@@ -8,13 +8,13 @@
 - sudal, sudal_app 등 여러 애플리케이션 repo는 문서를 **docs 디렉토리 내용만 copy**해서 사용한다.
 - 문서의 실제 원본과 이력은 **하나 이상의 문서 전용 Git repo(예: sudal_docs)**가 관리한다.
 - kkachi는
-  - sudal_docs에 대한 **실제 쓰기 권한을 가진 중앙 서버(kkachi-server)**와
+  - 하나 이상의 docs repo(예: `sudal_docs`, `dolgorae_docs`)에 대한 **실제 쓰기 권한을 가진 중앙 서버(kkachi-server)**와
   - 각 개발자 작업 디렉토리에서 동작하는 **CLI 클라이언트(kkachi)**,
   - 그리고 여러 **Git hook(pre-commit, post-checkout, post-merge, post-rewrite, pre-push, commit-msg)**으로 구성된다.
 
 문서 수정 시에는 다음 원칙을 따른다.
 
-- sudal_docs와의 동기화와 충돌 감지는 최대한 자동화한다.
+- 연결된 docs repo(예: `sudal_docs`)와의 동기화와 충돌 감지는 최대한 자동화한다.
 - 그러나 실제 **충돌 내용의 수정은 항상 사람이 직접** 수행한다.
 - kkachi는 3-way merge와 conflict marker 삽입까지 담당하고, marker를 없애는 수정은 개발자가 한다.
 
@@ -31,32 +31,43 @@
   - post-rewrite
   - pre-push
   - commit-msg
-- sudal_docs 버전 관리 모델
+- docs repo(sudal_docs 등)의 버전 관리 모델
 - 대표 시나리오 및 에러 처리 요구사항
 
 구체적인 Go 코드, 패키지 구조, 실제 Git 명령 사용 방식 등은 별도의 설계 문서에서 다룬다.
+
+> 이 문서에서 `sudal`, `sudal_app`, `sudal_docs`는 **예시 project 그룹 이름**일 뿐이며, kkachi는 `sudal`, `dolgorae` 등 여러 project와 각각의 docs repo에 대해 동일한 방식으로 동작한다. project 단위 동작 규약은 특정 repo 이름이 아니라 “project” / “docs repo” 용어를 기준으로 정의한다.
 
 ---
 
 ## 2. 용어 정의
 
+### 2.1. 공통 용어
+
 | 용어 | 의미 |
 |---|---|
-| sudal | 서버 애플리케이션 Git repo |
-| sudal_app | 클라이언트 애플리케이션 Git repo |
-| sudal_docs | kkachi가 관리하는 여러 문서 전용 Git repo(docs repo) 중 하나. sudal 관련 문서의 단일 소스 오브 트루스 |
-| docs repo | 각 프로젝트 또는 project 그룹의 문서 원본을 저장하는 전용 Git repo. 예: sudal_docs, dolgora_docs |
+| project | kkachi가 관리하는 논리적 프로젝트 이름. 예: `sudal`, `dolgorae` |
+| application repo | 각 project의 코드 저장소. 예: `sudal` 서버 repo, `sudal_app` 클라이언트 repo |
+| docs repo | 각 project 또는 project 그룹의 문서 원본을 저장하는 전용 Git repo. 예: `sudal_docs`, `dolgorae_docs` |
 | workspace | kkachi에 등록된 하나의 작업 디렉토리. 예: `/Users/karl/dev/sudal` |
-| docs 디렉토리 | 각 workspace 내에서 sudal_docs 내용을 copy해 두는 디렉토리. 기본값은 `docs` |
-| kkachi-server | sudal_docs repo를 실제로 clone하고 관리하는 중앙 REST 서버 |
+| docs 디렉토리 | 각 workspace 내에서 연결된 docs repo 내용을 copy해 두는 디렉토리. 기본값은 `docs` |
+| kkachi-server | 하나 이상의 docs repo를 실제로 clone하고 관리하는 중앙 REST 서버 |
 | kkachi CLI | 각 workspace 내에서 실행되는 kkachi 바이너리. init, hook, status, fix 등을 제공 |
 | `.kkachi.json` | workspace별 kkachi 설정 파일 |
-| `.sudal_docs_hash` | 해당 workspace의 docs가 기반으로 하는 sudal_docs commit hash를 기록한 파일 |
+| `docs_hash_file` | 해당 workspace의 docs가 기반으로 하는 docs repo commit hash를 기록하는 파일 경로 설정 값. v1 기본값은 `.kkachi_docs_hash` |
 | `.kkachi_pending_fix` | kkachi가 outdated merge를 수행한 뒤, 아직 사용자가 충돌을 모두 해결하고 fix를 완료하지 않은 상태임을 나타내는 플래그 파일 |
-| base_docs_hash | 현재 workspace의 docs가 **어느 sudal_docs commit을 기준으로 수정되었는지**를 나타내는 hash. 일반적으로 `.sudal_docs_hash`의 값과 동일한 의미를 갖는다. |
+| base_docs_hash | 현재 workspace의 docs가 **어느 docs repo commit을 기준으로 수정되었는지**를 나타내는 hash. 일반적으로 `docs_hash_file`이 가리키는 값과 동일한 의미를 갖는다. |
 | docs_snapshot | 현재 workspace의 docs 디렉토리 내용을 tar.gz 등으로 패키징한 바이너리 데이터 |
-| HEAD | sudal_docs main 브랜치의 최신 commit hash |
-| kkachi status | 현재 workspace의 docs 기준 버전과 sudal_docs HEAD의 관계를 요약해서 보여주는 kkachi 서브커맨드 |
+| HEAD | 각 docs repo(main 브랜치)의 최신 commit hash |
+| kkachi status | 현재 workspace의 docs 기준 버전과 연결된 docs repo HEAD의 관계를 요약해서 보여주는 kkachi 서브커맨드 |
+
+### 2.2. 예시 용어 (sudal 기반)
+
+| 용어 | 의미 (예제) |
+|---|---|
+| sudal | 예시 project A의 서버 애플리케이션 Git repo |
+| sudal_app | 예시 project A의 클라이언트 애플리케이션 Git repo |
+| sudal_docs | 예시 project A에 대한 docs repo (docs repo의 한 예시) |
 
 ---
 
@@ -68,12 +79,12 @@ kkachi-server와 kkachi CLI는 하나의 Git repository에서 함께 개발 및 
 
 - kkachi-server
   - 사내 내부 서버에서 동작
-  - sudal_docs repo를 로컬에 clone해서 관리
+  - 하나 이상의 docs repo(예: `sudal_docs`, `dolgorae_docs`)를 로컬에 clone해서 관리
   - 각 workspace의 상태를 JSON 등으로 저장
   - REST API를 통해
-    - sudal_docs HEAD 조회
+    - project별 docs repo HEAD 조회
     - 특정 commit 기준 docs snapshot 제공
-    - docs snapshot을 반영해 새로운 sudal_docs commit 생성
+    - docs snapshot을 반영해 새로운 docs repo commit 생성
 - kkachi CLI
   - Go로 작성된 단일 바이너리 `kkachi`
   - 대표적인 서브커맨드 예시 (전체 목록은 6장 참조)
@@ -89,8 +100,8 @@ kkachi-server와 kkachi CLI는 하나의 Git repository에서 함께 개발 및 
     - `kkachi hook post-rewrite`
     - `kkachi hook pre-push`
     - `kkachi hook commit-msg`
-  - `.kkachi.json`, `.sudal_docs_hash`, `.kkachi_pending_fix` 관리
-  - 여러 Git hook에서 호출되어 sudal_docs와의 동기화와 상태 체크를 수행
+  - `.kkachi.json`, `docs_hash_file`(기본: `.kkachi_docs_hash`), `.kkachi_pending_fix` 관리
+  - 여러 Git hook에서 호출되어 각 project의 docs repo와의 동기화와 상태 체크를 수행
 - Git hooks
   - `.git/hooks/pre-commit`에서 `kkachi hook pre-commit` 실행
   - `.git/hooks/post-checkout`에서 `kkachi hook post-checkout` 실행
@@ -128,12 +139,12 @@ Server -down-> DocsRepos : git fetch/commit/push\n(project별 docs repo)
 
 | Hook 이름 | 호출 시점 | kkachi 역할 요약 |
 |---|---|---|
-| pre-commit | 커밋 직전 | docs 변경 감지, conflict 마커 검사, sudal_docs 동기화 시도, outdated 시 3-way merge 및 커밋 차단 |
-| post-checkout | 브랜치 또는 커밋 checkout 직후 | `kkachi status`를 통해 현재 docs 기준 버전과 sudal_docs HEAD의 관계를 표시. 자동 merge 없음 |
+| pre-commit | 커밋 직전 | docs 변경 감지, conflict 마커 검사, 연결된 docs repo 동기화 시도, outdated 시 3-way merge 및 커밋 차단 |
+| post-checkout | 브랜치 또는 커밋 checkout 직후 | `kkachi status`를 통해 현재 docs 기준 버전과 연결된 docs repo HEAD의 관계를 표시. 자동 merge 없음 |
 | post-merge | `git merge` 또는 merge 기반 `git pull` 이후 | `kkachi status` 호출. merge 결과에 대한 docs 상태를 안내. 자동 merge 없음 |
 | post-rewrite | `git rebase`, `git commit --amend` 등 rewrite 이후 | 특히 `git fetch && git rebase` 후에 `kkachi status` 호출. 자동 merge 없음 |
 | pre-push | 원격으로 push 직전 | docs에 conflict 마커나 `.kkachi_pending_fix`가 있으면 push 차단. 자동 fix 없음 |
-| commit-msg | 커밋 메시지 확정 직전 | docs가 변경된 커밋이면, 최종 `.sudal_docs_hash`로부터 `docs-version: <hash>` 라인을 메시지에 추가 |
+| commit-msg | 커밋 메시지 확정 직전 | docs가 변경된 커밋이면, 최종 docs 기준 hash(예: `.kkachi_docs_hash`)로부터 `docs-version: <hash>` 라인을 메시지에 추가 |
 
 ---
 
@@ -143,19 +154,19 @@ Server -down-> DocsRepos : git fetch/commit/push\n(project별 docs repo)
 
 - kkachi-server는 하나 이상의 docs repo를 중앙 문서 저장소로 관리하며, 각 repo를 로컬 clone으로 유지한다.
 - 각 docs repo(main 브랜치)의 HEAD commit hash를 **해당 repo의 기준 버전**으로 사용한다.
-- 각 workspace는 자신이 연결된 docs repo에 대해, docs_hash_file(예: `.sudal_docs_hash`)로 현재 기준 commit을 기록한다.
-  - 예시로 사용하는 파일 이름은 `.sudal_docs_hash` 이지만, 실제 파일명은 `.kkachi.json` 의 `docs_hash_file` 설정값을 따른다. v1 의 기본값은 `.sudal_docs_hash` 이며, 구현 시에는 항상 설정 값을 사용해야 한다.
+- 각 workspace는 자신이 연결된 docs repo에 대해, `docs_hash_file`(기본: `.kkachi_docs_hash`)로 현재 기준 commit을 기록한다.
+  - 실제 파일명은 `.kkachi.json` 의 `docs_hash_file` 설정값을 따른다. v1 의 기본값은 `.kkachi_docs_hash` 이며, 구현 시에는 항상 설정 값을 사용해야 한다.
 
-### `.sudal_docs_hash` 의미
+### `docs_hash_file` (`.kkachi_docs_hash`) 의미
 
-`.sudal_docs_hash`는 항상 다음 의미를 가진다.
+`docs_hash_file`이 가리키는 값은 항상 다음 의미를 가진다(기본 파일 이름: `.kkachi_docs_hash`).
 
 > "현재 workspace의 docs 디렉토리는 연결된 docs repo의 commit X를 기반으로 하고 있으며,
 > 아직 push하지 않은 변경이 있다 하더라도, **마지막으로 kkachi를 통해 원격과 동기화한 기준 commit은 X**이다."
 
-- init 직후 `.sudal_docs_hash = sudal_docs HEAD`
-- pre-commit에서 `/docs/push`가 성공하면 `.sudal_docs_hash = 새 HEAD`
-- pre-commit에서 outdated를 감지하고 3-way merge를 수행한 후에는 `.sudal_docs_hash = merge 기준이 된 remote HEAD`로 갱신한다. 이때 실제 충돌 내용은 사람이 수정한다.
+- init 직후 `docs_hash_file = 연결된 docs repo HEAD`
+- pre-commit에서 `/docs/push`가 성공하면 `docs_hash_file = 새 HEAD`
+- pre-commit에서 outdated를 감지하고 3-way merge를 수행한 후에는 `docs_hash_file = merge 기준이 된 remote HEAD`로 갱신한다. 이때 실제 충돌 내용은 사람이 수정한다.
 
 ---
 
@@ -165,18 +176,18 @@ Server -down-> DocsRepos : git fetch/commit/push\n(project별 docs repo)
 
 ### 5.1. 서버 역할 요약
 
-1. sudal_docs repo 로컬 관리
+1. docs repo 로컬 관리
 
-   - 최초 실행 시 sudal_docs를 clone 한 뒤, `git fetch`로 한 번 동기화한다.
-   - 이후에는 `/docs/push` 처리 시점에만 `git fetch` / `reset --hard origin/main` 을 수행해 최신 HEAD 를 맞춘다.
+   - 최초 실행 시 설정된 각 docs repo(예: `sudal_docs`, `dolgorae_docs`)를 clone 한 뒤, `git fetch`로 한 번 동기화한다.
+   - 이후에는 `/docs/push` 처리 시점에만 필요한 docs repo에 대해 `git fetch` / `reset --hard origin/main` 을 수행해 최신 HEAD 를 맞춘다.
 2. docs 업데이트 요청 처리
 
    - workspace 로컬 docs snapshot을 받아
-   - base_docs_hash와 sudal_docs HEAD를 비교
-   - 조건이 맞으면 새로운 commit 생성 및 push
+   - base_docs_hash와 해당 project에 매핑된 docs repo HEAD를 비교
+   - 조건이 맞으면 해당 docs repo에 새로운 commit 생성 및 push
 3. outdated 감지
 
-   - base_docs_hash와 sudal_docs HEAD가 다르면
+   - base_docs_hash와 docs repo HEAD가 다르면
    - 바로 push하지 않고 `status = outdated` 응답
 4. docs snapshot 제공
 
@@ -234,9 +245,9 @@ Server -down-> DocsRepos : git fetch/commit/push\n(project별 docs repo)
   v1 기준으로 **각 project는 정확히 1개의 docs repo에 매핑되며, 하나의 docs repo를 여러 project가 공유하지 않는다.**
 - 각 workspace 엔트리는 id, 프로젝트명, 연결된 `docs_repo_id`, path, 마지막 docs_hash, 마지막 통신 시각, 해당 workspace 를 최초로 등록한 사용자의 email(예: `owner_email`), 그리고 마지막으로 docs 를 변경한 actor 의 email(예: `last_actor_email`) 등을 갖는다.
 - 새 workspace가 등록되면 서버는 해당 시점의 project별 docs repo HEAD를 조회해 workspace의 `docs_hash` 초기값으로 저장하고, 동일한 값을 `current_docs_head`로 응답한다. 이 때 `owner_email` 은 **해당 workspace_id 에 대해 최초로 등록 요청을 보낸 actor 의 email** 로 한 번만 설정하고, 이후 동일한 workspace_id 로 재등록이 들어와도 변경하지 않는다. 반면 `last_actor_email` 은 `/docs/push` 등 쓰기 요청이 성공할 때마다 해당 요청의 actor_email 로 갱신한다.
-  `kkachi init` 은 이 HEAD 기준 snapshot 을 받아 로컬 `docs/` 디렉토리를 생성하며, 로컬 `.sudal_docs_hash` 도 이 값으로 초기화한다.
-- 이후 `/docs/push` 호출 시에는 결과 status 와 관계없이( `updated` / `nochange` / `outdated` ) 서버가 요청을 처리한 시점의 sudal_docs HEAD 를 이용해 해당 workspace 의 `docs_hash` 를 갱신한다.
-  - 특히 `status = "outdated"` 인 경우에도 서버는 응답의 `current_docs_hash`(서버 기준 최신 HEAD)를 workspace `docs_hash` 로 업데이트해, 서버 state 와 로컬 `.sudal_docs_hash` 가 같은 기준 hash 를 바라보도록 맞춘다.
+  `kkachi init` 은 이 HEAD 기준 snapshot 을 받아 로컬 `docs/` 디렉토리를 생성하며, 로컬 `docs_hash_file`(기본: `.kkachi_docs_hash`)도 이 값으로 초기화한다.
+- 이후 `/docs/push` 호출 시에는 결과 status 와 관계없이( `updated` / `nochange` / `outdated` ) 서버가 요청을 처리한 시점의 docs repo HEAD 를 이용해 해당 workspace 의 `docs_hash` 를 갱신한다.
+  - 특히 `status = "outdated"` 인 경우에도 서버는 응답의 `current_docs_hash`(서버 기준 최신 HEAD)를 workspace `docs_hash` 로 업데이트해, 서버 state 와 로컬 `docs_hash_file`(기본: `.kkachi_docs_hash`)이 같은 기준 hash 를 바라보도록 맞춘다.
   이렇게 하면 `kkachi init` 이후에는 항상 "서버 docs HEAD = 로컬 docs" 상태에서 시작하게 되며,  
   init 시점에 로컬 docs 가 서버 HEAD 와 이미 동일하다는 별도 전제를 두지 않아도 된다.
 
@@ -388,7 +399,7 @@ Server -down-> DocsRepos : git fetch/commit/push\n(project별 docs repo)
   - `DELETE /projects/{project}`
     - 없는 project 인 경우: **HTTP 404 Not Found** + `{"error": "unknown_project"}` JSON
     - 해당 project 에 연결된 workspace 가 남아 있어 삭제할 수 없는 경우: **HTTP 409 Conflict** + `{"error": "project_has_workspaces"}` JSON
-  - sudal_docs repo 에 존재하지 않는 commit 을 가리키는 경우(예: force-push, 오래된 commit GC 등): **HTTP 400 Bad Request** + `{"error": "unknown_docs_commit"}` JSON
+  - docs repo 에 존재하지 않는 commit 을 가리키는 경우(예: force-push, 오래된 commit GC 등): **HTTP 400 Bad Request** + `{"error": "unknown_docs_commit"}` JSON
   - 그 외 검증 실패(요청 포맷 오류 등): **HTTP 400**
 - CLI 는 HTTP 4xx/5xx 여부와 상관없이 `"error": "unknown_project"`, `"unknown_workspace"`, `"unknown_docs_commit"` 코드 값을 감지하면
   “서버에 등록되지 않은 project/workspace” 또는 “알 수 없는 docs commit” 이라는 사용자 친화적 설명과 함께 exit code 1 로 처리한다.
@@ -400,11 +411,11 @@ Server -down-> DocsRepos : git fetch/commit/push\n(project별 docs repo)
 | ----------------------------------- | ----------------------------------------------------------------- | ----------------- | ------------------------------------------------- |
 | `GET /docs/head`                    | `project` 가 서버에 등록되지 않은 경우                           | `400 Bad Request` | `{"error": "unknown_project"}`                    |
 | `GET /docs/snapshot`                | `project` 가 서버에 등록되지 않은 경우                           | `400 Bad Request` | `{"error": "unknown_project"}`                    |
-| `GET /docs/snapshot`                | `commit` 이 sudal_docs repo 에 존재하지 않는 commit 인 경우      | `400 Bad Request` | `{"error": "unknown_docs_commit"}`                |
+| `GET /docs/snapshot`                | `commit` 이 docs repo 에 존재하지 않는 commit 인 경우            | `400 Bad Request` | `{"error": "unknown_docs_commit"}`                |
 | `POST /workspaces/register`         | `project` 가 서버에 등록되지 않은 경우                           | `400 Bad Request` | `{"error": "unknown_project"}`                    |
 | `POST /docs/push`                   | `workspace_id` 가 서버 state 에 존재하지 않는 경우              | `400 Bad Request` | `{"error": "unknown_workspace"}`                  |
 | `POST /docs/push`                   | 동일 docs repo 에 대한 다른 `/docs/push` 가 진행 중인 경우      | `409 Conflict`    | `{"ok": false, "error": "docs_repo_busy"}`        |
-| `POST /docs/push`                   | `base_docs_hash` 가 sudal_docs repo 에 존재하지 않는 commit 인 경우 | `400 Bad Request` | `{"error": "unknown_docs_commit"}`                |
+| `POST /docs/push`                   | `base_docs_hash` 가 docs repo 에 존재하지 않는 commit 인 경우    | `400 Bad Request` | `{"error": "unknown_docs_commit"}`                |
 | `DELETE /workspaces/{workspace_id}` | 해당 `workspace_id` 가 존재하지 않는 경우                        | `404 Not Found`   | `{"error": "unknown_workspace"}`                  |
 | `DELETE /projects/{project}`        | 해당 `project` 가 존재하지 않는 경우                             | `404 Not Found`   | `{"error": "unknown_project"}`                    |
 | `DELETE /projects/{project}`        | project 에 아직 등록된 workspace 가 남아 있어 삭제할 수 없는 경우 | `409 Conflict`    | `{"error": "project_has_workspaces"}`             |
@@ -480,7 +491,7 @@ CLI 는 가능하면 이 값을 자동으로 읽어 사용하며, 없는 경우�
   "project": "sudal",
   "actor_email": "karl@example.com",
   "docs_dir": "docs",
-  "docs_hash_file": ".sudal_docs_hash"
+  "docs_hash_file": ".kkachi_docs_hash"
 }
 ```
 
@@ -494,10 +505,10 @@ CLI 는 가능하면 이 값을 자동으로 읽어 사용하며, 없는 경우�
 - `docs_hash_file`
 
 > 주의: `docs_dir` 는 **로컬 workspace 안에서** docs 를 보관하는 디렉토리 경로이며, 서버와 주고받는 snapshot tar 내부의 루트 디렉토리 이름은 항상 `docs/` 로 고정한다.
-> 즉, 로컬에서 `docs_dir = "docs_kr"` 와 같이 다른 이름을 사용하더라도, snapshot 생성 시에는 해당 디렉토리 내용을 tar 내부 `docs/` 로 매핑하고, 서버는 sudal_docs repo 의 `docs/` 디렉토리에만 내용을 반영한다.
+> 즉, 로컬에서 `docs_dir = "docs_kr"` 와 같이 다른 이름을 사용하더라도, snapshot 생성 시에는 해당 디렉토리 내용을 tar 내부 `docs/` 로 매핑하고, 서버는 각 project 에 매핑된 docs repo 의 `docs/` 디렉토리에만 내용을 반영한다.
 > 아래에서 예시로 사용하는 `git diff --quiet -- docs` 와 같은 명령의 `docs` 부분은 기본값을 가리키는 것이며, 실제 구현에서는 항상 `.kkachi.json` 의 `docs_dir` 설정값을 사용해야 한다.
 
-#### 6.1.2. `.sudal_docs_hash`
+#### 6.1.2. `.kkachi_docs_hash`
 
 - 내용: 단일 줄의 commit hash
 
@@ -507,9 +518,9 @@ CLI 는 가능하면 이 값을 자동으로 읽어 사용하며, 없는 경우�
 abcd1234
 ```
 
-- init 시 sudal_docs HEAD로 설정
+- init 시 연결된 docs repo HEAD로 설정
 - `kkachi hook pre-commit`, `kkachi fix`에서 업데이트
-- 이 값은 해당 workspace에서 docs를 편집할 때 기준이 되는 sudal_docs commit을 의미한다.
+- 이 값은 해당 workspace에서 docs를 편집할 때 기준이 되는 docs repo commit을 의미한다.
 
 #### 6.1.3. `.kkachi_pending_fix`
 
@@ -519,7 +530,7 @@ abcd1234
   - 아직 `kkachi fix`가 성공적으로 완료되지 않았다.
 - 필수 요구사항:
   - pre-commit에서 outdated merge가 발생하면 `.kkachi_pending_fix`를 반드시 생성한다.
-  - `kkachi fix`가 성공적으로 sudal_docs에 새 commit을 만들고 `.sudal_docs_hash`를 갱신하면 `.kkachi_pending_fix`를 삭제한다.
+  - `kkachi fix`가 성공적으로 연결된 docs repo에 새 commit을 만들고 `.kkachi_docs_hash`를 갱신하면 `.kkachi_pending_fix`를 삭제한다.
   - pre-commit이 outdated가 아닌 정상 흐름(exit code 0)으로 종료하더라도, `.kkachi_pending_fix` 의 생성/삭제 책임은 원칙적으로 `kkachi fix` 에 있다. pre-commit 은 pending fix 상태를 감지하면 commit 을 차단하고 사용자가 먼저 `kkachi fix` 를 실행하도록 안내만 해야 한다.
 - 파일 내용:
   - 단순 플래그 파일로 취급하며, 최소한 다음 정보 포함을 권장한다.
@@ -537,11 +548,11 @@ created_at=2025-11-30T10:00:00Z
 
 `.kkachi_pending_fix` 상태 전이는 크게 다음과 같다.
 
-- **없음 → 생성**: pre-commit 에서 `/docs/push` 결과 `status = "outdated"` 인 경우, 3-way merge 를 수행하고 `.sudal_docs_hash` 를 remote HEAD 로 맞춘 뒤 `.kkachi_pending_fix` 를 생성한다. 이 시점부터는 commit/push 가 차단된 "pending fix" 상태이다.
-- **생성됨 → 삭제**: 사용자가 docs 의 conflict 마커를 모두 해결한 뒤 `kkachi fix` 를 실행하고, `/docs/push` 가 `updated` 또는 `nochange` 로 성공하면 `.sudal_docs_hash` 를 적절한 HEAD 로 맞추고 `.kkachi_pending_fix` 를 삭제한다. 이때 다시 commit/push 가 허용된다.
-- **생성됨 → 삭제(재시도)**: 사용자가 `kkachi fix` 를 실행했으나, 그 사이 다른 workspace 에서 sudal_docs 를 변경해 `H_base != H_head` 인 케이스 B 가 발생한 경우, 기존 pending fix 상태를 폐기하고 다시 pre-commit 에서 최신 HEAD 기준으로 merge 를 수행할 수 있도록 `.kkachi_pending_fix` 를 삭제한다. 이때 `.sudal_docs_hash` 는 기존 H_base 값을 유지하며, 이후 pre-commit 은 이 값을 base_docs_hash 로 사용해 새로운 outdated/merge 흐름을 수행한다.
+- **없음 → 생성**: pre-commit 에서 `/docs/push` 결과 `status = "outdated"` 인 경우, 3-way merge 를 수행하고 `.kkachi_docs_hash` 를 remote HEAD 로 맞춘 뒤 `.kkachi_pending_fix` 를 생성한다. 이 시점부터는 commit/push 가 차단된 "pending fix" 상태이다.
+- **생성됨 → 삭제**: 사용자가 docs 의 conflict 마커를 모두 해결한 뒤 `kkachi fix` 를 실행하고, `/docs/push` 가 `updated` 또는 `nochange` 로 성공하면 `.kkachi_docs_hash` 를 적절한 HEAD 로 맞추고 `.kkachi_pending_fix` 를 삭제한다. 이때 다시 commit/push 가 허용된다.
+- **생성됨 → 삭제(재시도)**: 사용자가 `kkachi fix` 를 실행했으나, 그 사이 다른 workspace 에서 docs repo 를 변경해 `H_base != H_head` 인 케이스 B 가 발생한 경우, 기존 pending fix 상태를 폐기하고 다시 pre-commit 에서 최신 HEAD 기준으로 merge 를 수행할 수 있도록 `.kkachi_pending_fix` 를 삭제한다. 이때 `.kkachi_docs_hash` 는 기존 H_base 값을 유지하며, 이후 pre-commit 은 이 값을 base_docs_hash 로 사용해 새로운 outdated/merge 흐름을 수행한다.
 - **생성됨 + stale**: `.kkachi_pending_fix` 는 존재하지만 docs 디렉토리에 더 이상 conflict 마커가 없고, 사용자가 이미 수동으로 정리한 흔적이 있는 경우이다. `kkachi status` 와 `pre-commit` 은 이 상태를 stale 로 간주하고, 안내 메시지를 출력한 뒤 필요 시 파일을 정리하도록 유도해야 한다. (stale 를 강제로 삭제하는 정책이나 명령은 추후 확장에서 정의할 수 있다.)
-  - stale 인 경우에도, 표준적인 해소 경로는 `kkachi fix` 를 실행해 sudal_docs 와 최종 내용을 다시 동기화한 뒤 `.kkachi_pending_fix` 를 삭제하는 것이다. 별도의 수동 삭제나 강제 clear 명령은 v1 에서는 제공하지 않으며, 필요 시 향후 `kkachi pending clear` 와 같은 확장 명령을 도입할 수 있다.
+  - stale 인 경우에도, 표준적인 해소 경로는 `kkachi fix` 를 실행해 연결된 docs repo 와 최종 내용을 다시 동기화한 뒤 `.kkachi_pending_fix` 를 삭제하는 것이다. 별도의 수동 삭제나 강제 clear 명령은 v1 에서는 제공하지 않으며, 필요 시 향후 `kkachi pending clear` 와 같은 확장 명령을 도입할 수 있다.
 
 ### 6.2. `kkachi init` 요구사항
 
@@ -549,7 +560,7 @@ created_at=2025-11-30T10:00:00Z
 
 - 현재 디렉토리를 kkachi workspace로 초기화
 - kkachi-server에 workspace 등록
-- `.kkachi.json`, `.sudal_docs_hash` 생성
+- `.kkachi.json`, `docs_hash_file`(기본: `.kkachi_docs_hash`) 생성
 - 필요한 Git hook 설치
 
 #### 6.2.2. 동작 요구사항
@@ -621,7 +632,7 @@ created_at=2025-11-30T10:00:00Z
    - 특히 init 시 결정한 Git 사용자 email 을 `actor_email` 로 저장해 둔다.
      - 이후 workspace 로컬 명령(pre-commit, fix 등)에서 `/docs/push` 를 호출할 때는 가능한 한 이 `actor_email` 값을 재사용한다.
      - `.kkachi.json` 의 `actor_email` 이 비어 있거나 잘못된 경우에는, fallback 으로 다시 `git config user.email` 을 읽거나 사용자에게 재입력을 요구할 수 있다.
-8. `.sudal_docs_hash` 생성
+8. `docs_hash_file`(기본: `.kkachi_docs_hash`) 생성
 
    - 내용: `current_docs_head`
 9. `.kkachi_pending_fix` 초기화
@@ -664,7 +675,7 @@ created_at=2025-11-30T10:00:00Z
 
 #### 6.3.1. 전체 흐름
 
-1. `.kkachi.json`, `.sudal_docs_hash` 읽기
+1. `.kkachi.json` 및 `docs_hash_file`(기본: `.kkachi_docs_hash`) 읽기
 
    - 두 파일 중 하나라도 존재하지 않거나 파싱에 실패하면, kkachi 설정이 깨진 상태로 간주한다.
    - 이 경우 명확한 에러 메시지를 출력하고 **exit code 1** 로 종료하여, 잘못된 설정 상태에서 commit 이 진행되지 않도록 한다.
@@ -721,7 +732,7 @@ created_at=2025-11-30T10:00:00Z
 #### 6.3.4. `/docs/push` 호출
 
 1. `docs_dir` 기준으로 tar.gz를 생성해 base64로 인코딩한다.
-2. `.sudal_docs_hash`의 값을 `base_docs_hash`로 사용한다.
+2. `docs_hash_file`(기본: `.kkachi_docs_hash`)의 값을 `base_docs_hash`로 사용한다.
 3. 다음과 같은 요청 바디로 `/docs/push`를 호출한다.
 
    ```json
@@ -781,26 +792,26 @@ created_at=2025-11-30T10:00:00Z
 > - 도메인 레벨 결과(`status = "updated" | "nochange" | "outdated"`)가 정상적으로 계산된 경우에는 **항상 HTTP 200** 과 `ok = true` 를 사용한다.
 > - 요청 자체가 잘못된 경우(예: 존재하지 않는 `workspace_id`, 서버 state 에 없는 `project` 등)는 **HTTP 400 또는 404** 와 함께 `ok = false` 및 `{"error": "unknown_workspace"}` 또는 `{"error": "unknown_project"}` 와 같은 에러 코드를 JSON body 로 반환한다.
 > - Git 에러, 디스크 IO 에러 등 서버 내부 문제는 **HTTP 500(또는 503)** 으로 처리하며, 필요 시 `ok = false` 와 간단한 에러 문자열만 노출하고 내부 세부 정보는 로그에만 남긴다.
-> - base_docs_hash 나 `/docs/snapshot?commit=` 의 `commit` 파라미터가 서버 sudal_docs repo 에 존재하지 않는 commit 을 가리키는 경우(예: force-push 나 히스토리 재작성, 오래된 commit GC 등)에는
+> - base_docs_hash 나 `/docs/snapshot?commit=` 의 `commit` 파라미터가 서버의 해당 docs repo 에 존재하지 않는 commit 을 가리키는 경우(예: force-push 나 히스토리 재작성, 오래된 commit GC 등)에는
 >   **HTTP 400 Bad Request** 와 `{"error": "unknown_docs_commit"}` 형식의 에러 JSON 을 표준으로 사용한다.
->   이 상황은 kkachi 가 자동으로 복구할 수 없는 오류로 간주하며, CLI 는 "sudal_docs 히스토리가 재작성되어 docs 기준 버전을 복구할 수 없습니다. sudal_docs 와 로컬 docs 를 수동으로 동기화한 뒤 `.sudal_docs_hash` 를 재설정하거나 `kkachi init` 을 다시 실행해 주세요." 와 같은 안내를 출력하고 exit code 1 로 종료한다.
+>   이 상황은 kkachi 가 자동으로 복구할 수 없는 오류로 간주하며, CLI 는 "연결된 docs repo 히스토리가 재작성되어 docs 기준 버전을 복구할 수 없습니다. docs repo 와 로컬 docs 를 수동으로 동기화한 뒤 `docs_hash_file`(예: `.kkachi_docs_hash`)을 재설정하거나 `kkachi init` 을 다시 실행해 주세요." 와 같은 안내를 출력하고 exit code 1 로 종료한다.
 > - CLI 는 HTTP 4xx/5xx 이거나 `ok = false` 인 경우 모두 “사용자가 인지해야 하는 오류”로 간주하고 exit code 1 로 처리한다.
 
 #### 1) `status = "updated"`
 
 - 의미
-  - base_docs_hash와 서버 HEAD가 동일했고, docs에 변경 사항이 있어서 sudal_docs에 새 commit이 생성되었다.
+  - base_docs_hash와 서버 HEAD가 동일했고, docs에 변경 사항이 있어서 연결된 docs repo에 새 commit이 생성되었다.
 - 동작
-  - `.sudal_docs_hash` 파일 내용을 `new_docs_hash`로 갱신한다.
+  - `.kkachi_docs_hash` 파일 내용을 `new_docs_hash`로 갱신한다.
   - 적절한 성공 메시지를 출력한다.
   - exit code 0으로 종료한다.
 
 #### 2) `status = "nochange"`
 
 - 의미
-  - base_docs_hash와 서버 HEAD는 같지만, 실제 diff 결과 sudal_docs와 동일해서 새 commit이 필요하지 않았다.
+  - base_docs_hash와 서버 HEAD는 같지만, 실제 diff 결과 docs repo와 동일해서 새 commit이 필요하지 않았다.
 - 동작
-  - `.sudal_docs_hash`를 항상 서버가 알려주는 HEAD(`current_docs_hash`)로 갱신한다.
+  - `.kkachi_docs_hash`를 항상 서버가 알려주는 HEAD(`current_docs_hash`)로 갱신한다.
   - "docs 변경 없음" 정도의 메시지를 출력하고 exit code 0으로 종료한다.
 
 #### 3) `status = "outdated"`
@@ -831,7 +842,7 @@ created_at=2025-11-30T10:00:00Z
 
   5. merge 결과를 현재 workspace `docs_dir/` 에 덮어쓴다.
 
-  6. `.sudal_docs_hash`를 `H_remote`로 업데이트한다.
+  6. `.kkachi_docs_hash`를 `H_remote`로 업데이트한다.
 
   7. `.kkachi_pending_fix` 파일을 생성한다.
 
@@ -841,7 +852,7 @@ created_at=2025-11-30T10:00:00Z
      kkachi: docs가 outdated 상태입니다 (local base=H_base, remote=H_remote).
      kkachi: kkachi가 remote 변경분과 로컬 변경분을 merge했습니다.
      kkachi: docs 디렉토리의 conflict 마커(<<<<<<<, =======, >>>>>>>)를 모두 해결한 뒤
-             'kkachi fix'를 실행해 sudal_docs에 최종 변경을 반영해 주세요.
+             'kkachi fix'를 실행해 연결된 docs repo에 최종 변경을 반영해 주세요.
      ```
 
   9. exit code 1로 종료해 commit을 차단한다.
@@ -851,7 +862,7 @@ created_at=2025-11-30T10:00:00Z
   - 실제 충돌 내용의 선택과 수정은 항상 사람이 직접 수행해야 한다.
   - Base/Remote snapshot 추출 또는 3-way merge 중 하나라도 실패하면,
     - 실패한 파일 경로와 원인을 포함한 에러 메시지를 출력하고
-    - `.sudal_docs_hash`, `.kkachi_pending_fix` 를 변경하지 않은 채 **exit code 1** 로 종료한다.
+    - `.kkachi_docs_hash`, `.kkachi_pending_fix` 를 변경하지 않은 채 **exit code 1** 로 종료한다.
     - 이미 일부 파일에 merge 결과를 써 버린 경우라도, 사용자가 수동으로 상태를 점검할 수 있도록
       “일부 파일은 이미 수정되었을 수 있으므로, Git diff 와 파일 내용을 확인한 뒤 다시 시도해 달라” 는 안내를 남긴다.
   - v1 에서는 텍스트 파일을 주 대상으로 하며, 이미지/PDF 등 바이너리 문서나 merge 가 불가능한 파일에서 충돌이 발생하는 경우
@@ -864,7 +875,7 @@ created_at=2025-11-30T10:00:00Z
 - 동작
   - 에러 메시지를 출력한다.
   - exit code 1로 commit을 차단한다. (네트워크 불안정, 서버 미응답도 여기에 포함된다.)
-  - `.sudal_docs_hash`, `.kkachi_pending_fix`는 변경하지 않거나, 최소한 일관된 상태를 유지해야 한다.
+  - `.kkachi_docs_hash`, `.kkachi_pending_fix`는 변경하지 않거나, 최소한 일관된 상태를 유지해야 한다.
 
 #### 6.3.6. 상태 값 구분 (CLI Status vs Server Status)
 
@@ -872,7 +883,7 @@ created_at=2025-11-30T10:00:00Z
 
   1. **CLI Status (`kkachi status`용)**  
      - 값: `up_to_date`, `outdated` (필요 시 `unknown`)  
-     - 의미: `.sudal_docs_hash`(기준 docs hash) 와 서버 sudal_docs HEAD (`/docs/head`) 비교 결과  
+     - 의미: `docs_hash_file`(기본: `.kkachi_docs_hash`)(기준 docs hash) 와 서버 docs repo HEAD (`/docs/head`) 비교 결과  
        - `up_to_date` : H_base == H_head  
        - `outdated`   : H_base != H_head
   2. **Server Status (`/docs/push` 응답용)**  
@@ -883,7 +894,7 @@ created_at=2025-11-30T10:00:00Z
        - `outdated` : base != HEAD 이라 push 를 거부하고, 최신 HEAD 를 알려줌
 
 - 구현 시 이 두 종류의 status 를 혼동하지 않고, **CLI Status 는 HEAD 비교 결과**, **Server Status 는 push 결과**로만 사용해야 한다.
-- 특히 pre-commit 에서 outdated merge 가 발생한 뒤에는 `.sudal_docs_hash` 가 remote HEAD 로 맞춰지고 `.kkachi_pending_fix` 가 생성되므로, `kkachi status` 기준으로는 `status = up_to_date`, `pending_fix = yes` 조합이 발생할 수 있다. 이 경우 실제로는 "추가 fix 가 필요해 commit/push 가 막힌 상태"이므로, 사람이나 도구가 상태를 해석할 때 **반드시 CLI Status 와 `pending_fix` 플래그를 함께 고려**해야 한다. (향후 `kkachi status --json` 에서는 별도의 `blocked` 또는 `pending_fix` 필드를 노출해 이 상태를 명확하게 표현하는 것을 권장한다.)
+- 특히 pre-commit 에서 outdated merge 가 발생한 뒤에는 `.kkachi_docs_hash` 가 remote HEAD 로 맞춰지고 `.kkachi_pending_fix` 가 생성되므로, `kkachi status` 기준으로는 `status = up_to_date`, `pending_fix = yes` 조합이 발생할 수 있다. 이 경우 실제로는 "추가 fix 가 필요해 commit/push 가 막힌 상태"이므로, 사람이나 도구가 상태를 해석할 때 **반드시 CLI Status 와 `pending_fix` 플래그를 함께 고려**해야 한다. (향후 `kkachi status --json` 에서는 별도의 `blocked` 또는 `pending_fix` 필드를 노출해 이 상태를 명확하게 표현하는 것을 권장한다.)
 
 ---
 
@@ -893,20 +904,20 @@ created_at=2025-11-30T10:00:00Z
 
 - pre-commit에서 outdated가 발생해 kkachi가 3-way merge를 수행한 뒤
 - 개발자가 docs 내 conflict 마커를 수동으로 해결한 상태에서
-- sudal_docs에 최종 수정된 docs를 반영하고, `.sudal_docs_hash`와 `.kkachi_pending_fix` 상태를 정상화한다.
+- 연결된 docs repo에 최종 수정된 docs를 반영하고, `.kkachi_docs_hash`와 `.kkachi_pending_fix` 상태를 정상화한다.
 
 #### 6.4.2. 동작 요구사항
 
-1. `.kkachi.json`, `.sudal_docs_hash`, `.kkachi_pending_fix` 읽기
+1. `.kkachi.json`, `.kkachi_docs_hash`, `.kkachi_pending_fix` 읽기
 
-   - `.kkachi.json` 또는 `.sudal_docs_hash` 를 읽지 못하면 kkachi 설정이 깨진 상태이므로 에러 메시지를 출력하고 **exit code 1** 로 종료한다.
+   - `.kkachi.json` 또는 `.kkachi_docs_hash` 를 읽지 못하면 kkachi 설정이 깨진 상태이므로 에러 메시지를 출력하고 **exit code 1** 로 종료한다.
    - `.kkachi_pending_fix` 파일이 존재하지 않으면, pre-commit 에서 outdated merge 를 수행한 적이 없는 것이므로
 
      - "현재 workspace 에는 pending fix 상태(.kkachi_pending_fix)가 없습니다." 와 같은 메시지를 출력하고
      - 아무 작업도 수행하지 않은 채 **exit code 1** 로 종료한다.
      - 즉, `kkachi fix` 는 **항상 `.kkachi_pending_fix` 가 존재하는 상황(실제 outdated merge 이후)** 에서만 사용한다.
 
-   - base_docs_hash = `.sudal_docs_hash = H_base`
+   - base_docs_hash = `.kkachi_docs_hash = H_base`
 2. docs conflict 마커 검사
 
    - `docs_dir` (기본값 `docs`) 아래 파일들에서 `<<<<<<<`, `=======`, `>>>>>>>` 문자열을 스캔
@@ -940,19 +951,19 @@ created_at=2025-11-30T10:00:00Z
        ```
 
      - 응답 처리
-       - `status = "updated"`:
+     - `status = "updated"`:
 
-         - `.sudal_docs_hash = new_docs_hash`로 업데이트
-         - `.kkachi_pending_fix` 삭제
-         - 성공 메시지 출력
+        - `.kkachi_docs_hash = new_docs_hash`로 업데이트
+        - `.kkachi_pending_fix` 삭제
+        - 성공 메시지 출력
 
-           ```text
-           kkachi: docs updated on server (H_base -> H_new).
-           kkachi: .sudal_docs_hash를 H_new로 갱신했습니다. 이제 다시 git commit을 시도할 수 있습니다.
-           ```
+          ```text
+          kkachi: docs updated on server (H_base -> H_new).
+           kkachi: .kkachi_docs_hash를 H_new로 갱신했습니다. 이제 다시 git commit을 시도할 수 있습니다.
+          ```
 
        - `status = "nochange"`:
-         - `.sudal_docs_hash`를 HEAD로 맞추고, `.kkachi_pending_fix` 삭제
+         - `.kkachi_docs_hash`를 HEAD로 맞추고, `.kkachi_pending_fix` 삭제
          - "변경 사항 없음" 로그 출력
   - 케이스 B: `H_base != H_head`
      - 그 사이에 다른 workspace에서 sudal_docs를 변경한 상황
@@ -970,7 +981,7 @@ created_at=2025-11-30T10:00:00Z
 
        2. `.kkachi_pending_fix` 파일을 삭제한다.
           - 이로써 workspace 는 더 이상 "pending fix" 상태가 아니며, pre-commit 이 `/docs/push` 를 다시 호출할 수 있다.
-          - `.sudal_docs_hash` 는 기존 H_base 값을 유지한다. 이후 pre-commit 이 다시 outdated 를 감지하면,
+          - `.kkachi_docs_hash` 는 기존 H_base 값을 유지한다. 이후 pre-commit 이 다시 outdated 를 감지하면,
             서버가 알려주는 최신 HEAD 와 H_base 를 기준으로 새로운 3-way merge 를 수행한다.
        3. **exit code 1** 로 종료해 현재 `kkachi fix` 시도는 실패로 처리한다.
 
@@ -978,7 +989,7 @@ created_at=2025-11-30T10:00:00Z
     - 예: HTTP 5xx, 네트워크 타임아웃, 서버 미응답 등으로 인해 `status` 필드를 포함하는 정상 응답을 받지 못했거나 `ok = false` 로만 응답한 경우이다.
     - 동작 요구사항:
       - 에러 유형에 따라 적절한 메시지를 출력하고 **exit code 1** 로 종료한다.
-      - 이 때 `.kkachi_pending_fix` 와 `.sudal_docs_hash` 는 **변경하지 않고 그대로 유지**한다.
+      - 이 때 `.kkachi_pending_fix` 와 `.kkachi_docs_hash` 는 **변경하지 않고 그대로 유지**한다.
         - 사용자는 동일한 pending fix 상태에서 나중에 네트워크/서버 상황이 복구된 뒤 다시 `kkachi fix` 를 실행해 재시도할 수 있어야 한다.
       - 단, 5.8 절에서 정의한 `"unknown_project"`, `"unknown_workspace"`, `"unknown_docs_commit"` 과 같은 4xx 에러 케이스는 별도의 복구 플로우(재-init, 수동 동기화 등)를 요구하므로, 해당 섹션의 안내 문구와 함께 처리한다.
 
@@ -988,18 +999,18 @@ created_at=2025-11-30T10:00:00Z
 
 #### 6.5.1. 목적
 
-- 현재 workspace의 docs 기준 버전과 sudal_docs HEAD의 관계를 간단히 파악한다.
+- 현재 workspace의 docs 기준 버전과 연결된 docs repo HEAD의 관계를 간단히 파악한다.
 - post-checkout, post-merge, post-rewrite hook에서 호출되는 기본 상태 조회 명령이다.
 
 #### 6.5.2. 동작 요구사항
 
-1. `.kkachi.json`, `.sudal_docs_hash`, `.kkachi_pending_fix` 읽기
+1. `.kkachi.json`, `.kkachi_docs_hash`, `.kkachi_pending_fix` 읽기
 2. `GET /docs/head` 호출
 
-   - 서버 sudal_docs HEAD `H_head` 획득
+   - 서버 docs repo HEAD `H_head` 획득
 3. 상태 판단
 
-   - `H_base = .sudal_docs_hash`
+   - `H_base = .kkachi_docs_hash`
    - 상태 값 예:
      - `up_to_date` (H_base == H_head)
      - `outdated` (H_base != H_head)
@@ -1018,7 +1029,7 @@ kkachi status
 kkachi: 현재 workspace의 docs 기준 버전은 서버 HEAD와 일치하지만,
         이전 pre-commit 에서 outdated merge 가 발생해 pending fix 상태입니다.
 kkachi: docs 디렉토리의 충돌을 모두 해결했다면 'kkachi fix'를 먼저 실행해
-        sudal_docs 에 최종 변경을 반영한 뒤 다시 commit/push 를 시도해 주세요.
+        연결된 docs repo 에 최종 변경을 반영한 뒤 다시 commit/push 를 시도해 주세요.
 ```
 
 - status 출력은 사람이 읽을 수 있는 텍스트 포맷이면 충분하다.
@@ -1048,7 +1059,7 @@ kkachi: docs 디렉토리의 충돌을 모두 해결했다면 'kkachi fix'를 �
 
 #### 6.6.1. 목적
 
-- 브랜치 전환이나 특정 커밋 checkout 직후 현재 docs와 sudal_docs HEAD 관계를 보여준다.
+- 브랜치 전환이나 특정 커밋 checkout 직후 현재 docs와 docs repo HEAD 관계를 보여준다.
 - 자동 merge나 자동 pull은 하지 않는다.
 
 #### 6.6.2. Git hook 설정
@@ -1255,9 +1266,9 @@ kkachi: docs 디렉토리의 충돌을 모두 해결했다면 'kkachi fix'를 �
 2. 메시지 중복 보호
 
    - 메시지 파일에 이미 `docs-version:` 문자열이 포함되어 있으면 아무 것도 하지 않는다.
-3. `.sudal_docs_hash` 읽기
+3. `docs_hash_file`(기본: `.kkachi_docs_hash`) 읽기
 
-   - `.sudal_docs_hash` 파일에서 hash 값을 읽어온다.
+   - 해당 파일에서 hash 값을 읽어온다.
    - 값이 비어 있거나 읽을 수 없으면 아무 것도 하지 않고 종료한다.
 4. 메시지 파일 수정
 
@@ -1278,14 +1289,14 @@ kkachi: docs 디렉토리의 충돌을 모두 해결했다면 'kkachi fix'를 �
   2. 사용자 메시지 편집
   3. `pre-commit`
 
-     - 이 시점에 kkachi가 `/docs/push`를 수행하고 `.sudal_docs_hash`를 최신 sudal_docs HEAD로 갱신한다.
+     - 이 시점에 kkachi가 `/docs/push`를 수행하고 `.kkachi_docs_hash`를 최신 docs repo HEAD로 갱신한다.
   4. `commit-msg`
   5. `post-commit`
 
-- 따라서 commit-msg hook은 **pre-commit 이후**, 즉 `.sudal_docs_hash`가 최종 값으로 갱신된 뒤에 실행된다.
+- 따라서 commit-msg hook은 **pre-commit 이후**, 즉 `.kkachi_docs_hash`가 최종 값으로 갱신된 뒤에 실행된다.
 
-- 이 구조 덕분에 **commit-msg hook 이 추가한 `docs-version` 라인에 대해서는** 커밋에 포함되는 `.sudal_docs_hash` 파일 내용과 커밋 메시지의 `docs-version` 값이 일관성을 가진다.
-  - 단, 사용자가 commit 메시지에 `docs-version:` 라인을 **직접 작성한 경우**에는, hook 이 이를 덮어쓰지 않으므로 메시지의 `docs-version` 값이 실제 sudal_docs 기준 버전과 다를 수 있다.
+- 이 구조 덕분에 **commit-msg hook 이 추가한 `docs-version` 라인에 대해서는** 커밋에 포함되는 `.kkachi_docs_hash` 파일 내용과 커밋 메시지의 `docs-version` 값이 일관성을 가진다.
+  - 단, 사용자가 commit 메시지에 `docs-version:` 라인을 **직접 작성한 경우**에는, hook 이 이를 덮어쓰지 않으므로 메시지의 `docs-version` 값이 실제 docs repo 기준 버전과 다를 수 있다.
   - v1 에서는 이러한 수동 입력까지 강제로 수정하지 않으며, 필요 시 향후 lint 규칙이나 별도 검증 도구를 통해 정책을 강화할 수 있다.
 
 ---
@@ -1298,7 +1309,7 @@ kkachi: docs 디렉토리의 충돌을 모두 해결했다면 'kkachi fix'를 �
 
    ```text
    sudal_docs HEAD = H0
-   workspace: .sudal_docs_hash = H0, .kkachi_pending_fix 없음
+   workspace: .kkachi_docs_hash = H0, .kkachi_pending_fix 없음
    ```
 
 2. 개발자가 sudal repo에서 `docs/` 수정
@@ -1316,7 +1327,7 @@ kkachi: docs 디렉토리의 충돌을 모두 해결했다면 'kkachi fix'를 �
       - docs 변경 있음
       - `/docs/push` 호출
       - base=H0, HEAD=H0이므로 sudal_docs에 새 commit(H1) 생성
-      - `.sudal_docs_hash = H1`로 갱신
+   - `.kkachi_docs_hash = H1`로 갱신
       - `.kkachi_pending_fix` 없음
    4. `commit-msg`
 
@@ -1338,15 +1349,15 @@ kkachi: docs 디렉토리의 충돌을 모두 해결했다면 'kkachi fix'를 �
    ```text
    sudal_docs HEAD = H0
 
-   K: .sudal_docs_hash = H0, .kkachi_pending_fix 없음
-   L: .sudal_docs_hash = H0, .kkachi_pending_fix 없음
+   K: .kkachi_docs_hash = H0, .kkachi_pending_fix 없음
+   L: .kkachi_docs_hash = H0, .kkachi_pending_fix 없음
    ```
 
 2. L이 docs 수정 후 commit
 
    - pre-commit에서 `/docs/push` 성공
    - sudal_docs HEAD = H1
-   - L: `.sudal_docs_hash = H1`, `.kkachi_pending_fix 없음`
+   - L: `.kkachi_docs_hash = H1`, `.kkachi_pending_fix 없음`
 
 3. K도 H0 기준으로 docs 수정 후 `git commit` 실행
 
@@ -1358,7 +1369,7 @@ kkachi: docs 디렉토리의 충돌을 모두 해결했다면 'kkachi fix'를 �
      - kkachi가 Base(H0), Local(K), Remote(H1) 기준 3-way merge 수행
        - docs에 conflict 마커 삽입 가능
      - `docs/`에 merge 결과 덮어쓰기
-     - `.sudal_docs_hash = H1`로 갱신
+     - `.kkachi_docs_hash = H1`로 갱신
      - `.kkachi_pending_fix` 생성
      - 안내 메시지 출력 후 exit code 1로 commit 실패
 
@@ -1366,12 +1377,12 @@ kkachi: docs 디렉토리의 충돌을 모두 해결했다면 'kkachi fix'를 �
 
 5. K가 `kkachi fix` 실행
 
-   - `.sudal_docs_hash = H1`, `.kkachi_pending_fix 존재`
+   - `.kkachi_docs_hash = H1`, `.kkachi_pending_fix 존재`
    - docs에 conflict 마커 없음
    - `GET /docs/head`로 H_head=H1 확인
    - `/docs/push` 호출
      - base=H1, HEAD=H1이므로 sudal_docs에 새 commit H2 생성
-   - `.sudal_docs_hash = H2`로 갱신
+   - `.kkachi_docs_hash = H2`로 갱신
    - `.kkachi_pending_fix` 삭제
 
 6. K가 다시 `git commit`
@@ -1409,11 +1420,11 @@ kkachi: docs 디렉토리의 충돌을 모두 해결했다면 'kkachi fix'를 �
 
    - Git이 `post-rewrite` hook을 호출한다.
    - `.git/hooks/post-rewrite`에서 `kkachi hook post-rewrite rebase ...` 호출
-   - `kkachi hook post-rewrite`가 `kkachi status`를 통해 docs 기준 버전과 sudal_docs HEAD 상태를 보여준다.
+   - `kkachi hook post-rewrite`가 `kkachi status`를 통해 docs 기준 버전과 연결된 docs repo HEAD 상태를 보여준다.
 
 4. 이후 docs 수정 및 commit 시에는 기존 pre-commit 흐름이 동일하게 적용된다.
 
-5. rebase로 인해 commit 히스토리가 바뀌더라도, `.sudal_docs_hash`와 sudal_docs HEAD 비교는 `kkachi status`, pre-commit, pre-push에서 일관되게 처리된다.
+5. rebase로 인해 commit 히스토리가 바뀌더라도, `.kkachi_docs_hash`와 docs repo HEAD 비교는 `kkachi status`, pre-commit, pre-push에서 일관되게 처리된다.
 
 ---
 
@@ -1431,7 +1442,7 @@ kkachi: docs 디렉토리의 충돌을 모두 해결했다면 'kkachi fix'를 �
    - kkachi-server에 project / workspace 등록
    - 서버에서 해당 project 의 **HEAD 기준 docs snapshot** 을 내려받아 로컬 `docs/` 디렉토리를 새로 생성
    - `.kkachi.json` 생성
-   - `.sudal_docs_hash`를 받은 HEAD(`current_docs_head`)로 설정
+   - `.kkachi_docs_hash`를 받은 HEAD(`current_docs_head`)로 설정
    - `.kkachi_pending_fix` 초기화
    - pre-commit, post-checkout, post-merge, post-rewrite, pre-push, commit-msg hook 설치
 
@@ -1439,7 +1450,7 @@ kkachi: docs 디렉토리의 충돌을 모두 해결했다면 'kkachi fix'를 �
 
    - init 전에 기존 repo 루트에 `docs/` 디렉토리가 이미 있다면, 해당 디렉토리를 **백업/정리한 뒤 삭제 또는 비우고** `kkachi init` 을 실행해야 한다.  
      v1 기준 `kkachi init` 은 기존 `docs/` 를 자동으로 덮어쓰거나 merge 하지 않으며, `docs/` 가 존재하면 init 을 실패(exit 1)로 처리한다.
-   - 이렇게 하면 init 이후에는 항상 "서버 sudal_docs HEAD = 로컬 docs" 상태에서 시작하게 되며,  
+   - 이렇게 하면 init 이후에는 항상 "서버 docs repo HEAD = 로컬 docs" 상태에서 시작하게 되며,  
      이후 변경은 모두 kkachi의 pre-commit / fix / push 흐름을 통해 관리된다.
 
 ---
@@ -1451,7 +1462,7 @@ kkachi: docs 디렉토리의 충돌을 모두 해결했다면 'kkachi fix'를 �
 - 서버, CLI 모두 Go 언어로 구현
 - 서버
   - 단일 바이너리 형태
-  - 설정 파일 또는 환경 변수로 sudal_docs remote URL, local path, listen 포트 등을 지정
+  - 설정 파일 또는 환경 변수로 각 docs repo remote URL(예: sudal_docs), local path, listen 포트 등을 지정
 - CLI
   - 단일 바이너리 `kkachi`
   - PATH 내에 설치
@@ -1493,7 +1504,7 @@ kkachi: docs 디렉토리의 충돌을 모두 해결했다면 'kkachi fix'를 �
 | `kkachi init`              | init 성공, `.kkachi.json` 및 hook 설치  | 설정 입력 오류, `/projects` 또는 `/workspaces/register` 4xx/5xx, config 파일 쓰기 실패 등 | 예기치 못한 panic/버그    |
 | `kkachi status`            | 상태 조회 성공                          | `.kkachi.json` 없음/손상, 서버 4xx/5xx (`unknown_project` / `unknown_workspace` 포함)             | 예기치 못한 panic/버그    |
 | `kkachi state`             | `/state` 조회 및 출력 성공              | 서버 4xx/5xx (예: 인증 실패 등)                                                      | 예기치 못한 panic/버그    |
-| `kkachi fix`               | fix 성공, `.sudal_docs_hash`/pending_fix 정상화 | `.kkachi.json`/`.sudal_docs_hash` 없음/손상, pending_fix 없음, conflict 미해결, 서버 오류 등 | 예기치 못한 panic/버그    |
+| `kkachi fix`               | fix 성공, `.kkachi_docs_hash`/pending_fix 정상화 | `.kkachi.json`/`.kkachi_docs_hash` 없음/손상, pending_fix 없음, conflict 미해결, 서버 오류 등 | 예기치 못한 panic/버그    |
 | `kkachi hook pre-commit`   | commit 허용                             | conflict 존재, outdated merge 후 pending_fix 생성, 서버/네트워크 오류 등             | 예기치 못한 panic/버그    |
 | `kkachi hook pre-push`     | push 허용                               | conflict 존재, pending_fix 존재, `.kkachi.json` 손상 등                              | 예기치 못한 panic/버그    |
 | `kkachi project add/delete`| 요청 성공                               | 서버 4xx/5xx (`unknown_project`, 409 conflict 등), 인자 오류                           | 예기치 못한 panic/버그    |

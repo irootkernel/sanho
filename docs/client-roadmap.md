@@ -22,7 +22,7 @@ PR 범위를 엄격히 관리하며, 필수 테스트를 수행해야 한다.
   - `infra/http`
     - kkachi-server REST API client (`/docs/head`, `/workspaces/register`, `/docs/snapshot`, `/docs/push`, `/state`)
   - `infra/fs`
-    - `.kkachi.json`, `.sudal_docs_hash`, `.kkachi_pending_fix` 파일 읽기·쓰기
+    - `.kkachi.json`, docs_hash_file(기본: `.kkachi_docs_hash`), `.kkachi_pending_fix` 파일 읽기·쓰기
     - docs 디렉토리 스캔, tar.gz 생성, base64 인코딩
   - `infra/git`
     - `git diff`, `git rev-parse`, staged 변경 감지 등 로컬 Git 연동
@@ -111,6 +111,8 @@ HTTP·FS 구현과 e2e는 후속 PR로 나눈다.
 - E2E Test
   - 실제 kkachi-server 테스트 인스턴스 + temp Git repo 사용
   - 대표 워크플로우(정상 commit, outdated 발생, fix, pre-push 차단)를 전체 플로우로 검증
+
+> 이 문서에서 `sudal`, `sudal_app`, `sudal_docs`는 **예시 project 그룹 이름**일 뿐이며, kkachi는 `sudal`, `dolgorae` 등 여러 project와 각각의 docs repo에 대해 동일한 방식으로 동작한다. CLI 동작 규약은 특정 repo 이름이 아니라 “project” / “docs repo” 용어를 기준으로 정의한다.
 
 ---
 
@@ -274,7 +276,7 @@ Phase 1은 이후 모든 기능에서 재사용할 공통 모듈을 구현한다
 ### P1-3. Docs hash / pending fix 파일 IO
 
 - 목표  
-  `.sudal_docs_hash`, `.kkachi_pending_fix` 파일 읽기·쓰기를 공통 유틸로 제공한다.
+  docs_hash_file(기본: `.kkachi_docs_hash`), `.kkachi_pending_fix` 파일 읽기·쓰기를 공통 유틸로 제공한다.
 
 - 개발 방향
   - `infra/fs/docs_hash_store.go`
@@ -395,7 +397,7 @@ Phase 1은 이후 모든 기능에서 재사용할 공통 모듈을 구현한다
        - `local_path` 는 현재 작업 디렉토리의 **절대 경로**를 사용한다.
      - `repo_url` 은 현재 코드 repo 의 `origin` URL (`git remote get-url origin`)을 사용한다.
   6. `.kkachi.json` 생성
-  7. `.sudal_docs_hash` 생성 (HEAD hash 기록)
+  7. docs_hash_file(기본: `.kkachi_docs_hash`) 생성 (HEAD hash 기록)
   8. `.kkachi_pending_fix` 존재 시 삭제
   9. Git hook 설치
 
@@ -417,7 +419,7 @@ Phase 1은 이후 모든 기능에서 재사용할 공통 모듈을 구현한다
     - workspace 루트에 기존 `docs/` 디렉토리가 **없어야** 하며,  
       만약 이미 있다면 init 을 실패(exit 1)로 처리하고 사용자가 먼저 백업/정리하도록 안내한다.
     - 서버 `docs repo` 의 **HEAD 기준 snapshot** 을 내려받아 새 `docs/` 디렉토리를 만든 뒤,  
-      이 HEAD 값을 `.sudal_docs_hash` 에 기록해야 한다.  
+      이 HEAD 값을 docs_hash_file(기본: `.kkachi_docs_hash`) 에 기록해야 한다.  
       즉, init 이후에는 항상 "서버 HEAD = 로컬 docs" 상태에서 출발한다.
     - 이 snapshot 단계는 서버 로드맵의 `GET /docs/snapshot` 구현(서버 Phase 3)이 준비된 이후에야 실제 kkachi-server 와 end-to-end 로 동작할 수 있으며,
       그 전에는 fake server 또는 stub HTTP client 를 사용해 usecase/CLI 레벨까지 선 구현할 수 있다.
@@ -477,7 +479,7 @@ Phase 1은 이후 모든 기능에서 재사용할 공통 모듈을 구현한다
 
 - 유즈케이스 흐름
 
-  1. `.kkachi.json`, `.sudal_docs_hash`, `.kkachi_pending_fix` 로드
+  1. `.kkachi.json`, `.kkachi_docs_hash`, `.kkachi_pending_fix` 로드
   2. `/docs/head` 호출
   3. H_base와 H_head 비교, DocsStatus 계산
   4. pending_fix 여부 포함해 status view model 생성
@@ -630,7 +632,7 @@ Phase 4는 문서 동기화의 핵심 흐름을 담당한다.
     - 출력: tar.gz 바이트 배열
       - 이 때 tar 내부의 경로는 `.kkachi.json` 의 `docs_dir` 값과 무관하게 항상 `docs/` 를 루트로 사용하도록 재매핑한다.
         예를 들어 로컬 `docs_dir = "my_docs"` 인 경우에도, tar 안에서는 `docs/..` 경로로만 나타나야 하며,
-        서버는 sudal_docs repo 의 `docs/` 디렉토리에만 내용을 반영한다. (Requirement 6.1.1 과 동일 규약)
+        서버는 각 project 에 매핑된 docs repo 의 `docs/` 디렉토리에만 내용을 반영한다. (Requirement 6.1.1 과 동일 규약)
   - `infra/fs/snapshot_applier.go`
     - 입력: base64-decoded tar.gz, target docs 디렉토리 경로(`docs_dir`)
     - 동작: tar 내부 `docs/` 루트를 `.kkachi.json` 의 `docs_dir` 경로로 리매핑하여 로컬 디렉토리에 복원한다.
@@ -644,13 +646,13 @@ Phase 4는 문서 동기화의 핵심 흐름을 담당한다.
 ### P4-2. `pre-commit` usecase
 
 - 목표
-  commit 직전에 docs 상태를 검사하고, 가능하면 자동으로 sudal_docs에 반영하거나, outdated 흐름을 시작한다.
+  commit 직전에 docs 상태를 검사하고, 가능하면 자동으로 연결된 docs repo에 반영하거나, outdated 흐름을 시작한다.
 
 - 유즈케이스 상세 흐름
 
-1. `.kkachi.json`, `.sudal_docs_hash` 로드
+1. `.kkachi.json`, `.kkachi_docs_hash` 로드
 
-   - 둘 중 하나라도 없거나 파싱에 실패하면 "kkachi 설정(.kkachi.json / .sudal_docs_hash)이 깨졌습니다." 와 같은 메시지를 출력하고 **exit 1** 로 종료한다.
+   - 둘 중 하나라도 없거나 파싱에 실패하면 "kkachi 설정(.kkachi.json / .kkachi_docs_hash)이 깨졌습니다." 와 같은 메시지를 출력하고 **exit 1** 로 종료한다.
    - pre-commit 단계에서 설정이 올바르지 않으면 commit 이 진행되지 않도록 하는 것이 목표다.
 2. docs conflict 마커 검사
 
@@ -663,7 +665,7 @@ Phase 4는 문서 동기화의 핵심 흐름을 담당한다.
 
      ```text
      kkachi: 이 workspace는 이전에 docs outdated가 발생해 pending fix 상태입니다.
-     kkachi: docs의 충돌을 모두 해결했다면 'kkachi fix'를 먼저 실행해 sudal_docs에 반영해 주세요.
+     kkachi: docs의 충돌을 모두 해결했다면 'kkachi fix'를 먼저 실행해 연결된 docs repo에 반영해 주세요.
      kkachi: pending fix를 정리하기 전에는 commit을 진행할 수 없습니다.
      ```
 
@@ -675,17 +677,17 @@ Phase 4는 문서 동기화의 핵심 흐름을 담당한다.
 5. docs snapshot 생성
 6. `/docs/push` 호출
 
-   - base_docs_hash = `.sudal_docs_hash`
+   - base_docs_hash = `.kkachi_docs_hash`
    - actor_email = `.kkachi.json` 의 `actor_email` (Requirement 6.2 에서 init 시 저장한 값)
    - `.kkachi.json` 의 `actor_email` 이 비어 있거나 잘못된 경우에는, Requirement 6.2 에서 정의한 fallback 규칙(현재 repo 의 `git config user.email` 재확인 또는 프롬프트 입력)을 적용할 수 있다.
 
 7. 응답 처리
 
    - `status = "updated"`
-     - `.sudal_docs_hash = new_docs_hash` 로 갱신
+     - `.kkachi_docs_hash = new_docs_hash` 로 갱신
      - 성공 메시지 출력 후 exit 0
    - `status = "nochange"`
-     - `.sudal_docs_hash` 를 항상 서버가 알려주는 HEAD(`current_docs_hash`)로 맞춘 뒤
+     - `.kkachi_docs_hash` 를 항상 서버가 알려주는 HEAD(`current_docs_hash`)로 맞춘 뒤
      - exit 0
    - `status = "outdated"`
 
@@ -695,15 +697,15 @@ Phase 4는 문서 동기화의 핵심 흐름을 담당한다.
 
         - 양쪽에서 수정된 곳은 conflict marker 삽입
      4. merge 결과를 docs 디렉토리에 덮어쓰기
-     5. `.sudal_docs_hash = remote_hash` 로 갱신
+     5. `.kkachi_docs_hash = remote_hash` 로 갱신
      6. `.kkachi_pending_fix` 생성
      7. 사용자에게 conflict 해결 후 `kkachi fix`를 안내
      8. exit 1로 commit 차단
    - `ok = false` 또는 기타 오류(네트워크 불안정 포함)
      - 에러 메시지 출력, exit 1로 commit 차단
      - 특히 HTTP 400 + `{"error": "unknown_docs_commit"}` 와 같이 Requirement 6.3.5 / 5.8 에서 정의한 `"unknown_docs_commit"` 에러인 경우,
-       sudal_docs 히스토리가 재작성되어 자동 복구가 불가능한 상황으로 간주하고,
-       "sudal_docs 히스토리가 재작성되어 docs 기준 버전을 복구할 수 없습니다. sudal_docs 와 로컬 docs 를 수동으로 동기화한 뒤 `.sudal_docs_hash` 를 재설정하거나 `kkachi init` 을 다시 실행해 주세요." 와 같은 안내를 출력한 뒤 exit 1 로 처리한다.
+       연결된 docs repo 히스토리가 재작성되어 자동 복구가 불가능한 상황으로 간주하고,
+       "연결된 docs repo 히스토리가 재작성되어 docs 기준 버전을 복구할 수 없습니다. docs repo 와 로컬 docs 를 수동으로 동기화한 뒤 `.kkachi_docs_hash` 를 재설정하거나 `kkachi init` 을 다시 실행해 주세요." 와 같은 안내를 출력한 뒤 exit 1 로 처리한다.
 
 - 구현 포인트
   - 3-way merge는 `git merge-file` 호출 wrapper로 구현하며, kkachi 바이너리는 git 의존성을 전제로 한다.
@@ -736,13 +738,13 @@ Phase 4는 문서 동기화의 핵심 흐름을 담당한다.
 3. 메시지 파일에 이미 `docs-version:` 존재하는지 검사
 
    - 존재하면 변경 없이 exit 0
-4. `.sudal_docs_hash` 읽기
+4. `docs_hash_file`(기본: `.kkachi_docs_hash`) 읽기
 
    - 값이 없으면 경고 후 exit 0
 5. 메시지 파일 끝에 빈 줄 + `docs-version: <hash>` 추가
 
 - 주의사항
-  - hook 실행 순서 상 pre-commit 이후에 실행되므로 `.sudal_docs_hash` 는 최신 sudal_docs HEAD를 가리켜야 한다.
+  - hook 실행 순서 상 pre-commit 이후에 실행되므로 `.kkachi_docs_hash` 는 최신 docs repo HEAD를 가리켜야 한다.
   - 메시지 파일 인코딩(UTF-8) 유지
 - 필수 테스트
   - Integration
@@ -755,13 +757,13 @@ Phase 4는 문서 동기화의 핵심 흐름을 담당한다.
 ### P5-1. `kkachi fix` usecase
 
 - 목표
-  outdated merge 이후 사용자 수정이 완료된 docs를 sudal_docs에 반영하고 상태를 정상화한다.
+  outdated merge 이후 사용자 수정이 완료된 docs를 연결된 docs repo에 반영하고 상태를 정상화한다.
 
 - 유즈케이스 흐름
 
-1. `.kkachi.json`, `.sudal_docs_hash`, `.kkachi_pending_fix` 로드
+1. `.kkachi.json`, `.kkachi_docs_hash`, `.kkachi_pending_fix` 로드
 
-   - `.kkachi.json` 또는 `.sudal_docs_hash` 를 읽지 못하면 설정이 깨진 상태이므로 에러 메시지를 출력하고 **exit 1** 로 종료한다.
+   - `.kkachi.json` 또는 `.kkachi_docs_hash` 를 읽지 못하면 설정이 깨진 상태이므로 에러 메시지를 출력하고 **exit 1** 로 종료한다.
    - `.kkachi_pending_fix` 파일이 **존재하지 않으면**, pre-commit 에서 outdated merge 를 수행한 흔적이 없는 것이므로
 
      - "현재 workspace 에는 pending fix 상태(.kkachi_pending_fix)가 없습니다." 와 같은 메시지를 출력하고
@@ -773,7 +775,7 @@ Phase 4는 문서 동기화의 핵심 흐름을 담당한다.
 3. `/docs/head` 호출
 
    - H_head 수신
-4. H_base = `.sudal_docs_hash` 와 H_head 비교
+4. H_base = `.kkachi_docs_hash` 와 H_head 비교
 
 - 케이스 A: `H_base == H_head`
   - docs snapshot 생성
@@ -782,20 +784,20 @@ Phase 4는 문서 동기화의 핵심 흐름을 담당한다.
     - actor_email = `.kkachi.json` 의 `actor_email` (pre-commit 과 동일하게, init 시점의 actor 를 기본으로 사용)
     - `.kkachi.json` 의 `actor_email` 이 비어 있거나 잘못된 경우에는 Requirement 6.2 의 규약에 따라 현재 repo 의 `git config user.email` 을 다시 읽거나, 사용자에게 email 입력을 요구한 뒤 그 값을 사용한다.
   - `status = updated`
-    - `.sudal_docs_hash = new_docs_hash` 로 갱신
+    - `.kkachi_docs_hash = new_docs_hash` 로 갱신
     - `.kkachi_pending_fix` 삭제
     - 성공 메시지 출력 후 exit 0
   - `status = nochange`
-    - `.sudal_docs_hash`를 `H_head`로 재기록해 해시를 명시적으로 최신화
+    - `.kkachi_docs_hash`를 `H_head`로 재기록해 해시를 명시적으로 최신화
     - `.kkachi_pending_fix` 삭제
     - "변경 사항 없음" 로그 출력 후 exit 0
 - 케이스 B: `H_base != H_head`
-  - 그 사이에 다른 workspace에서 sudal_docs를 변경한 상황
+  - 그 사이에 다른 workspace에서 docs repo를 변경한 상황
   - 동작
     - 에러 메시지 출력
 
       ```text
-      kkachi: fix를 시도하는 동안 sudal_docs HEAD가 변경되었습니다.
+      kkachi: fix를 시도하는 동안 docs repo HEAD가 변경되었습니다.
       kkachi: 이전 pending fix 상태를 정리하고, 다음 git commit 시 pre-commit에서
               최신 HEAD 기준으로 merge를 다시 수행합니다.
       kkachi: docs 내용과 Git diff를 한 번 확인한 뒤 필요한 경우 다시 commit을 시도해 주세요.
@@ -804,13 +806,13 @@ Phase 4는 문서 동기화의 핵심 흐름을 담당한다.
       ```
 
     - `.kkachi_pending_fix` 파일을 **삭제**해, workspace 를 pending fix 상태에서 해제한다.
-      - `.sudal_docs_hash` 는 기존 H_base 값을 유지한다.
+      - `.kkachi_docs_hash` 는 기존 H_base 값을 유지한다.
       - 이후 pre-commit 은 `.kkachi_pending_fix` 가 없으므로 `/docs/push` 를 다시 호출할 수 있고,
         outdated 가 감지되면 최신 HEAD 기준으로 새로운 3-way merge 를 수행한다.
     - exit 1 로 종료 (현재 fix 시도는 실패로 보고, 사용자가 이후 commit 을 통해 새로운 merge 를 수행하도록 유도)
     - 이 때 출력 메시지와 exit code 규약은 requirements 6.4.2(kkachi fix 동작 요구사항)와 동기화하여 관리한다.
   - HTTP 400 + `{"error": "unknown_docs_commit"}` 와 같이 Requirement 5.8 / 6.4.2 에서 정의한 `"unknown_docs_commit"` 에러가 발생한 경우,
-    pre-commit 에서의 처리와 동일하게 "sudal_docs 히스토리가 재작성되어 현재 pending fix 상태에서는 자동 복구가 불가능합니다. sudal_docs 와 로컬 docs 를 수동으로 동기화한 뒤 `.sudal_docs_hash` 를 재설정하거나, 필요 시 `kkachi init` 을 다시 실행해 주세요." 정도의 안내를 출력하고 exit 1 로 종료한다.
+    pre-commit 에서의 처리와 동일하게 "연결된 docs repo 히스토리가 재작성되어 현재 pending fix 상태에서는 자동 복구가 불가능합니다. docs repo 와 로컬 docs 를 수동으로 동기화한 뒤 `.kkachi_docs_hash` 를 재설정하거나, 필요 시 `kkachi init` 을 다시 실행해 주세요." 정도의 안내를 출력하고 exit 1 로 종료한다.
 - 필수 테스트
   - Unit
     - 두 케이스 흐름 검증
@@ -898,7 +900,7 @@ Phase 4는 문서 동기화의 핵심 흐름을 담당한다.
 요구사항은 아니지만, 추후 고려할 수 있는 확장 아이디어는 다음과 같다.
 
 - `kkachi pull`
-  - sudal_docs 최신 docs snapshot을 받아 로컬 docs를 덮어쓰는 명령
+  - 연결된 docs repo의 최신 docs snapshot을 받아 로컬 docs를 덮어쓰는 명령
   - 현재는 `fix` 및 pre-commit 중심 설계이지만, 특정 시점에 “강제 최신화”가 필요할 수 있다.
 - `kkachi status --json`
   - 다른 도구에서 파싱하기 쉬운 JSON 포맷 상태 출력

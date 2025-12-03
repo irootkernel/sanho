@@ -79,6 +79,8 @@ PR 범위를 엄격히 관리하며, 필수 테스트를 수행해야 한다.
   - 실제 git repo(임시 디렉토리) + file state를 이용해 서버 전체 플로우 검증
 - 각 기능마다 “반드시 통과해야 할 테스트 시나리오”를 Roadmap 내에 명시한다.
 
+> 이 문서에서 `sudal`, `sudal_docs` 는 **예시 project / docs repo 이름**일 뿐이며, kkachi-server 는 `sudal`, `dolgorae` 등 여러 project 와 각 project 에 매핑된 docs repo 를 동일한 방식으로 관리한다. 서버 동작 규약은 특정 repo 이름이 아니라 “project” / “docs repo” / `docs_repo_id` 용어를 기준으로 정의한다.
+
 ---
 
 ## 2. API Endpoint 요약
@@ -91,12 +93,12 @@ Phase 번호는 이후 섹션에서 설명하는 구현 순서와 매핑된다.
 | ID | Endpoint               | Method | 설명                                                                                | 구현 Phase |
 | -- | ---------------------- | ------ | --------------------------------------------------------------------------------- | -------- |
 | F1 | `/docs/head`           | GET    | 지정된 project에 매핑된 docs repo(main)의 현재 HEAD commit hash 조회 (`project` query 필수)        | Phase 1  |
-| F2 | `/workspaces/register` | POST   | workspace 정보를 등록/갱신하고, 현재 sudal_docs HEAD를 함께 반환                                  | Phase 2  |
+| F2 | `/workspaces/register` | POST   | workspace 정보를 등록/갱신하고, 현재 해당 project의 docs repo HEAD를 함께 반환                    | Phase 2  |
 | F3 | `/docs/snapshot`       | GET    | 지정된 project/docs repo에 대해 특정 commit(또는 HEAD) 기준 docs 디렉토리 snapshot(base64 tar.gz) 제공 (`project` query, `commit` optional) | Phase 3  |
 
 > `/docs/head`와 `/docs/snapshot` endpoint는 모두 `project` query param을 요구하며, server usecase에는 `ProjectName`으로 전달된다.
 
-| F4 | `/docs/push`           | POST   | workspace의 docs snapshot을 기반으로 sudal_docs 업데이트 시도 (updated / nochange / outdated) | Phase 4  |
+| F4 | `/docs/push`           | POST   | workspace의 docs snapshot을 기반으로 해당 project의 docs repo 업데이트 시도 (updated / nochange / outdated) | Phase 4  |
 | F5 | `/state`               | GET    | project 별 docs HEAD 및 모든 workspace의 상태를 조회하는 디버그용 endpoint                       | Phase 5  |
 
 ### 2.2 보조 API (운영/문서용 엔드포인트)
@@ -266,7 +268,7 @@ Phase 0에서는 이후 기능별 구현을 위한 최소한의 프로젝트 뼈
 
 ## 4. Phase 1 – 기능 1: `GET /docs/head`
 
-이 Phase의 결과로, 개발자는 실제 sudal_docs HEAD hash를 반환하는 `/docs/head`를 사용할 수 있어야 한다.
+이 Phase의 결과로, 개발자는 각 project 에 매핑된 docs repo 의 실제 HEAD hash(예: sudal_docs HEAD)를 반환하는 `/docs/head`를 사용할 수 있어야 한다.
 
 ### F1-Domain – Docs HEAD 도메인 정의
 
@@ -385,7 +387,7 @@ Phase 0에서는 이후 기능별 구현을 위한 최소한의 프로젝트 뼈
 ### F1-Data – GitDocsRepository.GetHead 구현 및 Wiring
 
 - 목표
-  실제 sudal_docs clone에서 HEAD hash를 읽어 반환한다.
+  각 project 에 매핑된 docs repo clone(예: sudal_docs)에서 HEAD hash를 읽어 반환한다.
 - 개발 방향
   - infra 레벨 Git client 인터페이스 정의
 
@@ -436,7 +438,7 @@ Phase 0에서는 이후 기능별 구현을 위한 최소한의 프로젝트 뼈
   - Scope
     - 포함
       - HEAD 조회에 필요한 Git 호출
-      - sudal_docs clone이 이미 있다고 가정 (초기 clone/fetch는 P0-3 Docs Repo Manager에서 처리)
+      - 각 docs repo clone(예: sudal_docs)이 이미 있다고 가정 (초기 clone/fetch는 P0-3 Docs Repo Manager에서 처리)
     - 제외
       - `git clone`, `git fetch` 등 repo 초기화/동기화 로직
         → `/docs/push` 구현 시점 또는 별도 infra Phase에서 처리 예정
@@ -446,13 +448,13 @@ Phase 0에서는 이후 기능별 구현을 위한 최소한의 프로젝트 뼈
   - Integration
     - 임시 디렉토리에 `git init` + commit 하나 생성 후, GitDocsRepository.GetHead 호출 → commit hash 일치하는지 확인
   - E2E
-    - 서버를 실제 sudal_docs 테스트 repo와 연결해 띄운 뒤 `/docs/head` 호출 → HEAD hash 확인
+    - 서버를 실제 docs 테스트 repo(예: sudal_docs)와 연결해 띄운 뒤 `/docs/head` 호출 → HEAD hash 확인
 
 ---
 
 ## 5. Phase 2 – 기능 2: `POST /workspaces/register`
 
-이 Phase의 결과로, kkachi CLI가 서버에 workspace를 등록하고, 서버가 해당 workspace와 sudal_docs HEAD를 기억할 수 있어야 한다.
+이 Phase의 결과로, kkachi CLI가 서버에 workspace를 등록하고, 서버가 해당 workspace와 연결된 docs repo HEAD 를 기억할 수 있어야 한다.
 
 ### F2-Domain – Workspace 엔티티 및 Repository
 
@@ -513,7 +515,7 @@ Phase 0에서는 이후 기능별 구현을 위한 최소한의 프로젝트 뼈
     - HTTP 계약 (JSON 필드, 이름, 타입)
   - 제외
     - WorkspaceID 생성 규칙
-    - sudal_docs HEAD 조회 로직
+    - docs repo HEAD 조회 로직
 - 주의할 점
   - handler는 usecase 호출 + DTO 변환에 집중하고, 로직을 넣지 않는다.
   - 요청된 `project`에 대해 서버 설정/상태 내에 project → docs repo 매핑이 **존재하지 않을 경우**, HTTP 400(BadRequest) 와 함께 `{"error": "unknown_project"}` 형식의 JSON 을 반환한다.
@@ -527,7 +529,7 @@ Phase 0에서는 이후 기능별 구현을 위한 최소한의 프로젝트 뼈
 ### F2-Usecase – RegisterWorkspaceUseCase
 
 - 목표
-  클라이언트 요청을 Workspace 도메인 객체로 변환하고, 저장 후 sudal_docs HEAD 정보를 응답에 포함한다.
+  클라이언트 요청을 Workspace 도메인 객체로 변환하고, 저장 후 해당 project 의 docs repo HEAD 정보를 응답에 포함한다.
 - 개발 방향
   - `RegisterWorkspaceUseCase` 정의
     - 입력: project, localPath, repoURL
@@ -549,7 +551,7 @@ Phase 0에서는 이후 기능별 구현을 위한 최소한의 프로젝트 뼈
 - Scope
   - 포함
     - Workspace 저장
-    - 현재 sudal_docs HEAD 반환
+    - 현재 docs repo HEAD 반환
   - 제외
     - Workspace 중복 정책(덮어쓰기 vs 에러)은 단순 정책으로 시작하고, 필요 시 추후 강화
 - 주의할 점
@@ -594,7 +596,7 @@ Phase 0에서는 이후 기능별 구현을 위한 최소한의 프로젝트 뼈
 
 ## 6. Phase 3 – 기능 3: `GET /docs/snapshot`
 
-이 Phase의 결과로, CLI는 특정 sudal_docs commit(또는 HEAD) 기준의 docs snapshot(base64 tar.gz)을 내려받을 수 있다.
+이 Phase의 결과로, CLI는 특정 project 에 매핑된 docs repo 의 지정된 commit(또는 HEAD) 기준 docs snapshot(base64 tar.gz)을 내려받을 수 있다.
 
 ### F3-Domain – Snapshot 도메인 모델
 
@@ -695,12 +697,12 @@ Phase 0에서는 이후 기능별 구현을 위한 최소한의 프로젝트 뼈
   - 포함
     - `docs/` 디렉토리만 포함한 tar.gz
   - 제외
-    - sudal_docs 전체 repo snapshot
+    - 전체 docs repo snapshot(코드 등 다른 디렉토리 포함)
 - 주의할 점
   - snapshot tar 내부의 루트 디렉토리 이름은 항상 `docs/` 로 고정하며, Requirement 6.1.1 에서 정의한 것처럼
-    로컬 workspace 의 `docs_dir` 값과 관계 없이 서버는 sudal_docs repo 의 `docs/` 디렉토리에만 내용을 반영한다.
+    로컬 workspace 의 `docs_dir` 값과 관계 없이 서버는 각 project 에 매핑된 docs repo 의 `docs/` 디렉토리에만 내용을 반영한다.
   - v1에서는 대용량 docs에 대한 성능/메모리 최적화는 과도하게 고려하지 않는다.
-  - `commit` 파라미터가 sudal_docs repo 에 존재하지 않는 commit 을 가리키는 경우, Requirement §6.3.3 의 규약에 따라 **HTTP 400 Bad Request** 와 `{"error": "unknown_docs_commit"}` 형식의 에러 JSON 을 반환한다. 이 에러는 도메인 레벨에서 별도 에러 타입(예: `ErrUnknownDocsCommit`) 으로 표현하고, HTTP handler 에서 일관되게 매핑한다.
+  - `commit` 파라미터가 docs repo 에 존재하지 않는 commit 을 가리키는 경우, Requirement §6.3.3 의 규약에 따라 **HTTP 400 Bad Request** 와 `{"error": "unknown_docs_commit"}` 형식의 에러 JSON 을 반환한다. 이 에러는 도메인 레벨에서 별도 에러 타입(예: `ErrUnknownDocsCommit`) 으로 표현하고, HTTP handler 에서 일관되게 매핑한다.
 - 필수 테스트
   - Integration
     - 샘플 repo에 docs 파일을 만들고 snapshot을 받은 뒤, tar.gz를 풀어 내용이 일치하는지 확인
@@ -712,7 +714,7 @@ Phase 0에서는 이후 기능별 구현을 위한 최소한의 프로젝트 뼈
 ## 7. Phase 4 – 기능 4: `POST /docs/push`
 
 이 Phase는 kkachi 전체 기능의 핵심이다.
-snapshot을 기반으로 새 sudal_docs commit을 만들고 main 브랜치에 push한다.
+snapshot을 기반으로 새 docs repo commit을 만들고 main 브랜치에 push한다.
 
 ### F4-Domain – Push 모델, enum, Repository 인터페이스
 
@@ -806,7 +808,7 @@ snapshot을 기반으로 새 sudal_docs commit을 만들고 main 브랜치에 pu
   - status 문자열 값(`"updated"`, `"nochange"`, `"outdated"`)은 고정하고, 바꾸지 않는다.
   - 요청된 `workspace_id` 가 서버 state 에 존재하지 않는 경우(삭제되었거나 잘못된 id 등)에는 Requirement §5.8 규약에 따라 HTTP 400(BadRequest) 또는 404(Not Found) 중 하나를 선택해 일관되게 사용해야 한다. v1 에서는 단순성을 위해 **400 + `{"error": "unknown_workspace"}`** 형식의 에러 JSON 을 표준으로 사용하며, `DELETE /workspaces/{workspace_id}` 의 404 케이스에서는 **404 + `{"error": "unknown_workspace"}`** 를 사용한다.
   - 동일 docs repo 에 대한 다른 `/docs/push` 가 이미 진행 중인 경우, Requirement §5.9 및 DECISION D5 의 규약에 따라 HTTP 409 와 함께 `{"ok": false, "error": "docs_repo_busy"}` 형식의 에러 JSON 을 반환한다.
-  - base_docs_hash 가 서버 sudal_docs repo 에 존재하지 않는 commit 을 가리키는 경우에는 Requirement §6.3.3 의 규약에 따라 HTTP 400 과 `{"error": "unknown_docs_commit"}` 를 반환한다.
+  - base_docs_hash 가 서버 docs repo 에 존재하지 않는 commit 을 가리키는 경우에는 Requirement §6.3.3 의 규약에 따라 HTTP 400 과 `{"error": "unknown_docs_commit"}` 를 반환한다.
 - 필수 테스트
   - Integration
     - fake usecase 응답에 따라 JSON 응답 필드가 올바르게 매핑되는지 확인
@@ -837,7 +839,7 @@ snapshot을 기반으로 새 sudal_docs commit을 만들고 main 브랜치에 pu
        - `updated` 인 경우: `NewHead` 값을 사용해 docs_hash, last_reported_at, `last_actor_email` 등을 갱신
        - `nochange` 인 경우: `CurrentHead` 값을 사용해 docs_hash, last_reported_at, `last_actor_email` 등을 갱신
        - `outdated` 인 경우: **push는 실패하지만**, `CurrentHead`(서버 기준 최신 HEAD)를 docs_hash로 반영해
-         서버가 기억하는 workspace 기준 hash와 sudal_docs HEAD를 맞춰 둔다. 이 때도 해당 요청의 actor_email 을 workspace 의 마지막 actor(`last_actor_email`) 로 기록한다.
+         서버가 기억하는 workspace 기준 hash와 docs repo HEAD를 맞춰 둔다. 이 때도 해당 요청의 actor_email 을 workspace 의 마지막 actor(`last_actor_email`) 로 기록한다.
     6. 결과 status에 따라 handler용 result 구조 생성
 - Scope
   - 포함
@@ -881,13 +883,13 @@ snapshot을 기반으로 새 sudal_docs commit을 만들고 main 브랜치에 pu
     - 상태 파일에서 해당 workspace docs_hash와 last_reported_at, `last_actor_email`을 현재 시각과 전달받은 actorEmail 에 맞게 업데이트
 - Scope
   - 포함
-    - sudal_docs main 브랜치에 대한 commit/push
+    - 각 project 에 매핑된 docs repo(main 브랜치)에 대한 commit/push
   - 제외
     - Git 충돌 해결, merge 전략
       → outdated를 응답하고, 이후는 kkachi/개발자가 처리
 - 주의할 점
   - push 실패 시 에러를 usecase에 올리고, handler에서 적절한 HTTP status(500/503 등)로 치환한다.
-  - baseDocsHash 가 sudal_docs repo 에 존재하지 않는 commit 을 가리키는 경우, Requirement §6.3.3 의 규약에 따라 도메인 에러(예: `ErrUnknownDocsCommit`) 로 변환하고 HTTP 400 + `{"error": "unknown_docs_commit"}` 로 매핑한다.
+  - baseDocsHash 가 docs repo 에 존재하지 않는 commit 을 가리키는 경우, Requirement §6.3.3 의 규약에 따라 도메인 에러(예: `ErrUnknownDocsCommit`) 로 변환하고 HTTP 400 + `{"error": "unknown_docs_commit"}` 로 매핑한다.
 - 필수 테스트
   - Integration
     - temp repo에서 base=HEAD인 snapshot push → updated
@@ -898,7 +900,7 @@ snapshot을 기반으로 새 sudal_docs commit을 만들고 main 브랜치에 pu
     - 두 workspace 에서 같은 project 에 대한 `/docs/push` 를 동시에(또는 거의 동시에) 호출했을 때,
       - 하나는 정상 updated,
       - 다른 하나는 outdated 로 응답하고,
-      - sudal_docs HEAD 가 일관된 상태를 유지하는지 확인
+      - 해당 docs repo HEAD 가 일관된 상태를 유지하는지 확인
 
 ---
 
