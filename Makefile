@@ -4,8 +4,13 @@ PORT ?= 5789
 STATE_FILE_PATH ?= data/kkachi_state.json
 E2E_BASE_URL ?= http://127.0.0.1:5789
 SERVER_CMD := ./cmd/server
+DOCKER_IMAGE ?= kkachi-server
+DOCKER_IMAGE_DEV ?= $(DOCKER_IMAGE):dev
+DOCKER_CONTAINER_NAME ?= kkachi-server
+# Mount host temp so in-container git can see host-created temp repos (e2e). Auto-add /var/folders on macOS.
+EXTRA_TMP_MOUNT ?= $(shell if [ -d /var/folders ]; then echo "-v /var/folders:/var/folders"; fi)
 
-.PHONY: server-test-prepare server-test-unit server-test-integration server-test-e2e server-test server-run
+.PHONY: server-test-prepare server-test-unit server-test-integration server-test-e2e server-test server-run server-build
 
 # Generate any code stubs, format, and run basic lint checks.
 server-test-prepare:
@@ -31,4 +36,18 @@ server-test: server-test-prepare server-test-unit server-test-integration server
 
 # Launch the server with optional PORT and STATE_FILE_PATH overrides.
 server-run:
-	PORT=$(PORT) STATE_FILE_PATH=$(STATE_FILE_PATH) $(GO) run $(SERVER_CMD)
+	docker build --target dev -t $(DOCKER_IMAGE_DEV) .
+	docker rm -f $(DOCKER_CONTAINER_NAME) >/dev/null 2>&1 || true
+	docker run --rm -it \
+		--name $(DOCKER_CONTAINER_NAME) \
+		-p $(PORT):$(PORT) \
+		-e PORT=$(PORT) \
+		-e STATE_FILE_PATH=$(STATE_FILE_PATH) \
+		-v $(CURDIR):/app \
+		-v /tmp:/tmp \
+		$(EXTRA_TMP_MOUNT) \
+		$(DOCKER_IMAGE_DEV)
+
+# Build a production image.
+server-build:
+	docker build -t $(DOCKER_IMAGE) .

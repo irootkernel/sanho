@@ -3,3 +3,4 @@ firebase-debug.log
 
 .vscode
 data/kkachi_state.json
+tmp/

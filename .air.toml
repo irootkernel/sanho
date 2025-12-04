@@ -1,0 +1,13 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+cmd = "CGO_ENABLED=0 go build -o ./tmp/server ./cmd/server"
+bin = "tmp/server"
+full_bin = "./tmp/server"
+include_ext = ["go", "mod", "sum"]
+exclude_dir = ["tmp", "docs", "docs_repos", "test", "data"]
+exclude_file = ["**/*_test.go"]
+pre_cmd = ["mkdir -p data"]
+delay = 200
+stop_on_error = true
