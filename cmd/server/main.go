@@ -43,15 +43,19 @@ func main() {
 		log.Fatalf("Error: Initial sync failed: %v", err)
 	}
 
-	// Usecase
+	// Repositories
+	workspaceRepo := state.NewFileWorkspaceRepository(stateRepo)
+
+	// Usecases
 	deleteProjectUC := project.NewDeleteProjectUseCase(stateRepo, gitManager)
 	addProjectUC := project.NewAddProjectUseCase(stateRepo, gitManager)
-	deleteWorkspaceUC := workspace.NewDeleteWorkspaceUseCase(stateRepo)
 	getDocsHeadUC := docs.NewGetDocsHeadUseCase(docsRepo)
+	deleteWorkspaceUC := workspace.NewDeleteWorkspaceUseCase(stateRepo)
+	registerWorkspaceUC := workspace.NewRegisterWorkspaceUseCase(docsRepo, workspaceRepo, stateRepo, workspace.RealClock{})
 
-	// Handler
+	// Handlers
 	projectHandler := handler.NewProjectHandler(deleteProjectUC, addProjectUC)
-	workspaceHandler := handler.NewWorkspaceHandler(deleteWorkspaceUC)
+	workspaceHandler := handler.NewWorkspaceHandler(deleteWorkspaceUC, registerWorkspaceUC)
 	docsHeadHandler := handler.NewDocsHeadHandler(getDocsHeadUC)
 
 	srv := http.NewHTTPServer(addr, projectHandler, workspaceHandler, docsHeadHandler)

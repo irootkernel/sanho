@@ -27,6 +27,7 @@ func NewHTTPServer(addr string, projectHandler *handler.ProjectHandler, workspac
 
 	if workspaceHandler != nil {
 		mux.HandleFunc("DELETE /workspaces/{workspace_id}", workspaceHandler.Delete)
+		mux.HandleFunc("POST /workspaces/register", workspaceHandler.Register)
 	}
 
 	if docsHeadHandler != nil {

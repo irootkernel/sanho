@@ -34,3 +34,57 @@ paths:
                 properties:
                   error:
                     type: string
+  /workspaces/register:
+    post:
+      summary: Register or update a workspace
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - project
+                - local_path
+                - repo_url
+                - actor_email
+              properties:
+                project:
+                  type: string
+                local_path:
+                  type: string
+                repo_url:
+                  type: string
+                actor_email:
+                  type: string
+      responses:
+        '200':
+          description: Successful registration
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  workspace_id:
+                    type: string
+                  current_docs_head:
+                    type: string
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: internal_server_error

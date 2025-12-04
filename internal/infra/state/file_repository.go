@@ -4,12 +4,21 @@ import (
 	"encoding/json"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/SeventeenthEarth/kkachi/internal/config"
 )
 
 type WorkspaceState struct {
-	ID string `json:"id"`
+	ID             string    `json:"id"`
+	Project        string    `json:"project"`
+	DocsRepoID     string    `json:"docs_repo_id"`
+	LocalPath      string    `json:"local_path"`
+	RepoURL        string    `json:"repo_url"`
+	DocsHash       string    `json:"docs_hash"`
+	LastReportedAt time.Time `json:"last_reported_at"`
+	OwnerEmail     string    `json:"owner_email"`
+	LastActorEmail string    `json:"last_actor_email"`
 }
 
 type State struct {

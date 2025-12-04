@@ -15,6 +15,7 @@ import (
 	"github.com/SeventeenthEarth/kkachi/internal/infra/git"
 	"github.com/SeventeenthEarth/kkachi/internal/infra/state"
 	kkachihttp "github.com/SeventeenthEarth/kkachi/internal/interface/http"
+	"github.com/SeventeenthEarth/kkachi/internal/interface/http/dto"
 	"github.com/SeventeenthEarth/kkachi/internal/interface/http/handler"
 	"github.com/SeventeenthEarth/kkachi/internal/usecase/docs"
 	"github.com/SeventeenthEarth/kkachi/internal/usecase/project"
@@ -71,8 +72,11 @@ func TestIntegration_Server(t *testing.T) {
 	deleteWorkspaceUC := workspace.NewDeleteWorkspaceUseCase(stateRepo)
 	getDocsHeadUC := docs.NewGetDocsHeadUseCase(docsRepo)
 
+	workspaceRepo := state.NewFileWorkspaceRepository(stateRepo)
+	registerWorkspaceUC := workspace.NewRegisterWorkspaceUseCase(docsRepo, workspaceRepo, stateRepo, nil)
+
 	projectHandler := handler.NewProjectHandler(deleteProjectUC, addProjectUC)
-	workspaceHandler := handler.NewWorkspaceHandler(deleteWorkspaceUC)
+	workspaceHandler := handler.NewWorkspaceHandler(deleteWorkspaceUC, registerWorkspaceUC)
 	docsHeadHandler := handler.NewDocsHeadHandler(getDocsHeadUC)
 
 	srv := kkachihttp.NewHTTPServer(":0", projectHandler, workspaceHandler, docsHeadHandler)
@@ -114,7 +118,33 @@ func TestIntegration_Server(t *testing.T) {
 		t.Errorf("Expected head %s, got %s", expectedHead, headResp["head"])
 	}
 
-	// 5. Test: Delete Project (P0-4)
+	// 5. Test: Register Workspace (P2)
+	regReq := dto.RegisterWorkspaceRequest{
+		Project:    "test-project",
+		LocalPath:  "/tmp/test-ws",
+		RepoURL:    originPath,
+		ActorEmail: "dev@example.com",
+	}
+	regReqBody, _ := json.Marshal(regReq)
+	resp, err = client.Post(ts.URL+"/workspaces/register", "application/json", bytes.NewReader(regReqBody))
+	if err != nil {
+		t.Fatalf("Failed to register workspace: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("RegisterWorkspace status: %d", resp.StatusCode)
+	}
+	var regResp map[string]string
+	json.NewDecoder(resp.Body).Decode(&regResp)
+	resp.Body.Close()
+
+	if regResp["current_docs_head"] != expectedHead {
+		t.Errorf("Expected current_docs_head %s, got %s", expectedHead, regResp["current_docs_head"])
+	}
+	if regResp["workspace_id"] == "" {
+		t.Error("Expected workspace_id to be present")
+	}
+
+	// 6. Test: Delete Project (P0-4)
 	req, _ := http.NewRequest(http.MethodDelete, ts.URL+"/projects/test-project?force=true", nil)
 	resp, err = client.Do(req)
 	if err != nil {

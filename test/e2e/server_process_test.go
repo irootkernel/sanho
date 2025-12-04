@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SeventeenthEarth/kkachi/internal/interface/http/dto"
 	testutil "github.com/SeventeenthEarth/kkachi/test/util"
 )
 
@@ -98,6 +99,45 @@ func TestE2E_ServerProcess(t *testing.T) {
 	resp.Body.Close()
 	if headResp["head"] != expectedHead {
 		t.Fatalf("expected head %s, got %s", expectedHead, headResp["head"])
+	}
+
+	// Register Workspace.
+	wsReq := dto.RegisterWorkspaceRequest{
+		Project:    projectName,
+		LocalPath:  "/tmp/test-ws",
+		RepoURL:    originPath,
+		ActorEmail: "dev@example.com",
+	}
+	wsBody, _ := json.Marshal(wsReq)
+	resp, err = client.Post(baseURL+"/workspaces/register", "application/json", bytes.NewReader(wsBody))
+	if err != nil {
+		t.Fatalf("register workspace request failed: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("register workspace status = %d", resp.StatusCode)
+	}
+	var wsResp map[string]string
+	json.NewDecoder(resp.Body).Decode(&wsResp)
+	resp.Body.Close()
+
+	if wsResp["current_docs_head"] != expectedHead {
+		t.Fatalf("expected current_docs_head %s, got %s", expectedHead, wsResp["current_docs_head"])
+	}
+	if wsResp["workspace_id"] == "" {
+		t.Fatal("expected workspace_id to be present")
+	}
+
+	// Verify State File Persistence
+	// Only check if we are running the server locally (stop != nil)
+	if stop != nil {
+		statePath := filepath.Join(tmp, "state.json")
+		stateBytes, err := os.ReadFile(statePath)
+		if err != nil {
+			t.Fatalf("failed to read state file: %v", err)
+		}
+		if !strings.Contains(string(stateBytes), wsResp["workspace_id"]) {
+			t.Fatalf("state file does not contain workspace id: %s", string(stateBytes))
+		}
 	}
 
 	// Delete project.
