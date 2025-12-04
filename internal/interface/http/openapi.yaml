@@ -1,0 +1,36 @@
+openapi: 3.0.0
+info:
+  title: Kkachi Server API
+  version: 1.0.0
+  description: API for Kkachi, a central documentation coordination system.
+paths:
+  /docs/head:
+    get:
+      summary: Get current HEAD commit hash of docs repository
+      parameters:
+        - name: project
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Project name
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  head:
+                    type: string
+                    description: Commit hash
+        '400':
+          description: Bad Request (missing project or unknown project)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string

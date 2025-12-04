@@ -128,7 +128,7 @@ Phase 0에서는 이후 기능별 구현을 위한 최소한의 프로젝트 뼈
   kkachi-server 프로젝트 기본 구조를 생성한다.
   - 개발 방향
   - 다음 디렉토리만 생성하고, 내용은 최소화한다.
-    - `cmd/kkachi-server`
+    - `cmd/server`
     - `internal/domain`
     - `internal/usecase`
     - `internal/interface/http`
@@ -154,8 +154,8 @@ Phase 0에서는 이후 기능별 구현을 위한 최소한의 프로젝트 뼈
 - 목표
   이후 모든 기능을 실험할 수 있는 HTTP 서버 실행 기반을 마련한다.
 - 개발 방향
-  - `cmd/kkachi-server/main.go`
-    - 포트 설정 (env 혹은 기본값 8080)
+  - `cmd/server/main.go`
+    - 포트 설정 (env 혹은 기본값 5789)
     - router 초기화
     - `/healthz` GET → 200 OK, 간단 JSON 응답
   - `internal/interface/http/server.go` (또는 유사 파일)

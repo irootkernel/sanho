@@ -486,7 +486,7 @@ CLI 는 가능하면 이 값을 자동으로 읽어 사용하며, 없는 경우�
 
 ```json
 {
-  "server_url": "http://kkachi.internal:8080",
+  "server_url": "http://kkachi.internal:5789",
   "workspace_id": "sudal:/Users/karl/dev/sudal",
   "project": "sudal",
   "actor_email": "karl@example.com",
@@ -579,7 +579,7 @@ created_at=2025-11-30T10:00:00Z
 2. 설정 입력
 
    - server URL
-     - 기본값: 예를 들어 `http://localhost:8080` 또는 환경변수에서 읽기
+     - 기본값: 예를 들어 `http://localhost:5789` 또는 환경변수에서 읽기
    - project 이름
      - 예: `sudal`, `sudal_app`
    - docs 디렉토리

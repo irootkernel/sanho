@@ -1,0 +1,65 @@
+package handler_test
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/SeventeenthEarth/kkachi/internal/config"
+	"github.com/SeventeenthEarth/kkachi/internal/infra/git"
+	"github.com/SeventeenthEarth/kkachi/internal/infra/state"
+	"github.com/SeventeenthEarth/kkachi/internal/interface/http/handler"
+	"github.com/SeventeenthEarth/kkachi/internal/usecase/project"
+)
+
+func TestDeleteProject(t *testing.T) {
+	// Setup temp dir
+	tempDir, err := os.MkdirTemp("", "kkachi-test-project-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	statePath := filepath.Join(tempDir, "state.json")
+	repoPath := filepath.Join(tempDir, "repo")
+	os.Mkdir(repoPath, 0755)
+
+	// Init State
+	stateRepo, _ := state.NewFileStateRepository(statePath)
+	stateRepo.AddDocsRepo(config.DocsRepoConfig{ID: "repo1", Path: repoPath})
+	stateRepo.AddProject("proj1", "repo1")
+
+	// Init Components
+	gitClient := git.NewClient()
+	gitManager := git.NewDocsRepoManager(gitClient)
+	uc := project.NewDeleteProjectUseCase(stateRepo, gitManager)
+	addUC := project.NewAddProjectUseCase(stateRepo, gitManager)
+	h := handler.NewProjectHandler(uc, addUC)
+
+	// Test: Delete success and cleanup
+	req := httptest.NewRequest(http.MethodDelete, "/projects/proj1?force=true", nil)
+	req.SetPathValue("project", "proj1")
+
+	w := httptest.NewRecorder()
+	h.Delete(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected 200, got %d", w.Code)
+	}
+
+	// Check state
+	if _, ok := stateRepo.GetDocsRepoID("proj1"); ok {
+		t.Error("Project should be removed from state")
+	}
+
+	// Check repo dir
+	if _, err := os.Stat(repoPath); !os.IsNotExist(err) {
+		t.Error("Repo directory should be deleted")
+	}
+}
+
+func TestAddProject(t *testing.T) {
+	// TODO: Implement integration test for AddProject
+}
