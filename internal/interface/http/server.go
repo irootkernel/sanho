@@ -11,7 +11,7 @@ import (
 //go:embed openapi.yaml
 var openapiSpec []byte
 
-func NewHTTPServer(addr string, projectHandler *handler.ProjectHandler, workspaceHandler *handler.WorkspaceHandler, docsHeadHandler *handler.DocsHeadHandler) *http.Server {
+func NewHTTPServer(addr string, projectHandler *handler.ProjectHandler, workspaceHandler *handler.WorkspaceHandler, docsHeadHandler *handler.DocsHeadHandler, docsSnapshotHandler *handler.DocsSnapshotHandler) *http.Server {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -32,6 +32,10 @@ func NewHTTPServer(addr string, projectHandler *handler.ProjectHandler, workspac
 
 	if docsHeadHandler != nil {
 		mux.Handle("GET /docs/head", docsHeadHandler)
+	}
+
+	if docsSnapshotHandler != nil {
+		mux.Handle("GET /docs/snapshot", docsSnapshotHandler)
 	}
 
 	// Serve OpenAPI spec

@@ -18,6 +18,10 @@ func (m *mockDocsReadRepository) GetHead(ctx context.Context, project domain.Pro
 	return m.head, m.err
 }
 
+func (m *mockDocsReadRepository) GetSnapshot(ctx context.Context, project domain.ProjectName, commit domain.CommitHash) (domain.DocsSnapshot, domain.CommitHash, error) {
+	return nil, "", errors.New("not implemented")
+}
+
 func TestGetDocsHeadUseCase_Execute(t *testing.T) {
 	tests := []struct {
 		name    string

@@ -11,6 +11,9 @@ func (h CommitHash) IsZero() bool {
 
 type DocsRepoID string
 
+type DocsSnapshot []byte
+
 type DocsReadRepository interface {
 	GetHead(ctx context.Context, project ProjectName) (CommitHash, error)
+	GetSnapshot(ctx context.Context, project ProjectName, commit CommitHash) (DocsSnapshot, CommitHash, error)
 }

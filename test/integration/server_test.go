@@ -36,17 +36,17 @@ func TestIntegration_Server(t *testing.T) {
 	if err := os.Mkdir(originPath, 0755); err != nil {
 		t.Fatal(err)
 	}
-	runCmd(t, "", "git", "init", originPath)
-	runCmd(t, "", "git", "-C", originPath, "config", "user.email", "test@example.com")
-	runCmd(t, "", "git", "-C", originPath, "config", "user.name", "Test User")
+	runCmd(t, originPath, "git", "init")
+	runCmd(t, originPath, "git", "config", "user.email", "test@example.com")
+	runCmd(t, originPath, "git", "config", "user.name", "Test User")
 	if err := os.WriteFile(filepath.Join(originPath, "README.md"), []byte("# Test Repo"), 0644); err != nil {
 		t.Fatalf("failed to write README: %v", err)
 	}
-	runCmd(t, "", "git", "-C", originPath, "add", ".")
-	runCmd(t, "", "git", "-C", originPath, "commit", "-m", "Initial commit")
+	runCmd(t, originPath, "git", "add", ".")
+	runCmd(t, originPath, "git", "commit", "-m", "Initial commit")
 
 	// Get HEAD hash
-	out := runCmd(t, "", "git", "-C", originPath, "rev-parse", "HEAD")
+	out := runCmd(t, originPath, "git", "rev-parse", "HEAD")
 	expectedHead := strings.TrimSpace(string(out))
 
 	// Server State Path
@@ -72,14 +72,17 @@ func TestIntegration_Server(t *testing.T) {
 	deleteWorkspaceUC := workspace.NewDeleteWorkspaceUseCase(stateRepo)
 	getDocsHeadUC := docs.NewGetDocsHeadUseCase(docsRepo)
 
+	getDocsSnapshotUC := docs.NewGetDocsSnapshotUseCase(docsRepo)
+
 	workspaceRepo := state.NewFileWorkspaceRepository(stateRepo)
 	registerWorkspaceUC := workspace.NewRegisterWorkspaceUseCase(docsRepo, workspaceRepo, stateRepo, nil)
 
 	projectHandler := handler.NewProjectHandler(deleteProjectUC, addProjectUC)
 	workspaceHandler := handler.NewWorkspaceHandler(deleteWorkspaceUC, registerWorkspaceUC)
 	docsHeadHandler := handler.NewDocsHeadHandler(getDocsHeadUC)
+	docsSnapshotHandler := handler.NewDocsSnapshotHandler(getDocsSnapshotUC)
 
-	srv := kkachihttp.NewHTTPServer(":0", projectHandler, workspaceHandler, docsHeadHandler)
+	srv := kkachihttp.NewHTTPServer(":0", projectHandler, workspaceHandler, docsHeadHandler, docsSnapshotHandler)
 	ts := httptest.NewServer(srv.Handler)
 	defer ts.Close()
 
@@ -97,7 +100,9 @@ func TestIntegration_Server(t *testing.T) {
 		t.Fatalf("Failed to add project: %v", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		t.Errorf("AddProject status: %d", resp.StatusCode)
+		var body bytes.Buffer
+		body.ReadFrom(resp.Body)
+		t.Errorf("AddProject status: %d, body: %s", resp.StatusCode, body.String())
 	}
 	resp.Body.Close()
 
@@ -144,7 +149,49 @@ func TestIntegration_Server(t *testing.T) {
 		t.Error("Expected workspace_id to be present")
 	}
 
-	// 6. Test: Delete Project (P0-4)
+	// 7. Test: Get Snapshot (P3)
+	// Create a dummy docs file in origin
+	if err := os.MkdirAll(filepath.Join(originPath, "docs"), 0755); err != nil {
+		t.Fatalf("failed to create docs directory: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(originPath, "docs", "index.md"), []byte("Hello Kkachi"), 0644); err != nil {
+		t.Fatalf("failed to write docs file: %v", err)
+	}
+	runCmd(t, originPath, "git", "add", ".")
+	runCmd(t, originPath, "git", "commit", "-m", "Add docs")
+
+	// Manually sync server repos to pick up the new commit (since we don't have bg sync yet)
+	if err := gitManager.Sync(context.Background(), stateRepo.ListDocsRepos()); err != nil {
+		t.Fatalf("failed to sync repos: %v", err)
+	}
+
+	// Get new HEAD
+	out = runCmd(t, originPath, "git", "rev-parse", "HEAD")
+	newHead := strings.TrimSpace(string(out))
+
+	// Request Snapshot (using HEAD implicit)
+	resp, err = client.Get(ts.URL + "/docs/snapshot?project=test-project")
+	if err != nil {
+		t.Fatalf("Failed to get snapshot: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("GetSnapshot status: %d", resp.StatusCode)
+	}
+
+	var snapResp map[string]string
+	if err := json.NewDecoder(resp.Body).Decode(&snapResp); err != nil {
+		t.Fatalf("failed to decode snapshot response: %v", err)
+	}
+	resp.Body.Close()
+
+	if snapResp["commit"] != newHead {
+		t.Errorf("Expected snapshot commit %s, got %s", newHead, snapResp["commit"])
+	}
+	if snapResp["snapshot"] == "" {
+		t.Fatal("Expected snapshot data, got empty")
+	}
+
+	// 8. Test: Delete Project (P0-4)
 	req, _ := http.NewRequest(http.MethodDelete, ts.URL+"/projects/test-project?force=true", nil)
 	resp, err = client.Do(req)
 	if err != nil {
@@ -167,7 +214,7 @@ func TestIntegration_Server(t *testing.T) {
 		t.Errorf("Expected error unknown_project, got %s", errResp["error"])
 	}
 
-	// 6. Test: OpenAPI & Swagger UI (S1, S2)
+	// 9. Test: OpenAPI & Swagger UI (S1, S2)
 	// OpenAPI Spec
 	resp, err = client.Get(ts.URL + "/openapi.yaml")
 	if err != nil {

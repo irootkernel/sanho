@@ -25,8 +25,8 @@ func (m *DocsRepoManager) Sync(ctx context.Context, repos []config.DocsRepoConfi
 				return fmt.Errorf("failed to clone %s: %w", repo.ID, err)
 			}
 		} else {
-			if err := m.client.Fetch(ctx, repo.Path); err != nil {
-				return fmt.Errorf("failed to fetch %s: %w", repo.ID, err)
+			if err := m.client.Pull(ctx, repo.Path); err != nil {
+				return fmt.Errorf("failed to pull %s: %w", repo.ID, err)
 			}
 		}
 	}

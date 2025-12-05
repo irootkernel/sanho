@@ -24,11 +24,11 @@ func TestDocsRepoManager_Sync(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Initialize bare repo
-	cmd := exec.Command("git", "init", "--bare", originPath)
-	if err := cmd.Run(); err != nil {
-		t.Fatal(err)
-	}
+	// Initialize origin repo with a commit
+	runCmd(t, "git", "init", originPath)
+	runCmd(t, "git", "-C", originPath, "config", "user.email", "test@example.com")
+	runCmd(t, "git", "-C", originPath, "config", "user.name", "Test User")
+	runCmd(t, "git", "-C", originPath, "commit", "--allow-empty", "-m", "Initial commit")
 
 	// Setup target path
 	targetPath := filepath.Join(tempDir, "target")
@@ -56,5 +56,13 @@ func TestDocsRepoManager_Sync(t *testing.T) {
 	// We can't easily verify fetch without new commits, but we can verify it doesn't error
 	if err := manager.Sync(context.Background(), []config.DocsRepoConfig{cfg}); err != nil {
 		t.Fatalf("Second Sync (Fetch) failed: %v", err)
+	}
+}
+
+func runCmd(t *testing.T, name string, args ...string) {
+	t.Helper()
+	cmd := exec.Command(name, args...)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("command %v failed: %v\n%s", args, err, out)
 	}
 }

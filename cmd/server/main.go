@@ -50,6 +50,7 @@ func main() {
 	deleteProjectUC := project.NewDeleteProjectUseCase(stateRepo, gitManager)
 	addProjectUC := project.NewAddProjectUseCase(stateRepo, gitManager)
 	getDocsHeadUC := docs.NewGetDocsHeadUseCase(docsRepo)
+	getDocsSnapshotUC := docs.NewGetDocsSnapshotUseCase(docsRepo)
 	deleteWorkspaceUC := workspace.NewDeleteWorkspaceUseCase(stateRepo)
 	registerWorkspaceUC := workspace.NewRegisterWorkspaceUseCase(docsRepo, workspaceRepo, stateRepo, workspace.RealClock{})
 
@@ -57,8 +58,9 @@ func main() {
 	projectHandler := handler.NewProjectHandler(deleteProjectUC, addProjectUC)
 	workspaceHandler := handler.NewWorkspaceHandler(deleteWorkspaceUC, registerWorkspaceUC)
 	docsHeadHandler := handler.NewDocsHeadHandler(getDocsHeadUC)
+	docsSnapshotHandler := handler.NewDocsSnapshotHandler(getDocsSnapshotUC)
 
-	srv := http.NewHTTPServer(addr, projectHandler, workspaceHandler, docsHeadHandler)
+	srv := http.NewHTTPServer(addr, projectHandler, workspaceHandler, docsHeadHandler, docsSnapshotHandler)
 	log.Printf("Starting server on %s", addr)
 	if err := srv.ListenAndServe(); err != nil {
 		log.Fatalf("Server failed: %v", err)

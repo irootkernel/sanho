@@ -34,6 +34,44 @@ paths:
                 properties:
                   error:
                     type: string
+  /docs/snapshot:
+    get:
+      summary: Get snapshot of docs directory
+      parameters:
+        - name: project
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Project name
+        - name: commit
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Commit hash (optional, defaults to HEAD)
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  commit:
+                    type: string
+                  snapshot:
+                    type: string
+                    description: Base64 encoded tar.gz
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
   /workspaces/register:
     post:
       summary: Register or update a workspace

@@ -10,7 +10,7 @@ import (
 )
 
 func TestHealthz(t *testing.T) {
-	srv := kkachihttp.NewHTTPServer(":5789", nil, nil, nil)
+	srv := kkachihttp.NewHTTPServer(":5789", nil, nil, nil, nil)
 	ts := httptest.NewServer(srv.Handler)
 	defer ts.Close()
 

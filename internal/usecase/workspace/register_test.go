@@ -21,6 +21,10 @@ func (m *mockDocsRepo) GetHead(ctx context.Context, project docs.ProjectName) (d
 	return m.head, m.err
 }
 
+func (m *mockDocsRepo) GetSnapshot(ctx context.Context, project docs.ProjectName, commit docs.CommitHash) (docs.DocsSnapshot, docs.CommitHash, error) {
+	return nil, "", errors.New("not implemented")
+}
+
 type mockWorkspaceRepo struct {
 	saved   *workspace.Workspace
 	get     *workspace.Workspace
