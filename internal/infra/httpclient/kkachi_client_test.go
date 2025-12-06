@@ -1,0 +1,267 @@
+package httpclient
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+	"time"
+
+	"github.com/SeventeenthEarth/kkachi/internal/domain/docs"
+)
+
+func TestHTTPClient_DocsHead_Success(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/docs/head" {
+			t.Errorf("expected path /docs/head, got %s", r.URL.Path)
+		}
+		if r.URL.Query().Get("project") != "test-project" {
+			t.Errorf("expected project query param 'test-project', got %s", r.URL.Query().Get("project"))
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"head": "abc123"})
+	}))
+	defer server.Close()
+
+	client := NewHTTPClient(server.URL)
+	head, err := client.DocsHead(context.Background(), "test-project")
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if head != "abc123" {
+		t.Errorf("expected head 'abc123', got %q", head)
+	}
+}
+
+func TestHTTPClient_DocsHead_UnknownProject(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "unknown_project"})
+	}))
+	defer server.Close()
+
+	client := NewHTTPClient(server.URL)
+	_, err := client.DocsHead(context.Background(), "unknown")
+
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, ErrUnknownProject) {
+		t.Errorf("expected ErrUnknownProject, got %v", err)
+	}
+}
+
+func TestHTTPClient_RegisterWorkspace_Success(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("expected POST, got %s", r.Method)
+		}
+		if r.URL.Path != "/workspaces/register" {
+			t.Errorf("expected path /workspaces/register, got %s", r.URL.Path)
+		}
+
+		var req RegisterWorkspaceRequest
+		json.NewDecoder(r.Body).Decode(&req)
+		if req.Project != "sudal" {
+			t.Errorf("expected project 'sudal', got %s", req.Project)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(RegisterWorkspaceResponse{
+			WorkspaceID:     "ws-123",
+			CurrentDocsHead: "def456",
+		})
+	}))
+	defer server.Close()
+
+	client := NewHTTPClient(server.URL)
+	resp, err := client.RegisterWorkspace(context.Background(), RegisterWorkspaceRequest{
+		Project:    "sudal",
+		LocalPath:  "/path/to/workspace",
+		RepoURL:    "git@github.com:org/repo.git",
+		ActorEmail: "user@example.com",
+	})
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.WorkspaceID != "ws-123" {
+		t.Errorf("expected workspace_id 'ws-123', got %q", resp.WorkspaceID)
+	}
+	if resp.CurrentDocsHead != "def456" {
+		t.Errorf("expected current_docs_head 'def456', got %q", resp.CurrentDocsHead)
+	}
+}
+
+func TestHTTPClient_DocsPush_RetryOnBusy(t *testing.T) {
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		if attempts < 3 {
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(map[string]string{"error": "docs_repo_busy"})
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(DocsPushResponse{
+			Status:      docs.DocsPushStatusUpdated,
+			NewDocsHash: "new123",
+		})
+	}))
+	defer server.Close()
+
+	client := NewHTTPClient(server.URL, WithRetryDelay(10*time.Millisecond))
+	resp, err := client.DocsPush(context.Background(), DocsPushRequest{
+		WorkspaceID:  "ws-123",
+		BaseDocsHash: "base123",
+		DocsSnapshot: "c25hcHNob3Q=", // base64-encoded "snapshot"
+		ActorEmail:   "user@example.com",
+	})
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if attempts != 3 {
+		t.Errorf("expected 3 attempts, got %d", attempts)
+	}
+	if resp.Status != docs.DocsPushStatusUpdated {
+		t.Errorf("expected status 'updated', got %q", resp.Status)
+	}
+}
+
+func TestHTTPClient_DocsPush_MaxRetriesExceeded(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(map[string]string{"error": "docs_repo_busy"})
+	}))
+	defer server.Close()
+
+	client := NewHTTPClient(server.URL, WithMaxRetries(2), WithRetryDelay(10*time.Millisecond))
+	_, err := client.DocsPush(context.Background(), DocsPushRequest{
+		WorkspaceID:  "ws-123",
+		BaseDocsHash: "base123",
+	})
+
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, ErrDocsRepoBusy) {
+		t.Errorf("expected ErrDocsRepoBusy, got %v", err)
+	}
+}
+
+func TestHTTPClient_DeleteProject_Success(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			t.Errorf("expected DELETE, got %s", r.Method)
+		}
+		if r.URL.Path != "/projects/test-project" {
+			t.Errorf("expected path /projects/test-project, got %s", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	client := NewHTTPClient(server.URL)
+	err := client.DeleteProject(context.Background(), "test-project", false)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestHTTPClient_DeleteProject_HasWorkspaces(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(map[string]string{"error": "project_has_workspaces"})
+	}))
+	defer server.Close()
+
+	client := NewHTTPClient(server.URL)
+	err := client.DeleteProject(context.Background(), "test-project", false)
+
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, ErrProjectHasWorkspaces) {
+		t.Errorf("expected ErrProjectHasWorkspaces, got %v", err)
+	}
+}
+
+func TestHTTPClient_DeleteWorkspace_UnknownWorkspace(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "unknown_workspace"})
+	}))
+	defer server.Close()
+
+	client := NewHTTPClient(server.URL)
+	err := client.DeleteWorkspace(context.Background(), "unknown-ws")
+
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, ErrUnknownWorkspace) {
+		t.Errorf("expected ErrUnknownWorkspace, got %v", err)
+	}
+}
+
+func TestHTTPClient_DeleteWorkspace_WorkspaceNotFound(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "workspace_not_found"})
+	}))
+	defer server.Close()
+
+	client := NewHTTPClient(server.URL)
+	err := client.DeleteWorkspace(context.Background(), "unknown-ws")
+
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, ErrUnknownWorkspace) {
+		t.Errorf("expected ErrUnknownWorkspace, got %v", err)
+	}
+}
+
+func TestHTTPClient_GetState_Success(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/state" {
+			t.Errorf("expected path /state, got %s", r.URL.Path)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(StateResponse{
+			DocsHeads: map[string]string{
+				"sudal": "abc123",
+			},
+			Workspaces: []WorkspaceSummary{
+				{
+					WorkspaceID: "ws-1",
+					Project:     "sudal",
+					LocalPath:   "/path",
+					DocsHash:    "abc123",
+				},
+			},
+		})
+	}))
+	defer server.Close()
+
+	client := NewHTTPClient(server.URL)
+	resp, err := client.GetState(context.Background(), nil)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(resp.DocsHeads) != 1 {
+		t.Errorf("expected 1 project in DocsHeads, got %d", len(resp.DocsHeads))
+	}
+	if len(resp.Workspaces) != 1 {
+		t.Errorf("expected 1 workspace, got %d", len(resp.Workspaces))
+	}
+}

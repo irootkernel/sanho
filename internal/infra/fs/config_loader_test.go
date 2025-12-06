@@ -1,0 +1,157 @@
+package fs
+
+import (
+	"errors"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/SeventeenthEarth/kkachi/internal/domain/client"
+)
+
+func TestFileConfigLoader_Load(t *testing.T) {
+	tests := []struct {
+		name       string
+		configJSON string
+		wantErr    error
+		wantConfig *client.WorkspaceConfig
+	}{
+		{
+			name: "valid config with all fields",
+			configJSON: `{
+				"server_url": "http://localhost:5789",
+				"workspace_id": "ws-123",
+				"project": "sudal",
+				"actor_email": "user@example.com",
+				"docs_dir": "my_docs",
+				"docs_hash_file": ".my_hash",
+				"pending_fix_file": ".my_fix"
+			}`,
+			wantErr: nil,
+			wantConfig: &client.WorkspaceConfig{
+				ServerURL:      "http://localhost:5789",
+				WorkspaceID:    "ws-123",
+				Project:        "sudal",
+				ActorEmail:     "user@example.com",
+				DocsDir:        "my_docs",
+				DocsHashFile:   ".my_hash",
+				PendingFixFile: ".my_fix",
+			},
+		},
+		{
+			name: "valid config with defaults applied",
+			configJSON: `{
+				"server_url": "http://localhost:5789",
+				"workspace_id": "ws-456",
+				"project": "dolgorae"
+			}`,
+			wantErr: nil,
+			wantConfig: &client.WorkspaceConfig{
+				ServerURL:      "http://localhost:5789",
+				WorkspaceID:    "ws-456",
+				Project:        "dolgorae",
+				ActorEmail:     "",
+				DocsDir:        client.DefaultDocsDir,
+				DocsHashFile:   client.DefaultDocsHashFile,
+				PendingFixFile: client.DefaultPendingFixFile,
+			},
+		},
+		{
+			name:       "missing server_url",
+			configJSON: `{"workspace_id": "ws-123", "project": "sudal"}`,
+			wantErr:    ErrConfigMissingField,
+			wantConfig: nil,
+		},
+		{
+			name:       "missing workspace_id",
+			configJSON: `{"server_url": "http://localhost:5789", "project": "sudal"}`,
+			wantErr:    ErrConfigMissingField,
+			wantConfig: nil,
+		},
+		{
+			name:       "missing project",
+			configJSON: `{"server_url": "http://localhost:5789", "workspace_id": "ws-123"}`,
+			wantErr:    ErrConfigMissingField,
+			wantConfig: nil,
+		},
+		{
+			name:       "invalid JSON",
+			configJSON: `{invalid json`,
+			wantErr:    ErrConfigParse,
+			wantConfig: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create temp directory
+			tmpDir := t.TempDir()
+
+			// Write config file
+			configPath := filepath.Join(tmpDir, ConfigFileName)
+			if err := os.WriteFile(configPath, []byte(tt.configJSON), 0644); err != nil {
+				t.Fatalf("failed to write test config: %v", err)
+			}
+
+			// Load config
+			loader := NewFileConfigLoader()
+			config, err := loader.Load(tmpDir)
+
+			// Check error
+			if tt.wantErr != nil {
+				if err == nil {
+					t.Errorf("expected error %v, got nil", tt.wantErr)
+					return
+				}
+				if !errors.Is(err, tt.wantErr) {
+					t.Errorf("expected error %v, got %v", tt.wantErr, err)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+
+			// Check config values
+			if config.ServerURL != tt.wantConfig.ServerURL {
+				t.Errorf("ServerURL = %v, want %v", config.ServerURL, tt.wantConfig.ServerURL)
+			}
+			if config.WorkspaceID != tt.wantConfig.WorkspaceID {
+				t.Errorf("WorkspaceID = %v, want %v", config.WorkspaceID, tt.wantConfig.WorkspaceID)
+			}
+			if config.Project != tt.wantConfig.Project {
+				t.Errorf("Project = %v, want %v", config.Project, tt.wantConfig.Project)
+			}
+			if config.ActorEmail != tt.wantConfig.ActorEmail {
+				t.Errorf("ActorEmail = %v, want %v", config.ActorEmail, tt.wantConfig.ActorEmail)
+			}
+			if config.DocsDir != tt.wantConfig.DocsDir {
+				t.Errorf("DocsDir = %v, want %v", config.DocsDir, tt.wantConfig.DocsDir)
+			}
+			if config.DocsHashFile != tt.wantConfig.DocsHashFile {
+				t.Errorf("DocsHashFile = %v, want %v", config.DocsHashFile, tt.wantConfig.DocsHashFile)
+			}
+			if config.PendingFixFile != tt.wantConfig.PendingFixFile {
+				t.Errorf("PendingFixFile = %v, want %v", config.PendingFixFile, tt.wantConfig.PendingFixFile)
+			}
+		})
+	}
+}
+
+func TestFileConfigLoader_Load_FileNotFound(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	loader := NewFileConfigLoader()
+	_, err := loader.Load(tmpDir)
+
+	if err == nil {
+		t.Error("expected error for missing config file, got nil")
+		return
+	}
+
+	if !errors.Is(err, ErrConfigNotFound) {
+		t.Errorf("expected ErrConfigNotFound, got %v", err)
+	}
+}
