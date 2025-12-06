@@ -128,7 +128,7 @@ func TestDocsPush_Integration(t *testing.T) {
 	docsSnapshotHandler := handler.NewDocsSnapshotHandler(getDocsSnapshotUC)
 	docsPushHandler := handler.NewDocsPushHandler(pushDocsUC)
 
-	srv := kkachihttp.NewHTTPServer(":0", projectHandler, workspaceHandler, docsHeadHandler, docsSnapshotHandler, docsPushHandler)
+	srv := kkachihttp.NewHTTPServer(":0", projectHandler, workspaceHandler, docsHeadHandler, docsSnapshotHandler, docsPushHandler, nil)
 	ts := httptest.NewServer(srv.Handler)
 	defer ts.Close()
 

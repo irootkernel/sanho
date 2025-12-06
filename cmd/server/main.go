@@ -12,6 +12,7 @@ import (
 	"github.com/SeventeenthEarth/kkachi/internal/interface/http/handler"
 	"github.com/SeventeenthEarth/kkachi/internal/usecase/docs"
 	"github.com/SeventeenthEarth/kkachi/internal/usecase/project"
+	stateuc "github.com/SeventeenthEarth/kkachi/internal/usecase/state"
 	"github.com/SeventeenthEarth/kkachi/internal/usecase/workspace"
 )
 
@@ -57,6 +58,7 @@ func main() {
 	deleteWorkspaceUC := workspace.NewDeleteWorkspaceUseCase(stateRepo)
 	registerWorkspaceUC := workspace.NewRegisterWorkspaceUseCase(docsRepo, workspaceRepo, stateRepo, workspace.RealClock{})
 	pushDocsUC := docs.NewPushDocsUseCase(workspaceRepo, docsRepo, mutexManager)
+	getStateUC := stateuc.NewGetStateUseCase(docsRepo, workspaceRepo, stateRepo)
 
 	// Handlers
 	projectHandler := handler.NewProjectHandler(deleteProjectUC, addProjectUC)
@@ -64,8 +66,9 @@ func main() {
 	docsHeadHandler := handler.NewDocsHeadHandler(getDocsHeadUC)
 	docsSnapshotHandler := handler.NewDocsSnapshotHandler(getDocsSnapshotUC)
 	docsPushHandler := handler.NewDocsPushHandler(pushDocsUC)
+	stateHandler := handler.NewStateHandler(getStateUC)
 
-	srv := http.NewHTTPServer(addr, projectHandler, workspaceHandler, docsHeadHandler, docsSnapshotHandler, docsPushHandler)
+	srv := http.NewHTTPServer(addr, projectHandler, workspaceHandler, docsHeadHandler, docsSnapshotHandler, docsPushHandler, stateHandler)
 	log.Printf("Starting server on %s", addr)
 	if err := srv.ListenAndServe(); err != nil {
 		log.Fatalf("Server failed: %v", err)

@@ -172,3 +172,37 @@ func (r *FileStateRepository) UpdateWorkspaceDocsHash(id, newHash, actorEmail st
 	r.state.Workspaces[id] = ws
 	return r.Save()
 }
+
+// ListWorkspaces returns all registered workspaces.
+func (r *FileStateRepository) ListWorkspaces() []WorkspaceState {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	workspaces := make([]WorkspaceState, 0, len(r.state.Workspaces))
+	for _, ws := range r.state.Workspaces {
+		workspaces = append(workspaces, ws)
+	}
+	return workspaces
+}
+
+// ListProjects returns all project names.
+func (r *FileStateRepository) ListProjects() []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	projects := make([]string, 0, len(r.state.ProjectToDocsRepo))
+	for project := range r.state.ProjectToDocsRepo {
+		projects = append(projects, project)
+	}
+	return projects
+}
+
+// HasWorkspacesForProject checks if there are any workspaces registered for the given project.
+func (r *FileStateRepository) HasWorkspacesForProject(project string) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, ws := range r.state.Workspaces {
+		if ws.Project == project {
+			return true
+		}
+	}
+	return false
+}

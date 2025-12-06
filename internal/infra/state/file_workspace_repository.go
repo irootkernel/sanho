@@ -51,3 +51,23 @@ func (r *FileWorkspaceRepository) Get(_ context.Context, id workspace.WorkspaceI
 func (r *FileWorkspaceRepository) UpdateDocsHash(_ context.Context, id workspace.WorkspaceID, newHash docs.CommitHash, actorEmail string) error {
 	return r.stateRepo.UpdateWorkspaceDocsHash(string(id), string(newHash), actorEmail)
 }
+
+// List returns all registered workspaces.
+func (r *FileWorkspaceRepository) List(_ context.Context) ([]*workspace.Workspace, error) {
+	wsStates := r.stateRepo.ListWorkspaces()
+	workspaces := make([]*workspace.Workspace, 0, len(wsStates))
+	for _, wsState := range wsStates {
+		workspaces = append(workspaces, &workspace.Workspace{
+			ID:             workspace.WorkspaceID(wsState.ID),
+			Project:        docs.ProjectName(wsState.Project),
+			DocsRepoID:     docs.DocsRepoID(wsState.DocsRepoID),
+			LocalPath:      wsState.LocalPath,
+			RepoURL:        wsState.RepoURL,
+			DocsHash:       docs.CommitHash(wsState.DocsHash),
+			LastReportedAt: wsState.LastReportedAt,
+			OwnerEmail:     wsState.OwnerEmail,
+			LastActorEmail: wsState.LastActorEmail,
+		})
+	}
+	return workspaces, nil
+}

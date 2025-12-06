@@ -192,3 +192,165 @@ paths:
                   error:
                     type: string
                     example: docs_repo_busy
+  /state:
+    get:
+      summary: Get server state (debug/monitoring)
+      description: Returns project docs heads and registered workspace summaries
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  docs_heads:
+                    type: object
+                    additionalProperties:
+                      type: string
+                    description: Map of project name to current docs HEAD commit hash
+                  workspaces:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        workspace_id:
+                          type: string
+                        project:
+                          type: string
+                        docs_repo_id:
+                          type: string
+                        local_path:
+                          type: string
+                        repo_url:
+                          type: string
+                        docs_hash:
+                          type: string
+                        last_reported_at:
+                          type: string
+                          format: date-time
+                        last_actor_email:
+                          type: string
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+  /projects/{project}:
+    delete:
+      summary: Delete a project and its docs repo mapping
+      parameters:
+        - name: project
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Project name to delete
+        - name: force
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: Force delete even if workspaces are registered
+      responses:
+        '200':
+          description: Project deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+        '404':
+          description: Project not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: unknown_project
+        '409':
+          description: Conflict - project has registered workspaces
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: project_has_workspaces
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+  /projects:
+    post:
+      summary: Add or update a project to docs repo mapping
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - project
+                - docs_repo_id
+                - docs_repo_url
+                - actor_email
+              properties:
+                project:
+                  type: string
+                  description: Project name
+                docs_repo_id:
+                  type: string
+                  description: Docs repository identifier
+                docs_repo_url:
+                  type: string
+                  description: Git URL of the docs repository
+                actor_email:
+                  type: string
+                  description: Email of the user performing the action
+      responses:
+        '200':
+          description: Project added/updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+        '400':
+          description: Bad Request (invalid input)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+

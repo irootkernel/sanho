@@ -25,10 +25,10 @@ func (uc *DeleteProjectUseCase) Execute(project string, force bool) error {
 		return ErrUnknownProject
 	}
 
-	// TODO: Check workspaces
-	// if hasWorkspaces(project) && !force {
-	// 	return ErrProjectHasWorkspaces
-	// }
+	// Check if project has registered workspaces
+	if !force && uc.stateRepo.HasWorkspacesForProject(project) {
+		return ErrProjectHasWorkspaces
+	}
 
 	if err := uc.stateRepo.DeleteProject(project); err != nil {
 		return err

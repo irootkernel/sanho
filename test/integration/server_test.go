@@ -82,7 +82,7 @@ func TestIntegration_Server(t *testing.T) {
 	docsHeadHandler := handler.NewDocsHeadHandler(getDocsHeadUC)
 	docsSnapshotHandler := handler.NewDocsSnapshotHandler(getDocsSnapshotUC)
 
-	srv := kkachihttp.NewHTTPServer(":0", projectHandler, workspaceHandler, docsHeadHandler, docsSnapshotHandler, nil)
+	srv := kkachihttp.NewHTTPServer(":0", projectHandler, workspaceHandler, docsHeadHandler, docsSnapshotHandler, nil, nil)
 	ts := httptest.NewServer(srv.Handler)
 	defer ts.Close()
 
@@ -191,8 +191,34 @@ func TestIntegration_Server(t *testing.T) {
 		t.Fatal("Expected snapshot data, got empty")
 	}
 
-	// 8. Test: Delete Project (P0-4)
-	req, _ := http.NewRequest(http.MethodDelete, ts.URL+"/projects/test-project?force=true", nil)
+	// 8. Test: Delete Project without force (should fail due to workspace)
+	req, _ := http.NewRequest(http.MethodDelete, ts.URL+"/projects/test-project", nil)
+	resp, err = client.Do(req)
+	if err != nil {
+		t.Fatalf("Failed to delete project: %v", err)
+	}
+	if resp.StatusCode != http.StatusConflict {
+		t.Errorf("DeleteProject without force should return 409, got %d", resp.StatusCode)
+	}
+	var conflictResp map[string]string
+	json.NewDecoder(resp.Body).Decode(&conflictResp)
+	resp.Body.Close()
+	if conflictResp["error"] != "project_has_workspaces" {
+		t.Errorf("Expected error project_has_workspaces, got %s", conflictResp["error"])
+	}
+
+	// Verify project still exists
+	resp, err = client.Get(ts.URL + "/docs/head?project=test-project")
+	if err != nil {
+		t.Fatalf("Failed to get head after blocked delete: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("Project should still exist, got status %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// 9. Test: Delete Project with force (P0-4)
+	req, _ = http.NewRequest(http.MethodDelete, ts.URL+"/projects/test-project?force=true", nil)
 	resp, err = client.Do(req)
 	if err != nil {
 		t.Fatalf("Failed to delete project: %v", err)

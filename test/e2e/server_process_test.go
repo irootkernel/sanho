@@ -140,7 +140,33 @@ func TestE2E_ServerProcess(t *testing.T) {
 		}
 	}
 
-	// Delete project.
+	// Test Delete without force (should fail due to workspace)
+	reqNoForce, _ := http.NewRequest(http.MethodDelete, baseURL+"/projects/"+projectName, nil)
+	respNoForce, err := client.Do(reqNoForce)
+	if err != nil {
+		t.Fatalf("delete without force request failed: %v", err)
+	}
+	if respNoForce.StatusCode != http.StatusConflict {
+		t.Fatalf("delete without force should return 409, got %d", respNoForce.StatusCode)
+	}
+	var conflictResp map[string]string
+	json.NewDecoder(respNoForce.Body).Decode(&conflictResp)
+	respNoForce.Body.Close()
+	if conflictResp["error"] != "project_has_workspaces" {
+		t.Fatalf("expected error project_has_workspaces, got %s", conflictResp["error"])
+	}
+
+	// Verify project still exists
+	respCheck, err := client.Get(baseURL + "/docs/head?project=" + projectName)
+	if err != nil {
+		t.Fatalf("get head check failed: %v", err)
+	}
+	if respCheck.StatusCode != http.StatusOK {
+		t.Fatalf("project should still exist, got status %d", respCheck.StatusCode)
+	}
+	respCheck.Body.Close()
+
+	// Delete project with force.
 	req, _ := http.NewRequest(http.MethodDelete, baseURL+"/projects/"+projectName+"?force=true", nil)
 	resp, err = client.Do(req)
 	if err != nil {

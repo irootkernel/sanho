@@ -37,6 +37,10 @@ func (m *mockWorkspaceRepo) UpdateDocsHash(ctx context.Context, id workspace.Wor
 	return m.updateHashErr
 }
 
+func (m *mockWorkspaceRepo) List(ctx context.Context) ([]*workspace.Workspace, error) {
+	return nil, nil
+}
+
 type mockDocsWriteRepo struct {
 	pushResult      docs.DocsPushResult
 	pushSnapshotErr error

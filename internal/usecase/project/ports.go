@@ -20,6 +20,7 @@ type DeleteProjectStateRepository interface {
 	GetRepoUsage() map[string]int
 	GetDocsRepo(id string) (config.DocsRepoConfig, bool)
 	DeleteDocsRepo(id string) error
+	HasWorkspacesForProject(project string) bool
 }
 
 type DocsRepoManager interface {
