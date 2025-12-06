@@ -46,6 +46,9 @@ func main() {
 	// Repositories
 	workspaceRepo := state.NewFileWorkspaceRepository(stateRepo)
 
+	// Mutex Manager (Phase 4)
+	mutexManager := docs.NewInMemoryMutexManager()
+
 	// Usecases
 	deleteProjectUC := project.NewDeleteProjectUseCase(stateRepo, gitManager)
 	addProjectUC := project.NewAddProjectUseCase(stateRepo, gitManager)
@@ -53,14 +56,16 @@ func main() {
 	getDocsSnapshotUC := docs.NewGetDocsSnapshotUseCase(docsRepo)
 	deleteWorkspaceUC := workspace.NewDeleteWorkspaceUseCase(stateRepo)
 	registerWorkspaceUC := workspace.NewRegisterWorkspaceUseCase(docsRepo, workspaceRepo, stateRepo, workspace.RealClock{})
+	pushDocsUC := docs.NewPushDocsUseCase(workspaceRepo, docsRepo, mutexManager)
 
 	// Handlers
 	projectHandler := handler.NewProjectHandler(deleteProjectUC, addProjectUC)
 	workspaceHandler := handler.NewWorkspaceHandler(deleteWorkspaceUC, registerWorkspaceUC)
 	docsHeadHandler := handler.NewDocsHeadHandler(getDocsHeadUC)
 	docsSnapshotHandler := handler.NewDocsSnapshotHandler(getDocsSnapshotUC)
+	docsPushHandler := handler.NewDocsPushHandler(pushDocsUC)
 
-	srv := http.NewHTTPServer(addr, projectHandler, workspaceHandler, docsHeadHandler, docsSnapshotHandler)
+	srv := http.NewHTTPServer(addr, projectHandler, workspaceHandler, docsHeadHandler, docsSnapshotHandler, docsPushHandler)
 	log.Printf("Starting server on %s", addr)
 	if err := srv.ListenAndServe(); err != nil {
 		log.Fatalf("Server failed: %v", err)

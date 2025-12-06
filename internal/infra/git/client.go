@@ -26,6 +26,20 @@ func (c *Client) Clone(ctx context.Context, repoURL, path string) error {
 	return nil
 }
 
+// ConfigUser sets git user.email and user.name for a repository.
+// This is needed for commits to work in environments without global git config.
+func (c *Client) ConfigUser(ctx context.Context, path, email, name string) error {
+	cmd := exec.CommandContext(ctx, "git", "-C", path, "config", "user.email", email)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git config user.email failed: %w\n%s", err, string(output))
+	}
+	cmd = exec.CommandContext(ctx, "git", "-C", path, "config", "user.name", name)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git config user.name failed: %w\n%s", err, string(output))
+	}
+	return nil
+}
+
 func (c *Client) Fetch(ctx context.Context, path string) error {
 	cmd := exec.CommandContext(ctx, "git", "-C", path, "fetch")
 	if output, err := cmd.CombinedOutput(); err != nil {
@@ -108,4 +122,83 @@ func (c *Client) ArchiveDocs(ctx context.Context, path string, commit string) ([
 	}
 
 	return buf.Bytes(), nil
+}
+
+// CheckoutMain checks out the main branch.
+func (c *Client) CheckoutMain(ctx context.Context, path string) error {
+	cmd := exec.CommandContext(ctx, "git", "-C", path, "checkout", "main")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		// Try master if main doesn't exist
+		cmd2 := exec.CommandContext(ctx, "git", "-C", path, "checkout", "master")
+		if output2, err2 := cmd2.CombinedOutput(); err2 != nil {
+			return fmt.Errorf("git checkout main/master failed: main: %v, master: %v\n%s\n%s", err, err2, string(output), string(output2))
+		}
+	}
+	return nil
+}
+
+// ResetHardToOriginMain resets the working directory to origin/main.
+func (c *Client) ResetHardToOriginMain(ctx context.Context, path string) error {
+	cmd := exec.CommandContext(ctx, "git", "-C", path, "reset", "--hard", "origin/main")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		// Try origin/master if origin/main doesn't exist
+		cmd2 := exec.CommandContext(ctx, "git", "-C", path, "reset", "--hard", "origin/master")
+		if output2, err2 := cmd2.CombinedOutput(); err2 != nil {
+			return fmt.Errorf("git reset --hard origin/main or origin/master failed: main: %v, master: %v\n%s\n%s", err, err2, string(output), string(output2))
+		}
+	}
+	return nil
+}
+
+// DiffIsEmpty checks if there are any changes in the working directory.
+func (c *Client) DiffIsEmpty(ctx context.Context, path string) (bool, error) {
+	cmd := exec.CommandContext(ctx, "git", "-C", path, "diff", "--quiet")
+	if err := cmd.Run(); err != nil {
+		if _, ok := err.(*exec.ExitError); ok {
+			// Non-zero exit means there are differences
+			return false, nil
+		}
+		return false, fmt.Errorf("git diff failed: %w", err)
+	}
+	return true, nil
+}
+
+// DiffStagedIsEmpty checks if there are any staged changes.
+func (c *Client) DiffStagedIsEmpty(ctx context.Context, path string) (bool, error) {
+	cmd := exec.CommandContext(ctx, "git", "-C", path, "diff", "--cached", "--quiet")
+	if err := cmd.Run(); err != nil {
+		if _, ok := err.(*exec.ExitError); ok {
+			// Non-zero exit means there are staged differences
+			return false, nil
+		}
+		return false, fmt.Errorf("git diff --cached failed: %w", err)
+	}
+	return true, nil
+}
+
+// AddDocs stages all changes in the docs directory.
+func (c *Client) AddDocs(ctx context.Context, path string) error {
+	cmd := exec.CommandContext(ctx, "git", "-C", path, "add", "docs/")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git add docs/ failed: %w\n%s", err, string(output))
+	}
+	return nil
+}
+
+// Commit creates a new commit with the given message.
+func (c *Client) Commit(ctx context.Context, path, message, authorEmail string) error {
+	cmd := exec.CommandContext(ctx, "git", "-C", path, "commit", "-m", message, "--author", fmt.Sprintf("Kkachi User <%s>", authorEmail))
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git commit failed: %w\n%s", err, string(output))
+	}
+	return nil
+}
+
+// Push pushes the current branch to origin.
+func (c *Client) Push(ctx context.Context, path string) error {
+	cmd := exec.CommandContext(ctx, "git", "-C", path, "push", "origin", "HEAD")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git push failed: %w\n%s", err, string(output))
+	}
+	return nil
 }

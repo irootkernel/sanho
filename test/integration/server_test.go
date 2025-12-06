@@ -82,7 +82,7 @@ func TestIntegration_Server(t *testing.T) {
 	docsHeadHandler := handler.NewDocsHeadHandler(getDocsHeadUC)
 	docsSnapshotHandler := handler.NewDocsSnapshotHandler(getDocsSnapshotUC)
 
-	srv := kkachihttp.NewHTTPServer(":0", projectHandler, workspaceHandler, docsHeadHandler, docsSnapshotHandler)
+	srv := kkachihttp.NewHTTPServer(":0", projectHandler, workspaceHandler, docsHeadHandler, docsSnapshotHandler, nil)
 	ts := httptest.NewServer(srv.Handler)
 	defer ts.Close()
 

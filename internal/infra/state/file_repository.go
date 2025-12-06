@@ -158,3 +158,17 @@ func (r *FileStateRepository) GetWorkspace(id string) (WorkspaceState, bool) {
 	ws, ok := r.state.Workspaces[id]
 	return ws, ok
 }
+
+func (r *FileStateRepository) UpdateWorkspaceDocsHash(id, newHash, actorEmail string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	ws, ok := r.state.Workspaces[id]
+	if !ok {
+		return os.ErrNotExist
+	}
+	ws.DocsHash = newHash
+	ws.LastReportedAt = time.Now()
+	ws.LastActorEmail = actorEmail
+	r.state.Workspaces[id] = ws
+	return r.Save()
+}

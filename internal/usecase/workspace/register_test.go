@@ -41,6 +41,10 @@ func (m *mockWorkspaceRepo) Get(ctx context.Context, id workspace.WorkspaceID) (
 	return m.get, m.getErr
 }
 
+func (m *mockWorkspaceRepo) UpdateDocsHash(ctx context.Context, id workspace.WorkspaceID, newHash docs.CommitHash, actorEmail string) error {
+	return nil
+}
+
 type mockProjectMapper struct {
 	repoID string
 	ok     bool

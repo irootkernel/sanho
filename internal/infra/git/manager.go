@@ -29,6 +29,11 @@ func (m *DocsRepoManager) Sync(ctx context.Context, repos []config.DocsRepoConfi
 				return fmt.Errorf("failed to pull %s: %w", repo.ID, err)
 			}
 		}
+		// Configure git user for commits (needed for push operations)
+		// Called for both new clones and existing repos to ensure config is always set
+		if err := m.client.ConfigUser(ctx, repo.Path, "kkachi-server@local", "kkachi-server"); err != nil {
+			return fmt.Errorf("failed to configure git user for %s: %w", repo.ID, err)
+		}
 	}
 	return nil
 }

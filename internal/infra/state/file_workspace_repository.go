@@ -47,3 +47,7 @@ func (r *FileWorkspaceRepository) Get(_ context.Context, id workspace.WorkspaceI
 		LastActorEmail: wsState.LastActorEmail,
 	}, nil
 }
+
+func (r *FileWorkspaceRepository) UpdateDocsHash(_ context.Context, id workspace.WorkspaceID, newHash docs.CommitHash, actorEmail string) error {
+	return r.stateRepo.UpdateWorkspaceDocsHash(string(id), string(newHash), actorEmail)
+}

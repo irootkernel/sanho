@@ -126,3 +126,69 @@ paths:
                   error:
                     type: string
                     example: internal_server_error
+  /docs/push:
+    post:
+      summary: Push docs snapshot to repository
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - workspace_id
+                - base_docs_hash
+                - docs_snapshot
+                - actor_email
+              properties:
+                workspace_id:
+                  type: string
+                base_docs_hash:
+                  type: string
+                docs_snapshot:
+                  type: string
+                  description: Base64-encoded tar.gz of docs directory
+                actor_email:
+                  type: string
+      responses:
+        '200':
+          description: Push result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  status:
+                    type: string
+                    enum: [updated, nochange, outdated]
+                  new_docs_hash:
+                    type: string
+                  current_docs_hash:
+                    type: string
+                  error:
+                    type: string
+        '400':
+          description: Bad Request (missing fields, unknown workspace, or unknown commit)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  error:
+                    type: string
+        '409':
+          description: Conflict (docs repo busy)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  error:
+                    type: string
+                    example: docs_repo_busy

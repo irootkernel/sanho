@@ -24,5 +24,6 @@ type Workspace struct {
 type WorkspaceRepository interface {
 	Save(ctx context.Context, ws *Workspace) error
 	Get(ctx context.Context, id WorkspaceID) (*Workspace, error)
+	UpdateDocsHash(ctx context.Context, id WorkspaceID, newHash docs.CommitHash, actorEmail string) error
 	// List is planned for Phase 5
 }
