@@ -137,6 +137,7 @@ HTTP·FS 구현과 e2e는 후속 PR로 나눈다.
 | H4 | `kkachi hook post-rewrite`     | rebase 등 rewrite 이후 상태 표시                             | `/docs/head?project` | Phase 3   |
 | H5 | `kkachi hook pre-push`         | push 직전 conflict·pending fix 체크                          | 없음         | Phase 5   |
 | H6 | `kkachi hook commit-msg`       | docs 변경 커밋의 commit 메시지에 `docs-version` 태그 추가    | 없음         | Phase 4   |
+| C9 | `kkachi pull`                  | 서버의 최신 docs snapshot을 다운로드해 로컬 docs 동기화      | `/docs/head?project`, `/docs/snapshot?project` | Phase 6   |
 
 ### 2.2 Git hook 역할 재정리
 
@@ -895,11 +896,71 @@ Phase 4는 문서 동기화의 핵심 흐름을 담당한다.
 
 ---
 
-## 9. 향후 확장 아이디어 (CLI 관점)
+## 9. Phase 6 - `kkachi pull`
+
+### P6-1. `kkachi pull` usecase
+
+- 목표  
+  서버의 최신 docs snapshot을 수동으로 다운로드해 로컬 docs 디렉토리를 동기화한다.
+
+- 유즈케이스 흐름
+
+  1. `.kkachi.json`, `.kkachi_docs_hash` 로드
+  2. `/docs/head` 호출 → 서버 HEAD 확인
+  3. 로컬 hash와 서버 HEAD 비교
+     - 같으면: "Already up to date." 출력 후 exit 0
+  4. 서버 HEAD가 다르면:
+     - `/docs/snapshot?project=...&commit=<HEAD>` 호출 → snapshot 다운로드
+     - 로컬 docs 디렉토리에 덮어쓰기 (기존 파일 삭제 후 새로 적용)
+     - `.kkachi_docs_hash` 를 서버 HEAD로 업데이트
+  5. 성공 메시지 출력
+
+     ```text
+     kkachi pull
+       pulled docs from: <old_hash>
+       new docs version: <new_hash>
+     ```
+
+- 옵션
+  - `--force`: 로컬 docs에 수정 사항이 있어도 무시하고 덮어쓰기
+  - 기본 동작: 로컬 docs에 변경 사항이 있으면 경고 후 abort
+
+- 주의사항
+  - `.kkachi_pending_fix` 가 존재하면 pull 을 거부하고, 먼저 `kkachi fix` 를 완료하라고 안내
+  - snapshot applier 로직은 `kkachi init` 에서 사용하는 것을 재사용
+
+---
+
+### P6-2. `kkachi pull` CLI interface
+
+- 목표  
+  실제 CLI 입력을 받아 pull usecase를 실행한다.
+
+- 개발 방향
+  - root command에 `pull` subcommand 추가
+  - flag 예시:
+    - `--force`: 로컬 변경 사항 무시
+  - 성공/실패 시 명확한 메시지 출력
+
+---
+
+### P6-3. 테스트
+
+- 필수 테스트
+  - Unit
+    - usecase 로직 (fake infra로 정상 플로우·에러 플로우 테스트)
+  - Integration
+    - temp Git repo + fake HTTP server 사용
+    - up-to-date, outdated, pending-fix 상태에서의 동작 확인
+    - `--force` 옵션 동작 확인
+
+---
+
+## 10. 향후 확장 아이디어 (CLI 관점)
 
 요구사항은 아니지만, 추후 고려할 수 있는 확장 아이디어는 다음과 같다.
 
-- `kkachi pull`
+- ~~`kkachi pull`~~ (Phase 6에서 구현)
   - 연결된 docs repo의 최신 docs snapshot을 받아 로컬 docs를 덮어쓰는 명령
   - 현재는 `fix` 및 pre-commit 중심 설계이지만, 특정 시점에 “강제 최신화”가 필요할 수 있다.
 - `kkachi status --json`

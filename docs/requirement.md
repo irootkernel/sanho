@@ -462,6 +462,7 @@ kkachi CLI는 Go로 작성된 단일 바이너리이며, 다음 서브커맨드�
 - `kkachi hook post-rewrite`
   - `kkachi hook pre-push`
   - `kkachi hook commit-msg`
+- `kkachi pull`
 
 > 플랫폼 전제: v1 기준으로 kkachi 는 POSIX 계열 경로(macOS, Linux 등)를 1차 대상으로 설계한다. `workspace_id = "<project>:<workspace-root-absolute-path>"` 규약 예시에서 사용되는 `/Users/...` 형태는 POSIX 경로를 가정한 것이며, Windows 드라이브 문자/백슬래시 등의 세부 규약은 v1 요구사항 범위를 벗어난다. 필요 시 Windows 지원에 맞춰 별도 workspace_id 포맷을 정의할 수 있다.
 
@@ -1298,6 +1299,78 @@ kkachi: docs 디렉토리의 충돌을 모두 해결했다면 'kkachi fix'를 �
 - 이 구조 덕분에 **commit-msg hook 이 추가한 `docs-version` 라인에 대해서는** 커밋에 포함되는 `.kkachi_docs_hash` 파일 내용과 커밋 메시지의 `docs-version` 값이 일관성을 가진다.
   - 단, 사용자가 commit 메시지에 `docs-version:` 라인을 **직접 작성한 경우**에는, hook 이 이를 덮어쓰지 않으므로 메시지의 `docs-version` 값이 실제 docs repo 기준 버전과 다를 수 있다.
   - v1 에서는 이러한 수동 입력까지 강제로 수정하지 않으며, 필요 시 향후 lint 규칙이나 별도 검증 도구를 통해 정책을 강화할 수 있다.
+
+---
+
+### 6.12. `kkachi pull` 요구사항
+
+#### 6.12.1. 목적
+
+- 서버의 최신 docs snapshot을 수동으로 다운로드해 로컬 docs 디렉토리를 동기화한다.
+- `kkachi init` 및 `pre-commit` 중심의 자동 동기화 흐름 외에, 단순히 "서버의 최신 docs 를 로컬에 반영"하고 싶을 때 사용한다.
+
+#### 6.12.2. 동작 요구사항
+
+1. `.kkachi.json`, `.kkachi_docs_hash` 로드
+
+   - 둘 중 하나라도 존재하지 않으면 에러 메시지를 출력하고 **exit code 1** 로 종료한다.
+
+2. `.kkachi_pending_fix` 존재 여부 확인
+
+   - 파일이 존재하면 아직 `kkachi fix` 가 완료되지 않은 상태이므로, 먼저 `kkachi fix` 를 완료하라는 안내 메시지를 출력하고 **exit code 1** 로 종료한다.
+
+     ```text
+     kkachi: pending fix 상태입니다. 먼저 'kkachi fix'를 완료한 뒤 pull을 시도해 주세요.
+     ```
+
+3. 로컬 docs 변경 여부 확인 (`--force` 옵션이 없는 경우)
+
+   - `git diff --quiet -- docs` 로 로컬 docs에 uncommitted 변경 사항이 있는지 확인한다.
+   - 변경 사항이 있으면 경고 메시지를 출력하고 **exit code 1** 로 종료한다.
+
+     ```text
+     kkachi: 로컬 docs에 수정 사항이 있습니다. 변경을 무시하고 덮어쓰려면 --force 옵션을 사용하세요.
+     ```
+
+   - `--force` 옵션이 있으면 이 검사를 건너뛰고 계속 진행한다.
+
+4. 서버 HEAD 조회
+
+   - `GET /docs/head?project=<project>` 호출
+   - `H_head` 획득
+
+5. 로컬 hash와 서버 HEAD 비교
+
+   - `H_base == H_head` 이면:
+     - "Already up to date." 메시지를 출력하고 **exit code 0** 으로 종료한다.
+
+6. snapshot 다운로드 및 적용
+
+   - `GET /docs/snapshot?project=<project>&commit=<H_head>` 호출해 최신 snapshot 다운로드
+   - 로컬 `docs_dir` 디렉토리를 **비우고** snapshot 내용으로 교체
+     - 기존 파일을 삭제한 뒤 snapshot 내용을 새로 적용한다.
+     - snapshot 내부 루트 `docs/` 를 `.kkachi.json` 의 `docs_dir` 경로로 리매핑해 복원한다.
+   - `.kkachi_docs_hash` 를 `H_head` 로 업데이트
+
+7. 성공 메시지 출력
+
+   ```text
+   kkachi pull
+     pulled docs from: <H_base>
+     new docs version: <H_head>
+   ```
+
+   - **exit code 0** 으로 종료
+
+#### 6.12.3. 옵션
+
+- `--force`: 로컬 docs에 uncommitted 변경 사항이 있어도 무시하고 덮어쓰기
+
+#### 6.12.4. 주의사항
+
+- snapshot applier 로직은 `kkachi init` 에서 사용하는 것을 재사용한다.
+- `kkachi pull` 은 3-way merge 를 수행하지 않고, 단순히 서버 snapshot 으로 로컬을 덮어쓴다.
+- 로컬 변경 사항을 보존하려면 `--force` 없이 먼저 docs 변경을 commit 한 뒤 pull 하거나, 수동으로 백업해야 한다.
 
 ---
 
