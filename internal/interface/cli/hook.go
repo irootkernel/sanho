@@ -42,38 +42,70 @@ This hook will:
 	}
 }
 
-// newPostCheckoutHookCmd creates the post-checkout hook command skeleton.
+// newPostCheckoutHookCmd creates the post-checkout hook command.
+// This is a read-only hook that displays docs status after checkout.
+// It always exits with code 0 to not block Git operations.
 func newPostCheckoutHookCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "post-checkout",
+		Use:   "post-checkout [prev-head] [new-head] [branch-flag]",
 		Short: "Post-checkout hook for status display",
-		Long:  `Invoked by Git after a checkout. Displays docs status.`,
-		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Println("kkachi hook post-checkout: not implemented yet (Phase 3)")
+		Long: `Invoked by Git after a checkout. Displays docs status.
+
+This hook will:
+- Check the current docs synchronization status
+- Display any pending fix or conflict warnings
+- Always exit with code 0 to not block Git operations`,
+		Args: cobra.MaximumNArgs(3), // Git passes: prev-HEAD, new-HEAD, branch-flag
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runHookStatus(cmd, "post-checkout")
 		},
 	}
 }
 
-// newPostMergeHookCmd creates the post-merge hook command skeleton.
+// newPostMergeHookCmd creates the post-merge hook command.
+// This is a read-only hook that displays docs status after merge.
+// It always exits with code 0 to not block Git operations.
 func newPostMergeHookCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "post-merge",
+		Use:   "post-merge [squash-flag]",
 		Short: "Post-merge hook for status display",
-		Long:  `Invoked by Git after a merge. Displays docs status.`,
-		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Println("kkachi hook post-merge: not implemented yet (Phase 3)")
+		Long: `Invoked by Git after a merge. Displays docs status.
+
+This hook will:
+- Check the current docs synchronization status
+- Display any pending fix or conflict warnings
+- Always exit with code 0 to not block Git operations`,
+		Args: cobra.MaximumNArgs(1), // Git passes: squash-flag
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runHookStatus(cmd, "post-merge")
 		},
 	}
 }
 
-// newPostRewriteHookCmd creates the post-rewrite hook command skeleton.
+// newPostRewriteHookCmd creates the post-rewrite hook command.
+// This is a read-only hook that displays docs status after rewrite operations.
+// It only shows status for rebase operations, not for amend.
+// It always exits with code 0 to not block Git operations.
 func newPostRewriteHookCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "post-rewrite",
+		Use:   "post-rewrite [rewrite-command]",
 		Short: "Post-rewrite hook for status display",
-		Long:  `Invoked by Git after a rewrite (e.g., rebase). Displays docs status.`,
-		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Println("kkachi hook post-rewrite: not implemented yet (Phase 3)")
+		Long: `Invoked by Git after a rewrite operation (e.g., rebase, amend). Displays docs status.
+
+This hook will:
+- Check if the rewrite command is 'rebase'
+- If rebase, check the current docs synchronization status
+- Display any pending fix or conflict warnings
+- Always exit with code 0 to not block Git operations
+
+Note: Status is only shown for rebase operations, not for amend.`,
+		Args: cobra.ArbitraryArgs, // Git may pass multiple args (rewrite-command, mapping-file, etc.)
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// Only run status check for rebase, not for amend or other rewrites
+			if len(args) == 0 || args[0] != "rebase" {
+				return nil // Silent no-op for non-rebase rewrites
+			}
+			return runHookStatus(cmd, "post-rewrite")
 		},
 	}
 }

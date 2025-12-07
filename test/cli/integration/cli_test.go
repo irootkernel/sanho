@@ -90,7 +90,6 @@ func TestCLISubcommandSkeletons(t *testing.T) {
 		{[]string{"fix"}, "not implemented yet"},
 		{[]string{"state"}, "not implemented yet"},
 		{[]string{"hook", "pre-commit"}, "not implemented yet"},
-		{[]string{"hook", "post-checkout"}, "not implemented yet"},
 	}
 
 	for _, tt := range tests {
@@ -157,6 +156,43 @@ func TestCLIStatusRequiresWorkspace(t *testing.T) {
 
 	if !strings.Contains(string(output), "not a kkachi workspace") {
 		t.Errorf("Expected 'not a kkachi workspace' message, got: %s", output)
+	}
+}
+
+// TestCLIReadOnlyHooksAlwaysExitZero verifies that read-only hooks always exit 0
+// even when not in a kkachi workspace (per Phase 3 requirement).
+func TestCLIReadOnlyHooksAlwaysExitZero(t *testing.T) {
+	cliBinary := getCliBinary(t)
+
+	// Run from temp dir (not a kkachi workspace)
+	tempDir := t.TempDir()
+
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{"post-checkout", []string{"hook", "post-checkout"}},
+		{"post-checkout with args", []string{"hook", "post-checkout", "abc123", "def456", "1"}},
+		{"post-merge", []string{"hook", "post-merge"}},
+		{"post-merge with squash flag", []string{"hook", "post-merge", "1"}},
+		{"post-rewrite rebase", []string{"hook", "post-rewrite", "rebase"}},
+		{"post-rewrite rebase with mapping file", []string{"hook", "post-rewrite", "rebase", "/tmp/git-rebase-todo"}},
+		{"post-rewrite amend", []string{"hook", "post-rewrite", "amend"}},
+		{"post-rewrite amend with mapping file", []string{"hook", "post-rewrite", "amend", "/tmp/git-amend-mapping"}},
+		{"post-rewrite no args", []string{"hook", "post-rewrite"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := exec.Command(cliBinary, tt.args...)
+			cmd.Dir = tempDir
+			output, err := cmd.CombinedOutput()
+
+			// All read-only hooks should exit 0
+			if err != nil {
+				t.Errorf("Expected exit code 0 for %v, got error: %v\nOutput: %s", tt.args, err, output)
+			}
+		})
 	}
 }
 
