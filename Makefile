@@ -45,6 +45,8 @@ server-run:
 		-e STATE_FILE_PATH=$(STATE_FILE_PATH) \
 		-v $(CURDIR):/app \
 		-v /tmp:/tmp \
+		-v $(HOME)/.ssh:/root/.ssh:ro \
+		-v $(HOME)/.gitconfig:/root/.gitconfig:ro \
 		$(EXTRA_TMP_MOUNT) \
 		$(DOCKER_IMAGE_DEV)
 

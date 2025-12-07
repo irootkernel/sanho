@@ -82,18 +82,15 @@ func TestCLIVerboseFlag(t *testing.T) {
 func TestCLISubcommandSkeletons(t *testing.T) {
 	cliBinary := getCliBinary(t)
 
+	// Only test commands that are still skeleton/not implemented
 	tests := []struct {
 		args     []string
 		expected string
 	}{
-		{[]string{"init"}, "not implemented yet"},
-		{[]string{"status"}, "not implemented yet"},
 		{[]string{"fix"}, "not implemented yet"},
 		{[]string{"state"}, "not implemented yet"},
 		{[]string{"hook", "pre-commit"}, "not implemented yet"},
 		{[]string{"hook", "post-checkout"}, "not implemented yet"},
-		{[]string{"project", "add"}, "not implemented yet"},
-		{[]string{"workspace", "register"}, "not implemented yet"},
 	}
 
 	for _, tt := range tests {
@@ -108,6 +105,58 @@ func TestCLISubcommandSkeletons(t *testing.T) {
 				t.Errorf("Expected output to contain %q, got: %s", tt.expected, output)
 			}
 		})
+	}
+}
+
+// TestCLIImplementedCommandsRequireFlags verifies implemented commands require flags.
+func TestCLIImplementedCommandsRequireFlags(t *testing.T) {
+	cliBinary := getCliBinary(t)
+
+	tests := []struct {
+		args          []string
+		expectedError string
+		expectNonZero bool
+	}{
+		// init prompts for interactive input; without stdin it fails fast on read
+		{[]string{"init"}, "failed to read input", true},
+		{[]string{"project", "add"}, "--server-url is required", true},
+		{[]string{"project", "delete"}, "--server-url is required", true},
+		{[]string{"workspace", "register"}, "--server-url is required", true},
+		{[]string{"workspace", "unregister"}, "--server-url is required", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(strings.Join(tt.args, "_"), func(t *testing.T) {
+			cmd := exec.Command(cliBinary, tt.args...)
+			output, err := cmd.CombinedOutput()
+
+			if tt.expectNonZero && err == nil {
+				t.Errorf("Expected non-zero exit code for %v", tt.args)
+			}
+
+			if !strings.Contains(string(output), tt.expectedError) {
+				t.Errorf("Expected output to contain %q, got: %s", tt.expectedError, output)
+			}
+		})
+	}
+}
+
+// TestCLIStatusRequiresWorkspace verifies status command requires kkachi workspace.
+func TestCLIStatusRequiresWorkspace(t *testing.T) {
+	cliBinary := getCliBinary(t)
+
+	// Run status from temp dir (not a kkachi workspace)
+	tempDir := t.TempDir()
+	cmd := exec.Command(cliBinary, "status")
+	cmd.Dir = tempDir
+	output, err := cmd.CombinedOutput()
+
+	if err == nil {
+		t.Error("Expected non-zero exit code for status without workspace")
+	}
+
+	if !strings.Contains(string(output), "not a kkachi workspace") {
+		t.Errorf("Expected 'not a kkachi workspace' message, got: %s", output)
 	}
 }
 
