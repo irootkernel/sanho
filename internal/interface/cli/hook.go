@@ -1,8 +1,6 @@
 package cli
 
 import (
-	"fmt"
-
 	"github.com/spf13/cobra"
 )
 
@@ -110,7 +108,7 @@ Note: Status is only shown for rebase operations, not for amend.`,
 	}
 }
 
-// newPrePushHookCmd creates the pre-push hook command skeleton.
+// newPrePushHookCmd creates the pre-push hook command.
 func newPrePushHookCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "pre-push",
@@ -121,8 +119,8 @@ This hook will:
 - Check for conflict markers in docs
 - Check for pending fix state
 - Block push if issues are found`,
-		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Println("kkachi hook pre-push: not implemented yet (Phase 5)")
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runPrePushHook(cmd)
 		},
 	}
 }

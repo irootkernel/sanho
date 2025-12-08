@@ -79,33 +79,11 @@ func TestCLIVerboseFlag(t *testing.T) {
 }
 
 // TestCLISubcommandSkeletons verifies that skeleton commands output expected messages.
+// Note: As commands are implemented, they should be removed from this test.
 func TestCLISubcommandSkeletons(t *testing.T) {
-	cliBinary := getCliBinary(t)
-
-	// Only test commands that are still skeleton/not implemented
-	// Note: hook pre-commit, hook commit-msg are now implemented (Phase 4)
-	tests := []struct {
-		args     []string
-		expected string
-	}{
-		{[]string{"fix"}, "not implemented yet"},
-		{[]string{"state"}, "not implemented yet"},
-		{[]string{"hook", "pre-push"}, "not implemented yet"},
-	}
-
-	for _, tt := range tests {
-		t.Run(strings.Join(tt.args, "_"), func(t *testing.T) {
-			cmd := exec.Command(cliBinary, tt.args...)
-			output, err := cmd.CombinedOutput()
-			if err != nil {
-				t.Fatalf("CLI command %v failed: %v\nOutput: %s", tt.args, err, output)
-			}
-
-			if !strings.Contains(string(output), tt.expected) {
-				t.Errorf("Expected output to contain %q, got: %s", tt.expected, output)
-			}
-		})
-	}
+	// All Phase 5 commands (fix, state, pre-push) are now implemented.
+	// No skeleton commands remain to test.
+	t.Skip("All skeleton commands have been implemented")
 }
 
 // TestCLIImplementedCommandsRequireFlags verifies implemented commands require flags.

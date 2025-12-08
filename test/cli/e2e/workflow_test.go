@@ -1,11 +1,14 @@
 package e2e
 
 import (
+	"net"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestE2ESetup verifies the E2E test environment is properly configured.
@@ -89,4 +92,29 @@ func getServerURL(t *testing.T) string {
 		url = "http://127.0.0.1:5789"
 	}
 	return url
+}
+
+// ensureServerAvailable checks TCP connectivity to the given server URL and skips the test if unreachable.
+func ensureServerAvailable(t *testing.T, rawURL string) {
+	t.Helper()
+
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed.Host == "" {
+		t.Skipf("Skipping E2E: invalid server URL %q", rawURL)
+	}
+
+	hostPort := parsed.Host
+	if !strings.Contains(hostPort, ":") {
+		if parsed.Scheme == "https" {
+			hostPort = hostPort + ":443"
+		} else {
+			hostPort = hostPort + ":80"
+		}
+	}
+
+	conn, err := net.DialTimeout("tcp", hostPort, 2*time.Second)
+	if err != nil {
+		t.Skipf("Skipping E2E: kkachi-server not reachable at %s (%v)", rawURL, err)
+	}
+	_ = conn.Close()
 }
