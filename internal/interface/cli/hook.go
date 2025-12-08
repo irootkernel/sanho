@@ -25,7 +25,7 @@ func newHookCmd() *cobra.Command {
 	return cmd
 }
 
-// newPreCommitHookCmd creates the pre-commit hook command skeleton.
+// newPreCommitHookCmd creates the pre-commit hook command.
 func newPreCommitHookCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "pre-commit",
@@ -36,8 +36,8 @@ This hook will:
 - Check for docs changes
 - Push docs to server if changed
 - Handle outdated state with 3-way merge`,
-		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Println("kkachi hook pre-commit: not implemented yet (Phase 4)")
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runPreCommitHook(cmd)
 		},
 	}
 }
@@ -127,7 +127,7 @@ This hook will:
 	}
 }
 
-// newCommitMsgHookCmd creates the commit-msg hook command skeleton.
+// newCommitMsgHookCmd creates the commit-msg hook command.
 func newCommitMsgHookCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "commit-msg [message-file]",
@@ -136,8 +136,8 @@ func newCommitMsgHookCmd() *cobra.Command {
 
 This hook will add a docs-version tag to commits that include docs changes.`,
 		Args: cobra.MaximumNArgs(1),
-		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Println("kkachi hook commit-msg: not implemented yet (Phase 4)")
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runCommitMsgHook(cmd, args)
 		},
 	}
 }

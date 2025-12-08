@@ -70,8 +70,8 @@ func TestSnapshotApplier_Apply_IncludesDotfilesAndDirs(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(tmpDir, "docs", "dir", "nested.md")); err != nil {
 		t.Errorf("expected dir/nested.md to be extracted, got error: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(tmpDir, "docs", "docs", "inner.md")); err != nil {
-		t.Errorf("expected docs/inner.md to be extracted under docs/docs/, got error: %v", err)
+	if _, err := os.Stat(filepath.Join(tmpDir, "docs", "inner.md")); err != nil {
+		t.Errorf("expected docs/inner.md to be extracted under docs/, got error: %v", err)
 	}
 
 	// Dotfiles and dot-directories (except .git) should be extracted.

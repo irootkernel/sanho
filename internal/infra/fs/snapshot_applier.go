@@ -75,15 +75,24 @@ func (s *SnapshotApplier) Apply(snapshot []byte, targetDir, docsDir string) erro
 			return fmt.Errorf("failed to read tar entry: %w", err)
 		}
 
-		// Skip if header name is empty or refers to the tar root.
-		if header.Name == "" || header.Name == "." {
+		// Normalize header path and drop any redundant docs prefix so we don't
+		// create nested docs/docs when snapshots already include it.
+		relPath := strings.TrimPrefix(header.Name, "./")
+		if relPath == "" || relPath == "." {
 			continue
 		}
-
-		// Preserve the repository layout relative to the archive root. The
-		// tar snapshot represents the docs repository root, and we mirror that
-		// structure under the workspace docsDir.
-		relPath := header.Name
+		if docsDir != "" {
+			if relPath == docsDir {
+				// Skip the root docsDir entry.
+				continue
+			}
+			if strings.HasPrefix(relPath, docsDir+"/") {
+				relPath = strings.TrimPrefix(relPath, docsDir+"/")
+				if relPath == "" {
+					continue
+				}
+			}
+		}
 
 		// Skip any entries that would touch a ".git" directory to avoid
 		// creating nested Git repositories or modifying Git metadata.

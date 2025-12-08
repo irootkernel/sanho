@@ -1,0 +1,504 @@
+// Package hook provides use cases for Git hook operations.
+package hook
+
+import (
+	"bytes"
+	"context"
+	"encoding/base64"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"time"
+
+	"github.com/SeventeenthEarth/kkachi/internal/domain/client"
+	"github.com/SeventeenthEarth/kkachi/internal/domain/docs"
+	"github.com/SeventeenthEarth/kkachi/internal/domain/workspace"
+	"github.com/SeventeenthEarth/kkachi/internal/infra/fs"
+)
+
+// Pre-commit specific errors.
+var (
+	// ErrConfigBroken indicates that the kkachi configuration is missing or corrupt.
+	ErrConfigBroken = errors.New("kkachi configuration is broken")
+	// ErrConflictMarkerFound indicates that conflict markers were found in docs.
+	ErrConflictMarkerFound = errors.New("conflict markers found in docs")
+	// ErrPendingFixExists indicates that a pending fix state exists.
+	ErrPendingFixExists = errors.New("pending fix state exists")
+	// ErrDocsRepoBusy indicates the docs repo is being updated by another workspace.
+	ErrDocsRepoBusy = errors.New("docs repo is busy")
+	// ErrOutdated indicates that the docs are outdated and merge was performed.
+	ErrOutdated = errors.New("docs are outdated, merge performed")
+	// ErrUnknownDocsCommit indicates the docs commit history was rewritten.
+	ErrUnknownDocsCommit = errors.New("unknown docs commit - history may have been rewritten")
+)
+
+// PreCommitConfigLoader loads workspace configuration.
+type PreCommitConfigLoader interface {
+	Load(workDir string) (*client.WorkspaceConfig, error)
+}
+
+// PreCommitDocsHashStore reads and writes docs hash files.
+type PreCommitDocsHashStore interface {
+	Read(path string) (docs.CommitHash, error)
+	Write(path string, hash docs.CommitHash) error
+}
+
+// PreCommitPendingFixStore manages pending fix state.
+type PreCommitPendingFixStore interface {
+	Read(path string) (fs.PendingFixState, bool, error)
+	Write(path string, state fs.PendingFixState) error
+	Remove(path string) error
+}
+
+// PreCommitConflictDetector detects conflict markers in docs.
+type PreCommitConflictDetector interface {
+	DetectConflicts(docsDir string) ([]string, error)
+}
+
+// PreCommitGitClient provides git operations.
+type PreCommitGitClient interface {
+	HasDocsChangeForCommit(ctx context.Context, repoPath, docsDir string) (bool, error)
+	MergeFile(ctx context.Context, baseContent, localContent, remoteContent []byte) (MergeResult, error)
+}
+
+// MergeResult represents the result of a file merge.
+type MergeResult struct {
+	Content      []byte
+	HasConflicts bool
+}
+
+// PreCommitSnapshotBuilder builds docs snapshots.
+type PreCommitSnapshotBuilder interface {
+	Build(sourceDir string) ([]byte, error)
+}
+
+// PreCommitSnapshotApplier applies docs snapshots.
+type PreCommitSnapshotApplier interface {
+	Apply(snapshot []byte, targetDir, docsDir string) error
+}
+
+// DocsPushRequest is the request for pushing docs to server.
+type DocsPushRequest struct {
+	WorkspaceID  workspace.WorkspaceID
+	BaseDocsHash docs.CommitHash
+	DocsSnapshot string // base64 encoded
+	ActorEmail   string
+}
+
+// DocsPushResponse is the response from pushing docs to server.
+type DocsPushResponse struct {
+	Ok              bool
+	Status          docs.DocsPushStatus
+	NewDocsHash     docs.CommitHash
+	CurrentDocsHash docs.CommitHash
+	Error           string
+}
+
+// PreCommitHTTPClient communicates with kkachi-server.
+type PreCommitHTTPClient interface {
+	DocsPush(ctx context.Context, req DocsPushRequest) (DocsPushResponse, error)
+	DocsSnapshot(ctx context.Context, project docs.ProjectName, commit docs.CommitHash) (docs.DocsSnapshot, docs.CommitHash, error)
+}
+
+// PreCommitOutput is the output callback for user messages.
+type PreCommitOutput interface {
+	Info(msg string)
+	Warning(msg string)
+	Error(msg string)
+}
+
+// PreCommitUseCase handles the pre-commit hook logic.
+type PreCommitUseCase struct {
+	configLoader     PreCommitConfigLoader
+	docsHashStore    PreCommitDocsHashStore
+	pendingFixStore  PreCommitPendingFixStore
+	conflictDetector PreCommitConflictDetector
+	gitClient        PreCommitGitClient
+	snapshotBuilder  PreCommitSnapshotBuilder
+	snapshotApplier  PreCommitSnapshotApplier
+	httpClient       PreCommitHTTPClient
+	output           PreCommitOutput
+}
+
+// NewPreCommitUseCase creates a new PreCommitUseCase.
+func NewPreCommitUseCase(
+	configLoader PreCommitConfigLoader,
+	docsHashStore PreCommitDocsHashStore,
+	pendingFixStore PreCommitPendingFixStore,
+	conflictDetector PreCommitConflictDetector,
+	gitClient PreCommitGitClient,
+	snapshotBuilder PreCommitSnapshotBuilder,
+	snapshotApplier PreCommitSnapshotApplier,
+	httpClient PreCommitHTTPClient,
+	output PreCommitOutput,
+) *PreCommitUseCase {
+	return &PreCommitUseCase{
+		configLoader:     configLoader,
+		docsHashStore:    docsHashStore,
+		pendingFixStore:  pendingFixStore,
+		conflictDetector: conflictDetector,
+		gitClient:        gitClient,
+		snapshotBuilder:  snapshotBuilder,
+		snapshotApplier:  snapshotApplier,
+		httpClient:       httpClient,
+		output:           output,
+	}
+}
+
+// Execute runs the pre-commit hook logic.
+func (u *PreCommitUseCase) Execute(ctx context.Context, workDir string) error {
+	// Step 1: Load configuration
+	config, err := u.configLoader.Load(workDir)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrConfigBroken, err)
+	}
+	config.ApplyDefaults()
+
+	// Step 2: Load docs hash
+	hashFilePath := filepath.Join(workDir, config.DocsHashFile)
+	baseHash, err := u.docsHashStore.Read(hashFilePath)
+	if err != nil {
+		return fmt.Errorf("%w: failed to read docs hash: %v", ErrConfigBroken, err)
+	}
+
+	// Step 3: Check for conflict markers
+	docsPath := filepath.Join(workDir, config.DocsDir)
+	conflictFiles, err := u.conflictDetector.DetectConflicts(docsPath)
+	if err != nil {
+		return fmt.Errorf("failed to check for conflicts: %w", err)
+	}
+	if len(conflictFiles) > 0 {
+		u.output.Error("Conflict markers found in docs files:")
+		for _, f := range conflictFiles {
+			u.output.Error(fmt.Sprintf("  - %s", f))
+		}
+		u.output.Error("Please resolve conflicts before committing.")
+		return ErrConflictMarkerFound
+	}
+
+	// Step 4: Check for pending fix state
+	pendingFixPath := filepath.Join(workDir, config.PendingFixFile)
+	_, hasPendingFix, err := u.pendingFixStore.Read(pendingFixPath)
+	if err != nil {
+		return fmt.Errorf("failed to check pending fix state: %w", err)
+	}
+	if hasPendingFix {
+		u.output.Error("This workspace is in pending fix state from a previous merge.")
+		u.output.Error("Please run 'kkachi fix' to complete the merge and sync docs.")
+		u.output.Error("Commit is blocked until pending fix is resolved.")
+		return ErrPendingFixExists
+	}
+
+	// Step 5: Check for docs changes
+	hasChanges, err := u.gitClient.HasDocsChangeForCommit(ctx, workDir, config.DocsDir)
+	if err != nil {
+		return fmt.Errorf("failed to check docs changes: %w", err)
+	}
+	if !hasChanges {
+		u.output.Info("No docs changes detected.")
+		return nil
+	}
+
+	// Step 6: Build docs snapshot
+	u.output.Info("Docs changes detected. Syncing with server...")
+	snapshot, err := u.snapshotBuilder.Build(docsPath)
+	if err != nil {
+		return fmt.Errorf("failed to build docs snapshot: %w", err)
+	}
+
+	// Step 7: Push to server
+	pushReq := DocsPushRequest{
+		WorkspaceID:  config.WorkspaceID,
+		BaseDocsHash: baseHash,
+		DocsSnapshot: base64.StdEncoding.EncodeToString(snapshot),
+		ActorEmail:   config.ActorEmail,
+	}
+
+	resp, err := u.httpClient.DocsPush(ctx, pushReq)
+	if err != nil {
+		// Handle specific errors with appropriate messages
+		if errors.Is(err, ErrUnknownDocsCommit) {
+			u.output.Error("The docs repo history has been rewritten.")
+			u.output.Error("Cannot automatically recover. Please manually sync docs and run 'kkachi init' again.")
+			return ErrUnknownDocsCommit
+		}
+		if errors.Is(err, ErrDocsRepoBusy) {
+			u.output.Error("Another workspace is currently updating docs. Please try again shortly.")
+			return ErrDocsRepoBusy
+		}
+		return fmt.Errorf("failed to push docs: %w", err)
+	}
+
+	// Step 8: Handle response
+	if !resp.Ok {
+		if resp.Error == "unknown_docs_commit" {
+			u.output.Error("The docs repo history has been rewritten.")
+			u.output.Error("Cannot automatically recover. Please manually sync docs and run 'kkachi init' again.")
+			return ErrUnknownDocsCommit
+		}
+		if resp.Error == "docs_repo_busy" {
+			u.output.Error("Another workspace is currently updating docs. Please try again shortly.")
+			return ErrDocsRepoBusy
+		}
+		return fmt.Errorf("server error: %s", resp.Error)
+	}
+
+	switch resp.Status {
+	case docs.DocsPushStatusUpdated:
+		// Success - update hash file
+		if resp.NewDocsHash != "" {
+			if err := u.docsHashStore.Write(hashFilePath, resp.NewDocsHash); err != nil {
+				return fmt.Errorf("failed to update docs hash: %w", err)
+			}
+		}
+		u.output.Info(fmt.Sprintf("Docs synced successfully. New version: %s", resp.NewDocsHash))
+		return nil
+
+	case docs.DocsPushStatusNoChange:
+		// No change - ensure hash is current
+		if !resp.CurrentDocsHash.IsZero() {
+			if err := u.docsHashStore.Write(hashFilePath, resp.CurrentDocsHash); err != nil {
+				return fmt.Errorf("failed to update docs hash: %w", err)
+			}
+		}
+		u.output.Info("Docs are already in sync with server.")
+		return nil
+
+	case docs.DocsPushStatusOutdated:
+		// Outdated - perform 3-way merge
+		u.output.Warning("Docs are outdated. Performing 3-way merge...")
+		return u.handleOutdated(ctx, workDir, config, baseHash, resp.CurrentDocsHash, docsPath, hashFilePath, pendingFixPath)
+
+	default:
+		return fmt.Errorf("unexpected response status: %s", resp.Status)
+	}
+}
+
+// handleOutdated performs 3-way merge when docs are outdated.
+func (u *PreCommitUseCase) handleOutdated(
+	ctx context.Context,
+	workDir string,
+	config *client.WorkspaceConfig,
+	baseHash, remoteHash docs.CommitHash,
+	docsPath, hashFilePath, pendingFixPath string,
+) error {
+	// Download base and remote snapshots
+	baseSnapshot, _, err := u.httpClient.DocsSnapshot(ctx, config.Project, baseHash)
+	if err != nil {
+		return fmt.Errorf("failed to download base snapshot: %w", err)
+	}
+
+	remoteSnapshot, _, err := u.httpClient.DocsSnapshot(ctx, config.Project, remoteHash)
+	if err != nil {
+		return fmt.Errorf("failed to download remote snapshot: %w", err)
+	}
+
+	// Create temp directories for base and remote
+	tempDir, err := os.MkdirTemp("", "kkachi-merge-*")
+	if err != nil {
+		return fmt.Errorf("failed to create temp directory: %w", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	baseDir := filepath.Join(tempDir, "base")
+	remoteDir := filepath.Join(tempDir, "remote")
+
+	if err := os.MkdirAll(baseDir, 0755); err != nil {
+		return fmt.Errorf("failed to create base directory: %w", err)
+	}
+	if err := os.MkdirAll(remoteDir, 0755); err != nil {
+		return fmt.Errorf("failed to create remote directory: %w", err)
+	}
+
+	// Apply snapshots
+	if err := u.snapshotApplier.Apply(baseSnapshot, baseDir, "docs"); err != nil {
+		return fmt.Errorf("failed to apply base snapshot: %w", err)
+	}
+	if err := u.snapshotApplier.Apply(remoteSnapshot, remoteDir, "docs"); err != nil {
+		return fmt.Errorf("failed to apply remote snapshot: %w", err)
+	}
+
+	// Perform 3-way merge
+	baseDocs := filepath.Join(baseDir, "docs")
+	remoteDocs := filepath.Join(remoteDir, "docs")
+
+	hasConflicts, conflictFiles, err := u.mergeDirectories(ctx, baseDocs, docsPath, remoteDocs)
+	if err != nil {
+		return fmt.Errorf("failed to perform 3-way merge: %w", err)
+	}
+
+	// Update hash to remote
+	if err := u.docsHashStore.Write(hashFilePath, remoteHash); err != nil {
+		return fmt.Errorf("failed to update docs hash: %w", err)
+	}
+
+	// Create pending fix state
+	pendingState := fs.PendingFixState{
+		BaseHash:   baseHash,
+		RemoteHash: remoteHash,
+		CreatedAt:  time.Now(),
+	}
+	if err := u.pendingFixStore.Write(pendingFixPath, pendingState); err != nil {
+		return fmt.Errorf("failed to create pending fix state: %w", err)
+	}
+
+	// Output messages
+	if hasConflicts {
+		u.output.Error("Merge completed with conflicts:")
+		for _, f := range conflictFiles {
+			u.output.Error(fmt.Sprintf("  - %s", f))
+		}
+		u.output.Error("")
+		u.output.Error("Please resolve the conflicts in the above files.")
+	} else {
+		u.output.Warning("Merge completed successfully (no conflicts).")
+	}
+
+	u.output.Warning("")
+	u.output.Warning("After reviewing/resolving, run 'kkachi fix' to complete the sync.")
+	u.output.Warning("Commit is blocked until 'kkachi fix' is completed.")
+
+	return ErrOutdated
+}
+
+// mergeDirectories performs 3-way merge on all files in the directories.
+// It modifies localDir in place with merged contents.
+// Returns whether any conflicts occurred and the list of conflict files.
+func (u *PreCommitUseCase) mergeDirectories(
+	ctx context.Context,
+	baseDir, localDir, remoteDir string,
+) (hasConflicts bool, conflictFiles []string, err error) {
+	// Collect all files from all three directories
+	allFiles := make(map[string]struct{})
+
+	collectFiles := func(dir string) error {
+		return filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+			if err != nil {
+				if os.IsNotExist(err) {
+					return nil
+				}
+				return err
+			}
+			if d.IsDir() {
+				return nil
+			}
+			relPath, err := filepath.Rel(dir, path)
+			if err != nil {
+				return err
+			}
+			allFiles[relPath] = struct{}{}
+			return nil
+		})
+	}
+
+	if err := collectFiles(baseDir); err != nil {
+		return false, nil, err
+	}
+	if err := collectFiles(localDir); err != nil {
+		return false, nil, err
+	}
+	if err := collectFiles(remoteDir); err != nil {
+		return false, nil, err
+	}
+
+	// Merge each file
+	for relPath := range allFiles {
+		basePath := filepath.Join(baseDir, relPath)
+		localPath := filepath.Join(localDir, relPath)
+		remotePath := filepath.Join(remoteDir, relPath)
+
+		baseContent, baseExists, err := readFileIfExists(basePath)
+		if err != nil {
+			return false, nil, fmt.Errorf("failed to read base %s: %w", relPath, err)
+		}
+		localContent, localExists, err := readFileIfExists(localPath)
+		if err != nil {
+			return false, nil, fmt.Errorf("failed to read local %s: %w", relPath, err)
+		}
+		remoteContent, remoteExists, err := readFileIfExists(remotePath)
+		if err != nil {
+			return false, nil, fmt.Errorf("failed to read remote %s: %w", relPath, err)
+		}
+
+		// Remote deleted the file: drop it locally when we have no local change.
+		if baseExists && !remoteExists && (!localExists || bytes.Equal(localContent, baseContent)) {
+			if err := os.Remove(localPath); err != nil && !os.IsNotExist(err) {
+				return false, nil, fmt.Errorf("failed to remove %s: %w", relPath, err)
+			}
+			continue
+		}
+
+		// Local deleted: keep deletion when remote is unchanged, but surface
+		// a conflict when remote modified the file.
+		if baseExists && !localExists {
+			if !remoteExists || bytes.Equal(remoteContent, baseContent) {
+				if err := os.Remove(localPath); err != nil && !os.IsNotExist(err) {
+					return false, nil, fmt.Errorf("failed to remove %s: %w", relPath, err)
+				}
+				continue
+			}
+			// Remote changed while local deleted: force conflict even if git
+			// merge decides otherwise.
+		}
+
+		// Perform merge
+		result, err := u.gitClient.MergeFile(ctx, baseContent, localContent, remoteContent)
+		if err != nil {
+			return false, nil, fmt.Errorf("failed to merge %s: %w", relPath, err)
+		}
+
+		conflictTriggered := result.HasConflicts
+
+		// Write merged content
+		targetPath := filepath.Join(localDir, relPath)
+		if err := os.MkdirAll(filepath.Dir(targetPath), 0755); err != nil {
+			return false, nil, fmt.Errorf("failed to create directory for %s: %w", relPath, err)
+		}
+		mode, err := pickFileMode(localPath, remotePath, basePath)
+		if err != nil {
+			return false, nil, fmt.Errorf("failed to pick file mode for %s: %w", relPath, err)
+		}
+		if err := os.WriteFile(targetPath, result.Content, mode); err != nil {
+			return false, nil, fmt.Errorf("failed to write %s: %w", relPath, err)
+		}
+
+		// If local deleted but remote changed, ensure we surface a conflict.
+		if baseExists && !localExists && remoteExists && !bytes.Equal(remoteContent, baseContent) {
+			conflictTriggered = true
+		}
+
+		if conflictTriggered {
+			hasConflicts = true
+			conflictFiles = append(conflictFiles, relPath)
+		}
+	}
+
+	return hasConflicts, conflictFiles, nil
+}
+
+func readFileIfExists(path string) ([]byte, bool, error) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+	return content, true, nil
+}
+
+func pickFileMode(localPath, remotePath, basePath string) (os.FileMode, error) {
+	paths := []string{localPath, remotePath, basePath}
+	for _, p := range paths {
+		info, err := os.Stat(p)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return 0, err
+		}
+		return info.Mode(), nil
+	}
+	return 0644, nil
+}

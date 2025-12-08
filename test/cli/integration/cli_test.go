@@ -83,13 +83,14 @@ func TestCLISubcommandSkeletons(t *testing.T) {
 	cliBinary := getCliBinary(t)
 
 	// Only test commands that are still skeleton/not implemented
+	// Note: hook pre-commit, hook commit-msg are now implemented (Phase 4)
 	tests := []struct {
 		args     []string
 		expected string
 	}{
 		{[]string{"fix"}, "not implemented yet"},
 		{[]string{"state"}, "not implemented yet"},
-		{[]string{"hook", "pre-commit"}, "not implemented yet"},
+		{[]string{"hook", "pre-push"}, "not implemented yet"},
 	}
 
 	for _, tt := range tests {
@@ -207,6 +208,133 @@ func TestCLIUnknownCommand(t *testing.T) {
 
 	if err == nil {
 		t.Error("Expected error for unknown command, but got none")
+	}
+}
+
+// TestCLICommitMsgHookAddsDocsVersion tests that commit-msg hook adds docs-version tag.
+func TestCLICommitMsgHookAddsDocsVersion(t *testing.T) {
+	cliBinary := getCliBinary(t)
+
+	// Create temp workspace
+	tempDir := t.TempDir()
+
+	// Initialize git repo
+	runGitCommand(t, tempDir, "init")
+	runGitCommand(t, tempDir, "config", "user.email", "test@example.com")
+	runGitCommand(t, tempDir, "config", "user.name", "Test User")
+
+	// Create docs directory and file
+	docsDir := filepath.Join(tempDir, "docs")
+	if err := os.MkdirAll(docsDir, 0755); err != nil {
+		t.Fatalf("Failed to create docs directory: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(docsDir, "readme.md"), []byte("# Hello"), 0644); err != nil {
+		t.Fatalf("Failed to create docs file: %v", err)
+	}
+
+	// Create .kkachi.json
+	config := `{
+		"server_url": "http://localhost:5789",
+		"workspace_id": "test-workspace",
+		"project": "test-project",
+		"actor_email": "test@example.com",
+		"docs_dir": "docs",
+		"docs_hash_file": ".kkachi_docs_hash"
+	}`
+	if err := os.WriteFile(filepath.Join(tempDir, ".kkachi.json"), []byte(config), 0644); err != nil {
+		t.Fatalf("Failed to create .kkachi.json: %v", err)
+	}
+
+	// Create .kkachi_docs_hash
+	docsHash := "abc123def456789\n"
+	if err := os.WriteFile(filepath.Join(tempDir, ".kkachi_docs_hash"), []byte(docsHash), 0644); err != nil {
+		t.Fatalf("Failed to create .kkachi_docs_hash: %v", err)
+	}
+
+	// Stage docs
+	runGitCommand(t, tempDir, "add", "docs/")
+
+	// Create commit message file
+	msgFile := filepath.Join(tempDir, "COMMIT_EDITMSG")
+	originalMsg := "Add documentation\n\nThis adds initial docs."
+	if err := os.WriteFile(msgFile, []byte(originalMsg), 0644); err != nil {
+		t.Fatalf("Failed to create commit message file: %v", err)
+	}
+
+	// Run commit-msg hook
+	cmd := exec.Command(cliBinary, "hook", "commit-msg", msgFile)
+	cmd.Dir = tempDir
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("commit-msg hook failed: %v\nOutput: %s", err, output)
+	}
+
+	// Verify message was updated
+	content, err := os.ReadFile(msgFile)
+	if err != nil {
+		t.Fatalf("Failed to read message file: %v", err)
+	}
+
+	if !strings.Contains(string(content), "docs-version: abc123def456789") {
+		t.Errorf("Expected message to contain docs-version tag, got:\n%s", content)
+	}
+}
+
+// TestCLICommitMsgHookNoConfigExitsZero tests that commit-msg exits 0 when no config.
+func TestCLICommitMsgHookNoConfigExitsZero(t *testing.T) {
+	cliBinary := getCliBinary(t)
+
+	// Create temp dir without kkachi config
+	tempDir := t.TempDir()
+
+	// Create commit message file
+	msgFile := filepath.Join(tempDir, "COMMIT_EDITMSG")
+	originalMsg := "Some commit message"
+	if err := os.WriteFile(msgFile, []byte(originalMsg), 0644); err != nil {
+		t.Fatalf("Failed to create commit message file: %v", err)
+	}
+
+	// Run commit-msg hook
+	cmd := exec.Command(cliBinary, "hook", "commit-msg", msgFile)
+	cmd.Dir = tempDir
+	output, err := cmd.CombinedOutput()
+
+	// Should exit 0 (not block commit)
+	if err != nil {
+		t.Errorf("Expected exit 0 for commit-msg without config, got error: %v\nOutput: %s", err, output)
+	}
+}
+
+// TestCLIPreCommitHookRequiresConfig tests that pre-commit exits 1 when config is missing.
+func TestCLIPreCommitHookRequiresConfig(t *testing.T) {
+	cliBinary := getCliBinary(t)
+
+	// Run from temp dir without kkachi config
+	tempDir := t.TempDir()
+
+	cmd := exec.Command(cliBinary, "hook", "pre-commit")
+	cmd.Dir = tempDir
+	output, err := cmd.CombinedOutput()
+
+	// Should exit non-zero (block commit)
+	if err == nil {
+		t.Error("Expected pre-commit to fail without config")
+	}
+
+	// Should mention config issue
+	if !strings.Contains(string(output), "config") {
+		t.Errorf("Expected output to mention config issue, got: %s", output)
+	}
+}
+
+// runGitCommand runs a git command in the given directory.
+func runGitCommand(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v failed: %v\nOutput: %s", args, err, output)
 	}
 }
 
