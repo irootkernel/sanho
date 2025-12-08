@@ -77,7 +77,7 @@ HTTP·FS 구현과 e2e는 후속 PR로 나눈다.
 
 - docs 디렉토리
   - `.kkachi.json` 에서 `docs_dir` 값을 읽어 사용하되, 기본값은 `docs`
-  - tar.gz snapshot 생성 시 루트 디렉토리는 항상 `docs/` 로 고정한다.
+  - tar.gz snapshot 은 `.kkachi.json` 의 `docs_dir` 디렉토리 내용을 **루트**로 하는 tar 를 생성하며, 서버는 각 project 에 매핑된 docs repo **루트**에 그대로 적용한다.
 - 충돌 마커 검사 규칙
   - 한 파일 안에 아래 세 토큰이 모두 존재하면 “충돌 마커 존재”로 본다.
     - `<<<<<<<`

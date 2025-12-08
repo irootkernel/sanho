@@ -505,8 +505,8 @@ CLI 는 가능하면 이 값을 자동으로 읽어 사용하며, 없는 경우�
 - `docs_dir`
 - `docs_hash_file`
 
-> 주의: `docs_dir` 는 **로컬 workspace 안에서** docs 를 보관하는 디렉토리 경로이며, 서버와 주고받는 snapshot tar 내부의 루트 디렉토리 이름은 항상 `docs/` 로 고정한다.
-> 즉, 로컬에서 `docs_dir = "docs_kr"` 와 같이 다른 이름을 사용하더라도, snapshot 생성 시에는 해당 디렉토리 내용을 tar 내부 `docs/` 로 매핑하고, 서버는 각 project 에 매핑된 docs repo 의 `docs/` 디렉토리에만 내용을 반영한다.
+> 주의: `docs_dir` 는 **로컬 workspace 안에서** docs 를 보관하는 디렉토리 경로이며, 서버와 주고받는 snapshot tar 내부의 경로들은 항상 **docs repo 루트**를 기준으로 한 상대 경로이다.
+> 즉, 로컬에서 `docs_dir = "docs_kr"` 와 같이 다른 이름을 사용하더라도, snapshot 생성 시에는 해당 디렉토리 내용을 tar 루트(= docs repo 루트) 기준으로 매핑하고, 서버는 각 project 에 매핑된 docs repo **루트 전체를 docs 트리**로 간주해 내용을 반영한다.
 > 아래에서 예시로 사용하는 `git diff --quiet -- docs` 와 같은 명령의 `docs` 부분은 기본값을 가리키는 것이며, 실제 구현에서는 항상 `.kkachi.json` 의 `docs_dir` 설정값을 사용해야 한다.
 
 #### 6.1.2. `.kkachi_docs_hash`

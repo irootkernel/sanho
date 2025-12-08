@@ -21,11 +21,32 @@ func NewSnapshotApplier() *SnapshotApplier {
 }
 
 // Apply extracts a tar.gz snapshot to the target docs directory.
-// The snapshot's internal "docs/" path is remapped to the target docsDir.
+// The snapshot paths are interpreted as relative to the docs repo root and
+// mirrored under the local docsDir beneath targetDir.
 func (s *SnapshotApplier) Apply(snapshot []byte, targetDir, docsDir string) error {
 	if len(snapshot) == 0 {
 		// Empty snapshot, nothing to do
 		return nil
+	}
+
+	// Helper: returns true if the path contains a ".git" segment.
+	// This is a defensive guard to avoid ever creating or modifying Git
+	// metadata directories from snapshots, while allowing other dotfiles
+	// (e.g., ".gitignore", ".github", ".vitepress") to be part of the docs.
+	hasGitSegment := func(p string) bool {
+		// Tar headers always use '/' as the path separator, regardless of
+		// the host OS. We must split on '/' here instead of filepath.Separator
+		// to correctly detect nested segments like "dir/.git/config"
+		// on Windows.
+		for _, segment := range strings.Split(p, "/") {
+			if segment == "" {
+				continue
+			}
+			if segment == ".git" {
+				return true
+			}
+		}
+		return false
 	}
 
 	// Create gzip reader - use bytes.NewReader to handle binary data correctly
@@ -54,16 +75,19 @@ func (s *SnapshotApplier) Apply(snapshot []byte, targetDir, docsDir string) erro
 			return fmt.Errorf("failed to read tar entry: %w", err)
 		}
 
-		// Skip if header name is empty
-		if header.Name == "" {
+		// Skip if header name is empty or refers to the tar root.
+		if header.Name == "" || header.Name == "." {
 			continue
 		}
 
-		// Remap "docs/" prefix to the target docsDir
-		relPath := strings.TrimPrefix(header.Name, "docs/")
+		// Preserve the repository layout relative to the archive root. The
+		// tar snapshot represents the docs repository root, and we mirror that
+		// structure under the workspace docsDir.
+		relPath := header.Name
 
-		// Skip if this results in empty path (the docs/ directory entry itself)
-		if relPath == "" || relPath == "." {
+		// Skip any entries that would touch a ".git" directory to avoid
+		// creating nested Git repositories or modifying Git metadata.
+		if hasGitSegment(relPath) {
 			continue
 		}
 

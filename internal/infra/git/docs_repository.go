@@ -109,9 +109,12 @@ func (r *GitDocsRepository) PushSnapshot(ctx context.Context, project docs.Proje
 		}, nil
 	}
 
-	// 7. Apply snapshot to docs/ directory
-	docsDir := filepath.Join(repoPath, "docs")
-	if err := r.applySnapshot(docsDir, snapshot); err != nil {
+	// 7. Apply snapshot to the docs repository root.
+	// In the current design, the docs repo root is treated as the canonical
+	// docs tree (docs repo 전체 루트가 곧 docs). The snapshot contains paths
+	// relative to this root, and we mirror them into the repository while
+	// leaving Git metadata (e.g., .git) intact.
+	if err := r.applySnapshot(repoPath, snapshot); err != nil {
 		return docs.DocsPushResult{}, fmt.Errorf("apply snapshot failed: %w", err)
 	}
 
@@ -163,23 +166,39 @@ func (r *GitDocsRepository) getRepoConfig(project docs.ProjectName) (config.Docs
 	return repoConfig, nil
 }
 
-// applySnapshot extracts a tar.gz snapshot to the docs directory.
-// It first removes the existing docs directory, then extracts the snapshot.
-func (r *GitDocsRepository) applySnapshot(docsDir string, snapshot docs.DocsSnapshot) error {
-	// Normalize docsDir for path comparison
-	absDocsDir, err := filepath.Abs(docsDir)
+// applySnapshot extracts a tar.gz snapshot into the specified docs root
+// directory. The snapshot paths are interpreted as relative to this root.
+// Existing non-hidden contents under the root are cleared before extraction,
+// but Git metadata such as .git and other dot-directories/files are preserved.
+func (r *GitDocsRepository) applySnapshot(docsRoot string, snapshot docs.DocsSnapshot) error {
+	// Normalize docsRoot for path comparison
+	absDocsRoot, err := filepath.Abs(docsRoot)
 	if err != nil {
-		return fmt.Errorf("failed to get absolute path for docs dir: %w", err)
+		return fmt.Errorf("failed to get absolute path for docs root: %w", err)
 	}
 
-	// Remove existing docs directory
-	if err := os.RemoveAll(docsDir); err != nil {
-		return fmt.Errorf("failed to remove existing docs dir: %w", err)
+	// Ensure docs root exists
+	if err := os.MkdirAll(docsRoot, 0755); err != nil {
+		return fmt.Errorf("failed to create docs root: %w", err)
 	}
 
-	// Create docs directory
-	if err := os.MkdirAll(docsDir, 0755); err != nil {
-		return fmt.Errorf("failed to create docs dir: %w", err)
+	// Clear existing contents under the docs root, but preserve the Git
+	// metadata directory (.git). All other entries, including hidden files
+	// and directories (e.g., .github, .gitignore), are treated as part of
+	// the docs tree and will be fully controlled by incoming snapshots.
+	entries, err := os.ReadDir(docsRoot)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to read docs root: %w", err)
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if name == ".git" {
+			continue
+		}
+		path := filepath.Join(docsRoot, name)
+		if err := os.RemoveAll(path); err != nil {
+			return fmt.Errorf("failed to remove existing path %s: %w", path, err)
+		}
 	}
 
 	// Decompress gzip
@@ -200,18 +219,12 @@ func (r *GitDocsRepository) applySnapshot(docsDir string, snapshot docs.DocsSnap
 			return fmt.Errorf("failed to read tar header: %w", err)
 		}
 
-		// The tar might contain "docs/" prefix, we need to strip it
-		// since we're extracting into the docs directory
 		targetPath := header.Name
-		if strings.HasPrefix(targetPath, "docs/") {
-			targetPath = targetPath[len("docs/"):]
-		}
-
 		if targetPath == "" || targetPath == "." {
 			continue
 		}
 
-		// Security: Validate the target path to prevent path traversal attacks
+		// Security: Validate the target path to prevent path traversal attacks.
 		// 1. Clean the path to normalize it
 		cleanPath := filepath.Clean(targetPath)
 
@@ -220,16 +233,29 @@ func (r *GitDocsRepository) applySnapshot(docsDir string, snapshot docs.DocsSnap
 			return fmt.Errorf("invalid tar entry: absolute path not allowed: %s", header.Name)
 		}
 
-		// 3. Reject paths with ".." as a path segment (not part of filename like "a..b.md")
+		// 3. Reject paths with ".." as a path segment (not part of filename like "a..b.md"),
+		// and skip any entries that would touch the Git metadata directory (.git).
+		// We split on the OS-specific separator so that, after filepath.Clean
+		// normalizes the path (which may rewrite separators on Windows), we
+		// still reliably detect traversal segments.
+		skipEntry := false
 		for _, segment := range strings.Split(cleanPath, string(filepath.Separator)) {
 			if segment == ".." {
 				return fmt.Errorf("invalid tar entry: path traversal not allowed: %s", header.Name)
 			}
+			if segment == ".git" {
+				// Never allow snapshots to create or modify .git contents.
+				skipEntry = true
+				break
+			}
+		}
+		if skipEntry {
+			continue
 		}
 
-		// 4. Compute final path and verify it's under docsDir
-		fullPath := filepath.Join(absDocsDir, cleanPath)
-		if !strings.HasPrefix(fullPath, absDocsDir+string(filepath.Separator)) && fullPath != absDocsDir {
+		// 4. Compute final path and verify it's under docsRoot
+		fullPath := filepath.Join(absDocsRoot, cleanPath)
+		if !strings.HasPrefix(fullPath, absDocsRoot+string(filepath.Separator)) && fullPath != absDocsRoot {
 			return fmt.Errorf("invalid tar entry: path escapes target directory: %s", header.Name)
 		}
 

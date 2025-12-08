@@ -695,12 +695,12 @@ Phase 0에서는 이후 기능별 구현을 위한 최소한의 프로젝트 뼈
     - F1에서 정의한 `repoPath map[ProjectName]string`을 사용해 project별 repoPath를 선택한 뒤, `GitClient.ArchiveDocs`를 호출한다.
 - Scope
   - 포함
-    - `docs/` 디렉토리만 포함한 tar.gz
+    - docs repo **루트 전체**를 포함한 tar.gz (코드·설정·문서 등)
   - 제외
-    - 전체 docs repo snapshot(코드 등 다른 디렉토리 포함)
+    - tar 내부 루트를 `docs/` 로 강제하는 이전 규약
 - 주의할 점
-  - snapshot tar 내부의 루트 디렉토리 이름은 항상 `docs/` 로 고정하며, Requirement 6.1.1 에서 정의한 것처럼
-    로컬 workspace 의 `docs_dir` 값과 관계 없이 서버는 각 project 에 매핑된 docs repo 의 `docs/` 디렉토리에만 내용을 반영한다.
+  - snapshot tar 의 경로들은 항상 docs repo 루트를 기준으로 한 상대 경로이며, Requirement 6.1.1 에서 정의한 것처럼
+    로컬 workspace 의 `docs_dir` 값과 관계 없이 서버는 각 project 에 매핑된 docs repo **루트 전체를 docs 트리**로 간주해 내용을 반영한다.
   - v1에서는 대용량 docs에 대한 성능/메모리 최적화는 과도하게 고려하지 않는다.
   - `commit` 파라미터가 docs repo 에 존재하지 않는 commit 을 가리키는 경우, Requirement §6.3.3 의 규약에 따라 **HTTP 400 Bad Request** 와 `{"error": "unknown_docs_commit"}` 형식의 에러 JSON 을 반환한다. 이 에러는 도메인 레벨에서 별도 에러 타입(예: `ErrUnknownDocsCommit`) 으로 표현하고, HTTP handler 에서 일관되게 매핑한다.
 - 필수 테스트

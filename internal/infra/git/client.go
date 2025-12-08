@@ -95,7 +95,12 @@ func (c *Client) ArchiveDocs(ctx context.Context, path string, commit string) ([
 	var buf bytes.Buffer
 	gw := gzip.NewWriter(&buf)
 
-	cmd := exec.CommandContext(ctx, "git", "-C", path, "archive", "--format=tar", commit, "docs/")
+	// Archive the entire repository at the given commit. We intentionally do
+	// not restrict this to a specific subdirectory so that the docs snapshot
+	// can reflect the full docs repo layout. Consumers (CLI) are responsible
+	// for mapping the archive root into their local docs directory and
+	// ignoring files they don't need (e.g., dotfiles).
+	cmd := exec.CommandContext(ctx, "git", "-C", path, "archive", "--format=tar", commit)
 	cmd.Stdout = gw
 
 	var stderr bytes.Buffer
@@ -176,11 +181,13 @@ func (c *Client) DiffStagedIsEmpty(ctx context.Context, path string) (bool, erro
 	return true, nil
 }
 
-// AddDocs stages all changes in the docs directory.
+// AddDocs stages all relevant changes in the docs repository.
+// In the current design, the docs repo root is treated as the docs tree,
+// so we stage all changes under the repository path.
 func (c *Client) AddDocs(ctx context.Context, path string) error {
-	cmd := exec.CommandContext(ctx, "git", "-C", path, "add", "docs/")
+	cmd := exec.CommandContext(ctx, "git", "-C", path, "add", ".")
 	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("git add docs/ failed: %w\n%s", err, string(output))
+		return fmt.Errorf("git add . failed: %w\n%s", err, string(output))
 	}
 	return nil
 }

@@ -280,7 +280,7 @@ func createSnapshotE2E(t *testing.T, files map[string]string) []byte {
 
 	for name, content := range files {
 		hdr := &tar.Header{
-			Name: "docs/" + name,
+			Name: name,
 			Mode: 0644,
 			Size: int64(len(content)),
 		}

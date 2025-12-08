@@ -23,15 +23,15 @@ func TestApplySnapshot_PathTraversal(t *testing.T) {
 		{
 			name: "Normal filename with dots allowed",
 			files: map[string]string{
-				"docs/a..b.md":     "content",
-				"docs/file...name": "content",
+				"a..b.md":     "content",
+				"file...name": "content",
 			},
 			wantErr: false,
 		},
 		{
 			name: "Path traversal with .. rejected",
 			files: map[string]string{
-				"docs/../evil.txt": "malicious",
+				"../evil.txt": "malicious",
 			},
 			wantErr:   true,
 			errSubstr: "path traversal not allowed",
@@ -39,7 +39,7 @@ func TestApplySnapshot_PathTraversal(t *testing.T) {
 		{
 			name: "Nested path traversal rejected",
 			files: map[string]string{
-				"docs/subdir/../../evil.txt": "malicious",
+				"subdir/../../evil.txt": "malicious",
 			},
 			wantErr:   true,
 			errSubstr: "path traversal not allowed",
@@ -55,9 +55,9 @@ func TestApplySnapshot_PathTraversal(t *testing.T) {
 		{
 			name: "Normal nested paths allowed",
 			files: map[string]string{
-				"docs/subdir/file.md":   "content",
-				"docs/a/b/c/deep.md":    "content",
-				"docs/readme..final.md": "content",
+				"subdir/file.md":   "content",
+				"a/b/c/deep.md":    "content",
+				"readme..final.md": "content",
 			},
 			wantErr: false,
 		},
@@ -118,4 +118,49 @@ func createTestSnapshot(t *testing.T, files map[string]string) docs.DocsSnapshot
 	gw.Close()
 
 	return docs.DocsSnapshot(buf.Bytes())
+}
+
+func TestApplySnapshot_SkipsGitDirEntries(t *testing.T) {
+	repo := &GitDocsRepository{}
+
+	tempDir, err := os.MkdirTemp("", "apply-snapshot-git-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	docsRoot := tempDir
+
+	// Prepare an existing .git/config that must not be modified by snapshots.
+	gitDir := filepath.Join(docsRoot, ".git")
+	if err := os.MkdirAll(gitDir, 0755); err != nil {
+		t.Fatalf("failed to create .git dir: %v", err)
+	}
+	gitConfigPath := filepath.Join(gitDir, "config")
+	if err := os.WriteFile(gitConfigPath, []byte("original"), 0644); err != nil {
+		t.Fatalf("failed to write initial git config: %v", err)
+	}
+
+	snapshot := createTestSnapshot(t, map[string]string{
+		".git/config": "malicious",
+		"file.md":     "content",
+	})
+
+	if err := repo.applySnapshot(docsRoot, snapshot); err != nil {
+		t.Fatalf("applySnapshot returned error: %v", err)
+	}
+
+	// .git/config must remain unchanged.
+	data, err := os.ReadFile(gitConfigPath)
+	if err != nil {
+		t.Fatalf("failed to read git config after snapshot: %v", err)
+	}
+	if string(data) != "original" {
+		t.Errorf("expected .git/config to remain unchanged, got %q", string(data))
+	}
+
+	// Normal files should still be written.
+	if _, err := os.Stat(filepath.Join(docsRoot, "file.md")); err != nil {
+		t.Errorf("expected file.md to be created, got error: %v", err)
+	}
 }
