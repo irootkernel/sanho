@@ -25,10 +25,10 @@ func TestE2ECLI_InitReuseWithExistingDocs(t *testing.T) {
 	runCmd(t, wsDir, "git", "remote", "add", "origin", originPath)
 
 	// Seed docs content matching the docs repo HEAD and commit with docs-version tag.
-	if err := os.MkdirAll(filepath.Join(wsDir, "docs"), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Join(wsDir, "docs", "docs"), 0755); err != nil {
 		t.Fatalf("mkdir docs: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(wsDir, "docs", "index.md"), []byte("# reuse init\n"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(wsDir, "docs", "docs", "index.md"), []byte("# reuse init\n"), 0644); err != nil {
 		t.Fatalf("write docs: %v", err)
 	}
 	runCmd(t, wsDir, "git", "add", ".")
@@ -71,10 +71,10 @@ func TestE2ECLI_InitFailsOnLegacyDocsWithoutDocsVersion(t *testing.T) {
 	initGitRepo(t, wsDir)
 	setGitUser(t, wsDir, "legacy@example.com")
 
-	if err := os.MkdirAll(filepath.Join(wsDir, "docs"), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Join(wsDir, "docs", "docs"), 0755); err != nil {
 		t.Fatalf("mkdir docs: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(wsDir, "docs", "index.md"), []byte("# legacy docs\n"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(wsDir, "docs", "docs", "index.md"), []byte("# legacy docs\n"), 0644); err != nil {
 		t.Fatalf("write docs: %v", err)
 	}
 	runCmd(t, wsDir, "git", "add", ".")
@@ -103,17 +103,17 @@ func TestE2ECLI_InitFailsWhenDocsDirty(t *testing.T) {
 	initGitRepo(t, wsDir)
 	setGitUser(t, wsDir, "dirty@example.com")
 
-	if err := os.MkdirAll(filepath.Join(wsDir, "docs"), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Join(wsDir, "docs", "docs"), 0755); err != nil {
 		t.Fatalf("mkdir docs: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(wsDir, "docs", "index.md"), []byte("# dirty docs\n"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(wsDir, "docs", "docs", "index.md"), []byte("# dirty docs\n"), 0644); err != nil {
 		t.Fatalf("write docs: %v", err)
 	}
 	runCmd(t, wsDir, "git", "add", ".")
 	runCmd(t, wsDir, "git", "commit", "-m", "with tag\n\ndocs-version: deadbeef")
 
 	// Make docs dirty (unstaged change)
-	if err := os.WriteFile(filepath.Join(wsDir, "docs", "index.md"), []byte("# dirty docs\nchanged\n"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(wsDir, "docs", "docs", "index.md"), []byte("# dirty docs\nchanged\n"), 0644); err != nil {
 		t.Fatalf("modify docs: %v", err)
 	}
 

@@ -47,10 +47,10 @@ func TestE2ECLI_TwoWorkspacesSequentialPush(t *testing.T) {
 	// Prepare local state for ws1 to push via HTTP
 	writeConfig(t, wsDir1, serverURL, project, ws1ID, "ws1@example.com")
 	writeDocsHash(t, wsDir1, head1)
-	if err := os.MkdirAll(filepath.Join(wsDir1, "docs"), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Join(wsDir1, "docs", "docs"), 0755); err != nil {
 		t.Fatalf("mkdir docs: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(wsDir1, "docs", "index.md"), []byte("# updated by ws1\n"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(wsDir1, "docs", "docs", "index.md"), []byte("# updated by ws1\n"), 0644); err != nil {
 		t.Fatalf("write docs: %v", err)
 	}
 

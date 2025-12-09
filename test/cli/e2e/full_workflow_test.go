@@ -100,7 +100,7 @@ func TestE2ECLI_FixWorkflow(t *testing.T) {
 	writePendingFix(t, workspaceDir, currentHead, currentHead)
 
 	// Update docs content
-	docsDir := filepath.Join(workspaceDir, "docs")
+	docsDir := filepath.Join(workspaceDir, "docs", "docs")
 	if err := os.MkdirAll(docsDir, 0755); err != nil {
 		t.Fatalf("mkdir docs: %v", err)
 	}

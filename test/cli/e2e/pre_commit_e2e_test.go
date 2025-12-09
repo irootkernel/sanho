@@ -37,14 +37,14 @@ func TestE2ECLI_PreCommitOutdatedCreatesPendingFix(t *testing.T) {
 	writeDocsHash(t, workspaceDir, currentHead)
 
 	// Local change: modify docs/index.md and stage it
-	docsDir := filepath.Join(workspaceDir, "docs")
+	docsDir := filepath.Join(workspaceDir, "docs", "docs")
 	if err := os.MkdirAll(docsDir, 0755); err != nil {
 		t.Fatalf("mkdir docs: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(docsDir, "index.md"), []byte("# local change\n"), 0644); err != nil {
 		t.Fatalf("write local docs: %v", err)
 	}
-	runCmd(t, workspaceDir, "git", "add", "docs/index.md")
+	runCmd(t, workspaceDir, "git", "add", "docs/docs/index.md")
 
 	// Advance server HEAD by pushing new snapshot via HTTP (simulating another workspace)
 	remoteHead := pushDocsViaHTTP(t, serverURL, wsID, currentHead, map[string]string{

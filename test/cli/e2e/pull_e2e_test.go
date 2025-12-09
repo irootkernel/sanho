@@ -39,7 +39,7 @@ func TestE2ECLI_PullAlreadyUpToDate(t *testing.T) {
 	writeDocsHash(t, workspaceDir, currentHead)
 
 	// Create docs directory (matching server content)
-	docsDir := filepath.Join(workspaceDir, "docs")
+	docsDir := filepath.Join(workspaceDir, "docs", "docs")
 	if err := os.MkdirAll(docsDir, 0755); err != nil {
 		t.Fatalf("mkdir docs: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestE2ECLI_PullOutdated(t *testing.T) {
 	writeDocsHash(t, workspaceDir, currentHead)
 
 	// Create local docs directory
-	docsDir := filepath.Join(workspaceDir, "docs")
+	docsDir := filepath.Join(workspaceDir, "docs", "docs")
 	if err := os.MkdirAll(docsDir, 0755); err != nil {
 		t.Fatalf("mkdir docs: %v", err)
 	}
@@ -184,7 +184,7 @@ func TestE2ECLI_PullBlockedByPendingFix(t *testing.T) {
 	writePendingFix(t, workspaceDir, currentHead, currentHead)
 
 	// Create docs directory
-	docsDir := filepath.Join(workspaceDir, "docs")
+	docsDir := filepath.Join(workspaceDir, "docs", "docs")
 	if err := os.MkdirAll(docsDir, 0755); err != nil {
 		t.Fatalf("mkdir docs: %v", err)
 	}
@@ -237,7 +237,7 @@ func TestE2ECLI_PullForce(t *testing.T) {
 	writeDocsHash(t, workspaceDir, currentHead)
 
 	// Create local docs with modifications
-	docsDir := filepath.Join(workspaceDir, "docs")
+	docsDir := filepath.Join(workspaceDir, "docs", "docs")
 	if err := os.MkdirAll(docsDir, 0755); err != nil {
 		t.Fatalf("mkdir docs: %v", err)
 	}
@@ -334,7 +334,7 @@ func TestE2ECLI_PullBlockedByUntrackedFiles(t *testing.T) {
 	writeDocsHash(t, workspaceDir, currentHead)
 
 	// Create docs directory with tracked file
-	docsDir := filepath.Join(workspaceDir, "docs")
+	docsDir := filepath.Join(workspaceDir, "docs", "docs")
 	if err := os.MkdirAll(docsDir, 0755); err != nil {
 		t.Fatalf("mkdir docs: %v", err)
 	}

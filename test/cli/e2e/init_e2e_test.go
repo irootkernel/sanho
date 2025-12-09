@@ -54,7 +54,7 @@ func TestE2ECLI_InitWorkflow(t *testing.T) {
 	}
 
 	// Docs directory should have content from server snapshot
-	body, err := os.ReadFile(filepath.Join(workspaceDir, "docs", "index.md"))
+	body, err := os.ReadFile(filepath.Join(workspaceDir, "docs", "docs", "index.md"))
 	if err != nil {
 		t.Fatalf("read docs/index.md: %v", err)
 	}

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 )
@@ -75,23 +76,13 @@ func (s *SnapshotApplier) Apply(snapshot []byte, targetDir, docsDir string) erro
 			return fmt.Errorf("failed to read tar entry: %w", err)
 		}
 
-		// Normalize header path and drop any redundant docs prefix so we don't
-		// create nested docs/docs when snapshots already include it.
+		// Normalize header path. Keep the original tree (including any leading
+		// docs/ prefix in the snapshot) so that nested layouts are preserved
+		// under the target docsDir.
 		relPath := strings.TrimPrefix(header.Name, "./")
+		relPath = path.Clean(relPath)
 		if relPath == "" || relPath == "." {
 			continue
-		}
-		if docsDir != "" {
-			if relPath == docsDir {
-				// Skip the root docsDir entry.
-				continue
-			}
-			if strings.HasPrefix(relPath, docsDir+"/") {
-				relPath = strings.TrimPrefix(relPath, docsDir+"/")
-				if relPath == "" {
-					continue
-				}
-			}
 		}
 
 		// Skip any entries that would touch a ".git" directory to avoid
@@ -100,7 +91,7 @@ func (s *SnapshotApplier) Apply(snapshot []byte, targetDir, docsDir string) erro
 			continue
 		}
 
-		targetPath := filepath.Join(targetDocsPath, relPath)
+		targetPath := filepath.Join(targetDocsPath, filepath.FromSlash(relPath))
 
 		// Security check: ensure path is within target directory using filepath.Rel
 		// This properly handles ".." traversal attacks that simple prefix check misses
