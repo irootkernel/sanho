@@ -1,7 +1,7 @@
 # Kkachi 🐦
 
 Git 기반 프로젝트 여러 개가 하나의 문서 저장소를 공유할 때,  
-Kkachi는 개발자가 `git subtree`나 `git worktree`, 서브모듈 없이도 **문서 원본을 중앙에서 안전하게 관리**할 수 있게 해 주는 도구입니다.
+Kkachi는 개발자가 `subtree`나 `submodule` 없이도 **문서 원본을 중앙에서 안전하게 관리**할 수 있게 해 주는 도구입니다.
 
 하나의 중앙 docs repository를 기준으로, 각 애플리케이션 저장소의 `docs/` 디렉토리를 자동으로 동기화하고 상태를 보여 주는 **서버 + CLI** 조합입니다.
 
@@ -72,7 +72,7 @@ Kkachi를 도입하면 다음과 같은 점이 좋아집니다.
   - `git clone`, `git pull`, `git commit`, `git push` 흐름을 유지하면서,
   - 문서 동기화와 상태 확인만 Kkachi가 자동으로 도와줍니다.
 - **복잡한 Git 기능을 배우지 않아도 됩니다.**
-  - 문서 공유를 위해 subtree/worktree/서브모듈을 설정할 필요가 없습니다.
+  - 문서 공유를 위해 `subtree`나 `submodule`을 설정할 필요가 없습니다.
 - **충돌은 사람이 해결하되, 발견과 흐름 관리는 도구가 담당**합니다.
   - Kkachi는 outdated 상황을 감지하고 3-way merge까지 수행하지만,
   - 실제 conflict marker를 제거하고 내용을 정리하는 작업은 개발자가 직접 수행합니다.
@@ -225,4 +225,3 @@ git push origin main
 - CLI 설계 및 구현 계획: `docs/client-roadmap.md`
 
 Kkachi의 내부 구조나 프로토콜을 더 깊이 이해하고 싶다면 위 문서들부터 읽는 것을 권장합니다.
-

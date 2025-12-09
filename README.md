@@ -2,7 +2,7 @@
 
 > [🇰🇷 한글](https://github.com/SeventeenthEarth/kkachi/blob/main/docs/readme/kor.md)
 
-Kkachi is a **central documentation coordination system** that keeps a single docs repository in sync with the `docs/` directories spread across multiple Git application repositories – without using submodules, `git subtree`, or `git worktree`.
+Kkachi is a **central documentation coordination system** that keeps a single docs repository in sync with the `docs/` directories spread across multiple Git application repositories – without relying on `submodules` or `subtree`.
 
 It consists of a server and a CLI that work together to ensure all participating workspaces share a consistent view of documentation while keeping developers on familiar Git workflows.
 
@@ -14,7 +14,7 @@ Kkachi is designed for teams that:
 
 - Have multiple Git repositories (backend, frontend, mobile, admin, etc.) sharing **one logical documentation set**.
 - Want the **canonical source of truth** for docs to live in a dedicated docs repository.
-- Prefer not to introduce `subtree`, `worktree`, or submodules just to share documentation.
+- Prefer not to introduce `submodules` or `subtree` just to share documentation.
 - Want a repeatable, tool-enforced way to detect outdated docs and avoid silent divergence between repos.
 
 Kkachi is composed of two main components:
@@ -74,7 +74,7 @@ With Kkachi in place:
   - You keep using `git clone`, `git pull`, `git commit`, `git push`.
   - Kkachi adds synchronization and status checks around those flows.
 - **No extra Git plumbing to learn.**
-  - You don’t need subtree/worktree/submodules just to share docs.
+  - You don’t need submod`ules or `git subtree` just to share docs.
 - **Conflicts are detected early and surfaced clearly.**
   - Kkachi detects outdated bases and performs 3-way merges.
   - Humans still resolve the actual conflict markers, but the tool manages the lifecycle and state.
