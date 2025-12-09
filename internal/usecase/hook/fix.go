@@ -185,7 +185,7 @@ func (u *FixUseCase) Execute(ctx context.Context, workDir string) error {
 	if actorEmail == "" {
 		gitEmail, err := u.gitClient.GetUserEmail(ctx, workDir)
 		if err != nil {
-			return fmt.Errorf("failed to read git user.email: %w", err)
+			u.output.Warning(fmt.Sprintf("Failed to read git user.email: %v", err))
 		} else if gitEmail != "" {
 			actorEmail = strings.TrimSpace(gitEmail)
 			if actorEmail != "" {

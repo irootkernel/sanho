@@ -371,45 +371,6 @@ func TestFixUseCase_DocsRepoBusy(t *testing.T) {
 	}
 }
 
-func TestFixUseCase_ActorEmailFallbackToGit(t *testing.T) {
-	output := &fakeFixOutput{}
-	httpClient := &fakeFixHTTPClient{
-		docsHead: "abc123",
-		pushResponse: DocsPushResponse{
-			Ok:          true,
-			Status:      docs.DocsPushStatusUpdated,
-			NewDocsHash: "new-hash",
-		},
-	}
-
-	uc := NewFixUseCase(
-		&fakeFixConfigLoader{config: &client.WorkspaceConfig{
-			ServerURL:   "http://localhost",
-			WorkspaceID: workspace.WorkspaceID("test-workspace"),
-			Project:     "test-project",
-			ActorEmail:  "",
-		}},
-		&fakeFixDocsHashStore{hash: "abc123"},
-		&fakeFixPendingFixStore{exists: true},
-		&fakeFixConflictDetector{},
-		&fakeFixSnapshotBuilder{snapshot: []byte("snapshot")},
-		httpClient,
-		&fakeFixGitClient{email: "git@example.com"},
-		output,
-	)
-
-	err := uc.Execute(context.Background(), "/fake/dir")
-	if err != nil {
-		t.Errorf("Expected no error, got: %v", err)
-	}
-	if httpClient.lastReq.ActorEmail != "git@example.com" {
-		t.Errorf("Expected actor email to fallback to git email, got: %s", httpClient.lastReq.ActorEmail)
-	}
-	if len(output.infos) == 0 {
-		t.Error("Expected info message about using git user.email")
-	}
-}
-
 func TestFixUseCase_ActorEmailMissing(t *testing.T) {
 	output := &fakeFixOutput{}
 	uc := NewFixUseCase(

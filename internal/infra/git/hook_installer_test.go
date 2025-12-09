@@ -71,4 +71,3 @@ func TestHookInstaller_InstallHook_FromRootAndSubdir(t *testing.T) {
 		t.Fatalf("hook file lost expected line %q after subdir install, got:\n%s", hookLine, string(data))
 	}
 }
-

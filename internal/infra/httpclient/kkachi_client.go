@@ -437,14 +437,14 @@ func (c *HTTPClient) checkError(resp *http.Response) error {
 	}
 	if json.Unmarshal(body, &errResp) == nil && errResp.Error != "" {
 		switch errResp.Error {
-	case "unknown_project":
-		return ErrUnknownProject
-	case "unknown_workspace", "workspace_not_found":
-		return ErrUnknownWorkspace
-	case "unknown_docs_commit":
-		return ErrUnknownDocsCommit
-	case "docs_repo_busy":
-		return ErrDocsRepoBusy
+		case "unknown_project":
+			return ErrUnknownProject
+		case "unknown_workspace", "workspace_not_found":
+			return ErrUnknownWorkspace
+		case "unknown_docs_commit":
+			return ErrUnknownDocsCommit
+		case "docs_repo_busy":
+			return ErrDocsRepoBusy
 		case "project_has_workspaces":
 			return ErrProjectHasWorkspaces
 		default:
