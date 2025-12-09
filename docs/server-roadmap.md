@@ -969,7 +969,7 @@ snapshot을 기반으로 새 docs repo commit을 만들고 main 브랜치에 pus
     - project 별 HEAD + workspace 리스트
   - 제외
     - paging, filter, sort 등 고급 기능
--- 주의할 점
+- 주의할 점
   - 내부 운영/디버그용이므로, 외부 API처럼 강한 backward compatibility를 강요하지 않는다.
 - 필수 테스트
   - Integration
@@ -1015,3 +1015,21 @@ snapshot을 기반으로 새 docs repo commit을 만들고 main 브랜치에 pus
     - 상태 파일에 여러 workspace 저장 후 List가 동일한 수와 데이터를 반환하는지 확인
   - E2E
     - 서버에서 `/workspaces/register` 를 여러 번 호출한 뒤 `/state` 응답이 이를 반영하는지 확인
+
+---
+
+## 9. Phase 6 – `kkachi clean` 대응 (workspace 해제 강건화)
+
+- 목표  
+  CLI의 `kkachi clean`이 서버 workspace 등록을 안전하게 해제할 수 있도록, `DELETE /workspaces/{workspace_id}`(S4) 동작을 재점검하고 idempotent 하게 유지한다.
+
+- 구현/동작 포인트
+  - 기존 S4 endpoint를 재사용하되, 동일 workspace에 대한 반복 삭제를 허용한다.
+  - 존재하지 않는 workspace일 때는 **404 + `{"error": "unknown_workspace"}`**를 반환하되, 서버 state에 부정합이 없도록 한다. (CLI는 경고 후 계속 진행할 수 있어야 함.)
+  - 삭제 시 해당 workspace 엔트리만 제거하고, docs repo clone이나 다른 workspace state에는 영향을 주지 않는다.
+  - 상태 파일 flush까지 완료된 것을 성공 조건으로 삼는다.
+
+- 테스트
+  - workspace 등록 후 삭제 → state에서 사라지는지 확인.
+  - 동일 workspace를 두 번 삭제 → 두 번째는 404 `unknown_workspace`.
+  - 다른 project/workspace state가 영향을 받지 않는지 검증.

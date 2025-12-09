@@ -7,7 +7,7 @@ import (
 	"github.com/SeventeenthEarth/kkachi/internal/infra/state"
 )
 
-var ErrWorkspaceNotFound = errors.New("workspace_not_found")
+var ErrUnknownWorkspace = errors.New("unknown_workspace")
 
 type DeleteWorkspaceUseCase struct {
 	stateRepo *state.FileStateRepository
@@ -20,7 +20,7 @@ func NewDeleteWorkspaceUseCase(stateRepo *state.FileStateRepository) *DeleteWork
 func (uc *DeleteWorkspaceUseCase) Execute(id string) error {
 	err := uc.stateRepo.DeleteWorkspace(id)
 	if errors.Is(err, os.ErrNotExist) {
-		return ErrWorkspaceNotFound
+		return ErrUnknownWorkspace
 	}
 	return err
 }

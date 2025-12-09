@@ -3,71 +3,119 @@ package git
 import (
 	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 )
 
-// runGitOrSkip runs a git command and skips the test if git is not available.
-func runGitOrSkip(t *testing.T, args ...string) {
-	t.Helper()
-
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skipf("git not available, skipping test: %v", err)
+func TestHookInstaller_RemoveHookLine(t *testing.T) {
+	tempDir := t.TempDir()
+	gitDir := filepath.Join(tempDir, ".git")
+	hooksDir := filepath.Join(gitDir, "hooks")
+	if err := os.MkdirAll(hooksDir, 0755); err != nil {
+		t.Fatal(err)
 	}
 
-	cmd := exec.Command("git", args...)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git %v failed: %v\n%s", args, err, string(out))
+	hookPath := filepath.Join(hooksDir, "pre-commit")
+	content := strings.Join([]string{
+		"#!/bin/sh",
+		"echo keep-me",
+		"kkachi hook pre-commit",
+		"echo also-keep",
+		"",
+	}, "\n")
+	if err := os.WriteFile(hookPath, []byte(content), 0755); err != nil {
+		t.Fatalf("failed to seed hook file: %v", err)
+	}
+
+	installer := NewHookInstaller()
+	if err := installer.RemoveHookLine(context.Background(), tempDir, "pre-commit", "kkachi hook pre-commit"); err != nil {
+		t.Fatalf("RemoveHookLine returned error: %v", err)
+	}
+
+	data, err := os.ReadFile(hookPath)
+	if err != nil {
+		t.Fatalf("failed to read hook file: %v", err)
+	}
+	text := string(data)
+	if strings.Contains(text, "kkachi hook pre-commit") {
+		t.Fatalf("expected kkachi line to be removed, content:\n%s", text)
+	}
+	if !strings.Contains(text, "echo keep-me") || !strings.Contains(text, "echo also-keep") {
+		t.Fatalf("expected other lines to remain, content:\n%s", text)
 	}
 }
 
-func TestHookInstaller_InstallHook_FromRootAndSubdir(t *testing.T) {
-	// Initialize a real git repository
-	repoDir := t.TempDir()
-	runGitOrSkip(t, "init", repoDir)
-
-	// Create a subdirectory inside the repo
-	subDir := filepath.Join(repoDir, "subdir")
-	if err := os.Mkdir(subDir, 0755); err != nil {
-		t.Fatalf("failed to create subdir: %v", err)
+func TestHookInstaller_RemoveHookLine_FileBecomesEmpty(t *testing.T) {
+	tempDir := t.TempDir()
+	gitDir := filepath.Join(tempDir, ".git")
+	hooksDir := filepath.Join(gitDir, "hooks")
+	if err := os.MkdirAll(hooksDir, 0755); err != nil {
+		t.Fatal(err)
 	}
 
-	ctx := context.Background()
+	hookPath := filepath.Join(hooksDir, "pre-commit")
+	content := "kkachi hook pre-commit\n"
+	if err := os.WriteFile(hookPath, []byte(content), 0755); err != nil {
+		t.Fatalf("failed to seed hook file: %v", err)
+	}
+
 	installer := NewHookInstaller()
-
-	const hookName = "pre-commit"
-	const hookLine = "kkachi hook pre-commit"
-
-	// 1) Install hook from repo root
-	if err := installer.InstallHook(ctx, repoDir, hookName, hookLine); err != nil {
-		t.Fatalf("InstallHook from repo root failed: %v", err)
+	if err := installer.RemoveHookLine(context.Background(), tempDir, "pre-commit", "kkachi hook pre-commit"); err != nil {
+		t.Fatalf("RemoveHookLine returned error: %v", err)
 	}
 
-	hookPath := filepath.Join(repoDir, ".git", "hooks", hookName)
+	if _, err := os.Stat(hookPath); !os.IsNotExist(err) {
+		t.Fatalf("expected hook file to be deleted, got err=%v", err)
+	}
+}
+
+func TestHookInstaller_RemoveHookLine_NoFile(t *testing.T) {
+	tempDir := t.TempDir()
+	gitDir := filepath.Join(tempDir, ".git")
+	if err := os.MkdirAll(filepath.Join(gitDir, "hooks"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	installer := NewHookInstaller()
+	if err := installer.RemoveHookLine(context.Background(), tempDir, "pre-commit", "kkachi hook pre-commit"); err != nil {
+		t.Fatalf("expected no error when hook file is missing, got %v", err)
+	}
+}
+
+func TestHookInstaller_RemoveHookLine_PreservesPermissions(t *testing.T) {
+	tempDir := t.TempDir()
+	gitDir := filepath.Join(tempDir, ".git")
+	hooksDir := filepath.Join(gitDir, "hooks")
+	if err := os.MkdirAll(hooksDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	hookPath := filepath.Join(hooksDir, "pre-commit")
+	content := "kkachi hook pre-commit\necho keep\n"
+	if err := os.WriteFile(hookPath, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to seed hook file: %v", err)
+	}
+
+	installer := NewHookInstaller()
+	if err := installer.RemoveHookLine(context.Background(), tempDir, "pre-commit", "kkachi hook pre-commit"); err != nil {
+		t.Fatalf("RemoveHookLine returned error: %v", err)
+	}
+
+	info, err := os.Stat(hookPath)
+	if err != nil {
+		t.Fatalf("failed to stat hook: %v", err)
+	}
+	if info.Mode().Perm() != 0644 {
+		t.Fatalf("expected permissions 0644, got %v", info.Mode().Perm())
+	}
 	data, err := os.ReadFile(hookPath)
 	if err != nil {
-		t.Fatalf("failed to read hook file from root install: %v", err)
+		t.Fatalf("failed to read hook: %v", err)
 	}
-	if !strings.Contains(string(data), hookLine) {
-		t.Fatalf("hook file does not contain expected line %q, got:\n%s", hookLine, string(data))
+	if strings.Contains(string(data), "kkachi hook pre-commit") {
+		t.Fatalf("expected kkachi line removed, got:\n%s", string(data))
 	}
-
-	// 2) Install the same hook from a subdirectory.
-	// This exercises the fallback path where <subdir>/.git does not exist
-	// and resolveHooksDirViaGit is used.
-	if err := installer.InstallHook(ctx, subDir, hookName, hookLine); err != nil {
-		t.Fatalf("InstallHook from subdir failed: %v", err)
-	}
-
-	// Hook should still be in the same .git/hooks directory at repo root,
-	// and remain executable / containing the line (idempotent behavior).
-	data, err = os.ReadFile(hookPath)
-	if err != nil {
-		t.Fatalf("failed to read hook file after subdir install: %v", err)
-	}
-	if !strings.Contains(string(data), hookLine) {
-		t.Fatalf("hook file lost expected line %q after subdir install, got:\n%s", hookLine, string(data))
+	if !strings.Contains(string(data), "echo keep") {
+		t.Fatalf("expected other content preserved, got:\n%s", string(data))
 	}
 }

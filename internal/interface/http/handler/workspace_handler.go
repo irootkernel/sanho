@@ -73,9 +73,9 @@ func (h *WorkspaceHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.deleteUC.Execute(id); err != nil {
 		w.Header().Set("Content-Type", "application/json")
-		if err == workspace.ErrWorkspaceNotFound {
+		if err == workspace.ErrUnknownWorkspace {
 			w.WriteHeader(http.StatusNotFound)
-			json.NewEncoder(w).Encode(map[string]string{"error": "workspace_not_found"})
+			json.NewEncoder(w).Encode(map[string]string{"error": "unknown_workspace"})
 			return
 		}
 		w.WriteHeader(http.StatusInternalServerError)

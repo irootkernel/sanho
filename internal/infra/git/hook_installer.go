@@ -156,3 +156,70 @@ func (h *HookInstaller) InstallAllHooks(ctx context.Context, repoPath string) er
 
 	return nil
 }
+
+// RemoveHookLine removes a specific kkachi hook line from the given hook script.
+// If the hook file does not exist or the line is not present, it returns nil.
+// If the hook file becomes empty after removal, it deletes the file.
+func (h *HookInstaller) RemoveHookLine(ctx context.Context, repoPath, hookName, line string) error {
+	hooksDir, err := h.resolveHooksDir(ctx, repoPath)
+	if err != nil {
+		return fmt.Errorf("failed to resolve hooks directory: %w", err)
+	}
+
+	hookPath := filepath.Join(hooksDir, hookName)
+	info, err := os.Stat(hookPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("failed to stat hook file: %w", err)
+	}
+
+	data, err := os.ReadFile(hookPath)
+	if err != nil {
+		return fmt.Errorf("failed to read hook file: %w", err)
+	}
+	perm := info.Mode().Perm()
+
+	lines := strings.Split(string(data), "\n")
+	filtered := make([]string, 0, len(lines))
+	removed := false
+	for _, l := range lines {
+		if strings.TrimSpace(l) == strings.TrimSpace(line) {
+			removed = true
+			continue
+		}
+		filtered = append(filtered, l)
+	}
+
+	if !removed {
+		return nil
+	}
+
+	// Trim trailing empty lines
+	for len(filtered) > 0 && strings.TrimSpace(filtered[len(filtered)-1]) == "" {
+		filtered = filtered[:len(filtered)-1]
+	}
+
+	// If nothing remains, delete the hook file.
+	if len(filtered) == 0 {
+		if err := os.Remove(hookPath); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("failed to remove empty hook file: %w", err)
+		}
+		return nil
+	}
+
+	content := strings.Join(filtered, "\n")
+	if !strings.HasSuffix(content, "\n") {
+		content += "\n"
+	}
+
+	if err := os.WriteFile(hookPath, []byte(content), perm); err != nil {
+		return fmt.Errorf("failed to write hook file: %w", err)
+	}
+	if err := os.Chmod(hookPath, perm); err != nil {
+		return fmt.Errorf("failed to chmod hook file: %w", err)
+	}
+
+	return nil
+}

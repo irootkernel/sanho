@@ -1374,6 +1374,57 @@ kkachi: docs 디렉토리의 충돌을 모두 해결했다면 'kkachi fix'를 �
 
 ---
 
+### 6.13. `kkachi clean` 요구사항
+
+#### 6.13.1. 목적
+
+- kkachi로 초기화된 workspace를 kkachi와 무관한 일반 Git 디렉토리로 되돌린다.
+- 로컬 설정/상태 파일과 kkachi가 설치한 Git hook 라인을 제거하고, 서버에 등록된 workspace 정보도 함께 해제한다.
+
+#### 6.13.2. 동작 요구사항
+
+1. `.kkachi.json` 로드
+
+   - 파일이 없거나 파싱에 실패하면 "현재 디렉토리는 kkachi workspace가 아닙니다." 정도의 메시지를 출력하고 **exit code 1**로 종료한다.
+   - defaults를 적용해 `docs_hash_file`(기본 `.kkachi_docs_hash`), `pending_fix_file`(기본 `.kkachi_pending_fix`) 경로를 결정한다.
+
+2. 사전 안내 및 확인
+
+   - 정리 대상(서버 URL, project, workspace_id, 삭제할 파일/훅 목록)을 요약해 보여준다.
+   - 기본은 확인 프롬프트 후 진행하며, `--yes`로 프롬프트를 건너뛸 수 있다.
+   - `--dry-run` 옵션이 있으면 실제 삭제는 하지 않고 계획만 출력한다.
+
+3. 서버 workspace 해제
+
+   - `.kkachi.json`에 있는 `server_url`, `workspace_id`를 사용해 `DELETE /workspaces/{workspace_id}`를 호출한다.
+   - 서버가 `unknown_workspace`(404) 를 반환하면 경고만 출력하고 다음 단계로 진행한다.
+   - 네트워크 오류나 기타 서버 오류는 기본적으로 **exit code 1**로 처리하되, `--offline`/`--no-server` 옵션이 있으면 호출을 건너뛰고 로컬 정리만 수행한다.
+
+4. 로컬 파일 정리
+
+   - `.kkachi.json`, docs_hash_file, pending_fix_file를 삭제한다. 파일이 없으면 경고만 출력하고 계속 진행한다.
+   - docs 디렉토리는 기본적으로 유지한다. 필요 시 `--remove-docs`와 같은 선택적 플래그로 삭제/백업까지 허용할 수 있다.
+
+5. Git hook 정리
+
+   - `.git/hooks/*` 각 hook 파일에서 `kkachi hook ...` 라인만 제거하고, 다른 도구 라인은 보존한다.
+   - hook 파일 내용이 비게 되면 파일을 삭제하거나 최소한의 빈 스크립트로 남긴다.
+   - chmod는 기존 실행 가능 상태를 유지한다.
+
+6. 종료 규약
+
+   - 모든 단계가 성공하면 **exit code 0**.
+   - `.kkachi.json` 부재/파싱 실패, 서버 오류(offline 모드가 아닌 경우), 필수 파일 삭제 실패 등은 **exit code 1**.
+   - `unknown_workspace`(404)는 경고만 출력하고 성공으로 간주한다.
+
+#### 6.13.3. 테스트 관점
+
+- 로컬에 kkachi hook 라인과 다른 도구 라인이 섞여 있을 때, clean 후에도 다른 라인은 남고 kkachi 라인만 제거되는지 확인한다.
+- fake 서버로 `DELETE /workspaces/{workspace_id}`가 200/404/500 등을 반환할 때 exit code 및 메시지 동작을 검증한다.
+- e2e: `kkachi init` → clean 실행 후 `.kkachi*` 파일 삭제, hook 정리, 서버 state에서 해당 workspace 제거 여부를 확인한다.
+
+---
+
 ## 7. 워크플로우 시나리오
 
 ### 7.1. 정상 케이스: 한 workspace에서만 수정

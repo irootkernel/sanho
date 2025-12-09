@@ -64,6 +64,7 @@ in a dedicated repository, separate from the application code.`,
 	rootCmd.AddCommand(newWorkspaceCmd())
 	rootCmd.AddCommand(newStateCmd())
 	rootCmd.AddCommand(newPullCmd())
+	rootCmd.AddCommand(newCleanCmd())
 
 	return rootCmd
 }

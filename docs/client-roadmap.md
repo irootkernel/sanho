@@ -138,6 +138,7 @@ HTTP·FS 구현과 e2e는 후속 PR로 나눈다.
 | H5 | `kkachi hook pre-push`         | push 직전 conflict·pending fix 체크                          | 없음         | Phase 5   |
 | H6 | `kkachi hook commit-msg`       | docs 변경 커밋의 commit 메시지에 `docs-version` 태그 추가    | 없음         | Phase 4   |
 | C9 | `kkachi pull`                  | 서버의 최신 docs snapshot을 다운로드해 로컬 docs 동기화      | `/docs/head?project`, `/docs/snapshot?project` | Phase 6   |
+| C10 | `kkachi clean`                 | 로컬 kkachi 흔적 제거 + 서버 workspace 등록 해제             | `DELETE /workspaces/{workspace_id}` | Phase 7   |
 
 ### 2.2 Git hook 역할 재정리
 
@@ -938,6 +939,39 @@ Phase 4는 문서 동기화의 핵심 흐름을 담당한다.
 
 - 개발 방향
   - root command에 `pull` subcommand 추가
+
+---
+
+## 10. Phase 7 - `kkachi clean`
+
+### 목표
+
+- kkachi 로 초기화된 workspace를 안전하게 원상복귀한다.
+- 로컬 설정/상태 파일(.kkachi.json, docs_hash_file, pending_fix_file)과 kkachi가 설치한 Git hook 라인을 제거하고, 서버 workspace 등록도 정리한다.
+
+### 구현 방향
+
+- CLI 흐름
+  1. `.kkachi.json` 로드(없으면 친절 메시지 후 exit 1) 및 defaults 적용.
+  2. 정리 대상 요약(server_url, project, workspace_id, docs_hash_file, pending_fix_file, hook 목록)을 출력하고 확인 프롬프트(`--yes` 로 스킵) 수행.
+  3. 서버 정리: `DELETE /workspaces/{workspace_id}` 호출.
+     - `unknown_workspace`(404)면 경고만 출력하고 계속.
+     - 네트워크/서버 오류는 exit 1, `--offline`/`--no-server` 옵션으로 스킵 가능.
+  4. 로컬 정리: `.kkachi.json`, docs_hash_file(기본 `.kkachi_docs_hash`), pending_fix_file(기본 `.kkachi_pending_fix`) 삭제. 없으면 경고만 출력.
+  5. Git hook 정리: 각 hook 파일에서 `kkachi hook ...` 라인만 제거하고, 다른 도구 라인은 보존한다. 파일이 비면 삭제하거나 최소 빈 스크립트로 유지.
+  6. docs 디렉토리는 기본적으로 남긴다. 필요 시 `--remove-docs` 또는 별도 플래그로 삭제/백업 선택을 고려.
+  7. 완료 메시지 출력. `--dry-run` 이면 실행 계획만 보여주고 실제 삭제는 수행하지 않는다.
+
+- 출력/exit code 규약
+  - 성공 시 exit 0.
+  - `.kkachi.json` 없음/파싱 실패, 서버 오류(offline 모드 미사용), 파일 삭제 실패 등은 exit 1.
+  - `unknown_workspace` 는 경고 후 exit 0 유지.
+
+### 테스트 아이디어
+
+- Integration: temp Git repo에 kkachi hook 라인을 삽입 후 clean 실행 → 해당 라인만 제거, 다른 내용 유지.
+- Integration: fake 서버로 `DELETE /workspaces/{workspace_id}` 응답을 200/404/500 으로 바꿔가며 exit code 확인.
+- e2e: `kkachi init` → clean → `.kkachi*` 파일과 hook 라인 제거, 서버 state에서 workspace 제거 확인.
   - flag 예시:
     - `--force`: 로컬 변경 사항 무시
   - 성공/실패 시 명확한 메시지 출력

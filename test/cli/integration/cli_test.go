@@ -30,6 +30,7 @@ func TestCLIHelp(t *testing.T) {
 		"hook",
 		"project",
 		"workspace",
+		"clean",
 		"version",
 	}
 
