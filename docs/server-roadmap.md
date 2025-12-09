@@ -556,6 +556,7 @@ Phase 0에서는 이후 기능별 구현을 위한 최소한의 프로젝트 뼈
     - Workspace 중복 정책(덮어쓰기 vs 에러)은 단순 정책으로 시작하고, 필요 시 추후 강화
 - 주의할 점
   - `WorkspaceID` 생성 규칙은 한 곳(usecase)에서만 정의하고, 다른 코드에서 직접 조립하지 않는다.
+  - CLI 가 기존 `docs/` 를 재사용해 `.kkachi_docs_hash` 를 과거 hash 로 초기화하는 경우가 있어도, 서버는 `docs_hash` 를 항상 현재 docs repo HEAD 로 저장한다. 이 초기 불일치는 첫 `/docs/push` 성공 시 자동으로 다시 맞춰진다.
 - 필수 테스트
   - Unit
     - fake WorkspaceRepo + fake DocsRepo 사용

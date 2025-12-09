@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -25,6 +26,12 @@ func newInitCmd() *cobra.Command {
 		force       bool
 	)
 
+	type initMode int
+	const (
+		modeFresh initMode = iota // download snapshot
+		modeReuse                 // reuse existing docs
+	)
+
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Initialize a workspace for kkachi",
@@ -42,7 +49,7 @@ This command will:
 Prerequisites:
 - Current directory must be a Git repository
 - .kkachi.json must not exist (unless --force is used)
-- docs directory must not exist (snapshot will be downloaded)`,
+- docs directory must not exist unless this repo already has kkachi-managed docs (docs-version commits)`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Get current working directory
 			cwd, err := getWorkingDirectory()
@@ -120,9 +127,41 @@ Prerequisites:
 				return err
 			}
 
-			// Check if docs directory already exists
-			if _, err := os.Stat(docsPath); err == nil && !force {
-				return fmt.Errorf("docs directory '%s' already exists. Please backup/remove it before init, or use --force", docsDir)
+			// Prepare git client for repo inspection
+			gitClient := git.NewClient()
+
+			// Decide init mode (fresh download vs reuse existing docs)
+			initMode := modeFresh
+			var reuseBaseHash string
+
+			if !force {
+				if _, err := os.Stat(docsPath); err == nil {
+					hasDocsVersion, err := gitClient.HasDocsVersionCommits(context.Background(), cwd)
+					if err != nil {
+						return fmt.Errorf("failed to inspect git history for docs-version commits: %w", err)
+					}
+					if !hasDocsVersion {
+						return errors.New("existing docs directory detected, but this repo has no docs-version commits.\nkkachi does not overwrite legacy/manual docs automatically.\nPlease backup/remove the docs directory first or use --force to replace it.")
+					}
+
+					clean, err := gitClient.IsPathClean(context.Background(), cwd, docsDir)
+					if err != nil {
+						return fmt.Errorf("failed to check docs directory cleanliness: %w", err)
+					}
+					if !clean {
+						return errors.New("현재 docs 디렉토리에 commit 되지 않은 변경이 있습니다.\nkkachi 를 연결하기 전에 먼저 변경을 커밋하거나, 백업 후 되돌린 뒤 다시 `kkachi init` 을 실행해 주세요.")
+					}
+
+					hash, err := gitClient.GetLastDocsVersionHash(context.Background(), cwd)
+					if err != nil {
+						if errors.Is(err, git.ErrNoDocsVersionCommits) {
+							return errors.New("repo 에 docs-version 커밋이 있지만 기준 hash 를 찾지 못했습니다. kkachi commit-msg hook 이 올바르게 동작했는지 확인해 주세요.")
+						}
+						return fmt.Errorf("failed to read last docs-version hash: %w", err)
+					}
+					initMode = modeReuse
+					reuseBaseHash = hash
+				}
 			}
 
 			// Get actor email from git config or prompt (with its own timeout)
@@ -177,31 +216,46 @@ Prerequisites:
 				return fmt.Errorf("failed to register workspace: %w", err)
 			}
 
-			// Step 3: Download docs snapshot
-			fmt.Println("Downloading docs snapshot...")
-			snapshot, commitHash, err := httpClient.DocsSnapshot(ctx, docs.ProjectName(projectName), "")
-			if err != nil {
-				return fmt.Errorf("failed to download docs snapshot: %w", err)
-			}
+			var docsBaseHash docs.CommitHash
 
-			// Step 4: Apply snapshot, ensuring docs directory reflects the server state
-			// When --force is used, always clear any existing docs to avoid stale content,
-			// regardless of whether the snapshot is empty or not.
-			if force {
-				if err := os.RemoveAll(docsPath); err != nil {
-					return fmt.Errorf("failed to remove docs directory '%s': %w", docsDir, err)
+			if initMode == modeFresh {
+				// Step 3: Download docs snapshot
+				fmt.Println("Downloading docs snapshot...")
+				snapshot, commitHash, err := httpClient.DocsSnapshot(ctx, docs.ProjectName(projectName), "")
+				if err != nil {
+					return fmt.Errorf("failed to download docs snapshot: %w", err)
 				}
-			}
 
-			if len(snapshot) > 0 {
-				applier := fs.NewSnapshotApplier()
-				if err := applier.Apply(snapshot, cwd, docsDir); err != nil {
-					return fmt.Errorf("failed to apply docs snapshot: %w", err)
+				// Step 4: Apply snapshot, ensuring docs directory reflects the server state
+				// When --force is used, always clear any existing docs to avoid stale content,
+				// regardless of whether the snapshot is empty or not.
+				if force {
+					if err := os.RemoveAll(docsPath); err != nil {
+						return fmt.Errorf("failed to remove docs directory '%s': %w", docsDir, err)
+					}
 				}
+
+				if len(snapshot) > 0 {
+					applier := fs.NewSnapshotApplier()
+					if err := applier.Apply(snapshot, cwd, docsDir); err != nil {
+						return fmt.Errorf("failed to apply docs snapshot: %w", err)
+					}
+				} else {
+					// Create empty docs directory
+					if err := os.MkdirAll(docsPath, 0755); err != nil {
+						return fmt.Errorf("failed to create docs directory: %w", err)
+					}
+				}
+
+				if commitHash == "" {
+					return errors.New("server returned empty docs HEAD hash; init cannot proceed")
+				}
+				docsBaseHash = docs.CommitHash(commitHash)
 			} else {
-				// Create empty docs directory
-				if err := os.MkdirAll(docsPath, 0755); err != nil {
-					return fmt.Errorf("failed to create docs directory: %w", err)
+				// Reuse existing docs directory without touching its contents.
+				docsBaseHash = docs.CommitHash(reuseBaseHash)
+				if docsBaseHash.IsZero() {
+					return errors.New("failed to determine docs base hash from git log")
 				}
 			}
 
@@ -220,13 +274,9 @@ Prerequisites:
 			}
 
 			// Step 6: Write docs hash file
-			// Validate that commitHash is not empty to avoid creating invalid state
-			if commitHash == "" {
-				return errors.New("server returned empty docs HEAD hash; init cannot proceed")
-			}
 			hashStore := fs.NewFileDocsHashStore()
 			hashPath := filepath.Join(cwd, client.DefaultDocsHashFile)
-			if err := hashStore.Write(hashPath, docs.CommitHash(commitHash)); err != nil {
+			if err := hashStore.Write(hashPath, docsBaseHash); err != nil {
 				return fmt.Errorf("failed to write docs hash file: %w", err)
 			}
 
@@ -243,9 +293,21 @@ Prerequisites:
 
 			// Success message
 			fmt.Println()
-			fmt.Println("kkachi: workspace initialized.")
-			fmt.Printf("  workspace_id : %s\n", workspaceResp.WorkspaceID)
-			fmt.Printf("  docs_head    : %s\n", commitHash)
+			if initMode == modeReuse {
+				status := "up_to_date"
+				if string(docsBaseHash) != string(workspaceResp.CurrentDocsHead) {
+					status = "outdated"
+				}
+				fmt.Println("kkachi: 기존 docs 디렉토리를 그대로 사용하여 workspace 를 초기화했습니다.")
+				fmt.Printf("  workspace_id : %s\n", workspaceResp.WorkspaceID)
+				fmt.Printf("  docs_base    : %s\n", docsBaseHash)
+				fmt.Printf("  server_head  : %s\n", workspaceResp.CurrentDocsHead)
+				fmt.Printf("  status       : %s\n", status)
+			} else {
+				fmt.Println("kkachi: workspace initialized.")
+				fmt.Printf("  workspace_id : %s\n", workspaceResp.WorkspaceID)
+				fmt.Printf("  docs_head    : %s\n", docsBaseHash)
+			}
 
 			return nil
 		},

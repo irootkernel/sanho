@@ -574,9 +574,10 @@ created_at=2025-11-30T10:00:00Z
      - 이 때 "현재 디렉토리는 이미 kkachi workspace 입니다. 설정을 초기화하려면 먼저 `.kkachi.json` 을 백업/삭제하거나, 추후 제공될 `kkachi reinit`/`kkachi init --force` 와 같은 명령을 사용해 주세요." 와 같은 안내를 출력한다.
      - v1 에서는 별도의 re-init 명령을 제공하지 않으며, 운영 정책에 따라 재-init 전략을 결정할 수 있다.
    - docs 디렉토리 존재 여부 확인
-     - `.kkachi.json` 에서 설정된 `docs_dir` (또는 아직 설정되지 않았다면 기본값 `docs`) 에 해당하는 디렉토리가 이미 존재하면, init 을 **실패(exit 1)** 로 처리한다.
-       - 예: "현재 workspace 에 docs 디렉토리(`docs_dir`)가 이미 존재합니다. kkachi 를 도입하기 전에, 먼저 기존 디렉토리를 백업/정리한 뒤 삭제하거나 비우고 다시 `kkachi init` 을 실행해 주세요."
-       - v1 에서는 기존 docs 디렉토리 내용을 자동으로 덮어쓰거나 merge 하지 않는다.
+     - `.kkachi.json` 에서 설정된 `docs_dir` (또는 아직 설정되지 않았다면 기본값 `docs`) 이 이미 존재하는 경우 다음과 같이 분기한다.
+       - git log(HEAD 기준) 에서 `docs-version:` 커밋이 **한 번도 없으면**: init 실패(exit 1). 기존 수동 docs 로 판단하고 자동 덮어쓰기를 허용하지 않는다.
+       - `docs_dir` 에 staged/unstaged 변경이 있으면: init 실패(exit 1) 후 "변경을 커밋/백업 후 다시 시도" 메시지 안내.
+       - 위 두 조건을 모두 통과하면(즉, `docs-version:` 커밋이 있고 `docs_dir` 이 clean 하면): **기존 `docs_dir` 를 그대로 사용한 채 init 진행**. 서버 snapshot 은 다운로드하지 않으며, git log 에서 가장 최근 `docs-version: <hash>` 값을 찾아 `.kkachi_docs_hash` 초기값으로 사용한다.
 2. 설정 입력
 
    - server URL
@@ -621,11 +622,10 @@ created_at=2025-11-30T10:00:00Z
    - 서버가 400 Bad Request 와 `{"error": "unknown_project"}` 와 같은 코드를 반환하는 경우:
      - CLI 는 "kkachi-server에 project가 아직 등록되지 않았습니다. 'kkachi project add'를 먼저 실행해 project 를 등록해 주세요." 와 같은 안내를 출력하고
      - exit code 1 로 종료한다 (init 중단).
-6. 서버 snapshot 으로 docs 디렉토리 생성
+6. docs 디렉토리 준비
 
-   - `GET /docs/snapshot` 을 호출해, 위에서 등록한 `project` 에 대한 **현재 HEAD 기준 docs snapshot** 을 다운로드한다.
-     - 기본: `GET /docs/snapshot?project=<project>` 또는 `commit=head` 와 동등한 의미
-   - 로컬 workspace 루트에 `.kkachi.json` 에서 설정할 `docs_dir` (기본값 `docs`) 디렉토리를 새로 만들고, snapshot tar 내용을 풀어 넣는다. 이 때 tar 내부 루트는 항상 `docs/` 이므로, `docs/` 이하의 내용을 `docs_dir/` 로 리매핑해 복원한다.
+   - `docs_dir` 가 없거나 `--force` 인 경우: `GET /docs/snapshot` 으로 현재 HEAD 기준 snapshot 을 다운로드해 `docs_dir` 를 생성/덮어쓴다. tar 내부 루트는 항상 `docs/` 이므로, 이를 `docs_dir/` 로 리매핑한다.
+   - `docs_dir` 가 존재하며 1단계에서 “kkachi-managed repo 새 clone” 으로 분류된 경우: snapshot 을 다운로드하지 않고 기존 `docs_dir` 내용을 그대로 둔다.
 
 7. `.kkachi.json` 생성
 
@@ -635,7 +635,8 @@ created_at=2025-11-30T10:00:00Z
      - `.kkachi.json` 의 `actor_email` 이 비어 있거나 잘못된 경우에는, fallback 으로 다시 `git config user.email` 을 읽거나 사용자에게 재입력을 요구할 수 있다.
 8. `docs_hash_file`(기본: `.kkachi_docs_hash`) 생성
 
-   - 내용: `current_docs_head`
+   - snapshot 으로 생성한 경우: 내용은 서버가 알려준 `current_docs_head`
+   - 기존 `docs_dir` 를 재사용한 경우: git log 에서 찾은 가장 최근 `docs-version: <hash>` 값
 9. `.kkachi_pending_fix` 초기화
 
    - init 시에는 존재하지 않아야 한다.
@@ -1572,10 +1573,9 @@ kkachi: docs 디렉토리의 충돌을 모두 해결했다면 'kkachi fix'를 �
 
 3. 기존 프로젝트에 kkachi 를 도입할 때
 
-   - init 전에 기존 repo 루트에 `docs/` 디렉토리가 이미 있다면, 해당 디렉토리를 **백업/정리한 뒤 삭제 또는 비우고** `kkachi init` 을 실행해야 한다.  
-     v1 기준 `kkachi init` 은 기존 `docs/` 를 자동으로 덮어쓰거나 merge 하지 않으며, `docs/` 가 존재하면 init 을 실패(exit 1)로 처리한다.
-   - 이렇게 하면 init 이후에는 항상 "서버 docs repo HEAD = 로컬 docs" 상태에서 시작하게 되며,  
-     이후 변경은 모두 kkachi의 pre-commit / fix / push 흐름을 통해 관리된다.
+   - git log 에 `docs-version:` 커밋이 **한 번도 없는 레거시 repo** 에서 `docs/` 가 이미 존재하면, init 전에 해당 디렉토리를 **백업/정리한 뒤 삭제 또는 비우고** 진행해야 한다. 자동 덮어쓰기를 하지 않는다.
+   - 반대로 이미 kkachi commit-msg hook 이 사용된 repo(= `docs-version:` 커밋 존재)에서 새로 clone 한 경우에는, `docs/` 가 clean 이기만 하면 그대로 둔 채 `kkachi init` 이 가능하다. 이때 `.kkachi_docs_hash` 는 git log 의 최근 `docs-version` 값으로 초기화한다.
+   - 이렇게 하면 init 이후에는 "서버 docs repo HEAD = 로컬 docs" (fresh init) 혹은 "git log 상의 기준 hash = 로컬 docs" (재사용 init) 상태에서 시작하며, 이후 변경은 모두 kkachi의 pre-commit / fix / push 흐름을 통해 관리된다.
 
 ---
 

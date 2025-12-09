@@ -11,6 +11,7 @@ import (
 )
 
 var ErrUnknownCommit = errors.New("unknown_commit")
+var ErrNoDocsVersionCommits = errors.New("no_docs_version_commits")
 
 type Client struct{}
 
@@ -208,4 +209,88 @@ func (c *Client) Push(ctx context.Context, path string) error {
 		return fmt.Errorf("git push failed: %w\n%s", err, string(output))
 	}
 	return nil
+}
+
+// HasDocsVersionCommits reports whether any reachable commit message contains a docs-version tag.
+func (c *Client) HasDocsVersionCommits(ctx context.Context, repoPath string) (bool, error) {
+	cmd := exec.CommandContext(ctx, "git", "-C", repoPath, "log", "--grep", "^docs-version:", "--format=%H", "-n", "1")
+	out, err := cmd.Output()
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			// Empty repo (no commits) returns non-zero; treat as no matches.
+			if exitErr.ExitCode() != 0 {
+				return false, nil
+			}
+		}
+		return false, fmt.Errorf("git log for docs-version failed: %w", err)
+	}
+	return strings.TrimSpace(string(out)) != "", nil
+}
+
+// GetLastDocsVersionHash returns the most recent docs-version hash from commit messages reachable from HEAD.
+func (c *Client) GetLastDocsVersionHash(ctx context.Context, repoPath string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", "-C", repoPath, "log", "--grep", "^docs-version:", "--format=%B", "-n", "1")
+	out, err := cmd.Output()
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			if exitErr.ExitCode() != 0 {
+				return "", ErrNoDocsVersionCommits
+			}
+		}
+		return "", fmt.Errorf("git log for docs-version failed: %w", err)
+	}
+	msg := string(out)
+	if strings.TrimSpace(msg) == "" {
+		return "", ErrNoDocsVersionCommits
+	}
+	lines := strings.Split(msg, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "docs-version:") {
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) != 2 {
+				continue
+			}
+			hash := strings.TrimSpace(parts[1])
+			if hash == "" {
+				continue
+			}
+			return hash, nil
+		}
+	}
+	return "", ErrNoDocsVersionCommits
+}
+
+// IsPathClean reports whether the given path has no staged or unstaged changes.
+// path may be a directory or file; it must be relative to the repo root.
+func (c *Client) IsPathClean(ctx context.Context, repoPath, path string) (bool, error) {
+	// Unstaged changes
+	cmd := exec.CommandContext(ctx, "git", "-C", repoPath, "diff", "--quiet", "--", path)
+	if err := cmd.Run(); err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
+			return false, nil
+		}
+		return false, fmt.Errorf("git diff --quiet -- %s failed: %w", path, err)
+	}
+
+	// Staged changes
+	cmd = exec.CommandContext(ctx, "git", "-C", repoPath, "diff", "--cached", "--quiet", "--", path)
+	if err := cmd.Run(); err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
+			return false, nil
+		}
+		return false, fmt.Errorf("git diff --cached --quiet -- %s failed: %w", path, err)
+	}
+
+	// Untracked files
+	statusCmd := exec.CommandContext(ctx, "git", "-C", repoPath, "status", "--porcelain", "--", path)
+	out, err := statusCmd.Output()
+	if err != nil {
+		return false, fmt.Errorf("git status --porcelain -- %s failed: %w", path, err)
+	}
+	if len(bytes.TrimSpace(out)) > 0 {
+		return false, nil
+	}
+
+	return true, nil
 }

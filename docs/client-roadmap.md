@@ -378,35 +378,34 @@ Phase 1은 이후 모든 기능에서 재사용할 공통 모듈을 구현한다
 
 - 유즈케이스 흐름
 
-  1. 현재 디렉토리에 `.git` 존재 여부 확인
-     - 이미 `.kkachi.json` 이 존재하는 경우, v1 기준 기본 동작은 **init 실패(exit 1)** 로 간주하고 사용자에게 재-init 이 아닌 다른 조치를 안내한다.
-       - 예: "이 디렉토리는 이미 kkachi workspace 입니다. 설정을 다시 만들려면 먼저 `.kkachi.json` 을 백업/삭제하거나, 향후 제공될 `kkachi reinit`/`kkachi init --force` 와 같은 명령을 사용해 주세요."
-  2. 입력 파라미터 또는 interactive로 project, server URL, docs dir 수집
-  3. docs repo URL 입력
-
-     - 사용자가 sudal_docs 등 **문서 전용 repo의 Git URL**(예: `git@github.com:SeventeenthEarth/sudal_docs.git`)을 직접 입력하거나 flag 로 전달한다.
-     - 입력받은 docs_repo_url 로부터 **Git URL 의 repo 이름을 그대로 사용해 `docs_repo_id` 를 결정**한다.  
-       예: 위 URL이면 `docs_repo_id = "sudal_docs"`.
-    - docs_repo_url은 항상 사용자의 명시 입력(또는 별도 관리 도구 결과)에서 가져오며, **코드 repo의 `origin` remote에서 추론하지 않는다**. (Requirement 5.5와 동일 규약)
-  4. `POST /projects`로 project가 미등록이면 추가/갱신 (이미 있으면 idempotent no-op)
-
-     - 요청에는 `project`, `docs_repo_id`, `docs_repo_url`, `actor_email` 을 포함한다.
-  5. `/workspaces/register` 호출, `workspace_id`, `current_docs_head` 수신
-     - 이 때 서버가 `400 Bad Request` 와 `{"error": "unknown_project"}` 와 같은 코드를 반환하면,
-       - CLI 는 "kkachi-server에 project가 아직 등록되지 않았습니다. 'kkachi project add'를 먼저 실행해 project 를 등록해 주세요." 와 유사한 안내를 출력하고
-       - exit code 1 로 종료한다.
-     - 기본 값 규칙:
-       - `local_path` 는 현재 작업 디렉토리의 **절대 경로**를 사용한다.
-     - `repo_url` 은 현재 코드 repo 의 `origin` URL (`git remote get-url origin`)을 사용한다.
-  6. `.kkachi.json` 생성
-  7. docs_hash_file(기본: `.kkachi_docs_hash`) 생성 (HEAD hash 기록)
-  8. `.kkachi_pending_fix` 존재 시 삭제
-  9. Git hook 설치
+  1. 현재 디렉토리에 `.git` 존재 여부 확인  
+     - 이미 `.kkachi.json` 이 존재하면 init 실패(exit 1) 안내.
+  2. 입력 수집: project, server URL, docs dir, docs repo URL, actor email(`git config user.email` 기본)
+     - docs_repo_url 은 사용자가 명시 입력하며, repo 이름을 `docs_repo_id` 로 사용한다. 코드 repo origin에서 추론하지 않는다.
+  3. docs 디렉토리 상태/기록 검사 (`docs_dir` 기준)
+     - `--force` 면 검사 없이 fresh 모드로 진행.
+     - `docs_dir` 없음 → fresh 모드.
+     - `docs_dir` 존재 시:
+       - git log 에 `docs-version:` 커밋이 없으면 exit 1 (레거시 수동 docs 보호).
+       - `docs_dir` 에 staged/unstaged 변경이 있으면 exit 1 (clean 상태 요구).
+       - 위 조건을 통과하면 reuse 모드로 간주하고, git log 에서 가장 최근 `docs-version: <hash>` 를 `H_base` 로 획득.
+  4. `POST /projects` 로 project 생성/갱신 (idempotent)
+  5. `/workspaces/register` 호출 → `workspace_id`, `current_docs_head` 수신
+  6. docs 디렉토리 준비
+     - fresh 모드: `GET /docs/snapshot` 으로 HEAD snapshot 다운로드 후 `docs_dir` 생성/덮어쓰기 (`--force` 시 기존 디렉토리 제거).
+     - reuse 모드: snapshot 다운로드 없이 기존 `docs_dir` 유지.
+  7. `.kkachi.json` 생성
+  8. docs_hash_file 생성
+     - fresh 모드: `current_docs_head`
+     - reuse 모드: `H_base`(git log 의 최근 docs-version 값)
+  9. `.kkachi_pending_fix` 제거, Git hook 설치
 
 - 개발 방향
   - `usecase/init_workspace.go`
     - infra에 의존하는 interface:
       - `GitRepoDetector` (`HasGitDir()`)
+      - `GitHistoryInspector` (`HasDocsVersionCommits`, `GetLastDocsVersionHash`)
+      - `GitWorktreeState` (`IsPathClean`)
     - `ServerClient` (`RegisterWorkspace`)
       - `ConfigWriter`
       - `HookInstaller`
@@ -418,13 +417,10 @@ Phase 1은 이후 모든 기능에서 재사용할 공통 모듈을 구현한다
 
 - 추가 요구사항
   - v1 기준 `kkachi init` 완료 시점에는:
-    - workspace 루트에 기존 `docs/` 디렉토리가 **없어야** 하며,  
-      만약 이미 있다면 init 을 실패(exit 1)로 처리하고 사용자가 먼저 백업/정리하도록 안내한다.
-    - 서버 `docs repo` 의 **HEAD 기준 snapshot** 을 내려받아 새 `docs/` 디렉토리를 만든 뒤,  
-      이 HEAD 값을 docs_hash_file(기본: `.kkachi_docs_hash`) 에 기록해야 한다.  
-      즉, init 이후에는 항상 "서버 HEAD = 로컬 docs" 상태에서 출발한다.
-    - 이 snapshot 단계는 서버 로드맵의 `GET /docs/snapshot` 구현(서버 Phase 3)이 준비된 이후에야 실제 kkachi-server 와 end-to-end 로 동작할 수 있으며,
-      그 전에는 fake server 또는 stub HTTP client 를 사용해 usecase/CLI 레벨까지 선 구현할 수 있다.
+    - `docs/` 가 없으면 snapshot 으로 생성하고 `.kkachi_docs_hash = server HEAD` 로 맞춘다.
+    - `docs/` 가 이미 있고 git log 에 `docs-version:` 커밋이 있으며 clean 하면, snapshot 없이 기존 `docs/` 를 재사용하고 `.kkachi_docs_hash = git log 의 최근 docs-version 값` 으로 초기화한다.
+    - git log 에 `docs-version:` 이 없거나 `docs/` 가 dirty 면 init 을 실패(exit 1)로 처리해 사용자가 백업/정리하도록 안내한다. `--force` 는 무조건 snapshot 으로 덮어쓴다.
+    - snapshot 적용 단계는 서버 로드맵의 `GET /docs/snapshot` 구현(서버 Phase 3)이 준비된 이후에야 실제 kkachi-server 와 end-to-end 로 동작할 수 있으며, 그 전에는 fake server 또는 stub HTTP client 로 선 구현한다.
 
 ---
 
