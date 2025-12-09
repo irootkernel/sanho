@@ -1,6 +1,7 @@
 package git
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os/exec"
@@ -76,5 +77,40 @@ func (c *Client) hasDocsStagedForInitialCommit(ctx context.Context, repoPath, do
 			return true, nil
 		}
 	}
+	return false, nil
+}
+
+// HasLocalDocsChanges checks if there are any uncommitted changes (staged, unstaged, or untracked) in the docs directory.
+// This is used by kkachi pull to detect local modifications and prevent data loss.
+func (c *Client) HasLocalDocsChanges(ctx context.Context, repoPath, docsDir string) (bool, error) {
+	// Check for unstaged changes: git diff --quiet <docsDir>
+	cmdUnstaged := exec.CommandContext(ctx, "git", "-C", repoPath, "diff", "--quiet", "--", docsDir)
+	if err := cmdUnstaged.Run(); err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
+			return true, nil // has unstaged changes
+		}
+		return false, fmt.Errorf("git diff failed: %w", err)
+	}
+
+	// Check for staged changes: git diff --cached --quiet <docsDir>
+	cmdStaged := exec.CommandContext(ctx, "git", "-C", repoPath, "diff", "--cached", "--quiet", "--", docsDir)
+	if err := cmdStaged.Run(); err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
+			return true, nil // has staged changes
+		}
+		return false, fmt.Errorf("git diff --cached failed: %w", err)
+	}
+
+	// Check for untracked files: git status --porcelain -- <docsDir>
+	// This catches new files that haven't been added to git yet.
+	cmdUntracked := exec.CommandContext(ctx, "git", "-C", repoPath, "status", "--porcelain", "--", docsDir)
+	output, err := cmdUntracked.Output()
+	if err != nil {
+		return false, fmt.Errorf("git status --porcelain failed: %w", err)
+	}
+	if len(bytes.TrimSpace(output)) > 0 {
+		return true, nil
+	}
+
 	return false, nil
 }

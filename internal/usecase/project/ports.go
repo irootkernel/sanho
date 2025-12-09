@@ -21,6 +21,8 @@ type DeleteProjectStateRepository interface {
 	GetDocsRepo(id string) (config.DocsRepoConfig, bool)
 	DeleteDocsRepo(id string) error
 	HasWorkspacesForProject(project string) bool
+	// DeleteWorkspacesByProject removes all workspaces registered to the project.
+	DeleteWorkspacesByProject(project string) error
 }
 
 type DocsRepoManager interface {

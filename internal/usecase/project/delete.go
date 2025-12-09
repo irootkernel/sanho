@@ -30,6 +30,13 @@ func (uc *DeleteProjectUseCase) Execute(project string, force bool) error {
 		return ErrProjectHasWorkspaces
 	}
 
+	// With force, proactively remove all workspaces tied to the project.
+	if force {
+		if err := uc.stateRepo.DeleteWorkspacesByProject(project); err != nil {
+			return err
+		}
+	}
+
 	if err := uc.stateRepo.DeleteProject(project); err != nil {
 		return err
 	}

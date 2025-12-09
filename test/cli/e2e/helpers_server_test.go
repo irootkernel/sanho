@@ -74,6 +74,11 @@ func runCmd(t *testing.T, dir string, name string, args ...string) []byte {
 // registerProjectViaCLI registers a project using the CLI and returns repoID.
 func registerProjectViaCLI(t *testing.T, cli, serverURL, project, repoURL, cwd string) string {
 	t.Helper()
+	t.Cleanup(func() {
+		// Ensure projects are always torn down, even if the test fails midway.
+		deleteProjectViaCLI(t, cli, serverURL, project, true)
+	})
+
 	cmd := exec.Command(cli, "project", "add",
 		"--server-url", serverURL,
 		"--project", project,
@@ -120,6 +125,12 @@ func registerWorkspaceViaCLI(t *testing.T, cli, serverURL, project, cwd string) 
 	if workspaceID == "" {
 		t.Fatalf("workspace_id not found in output:\n%s", string(out))
 	}
+
+	// Ensure workspace is unregistered even if the test fails later.
+	t.Cleanup(func() {
+		deleteWorkspaceViaCLI(t, cli, serverURL, workspaceID)
+	})
+
 	return workspaceID, currentHead
 }
 
@@ -132,6 +143,11 @@ func deleteProjectViaCLI(t *testing.T, cli, serverURL, project string, force boo
 	cmd := exec.Command(cli, args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
+		// Allow cleanup to be idempotent: ignore "does not exist" errors so that
+		// manual deletions in tests don't cause cleanup failures.
+		if strings.Contains(string(out), "does not exist") || strings.Contains(string(out), "unknown_project") {
+			return
+		}
 		t.Fatalf("project delete failed: %v\nOutput:\n%s", err, string(out))
 	}
 }
@@ -145,6 +161,12 @@ func deleteWorkspaceViaCLI(t *testing.T, cli, serverURL, workspaceID string) {
 	)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
+		// Allow idempotent cleanup.
+		if strings.Contains(string(out), "workspace not found") ||
+			strings.Contains(string(out), "unknown_workspace") ||
+			strings.Contains(string(out), "not registered on the server") {
+			return
+		}
 		t.Fatalf("workspace unregister failed: %v\nOutput:\n%s", err, string(out))
 	}
 }

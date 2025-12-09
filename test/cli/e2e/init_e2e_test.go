@@ -25,6 +25,11 @@ func TestE2ECLI_InitWorkflow(t *testing.T) {
 
 	project := "cli-init-" + strings.ReplaceAll(filepath.Base(workspaceDir), string(filepath.Separator), "_")
 
+	// Ensure project is deleted even if the test fails midway.
+	t.Cleanup(func() {
+		deleteProjectViaCLI(t, cliBinary, serverURL, project, true)
+	})
+
 	cmd := exec.Command(cliBinary, "init",
 		"--server-url", serverURL,
 		"--project", project,
@@ -85,6 +90,11 @@ func TestE2ECLI_InitForce(t *testing.T) {
 	}
 
 	project := "cli-init-force-" + strings.ReplaceAll(filepath.Base(workspaceDir), string(filepath.Separator), "_")
+
+	// Ensure project is deleted even if the test fails midway.
+	t.Cleanup(func() {
+		deleteProjectViaCLI(t, cliBinary, serverURL, project, true)
+	})
 
 	cmd := exec.Command(cliBinary, "init",
 		"--server-url", serverURL,

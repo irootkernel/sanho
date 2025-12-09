@@ -206,3 +206,21 @@ func (r *FileStateRepository) HasWorkspacesForProject(project string) bool {
 	}
 	return false
 }
+
+// DeleteWorkspacesByProject removes all workspaces registered to the given project.
+func (r *FileStateRepository) DeleteWorkspacesByProject(project string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	changed := false
+	for id, ws := range r.state.Workspaces {
+		if ws.Project == project {
+			delete(r.state.Workspaces, id)
+			changed = true
+		}
+	}
+	if changed {
+		return r.Save()
+	}
+	return nil
+}

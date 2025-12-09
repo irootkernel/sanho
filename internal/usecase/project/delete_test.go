@@ -11,14 +11,15 @@ import (
 // Mock implementations for unit testing
 
 type mockStateRepository struct {
-	docsRepoID           string
-	hasDocsRepoID        bool
-	hasWorkspaces        bool
-	deleteProjectCalled  bool
-	deleteDocsRepoCalled bool
-	repoUsage            map[string]int
-	docsRepoConfig       config.DocsRepoConfig
-	hasDocsRepoConfig    bool
+	docsRepoID             string
+	hasDocsRepoID          bool
+	hasWorkspaces          bool
+	deleteProjectCalled    bool
+	deleteDocsRepoCalled   bool
+	deleteWorkspacesCalled bool
+	repoUsage              map[string]int
+	docsRepoConfig         config.DocsRepoConfig
+	hasDocsRepoConfig      bool
 }
 
 func (m *mockStateRepository) GetDocsRepoID(projectName string) (string, bool) {
@@ -48,6 +49,12 @@ func (m *mockStateRepository) DeleteDocsRepo(id string) error {
 
 func (m *mockStateRepository) HasWorkspacesForProject(projectName string) bool {
 	return m.hasWorkspaces
+}
+
+func (m *mockStateRepository) DeleteWorkspacesByProject(project string) error {
+	m.deleteWorkspacesCalled = true
+	m.hasWorkspaces = false
+	return nil
 }
 
 type mockGitManager struct {
@@ -118,6 +125,9 @@ func TestDeleteProjectUseCase_HasWorkspacesWithForce(t *testing.T) {
 	}
 	if !stateRepo.deleteProjectCalled {
 		t.Error("DeleteProject should be called with force=true")
+	}
+	if !stateRepo.deleteWorkspacesCalled {
+		t.Error("DeleteWorkspacesByProject should be called with force=true")
 	}
 }
 
