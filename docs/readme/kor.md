@@ -81,7 +81,7 @@ Kkachi를 도입하면 다음과 같은 점이 좋아집니다.
 
 ## 주요 개념 정리 📚
 
-자세한 용어 정의는 `docs/requirement.md`에 있지만,  
+자세한 용어 정의는 `docs/requirement-v1.md`에 있지만,  
 이 문서에서는 이해에 필요한 핵심 개념만 요약합니다.
 
 - **Project**
@@ -112,7 +112,7 @@ commit/push 시점에 이를 중앙 저장소와 비교하여 상태를 알려 �
 ### 1. 서버 준비
 
 팀 차원에서 한 번만 kkachi-server를 배포합니다.  
-자세한 설정 방법과 운영 방식은 `docs/server-roadmap.md`를 참고하세요.
+자세한 설정 방법과 운영 방식은 프로젝트 환경에 맞게 별도 운영 문서를 두고 관리하는 것을 권장합니다.
 
 아주 단순한 로컬 실행 예시는 다음과 같습니다.
 
@@ -220,8 +220,6 @@ git push origin main
 이 문서는 “Kkachi가 어떤 문제를 해결하고, 어떤 식으로 사용하는지”에 집중한 개요 문서입니다.  
 구체적인 요구사항, 상세 동작, 에러 처리 정책, API 스펙 등은 `/docs` 디렉토리를 참고하세요.
 
-- 전체 요구사항 및 용어 정의: `docs/requirement.md`
-- 서버 설계 및 구현 계획: `docs/server-roadmap.md`
-- CLI 설계 및 구현 계획: `docs/client-roadmap.md`
+- 전체 요구사항 및 용어 정의(v1): `docs/requirement-v1.md`
 
 Kkachi의 내부 구조나 프로토콜을 더 깊이 이해하고 싶다면 위 문서들부터 읽는 것을 권장합니다.

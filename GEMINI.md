@@ -101,6 +101,4 @@ go test ./...
 
 ## Key Documentation
 
-*   **Requirements:** `docs/requirement.md` - Detailed system behavior and protocol specifications.
-*   **Server Roadmap:** `docs/server-roadmap.md` - Step-by-step implementation plan for the server.
-*   **Client Roadmap:** `docs/client-roadmap.md` - Step-by-step implementation plan for the CLI.
+*   **Requirements:** `docs/requirement-v1.md` - Detailed system behavior and protocol specifications.

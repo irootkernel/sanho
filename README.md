@@ -83,7 +83,7 @@ With Kkachi in place:
 
 ## Key concepts 📚
 
-For full definitions, see `docs/requirement.md`. This is a brief summary:
+For full definitions, see `docs/requirement-v1.md`. This is a brief summary:
 
 - **Project**
   - Logical name representing one product or domain (e.g., `sudal`, `dolgorae`).
@@ -120,8 +120,6 @@ In real environments you will typically configure:
 - Which docs repos to manage.
 - Where to store server state.
 - Port / listen address and authentication.
-
-See `docs/server-roadmap.md` for server configuration details.
 
 ### 2. Initialize a workspace (`kkachi init`)
 
@@ -219,9 +217,7 @@ The following is a typical end-to-end flow:
 This README focuses on what Kkachi is and how to use it at a high level.  
 For full specifications, error handling rules, and API details, see the documents under `docs/`:
 
-- Requirements and terminology: `docs/requirement.md`
-- Server design and roadmap: `docs/server-roadmap.md`
-- CLI design and roadmap: `docs/client-roadmap.md`
+- Requirements and terminology (v1): `docs/requirement-v1.md`
 
 For the Korean introduction to Kkachi, see:
 
