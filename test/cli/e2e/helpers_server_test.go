@@ -325,3 +325,30 @@ func pushDocsViaHTTP(t *testing.T, serverURL, workspaceID, baseHash string, file
 	t.Fatalf("push response missing docs hash: %+v", body)
 	return ""
 }
+
+func assertGitignoreHasEntries(t *testing.T, dir string, header string, entries ...string) {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
+	if err != nil {
+		t.Fatalf("failed to read .gitignore: %v", err)
+	}
+
+	content := strings.ReplaceAll(string(data), "\r\n", "\n")
+	lines := strings.Split(content, "\n")
+	lineSet := make(map[string]struct{}, len(lines))
+	for _, ln := range lines {
+		lineSet[strings.TrimSpace(ln)] = struct{}{}
+	}
+
+	if header != "" {
+		if _, ok := lineSet[header]; !ok {
+			t.Fatalf(".gitignore missing header %s; content:\n%s", header, content)
+		}
+	}
+
+	for _, entry := range entries {
+		if _, ok := lineSet[entry]; !ok {
+			t.Fatalf(".gitignore missing entry %s; content:\n%s", entry, content)
+		}
+	}
+}

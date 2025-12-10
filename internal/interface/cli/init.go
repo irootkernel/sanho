@@ -44,6 +44,7 @@ This command will:
 - Download the current docs snapshot from the server
 - Create .kkachi.json configuration file
 - Create .kkachi_docs_hash file
+- Add workspace metadata files to .gitignore
 - Install Git hooks for document synchronization
 
 Prerequisites:
@@ -284,7 +285,13 @@ Prerequisites:
 			pendingFixPath := filepath.Join(cwd, client.DefaultPendingFixFile)
 			_ = os.Remove(pendingFixPath)
 
-			// Step 8: Install Git hooks
+			// Step 8: Ensure .gitignore excludes kkachi workspace metadata
+			gitignoreManager := fs.NewGitignoreManager()
+			if err := gitignoreManager.EnsureEntries(cwd, "# Kkachi", []string{client.DefaultDocsHashFile, fs.ConfigFileName}); err != nil {
+				return fmt.Errorf("failed to update .gitignore: %w", err)
+			}
+
+			// Step 9: Install Git hooks
 			fmt.Println("Installing Git hooks...")
 			hookInstaller := git.NewHookInstaller()
 			if err := hookInstaller.InstallAllHooks(ctx, cwd); err != nil {

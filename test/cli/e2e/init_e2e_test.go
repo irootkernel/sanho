@@ -62,6 +62,8 @@ func TestE2ECLI_InitWorkflow(t *testing.T) {
 		t.Fatalf("docs snapshot not applied: %s", string(body))
 	}
 
+	assertGitignoreHasEntries(t, workspaceDir, "# Kkachi", ".kkachi_docs_hash", ".kkachi.json")
+
 	// Cleanup: delete project
 	deleteProjectViaCLI(t, cliBinary, serverURL, project, true)
 }
@@ -119,6 +121,8 @@ func TestE2ECLI_InitForce(t *testing.T) {
 	if strings.TrimSpace(string(hashBytes)) != head {
 		t.Fatalf("docs hash mismatch: got %s want %s", strings.TrimSpace(string(hashBytes)), head)
 	}
+
+	assertGitignoreHasEntries(t, workspaceDir, "# Kkachi", ".kkachi_docs_hash", ".kkachi.json")
 
 	// Cleanup
 	deleteProjectViaCLI(t, cliBinary, serverURL, project, true)

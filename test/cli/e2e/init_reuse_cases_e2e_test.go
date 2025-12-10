@@ -61,6 +61,8 @@ func TestE2ECLI_InitReuseWithExistingDocs(t *testing.T) {
 	if !strings.Contains(string(out), "기존 docs 디렉토리를 그대로 사용하여 workspace 를 초기화했습니다.") {
 		t.Fatalf("expected reuse mode message in output, got:\n%s", string(out))
 	}
+
+	assertGitignoreHasEntries(t, wsDir, "# Kkachi", ".kkachi_docs_hash", ".kkachi.json")
 }
 
 // docs 존재 + docs-version 없음 → init 실패 (레거시 보호)
