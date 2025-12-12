@@ -215,4 +215,79 @@ func TestE2E_State(t *testing.T) {
 			}
 		}
 	})
+
+	// Test 4: Verify /docs/head consistency with /state.docs_heads
+	// STASK-1 requirement: GET /docs/head?project=<project> should return the same value as docs_heads[project]
+	t.Run("DocsHead consistency with State", func(t *testing.T) {
+		// Get /docs/head response
+		docsHeadResp, err := client.Get(baseURL + "/docs/head?project=" + projectName)
+		if err != nil {
+			t.Fatalf("get docs/head request failed: %v", err)
+		}
+		if docsHeadResp.StatusCode != http.StatusOK {
+			t.Fatalf("get docs/head status = %d", docsHeadResp.StatusCode)
+		}
+		var docsHeadJSON map[string]string
+		json.NewDecoder(docsHeadResp.Body).Decode(&docsHeadJSON)
+		docsHeadResp.Body.Close()
+		docsHeadValue := docsHeadJSON["head"]
+
+		// Get /state response
+		stateResp, err := client.Get(baseURL + "/state")
+		if err != nil {
+			t.Fatalf("get state request failed: %v", err)
+		}
+		if stateResp.StatusCode != http.StatusOK {
+			t.Fatalf("get state status = %d", stateResp.StatusCode)
+		}
+		var stateJSON map[string]interface{}
+		json.NewDecoder(stateResp.Body).Decode(&stateJSON)
+		stateResp.Body.Close()
+
+		docsHeads, ok := stateJSON["docs_heads"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("docs_heads not found in /state response")
+		}
+		stateDocsHeadValue, ok := docsHeads[projectName].(string)
+		if !ok {
+			t.Fatalf("docs_heads[%s] not found in /state response", projectName)
+		}
+
+		// Verify consistency
+		if docsHeadValue != stateDocsHeadValue {
+			t.Errorf("Inconsistency detected: /docs/head returned %q, but /state.docs_heads[%s] returned %q",
+				docsHeadValue, projectName, stateDocsHeadValue)
+		}
+	})
+
+	// Test 5: Verify last_reported_at is RFC3339 formatted
+	t.Run("LastReportedAt is RFC3339 formatted", func(t *testing.T) {
+		resp, err := client.Get(baseURL + "/state")
+		if err != nil {
+			t.Fatalf("get state request failed: %v", err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("get state status = %d", resp.StatusCode)
+		}
+
+		var stateResp map[string]interface{}
+		json.NewDecoder(resp.Body).Decode(&stateResp)
+		resp.Body.Close()
+
+		workspaces, _ := stateResp["workspaces"].([]interface{})
+		for _, ws := range workspaces {
+			wsMap := ws.(map[string]interface{})
+			if wsMap["project"] != projectName {
+				continue
+			}
+			lastReportedAt, ok := wsMap["last_reported_at"].(string)
+			if !ok || lastReportedAt == "" {
+				t.Errorf("last_reported_at is missing or empty for workspace %v", wsMap["workspace_id"])
+				continue
+			}
+			if _, err := time.Parse(time.RFC3339, lastReportedAt); err != nil {
+				t.Errorf("last_reported_at %q is not RFC3339 formatted: %v", lastReportedAt, err)
+			}
+		}
+	})
 }

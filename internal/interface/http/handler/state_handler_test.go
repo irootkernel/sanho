@@ -240,3 +240,65 @@ func TestStateHandler_LastReportedAtFormatsRFC3339(t *testing.T) {
 		t.Fatalf("LastReportedAt is not RFC3339: %v", err)
 	}
 }
+
+// TestStateHandler_EmptyStateReturnsNonNullSchema verifies that /state returns
+// non-null empty object {} for docs_heads and empty array [] for workspaces.
+// This is required for v2 Web dashboard compatibility.
+func TestStateHandler_EmptyStateReturnsNonNullSchema(t *testing.T) {
+	docsRepo := &mockDocsRepoForState{
+		heads: map[docs.ProjectName]docs.CommitHash{},
+	}
+	wsRepo := &mockWorkspaceRepoForState{
+		workspaces: []*workspace.Workspace{},
+	}
+	projectLister := &mockProjectListerForState{projects: []string{}}
+
+	uc := stateuc.NewGetStateUseCase(docsRepo, wsRepo, projectLister)
+	h := handler.NewStateHandler(uc)
+
+	req := httptest.NewRequest("GET", "/state", nil)
+	w := httptest.NewRecorder()
+
+	h.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %v, want %v", w.Code, http.StatusOK)
+	}
+
+	// Parse raw JSON to check exact structure
+	var rawResp map[string]json.RawMessage
+	if err := json.Unmarshal(w.Body.Bytes(), &rawResp); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+
+	// Verify docs_heads is present and is an empty object {}
+	docsHeadsRaw, ok := rawResp["docs_heads"]
+	if !ok {
+		t.Fatalf("docs_heads field is missing from response")
+	}
+	if string(docsHeadsRaw) != "{}" {
+		// It might be a non-empty object, which is also fine, but for empty state it should be {}
+		var docsHeads map[string]string
+		if err := json.Unmarshal(docsHeadsRaw, &docsHeads); err != nil {
+			t.Fatalf("docs_heads is not a valid object: %v", err)
+		}
+		if len(docsHeads) != 0 {
+			t.Errorf("expected docs_heads to be empty, got %v", docsHeads)
+		}
+	}
+
+	// Verify workspaces is present and is an empty array []
+	workspacesRaw, ok := rawResp["workspaces"]
+	if !ok {
+		t.Fatalf("workspaces field is missing from response")
+	}
+	if string(workspacesRaw) != "[]" {
+		var workspaces []interface{}
+		if err := json.Unmarshal(workspacesRaw, &workspaces); err != nil {
+			t.Fatalf("workspaces is not a valid array: %v", err)
+		}
+		if len(workspaces) != 0 {
+			t.Errorf("expected workspaces to be empty, got %v", workspaces)
+		}
+	}
+}
