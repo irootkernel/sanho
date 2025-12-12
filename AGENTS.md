@@ -1,0 +1,37 @@
+# Repository Guidelines
+
+## Project Structure & Module Organization
+- `cmd/server` hosts the kkachi-server HTTP service; `cmd/kkachi` is the CLI entrypoint.
+- Core logic sits in `internal/{config,domain,infra,interface,usecase}`; keep new packages domain-oriented.
+- Docs/roadmaps live in `docs/`; fixture docs repos for tests in `docs_repos/`; runtime artifacts in `data/` and `tmp/` (ignored); builds in `bin/`.
+- Tests: co-locate package unit tests as `*_test.go`; server integration in `test/integration`, server e2e in `test/e2e`; CLI integration/e2e in `test/cli/...`.
+
+## Language Policy
+- Code, inline comments, and all CLI/HTTP interfaces stay in English.
+- Documentation under `docs/` and team communication (including this guide and conversations) should be written in Korean.
+
+## Build, Test, and Development Commands
+- Require Go 1.25+. Local server: `go run ./cmd/server` (override `PORT`, `STATE_FILE_PATH`).
+- CLI build/install: `make cli-build` → `bin/kkachi`; `make cli-install` to `$GOPATH/bin`.
+- Server checks: `make server-test-prepare` (generate+fmt+vet), `make server-test-unit`, `make server-test-integration`, `make server-test-e2e` (`E2E_BASE_URL`, default `http://127.0.0.1:5789`), or `make server-test` for all.
+- CLI checks: `make cli-test-prepare`, `make cli-test-unit`, `make cli-test-integration` (sets `KKACHI_CLI_BINARY`), `make cli-test-e2e` (`KKACHI_E2E_BASE_URL`), or `make cli-test`.
+- Docker dev loop: `make server-run` builds the dev image and runs with Git/SSH mounts.
+
+## Coding Style & Naming Conventions
+- Use standard Go formatting (`go fmt ./...` is in prep targets); exported names follow Go casing, packages stay lowercase.
+- Keep names explicit about intent and side effects; command wiring in `cmd/kkachi`, HTTP handlers in `internal/interface/http`, domain types in `internal/domain`.
+- Tests use `TestXxx`/`BenchmarkXxx` patterns; table tests for branch-heavy logic are preferred.
+
+## Testing Guidelines
+- Add unit tests near new code; move cross-adapter cases to `test/integration` and end-to-end flows to `test/e2e` or `test/cli/e2e`.
+- Set `KKACHI_E2E_BASE_URL` for non-default servers; point `KKACHI_CLI_BINARY` at a fresh build for CLI suites.
+- Keep failing tests that capture expected behavior when fixing regressions; aim for coverage on new branches.
+
+## Commit & Pull Request Guidelines
+- Commit style matches history: `[TYPE] Brief summary (#issue-or-PR)` (e.g., `[BUG-3] Fix pending fix merge edge case (#42)`); one logical change per commit.
+- PRs outline scope, validation steps, config/env changes, linked issues; include screenshots only when output matters.
+- Call out deferred follow-ups explicitly so they can be tracked.
+
+## Security & Configuration Tips
+- Do not commit secrets; `.kkachi*`, `data/`, and temp repos should stay untracked (init updates `.gitignore`).
+- Prefer disposable repos under `/tmp` for e2e runs to avoid polluting real workspaces.
