@@ -3,6 +3,7 @@ package e2e_test
 import (
 	"context"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -85,7 +86,7 @@ func TestE2E_CliClean_RemovesWorkspaceAndLocalFiles(t *testing.T) {
 	runCmdE2E(t, wsDir, nil, cliBin, "clean", "--yes", "--remove-docs")
 
 	// Server workspace should be gone
-	req, _ := http.NewRequest(http.MethodDelete, baseURL+"/workspaces/"+wsID, nil)
+	req, _ := http.NewRequest(http.MethodDelete, baseURL+"/workspaces/"+url.PathEscape(wsID), nil)
 	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatalf("server delete check failed: %v", err)

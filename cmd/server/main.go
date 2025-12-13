@@ -23,6 +23,9 @@ func main() {
 	}
 	addr := ":" + port
 
+	// Resolve web distribution directory
+	webDistDir := config.ResolveWebDistDir(os.Getenv("WEB_DIST_DIR"))
+
 	statePath, err := config.ResolveStatePath(os.Getenv("STATE_FILE_PATH"))
 	if err != nil {
 		log.Fatalf("Failed to resolve state path: %v", err)
@@ -68,8 +71,14 @@ func main() {
 	docsPushHandler := handler.NewDocsPushHandler(pushDocsUC)
 	stateHandler := handler.NewStateHandler(getStateUC)
 
-	srv := http.NewHTTPServer(addr, projectHandler, workspaceHandler, docsHeadHandler, docsSnapshotHandler, docsPushHandler, stateHandler)
-	log.Printf("Starting server on %s", addr)
+	// Server configuration
+	serverCfg := http.ServerConfig{
+		Addr:       addr,
+		WebDistDir: webDistDir,
+	}
+
+	srv := http.NewHTTPServer(serverCfg, projectHandler, workspaceHandler, docsHeadHandler, docsSnapshotHandler, docsPushHandler, stateHandler)
+	log.Printf("Starting server on %s (web dist: %s)", addr, webDistDir)
 	if err := srv.ListenAndServe(); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}

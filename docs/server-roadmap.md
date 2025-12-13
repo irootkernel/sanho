@@ -5,6 +5,7 @@
 - v1 기준 kkachi-server와 kkachi CLI, `/state`, `/docs/head` 등 핵심 기능은 이미 구현되어 있다.
 - v2는 **읽기 전용 Web 대시보드(kkachi-web)** 를 추가하고, 이를 위해 서버는 최소한의 API alias 및 정적 파일 서빙만 확장한다.
 - v2 범위에서는 새로운 쓰기 API를 추가하지 않으며, 기존 v1 워크플로우(kkachi CLI + Git hook)를 그대로 존중한다.
+- v2는 인증/인가 없이 접근 가능하다고 가정하되, v3(Web Terminal)부터 옵션 토큰 기반 보호를 붙일 수 있도록 auth middleware를 **비활성 기본값**으로 설계할 여지를 남긴다.
 
 ---
 
@@ -82,10 +83,10 @@
    - 구현 방식:
 
      - Router 레벨에서 `/api/state` → `/state` 핸들러로 바인딩.
-	   - 요구사항:
+		   - 요구사항:
 
-	     - `/state` 와 응답 스키마 100% 동일.
-	     - Web UI 기본 호출 경로는 `/api/state` 로 고정하고, 레거시/개발 환경에서만 `/state` fallback 을 허용한다.
+		     - `/state` 와 응답 스키마 100% 동일.
+		     - Web UI 기본 호출 경로는 `/api/state` 로 **고정**한다. (`/state` fallback 전제 없음)
 
 2. 간단한 헬스체크 API (v2 필수)
 
@@ -99,20 +100,21 @@
 
 4. 정적 서빙 핸들러 구현
 
-	   - 라우팅 규칙 예:
+		   - 라우팅 규칙 예:
 
-		     - `GET /app/*` → `web/dist/index.html` (SPA 라우팅)
-		     - `GET /app/assets/*` → `web/dist/assets/*`
-		     - `GET /` → `web/dist/index.html` (`/app/`과 동일 SPA 엔트리, 호환용)
-	   - 구현 옵션:
+			     - `GET /api/*` → API (Web 전용 엔드포인트 prefix)
+			     - `GET /assets/*` → `web/dist/assets/*`
+			     - `GET /*` → `web/dist/index.html` (SPA 라우팅)
+		   - 구현 옵션:
 
-	     - Go `http.FileServer` 로 디렉토리 서빙.
-	     - 또는 embed(FS) 활용해 단일 바이너리로 패키징.
+		     - Go `http.FileServer` 로 디렉토리 서빙.
+		     - 또는 embed(FS) 활용해 단일 바이너리로 패키징.
 
 5. 404 처리 / SPA fallback
 
-	   - `/app/*` 와 같이 SPA 내부 라우트로 오는 요청은 항상 `index.html` 로 fallback.
-	   - `/api/*` 는 API로, `/app/assets/*` 는 정적 파일로 구분.
+		   - SPA 내부 라우트(`/projects/...`, `/debug/...` 등)로 오는 요청은 항상 `index.html` 로 fallback.
+		   - `/api/*` 는 API로, `/assets/*` 는 정적 파일로 구분한다.
+		   - `/state`, `/docs/*`, `/healthz` 등 기존 API/정적 라우트는 먼저 매칭되고, 그 외만 SPA fallback 처리한다.
 
 6. CORS / Same-origin 정책 적용
 
@@ -124,10 +126,9 @@
 - 서버 단위/통합 테스트 또는 수동 검증으로 다음을 확인:
 
 	  - `/api/state` 응답이 `/state` 와 완전히 동일하다.
-		  - 서버 실행 후 `GET /app/` 요청 시 `web/dist/index.html` 이 로딩된다.
-		  - `GET /app/...` 요청이 SPA fallback으로 `index.html` 을 반환한다.
-		  - `GET /app/assets/...` 요청이 실제 정적 파일로 응답한다.
-		  - `GET /` 요청 시 동일 `index.html` 이 로딩된다.
+		  - 서버 실행 후 `GET /` 요청 시 `web/dist/index.html` 이 로딩된다.
+		  - `GET /projects/...` 요청이 SPA fallback으로 `index.html` 을 반환한다.
+		  - `GET /assets/...` 요청이 실제 정적 파일로 응답한다.
 
 ---
 
@@ -164,10 +165,10 @@
 
 	     - web 빌드 수행 여부 (`web/dist` 생성 확인).
 	     - `/api/state` 응답 확인.
-	     - `/app/` 접속 시 SPA 로딩 여부.
+	     - `/` 접속 시 SPA 로딩 여부.
 
 **테스트 / Done 기준 (DoD)**
 
 - 단일 커맨드(예: `make server-with-web`) 또는 문서화된 절차로 web + server 빌드를 재현할 수 있다.
 - `web/dist` 가 없을 때 서버 로그/에러 메시지에서 원인을 바로 파악할 수 있다.
-- 배포 체크리스트를 따라 실제 환경에 올린 뒤, `/app/`, `/api/state` 가 정상 동작하는 것을 확인했다.
+- 배포 체크리스트를 따라 실제 환경에 올린 뒤, `/`, `/api/state` 가 정상 동작하는 것을 확인했다.

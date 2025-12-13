@@ -83,7 +83,7 @@ v2에서의 주요 컴포넌트는 다음과 같다.
 데이터 흐름(고수준):
 
 1. 브라우저에서 Web UI 로드
-2. Web UI가 kkachi-server의 `/api/state`를 호출하여 전체 상태를 가져옴 (레거시/개발 환경에서는 `/state` fallback 가능)
+2. Web UI가 kkachi-server의 `/api/state`를 호출하여 전체 상태를 가져옴
 3. Project / workspace 별로 상태를 가공해 화면에 출력
 
 ### 3.2 Monorepo 구조
@@ -119,7 +119,7 @@ kkachi/
 * 기본 API 엔드포인트:
 
   * `GET /state` – 서버 상태 조회(v1 유지)
-  * `GET /api/state` – v2 Web UI 기본 엔드포인트(`/state` alias, 동일 응답)
+  * `GET /api/state` – v2 Web UI 기본 엔드포인트(v2부터 고정, `/state`와 동일 응답)
   * `GET /healthz` – v2 헬스 체크 엔드포인트(운영 필수)
 * 동일 Origin을 사용한다 (예: `http://localhost:5789` 에서 서버와 Web UI 모두 제공).
 
@@ -156,7 +156,7 @@ Web UI에서 workspace 상태는 다음과 같이 표현한다.
 
 * 초기 버전(v2)에서는 **수동 리프레시 버튼**을 제공한다.
 
-  * “새로고침” 버튼 클릭 시 `/api/state`를 다시 호출한다. (레거시/개발 환경에서는 `/state` fallback 가능)
+  * “새로고침” 버튼 클릭 시 `/api/state`를 다시 호출한다.
 * 자동 주기 리프레시는 선택 옵션이며, 초기 구현에서는 필수 아님.
 
   * 추후 `10초/30초` 자동 리프레시 옵션을 설정으로 추가할 수 있다.
@@ -183,7 +183,7 @@ Web UI에서 workspace 상태는 다음과 같이 표현한다.
 
 #### 5.2.2 동작 요구사항
 
-* `GET /api/state` 호출 결과의 `docs_heads` 및 `workspaces`를 기반으로 각 project별로 다음을 계산한다. (레거시/개발 환경에서는 `/state` fallback 가능)
+* `GET /api/state` 호출 결과의 `docs_heads` 및 `workspaces`를 기반으로 각 project별로 다음을 계산한다.
 
   * `docs_head` – `docs_heads[project]` (없으면 null)
   * `workspace_count` – 해당 project를 가진 workspace 개수
@@ -213,11 +213,11 @@ Web UI에서 workspace 상태는 다음과 같이 표현한다.
 
 #### 5.2.3 빈 상태/에러 처리
 
-* `/api/state`(=`/state`) 응답의 `workspaces`가 비어 있지만 `docs_heads`가 존재할 때:
+* `/api/state` 응답의 `workspaces`가 비어 있지만 `docs_heads`가 존재할 때:
 
   * 프로젝트 목록은 표시하되, 상단 배너로 “아직 workspace가 없습니다. 먼저 kkachi init 또는 kkachi workspace register를 실행해 주세요.” 정도의 안내 문구를 표시한다.
 * `docs_heads`와 `workspaces`가 모두 비어 있는 “완전 빈 state”는 §5.5에서 전역 처리한다.
-* `/api/state` 호출 실패 시(또는 `/state` fallback 실패 시):
+* `/api/state` 호출 실패 시:
 
   * 화면 상단에 에러 배너 표시 (예: “서버에 연결할 수 없습니다. retry 버튼을 누르거나 서버 상태를 확인해 주세요.”)
   * Retry 버튼 제공.
@@ -233,11 +233,11 @@ Web UI에서 workspace 상태는 다음과 같이 표현한다.
 
 * URL 구조 예시:
 
-  * `/app/projects/:projectName`
+  * `/projects/:projectName`
 
 * 진입 시:
 
-  1. `/api/state` 를 호출한다 (이미 메인 화면에서 가져온 데이터가 있다면 캐시 재사용 가능; 레거시/개발 환경에서는 `/state` fallback 가능).
+  1. `/api/state` 를 호출한다 (이미 메인 화면에서 가져온 데이터가 있다면 캐시 재사용 가능).
   2. `workspaces` 중 `project == :projectName` 인 항목만 필터링한다.
   3. `docs_heads[:projectName]` 값을 가져온다; 없으면 docs HEAD가 없는 project로 처리하며, workspace 상태는 Unknown으로 표시한다.
 
@@ -301,9 +301,9 @@ Web UI에서 workspace 상태는 다음과 같이 표현한다.
 
 * URL 구조 예시:
 
-  * `/app/debug/state`
+  * `/debug/state`
 
-* `/api/state` 호출 결과를 prettified JSON으로 화면에 보여준다. (레거시/개발 환경에서는 `/state` fallback 가능)
+* `/api/state` 호출 결과를 prettified JSON으로 화면에 보여준다.
 * 별도 가공 없이 그대로 노출하되, Syntax highlighting 제공(선택).
 * 읽기 전용, 편집 불가.
 
@@ -319,7 +319,7 @@ Web UI에서 workspace 상태는 다음과 같이 표현한다.
     * 화면 상단에 에러 배너 + Retry 버튼.
 * 빈 상태:
 
-  * `/api/state`(=`/state`)의 `docs_heads`와 `workspaces`가 모두 비어 있는 경우:
+* `/api/state`의 `docs_heads`와 `workspaces`가 모두 비어 있는 경우:
 
     * “kkachi-server에 아직 project / workspace가 등록되지 않았습니다.” 안내 문구 + v1 CLI 명령 예시(`kkachi project add`, `kkachi init`)를 간단히 보여줄 수 있다.
 
@@ -350,7 +350,7 @@ v2 Web UI를 위해 다음 alias/헬퍼 엔드포인트를 추가한다 (v2 필�
 요구사항:
 
 * `/api/state`는 `/state`와 **완전히 동일한 응답 스키마**를 가져야 하며, 서버 내부에서는 핸들러를 재사용한다.
-* Web UI에서 사용할 기본 endpoint는 `/api/state`이며, 레거시/개발 환경에서만 `/state` fallback을 허용할 수 있다.
+* Web UI는 **항상** `/api/state`만 호출한다. (`/state` fallback 로직 없음)
 * `/healthz`는 200 OK와 간단한 JSON(예: `{ ok: true }`)을 반환한다.
 
 ### 6.3 정적 파일 서빙
@@ -363,12 +363,13 @@ v2 Web UI를 위해 다음 alias/헬퍼 엔드포인트를 추가한다 (v2 필�
 
 * 서버 라우팅:
 
-  * `GET /app/*`  → `web/dist/index.html` (SPA 라우팅용)
-  * `GET /app/assets/*` → `web/dist/assets/*` (JS/CSS/이미지)
-  * `GET /` → `web/dist/index.html` (`/app/`과 동일 SPA 엔트리, 호환용)
+  * `GET /api/*` → API (v2 Web 전용 엔드포인트 prefix)
+  * `GET /assets/*` → `web/dist/assets/*` (JS/CSS/이미지)
+  * `GET /*` → `web/dist/index.html` (SPA 라우팅용)
 
-* Web UI의 공식 엔트리 URL은 `/app/` 이며, `/app/*` 하위는 모두 SPA 라우트로 처리한다.
-* Web 빌드 시 정적 asset 경로가 `/app/assets/...`로 생성되도록 프론트 설정(Vite `base: "/app/"` 등)을 적용한다.
+* Web UI의 공식 엔트리 URL은 `/` 이며, SPA 라우트는 `/projects/...`, `/debug/...` 처럼 루트 하위에 배치한다.
+* 서버는 기존 API 경로(`/state`, `/docs/*`, `/healthz` 등)를 먼저 매칭하고, 그 외 경로만 SPA fallback(`index.html`)으로 처리한다.
+* Web 빌드 시 정적 asset 경로가 `/assets/...`로 생성되도록 프론트 설정(Vite `base: "/"` 또는 기본값)을 적용한다.
 
 ---
 
@@ -428,6 +429,7 @@ web/src/
 * v2에서는 별도의 인증·인가를 두지 않는다.
 * 모든 HTTP 호출은 동일 Origin(kkachi-server)으로만 수행된다.
 * CORS는 기본적으로 비활성(또는 same-origin 허용) 상태를 유지한다.
+* 확장 고려: v3(Web Terminal)부터는 옵션으로 간단 토큰 기반 보호를 붙일 수 있도록, 서버는 auth middleware를 **비활성 기본값**으로 설계한다. (v2에서 인증 구현을 “필수”로 요구하진 않음)
 
 ### 8.3 에러 처리 / 로깅
 
@@ -458,7 +460,7 @@ web/src/
 
 v2는 이후 v3~v9 확장의 기반이 되므로, 다음을 고려하여 설계한다.
 
-* v3에서 Web Terminal(PTY + xterm.js)를 추가하기 쉬운 라우팅 구조 유지 (`/app/terminal` 등).
+* v3에서 Web Terminal(PTY + xterm.js)를 추가하기 쉬운 라우팅 구조 유지 (`/terminal` 등).
 * v4 이후 Task/Agent 화면 확장을 위해, 프로젝트 상세 화면에 향후 “Tasks” 탭을 추가할 수 있는 레이아웃 사용.
 * v2는 same-origin 고정(보안/운영 단순화)이며, 설정은 `/api` 같은 path prefix 수준만 허용한다.
   * full URL/별도 도메인 분리는 v3+에서 별도 요구사항으로 다룬다.

@@ -6,7 +6,7 @@
 - v1 기준 kkachi CLI 및 Git hook 기반 워크플로우가 운영 중이며, v2는 이를 변경하지 않는다.
 - v2는 **서버의 기존 REST API**(특히 `/state`, `/docs/head`) 위에 구축되는 **읽기 전용 Web UI(kkachi-web)** 를 추가하는 범위이다.
 - 배포 환경은 개인 또는 소규모 팀의 로컬 네트워크를 전제로 하며, 인증/인가 없이 접근 가능하다고 가정한다.
-- SPA 공식 엔트리는 `/app/`로 고정한다. 서버는 `/app/*`에 대해 SPA fallback을 제공하고, `/api/state` alias와 `/healthz` 헬스 체크를 필수로 노출하며, 정적 빌드 미존재 시 친절한 안내를 반환한다.
+- SPA 공식 엔트리는 `/`로 고정한다. 서버는 `/assets/*`를 정적 asset으로 서빙하고, `/api/*` 및 기존 API 경로(`/state`, `/docs/*`, `/healthz` 등)를 제외한 `GET /*`에 대해 `index.html` SPA fallback을 제공하며, `/api/state`와 `/healthz`를 필수로 노출하고, 정적 빌드 미존재 시 친절한 안내를 반환한다.
 
 ---
 
@@ -24,7 +24,7 @@ Web 쪽은 기능이 많기 때문에, 단계별로 쪼개어 정리한다.
 ### 1.2 Client Tasks 개요
 
 - **CTASK-1**: kkachi-web 기본 셋업 + `/api/state` 클라이언트 + Debug State 페이지  
-  - 내용: `web/` 패키지 생성, React+TS+Vite 템플릿, 라우터/레이아웃 기본 틀, API 타입 정의 및 HTTP 클라이언트, `RawStatePage`(URL: `/app/debug/state`)를 통해 `/api/state` 응답을 그대로 노출하는 최소 동작 가능한 버전.
+  - 내용: `web/` 패키지 생성, React+TS+Vite 템플릿, 라우터/레이아웃 기본 틀, API 타입 정의 및 HTTP 클라이언트, `RawStatePage`(URL: `/debug/state`)를 통해 `/api/state` 응답을 그대로 노출하는 최소 동작 가능한 버전.
 - **CTASK-2**: 프로젝트 리스트 대시보드(F2-1) 구현  
   - 내용: 상태 fetch hook, 프로젝트별 집계 로직, `ProjectsPage` UI(테이블/정렬/필터), 기본 로딩·에러·빈 상태 처리까지 포함한 메인 대시보드.
 - **CTASK-3**: 프로젝트 상세 화면(F2-2) 구현  
@@ -60,16 +60,16 @@ Web 쪽은 기능이 많기 때문에, 단계별로 쪼개어 정리한다.
 
    - React + TypeScript + Vite 초기 템플릿.
    - ESLint / Prettier / 테스트 프레임워크(Jest or Vitest) 설정.
-   - Vite 빌드 `base`를 `/app/`로 설정해 asset URL이 `/app/assets/...`로 생성되도록 한다. (예: `vite.config.ts`에서 `base: "/app/"`)
+   - Vite 빌드 `base`는 `/`(기본값)을 유지해 asset URL이 `/assets/...`로 생성되도록 한다. (예: `vite.config.ts`에서 `base: "/"` 또는 설정 생략)
 
 3. 라우터 도입
 
    - React Router (v6 이상) 설치.
    - `router/index.tsx` 에서 라우트 매핑:
 
-     - `/app/` → ProjectsPage (F2-1)
-     - `/app/projects/:projectName` → ProjectDetailPage (F2-2)
-     - `/app/debug/state` → RawStatePage (F2-3, optional, dev 전용 혹은 `?debug=1` 로만 노출)
+     - `/` → ProjectsPage (F2-1)
+     - `/projects/:projectName` → ProjectDetailPage (F2-2)
+     - `/debug/state` → RawStatePage (F2-3, optional, dev 전용 혹은 `?debug=1` 로만 노출)
 
 4. 공통 레이아웃 컴포넌트
 
@@ -77,7 +77,7 @@ Web 쪽은 기능이 많기 때문에, 단계별로 쪼개어 정리한다.
    - 헤더에:
 
      - “Kkachi Web v2” 타이틀
-     - “새로고침” 버튼 (수동 `/state` refetch)
+     - “새로고침” 버튼 (수동 `/api/state` refetch)
 
 ---
 
@@ -85,7 +85,7 @@ Web 쪽은 기능이 많기 때문에, 단계별로 쪼개어 정리한다.
 
 5. API 타입 정의 (`api/kkachi.ts`)
 
-   - `/state` 응답 타입:
+   - `/api/state` 응답 타입: (`/state`와 동일 스키마)
 
      ```ts
      export interface KkachiState {
@@ -107,7 +107,7 @@ Web 쪽은 기능이 많기 때문에, 단계별로 쪼개어 정리한다.
 
    - 타입 드리프트 방지:
 
-     - v2에서는 수동 정의를 유지하되, `/state` 샘플 fixture(JSON)를 두고 파싱 테스트로 계약을 검증한다.
+     - v2에서는 수동 정의를 유지하되, `/api/state` 샘플 fixture(JSON)를 두고 파싱 테스트로 계약을 검증한다. (`/state`와 동일 스키마)
      - 이후 Go struct → TS 타입 자동 생성(go2ts 등) 스크립트를 추가할 여지를 남긴다.
 
 6. HTTP 클라이언트 wrapper (`api/client.ts`)
@@ -180,7 +180,7 @@ Web 쪽은 기능이 많기 때문에, 단계별로 쪼개어 정리한다.
       - Workspaces (총 개수)
       - Outdated (개수)
       - Last updated (포맷된 `last_reported_at_max`)
-    - 각 row 클릭 시 `/app/projects/:projectName` 로 이동.
+	    - 각 row 클릭 시 `/projects/:projectName` 로 이동.
 
 14. 정렬/필터 옵션
 
@@ -206,11 +206,11 @@ Web 쪽은 기능이 많기 때문에, 단계별로 쪼개어 정리한다.
 
 16. 라우팅 / 데이터 준비
 
-    - URL: `/app/projects/:projectName`.
-    - 진입 시:
+	    - URL: `/projects/:projectName`.
+	    - 진입 시:
 
-      - 이미 로드된 `/state` 데이터를 재사용 (Context or 상위에서 props 전달).
-      - 없으면 `useKkachiState()` 로 fetch.
+	      - 이미 로드된 state 데이터를 재사용 (Context or 상위에서 props 전달).
+	      - 없으면 `useKkachiState()` 로 fetch.
     - 필터링:
 
       - `const projectWorkspaces = workspaces.filter(w => w.project === projectName);`
@@ -273,10 +273,10 @@ Web 쪽은 기능이 많기 때문에, 단계별로 쪼개어 정리한다.
 
 22. RawStatePage 구현
 
-    - URL: `/app/debug/state`.
-    - `/state` 혹은 `/api/state` 응답을 pretty JSON 으로 그대로 노출.
-    - Syntax highlighting (예: prism, highlight.js) 도입 여부는 선택.
-    - 완전 읽기 전용. 운영 노출 여부를 명확히: dev 전용이거나 `?debug=1` 접근만 허용.
+	    - URL: `/debug/state`.
+	    - `/api/state` 응답을 pretty JSON 으로 그대로 노출. (`/state`와 동일 스키마)
+	    - Syntax highlighting (예: prism, highlight.js) 도입 여부는 선택.
+	    - 완전 읽기 전용. 운영 노출 여부를 명확히: dev 전용이거나 `?debug=1` 접근만 허용.
 
 ---
 
@@ -284,7 +284,7 @@ Web 쪽은 기능이 많기 때문에, 단계별로 쪼개어 정리한다.
 
 23. Loading 상태
 
-    - `/state` 호출 중:
+	    - `/api/state` 호출 중:
 
       - 중앙 스피너 + “불러오는 중…” 텍스트.
 
@@ -312,13 +312,14 @@ Web 쪽은 기능이 많기 때문에, 단계별로 쪼개어 정리한다.
 
 26. 성능 요구사항 반영
 
-    - `/state`는 최상위 Provider에서 최초 로딩 시 1회 호출 후 context 캐시.
-    - 프로젝트 상세 화면 이동 시, 기존 데이터를 캐시에서 사용 (리로드 시에만 refetch).
+	    - `/api/state`는 최상위 Provider에서 최초 로딩 시 1회 호출 후 context 캐시.
+	    - 프로젝트 상세 화면 이동 시, 기존 데이터를 캐시에서 사용 (리로드 시에만 refetch).
 
 27. 보안 / 네트워크
 
-    - 동일 Origin만 전제, CORS 설정 불필요.
-    - 브라우저에서 다른 도메인 호출 금지.
+	    - 동일 Origin만 전제, CORS 설정 불필요.
+	    - 브라우저에서 다른 도메인 호출 금지.
+	    - 확장 고려: v3(Web Terminal)부터 옵션 토큰 기반 보호가 활성화될 수 있으니, API client 계층에서 (기본 비활성) auth header를 주입할 수 있는 설정 포인트를 남긴다.
 
 28. 유닛 테스트
 
@@ -343,7 +344,7 @@ Web 쪽은 기능이 많기 때문에, 단계별로 쪼개어 정리한다.
 
     - Playwright/Cypress:
 
-      - 서버에 fixture `/state` 응답 주입.
+	      - 서버에 fixture `/api/state` 응답 주입.
       - “단 하나의 happy path” 시나리오만: 리스트 → 상세 페이지 정상 표시 확인.
       - 에러/네트워크 실패 시나리오는 유닛/컴포넌트 테스트로 커버.
 
@@ -353,10 +354,10 @@ Web 쪽은 기능이 많기 때문에, 단계별로 쪼개어 정리한다.
 
 31. 라우팅 구조 확장성 확보
 
-    - 향후:
+	    - 향후:
 
-      - `/app/terminal` (Web Terminal) 추가 가능하도록 라우트 설계.
-      - `/app/projects/:projectName/tasks` 탭 등 추가 용이한 레이아웃.
+	      - `/terminal` (Web Terminal) 추가 가능하도록 라우트 설계.
+	      - `/projects/:projectName/tasks` 탭 등 추가 용이한 레이아웃.
 
 32. 설정화
 
@@ -371,11 +372,11 @@ Web 쪽은 기능이 많기 때문에, 단계별로 쪼개어 정리한다.
 
 33. SPA 엔트리
 
-    - 공식 URL: `/app/` → `index.html` (SPA). `/`도 동일 `index.html`을 서빙한다(호환용).
+	    - 공식 URL: `/` → `index.html` (SPA).
 
-34. `/api/state` alias
+34. `/api/state` (Web 기본 엔드포인트)
 
-    - 기존 `/state` 핸들러를 그대로 재사용해 `/api/state`에 매핑한다.
+	    - 기존 `/state` 핸들러를 그대로 재사용해 `/api/state`에 매핑한다. (Web은 `/api/state`만 호출)
 
 35. `/healthz`
 
@@ -383,8 +384,8 @@ Web 쪽은 기능이 많기 때문에, 단계별로 쪼개어 정리한다.
 
 36. 정적 빌드 미존재 시 UX
 
-    - 서버 기동 시 `web/dist` 미존재 로그 경고.
-    - `/app/` 요청 시 “kkachi-web 빌드가 없습니다. web/ 디렉토리에서 npm run build 후 서버를 재기동하세요.”와 같이 명시적 안내를 반환.
+	    - 서버 기동 시 `web/dist` 미존재 로그 경고.
+	    - `/` 요청 시 “kkachi-web 빌드가 없습니다. web/ 디렉토리에서 npm run build 후 서버를 재기동하세요.”와 같이 명시적 안내를 반환.
 
 37. 빌드 순서 문서화
 

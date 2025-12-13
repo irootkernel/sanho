@@ -83,7 +83,7 @@ func TestDocsSnapshot(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			handler := handler.NewDocsSnapshotHandler(tt.mockUC)
-			srv := kkachihttp.NewHTTPServer(":0", nil, nil, nil, handler, nil, nil)
+			srv := kkachihttp.NewHTTPServer(kkachihttp.ServerConfig{Addr: ":0"}, nil, nil, nil, handler, nil, nil)
 
 			req := httptest.NewRequest("GET", "/docs/snapshot?project="+tt.queryProject+"&commit="+tt.queryCommit, nil)
 			w := httptest.NewRecorder()

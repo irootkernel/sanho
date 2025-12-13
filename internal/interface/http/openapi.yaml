@@ -4,6 +4,41 @@ info:
   version: 1.0.0
   description: API for Kkachi, a central documentation coordination system.
 paths:
+  /healthz:
+    get:
+      summary: Health check endpoint
+      description: Returns server health status for deployment monitoring
+      responses:
+        '200':
+          description: Server is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+  /api/state:
+    get:
+      summary: Get server state (Web UI alias)
+      description: Alias for /state endpoint, used by the v2 Web UI dashboard
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StateResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
   /docs/head:
     get:
       summary: Get current HEAD commit hash of docs repository
@@ -354,3 +389,35 @@ paths:
                   error:
                     type: string
 
+components:
+  schemas:
+    StateResponse:
+      type: object
+      properties:
+        docs_heads:
+          type: object
+          additionalProperties:
+            type: string
+          description: Map of project name to current docs HEAD commit hash
+        workspaces:
+          type: array
+          items:
+            type: object
+            properties:
+              workspace_id:
+                type: string
+              project:
+                type: string
+              docs_repo_id:
+                type: string
+              local_path:
+                type: string
+              repo_url:
+                type: string
+              docs_hash:
+                type: string
+              last_reported_at:
+                type: string
+                format: date-time
+              last_actor_email:
+                type: string
