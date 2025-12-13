@@ -81,7 +81,7 @@ Kkachi를 도입하면 다음과 같은 점이 좋아집니다.
 
 ## 주요 개념 정리 📚
 
-자세한 용어 정의는 `docs/requirement-v1.md`에 있지만,  
+자세한 용어 정의는 `docs/requirement.md`에 있지만,  
 이 문서에서는 이해에 필요한 핵심 개념만 요약합니다.
 
 - **Project**
@@ -111,18 +111,19 @@ commit/push 시점에 이를 중앙 저장소와 비교하여 상태를 알려 �
 
 ### 1. 서버 준비
 
-팀 차원에서 한 번만 kkachi-server를 배포합니다.  
-자세한 설정 방법과 운영 방식은 프로젝트 환경에 맞게 별도 운영 문서를 두고 관리하는 것을 권장합니다.
+팀 차원에서 한 번만 kkachi-server를 배포합니다.
 
-아주 단순한 로컬 실행 예시는 다음과 같습니다.
+Docker를 사용한 로컬 개발 서버 실행 (hot reload 지원):
 
 ```bash
-go run ./cmd/server \
-  # 환경 변수나 설정 파일로 포트, 상태 파일, docs repo 설정 등을 전달
+make server-run
 ```
 
-실제 운영 환경에서는 별도의 설정 파일/환경 변수를 사용해  
-프로젝트별 docs repo 정보를 등록합니다.
+Docker 없이 간단히 테스트하려면:
+
+```bash
+go run ./cmd/server
+```
 
 ### 2. 워크스페이스 초기화 (`kkachi init`)
 
@@ -215,11 +216,60 @@ git push origin main
 
 ---
 
+## 서버 배포 🚀
+
+### 필수 요구사항
+
+- **Go** 1.25+
+- **Docker** (`make server-run` 사용 시)
+- **Git** (PATH에 등록 필요)
+
+### 환경 변수
+
+| 변수 | 기본값 | 설명 |
+|------|--------|------|
+| `PORT` | `5789` | 서버 리슨 포트 |
+| `STATE_FILE_PATH` | `data/kkachi_state.json` | 상태 저장 파일 경로 |
+| `WEB_DIST_DIR` | `web/dist` | Web UI 빌드 디렉토리 (v2) |
+
+### Makefile 타겟
+
+| 타겟 | 설명 |
+|------|------|
+| `make server-run` | Docker + hot reload로 개발 서버 실행 |
+| `make server-build` | 프로덕션 Docker 이미지 빌드 |
+| `make server-test` | 전체 서버 테스트 실행 |
+| `make cli-build` | kkachi CLI 바이너리 빌드 |
+| `make cli-install` | CLI를 `$GOPATH/bin`에 설치 |
+
+### 배포 체크리스트
+
+배포 후 다음을 확인하세요:
+
+```bash
+# 헬스체크
+curl http://localhost:5789/healthz
+# 예상 응답: {"ok":true}
+
+# Web UI(SPA) 확인
+curl -i http://localhost:5789/
+# 예상: 200과 HTML (web dist가 없으면 원인을 알려주는 에러 응답)
+
+# Web API 별칭(v2) 확인
+curl http://localhost:5789/api/state
+# 예상: /state와 동일한 JSON
+
+# API 상태 확인 (v1)
+curl http://localhost:5789/state
+```
+
+---
+
 ## 더 알고 싶다면 📖
 
-이 문서는 “Kkachi가 어떤 문제를 해결하고, 어떤 식으로 사용하는지”에 집중한 개요 문서입니다.  
+이 문서는 "Kkachi가 어떤 문제를 해결하고, 어떤 식으로 사용하는지"에 집중한 개요 문서입니다.  
 구체적인 요구사항, 상세 동작, 에러 처리 정책, API 스펙 등은 `/docs` 디렉토리를 참고하세요.
 
-- 전체 요구사항 및 용어 정의(v1): `docs/requirement-v1.md`
+- 전체 요구사항 및 용어 정의: `docs/requirement.md`
 
 Kkachi의 내부 구조나 프로토콜을 더 깊이 이해하고 싶다면 위 문서들부터 읽는 것을 권장합니다.

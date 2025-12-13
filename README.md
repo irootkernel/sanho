@@ -74,7 +74,7 @@ With Kkachi in place:
   - You keep using `git clone`, `git pull`, `git commit`, `git push`.
   - Kkachi adds synchronization and status checks around those flows.
 - **No extra Git plumbing to learn.**
-  - You don’t need submod`ules or `git subtree` just to share docs.
+  - You don’t need `submodules` or `git subtree` just to share docs.
 - **Conflicts are detected early and surfaced clearly.**
   - Kkachi detects outdated bases and performs 3-way merges.
   - Humans still resolve the actual conflict markers, but the tool manages the lifecycle and state.
@@ -83,7 +83,7 @@ With Kkachi in place:
 
 ## Key concepts 📚
 
-For full definitions, see `docs/requirement-v1.md`. This is a brief summary:
+For full definitions, see `docs/requirement.md`. This is a brief summary:
 
 - **Project**
   - Logical name representing one product or domain (e.g., `sudal`, `dolgorae`).
@@ -109,17 +109,20 @@ From these primitives, Kkachi can always answer:
 
 ### 1. Run the server
 
-As a team, you deploy **kkachi-server** once. For local experiments:
+As a team, you deploy **kkachi-server** once. For local development with hot reload:
+
+```bash
+# Requires Docker
+make server-run
+```
+
+This builds a dev Docker image and runs the server on port 5789 with hot reload enabled.
+
+For a quick test without Docker:
 
 ```bash
 go run ./cmd/server
 ```
-
-In real environments you will typically configure:
-
-- Which docs repos to manage.
-- Where to store server state.
-- Port / listen address and authentication.
 
 ### 2. Initialize a workspace (`kkachi init`)
 
@@ -212,12 +215,61 @@ The following is a typical end-to-end flow:
 
 ---
 
+## Server Deployment 🚀
+
+### Prerequisites
+
+- **Go** 1.25+
+- **Docker** (for `make server-run`)
+- **Git** available in PATH
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | `5789` | Server listen port |
+| `STATE_FILE_PATH` | `data/kkachi_state.json` | Path to state persistence file |
+| `WEB_DIST_DIR` | `web/dist` | Path to web UI build directory (v2) |
+
+### Makefile Targets
+
+| Target | Description |
+|--------|-------------|
+| `make server-run` | Run dev server with Docker + hot reload |
+| `make server-build` | Build production Docker image |
+| `make server-test` | Run full server test suite |
+| `make cli-build` | Build the kkachi CLI binary |
+| `make cli-install` | Install CLI to `$GOPATH/bin` |
+
+### Deployment Checklist
+
+After deploying, verify:
+
+```bash
+# Health check
+curl http://localhost:5789/healthz
+# Expected: {"ok":true}
+
+# Web UI (SPA)
+curl -i http://localhost:5789/
+# Expected: 200 and HTML (or a clear error if web dist is missing)
+
+# Web API alias (v2)
+curl http://localhost:5789/api/state
+# Expected: same JSON as /state
+
+# API state (v1)
+curl http://localhost:5789/state
+```
+
+---
+
 ## Documentation 📖
 
 This README focuses on what Kkachi is and how to use it at a high level.  
 For full specifications, error handling rules, and API details, see the documents under `docs/`:
 
-- Requirements and terminology (v1): `docs/requirement-v1.md`
+- Requirements and terminology: `docs/requirement.md`
 
 For the Korean introduction to Kkachi, see:
 

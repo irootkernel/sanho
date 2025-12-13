@@ -94,3 +94,44 @@ cli-test-e2e: cli-build
 # Full CLI test pipeline.
 cli-test: cli-test-prepare cli-test-unit cli-test-integration cli-test-e2e
 
+# ---- Web + Server Build Targets (v2) ----
+
+WEB_DIR := web
+WEB_DIST_DIR := $(WEB_DIR)/dist
+
+.PHONY: web-check web-build server-with-web server-build-binary
+
+# Check if web dist exists
+web-check:
+	@if [ ! -d "$(WEB_DIST_DIR)" ]; then \
+		echo "Warning: $(WEB_DIST_DIR) not found. Run 'make web-build' or 'make server-with-web' first."; \
+		exit 1; \
+	fi
+	@echo "Web dist found: $(WEB_DIST_DIR)"
+
+# Build web UI (requires Node.js and npm)
+web-build:
+	@if [ ! -d "$(WEB_DIR)" ]; then \
+		echo "Error: $(WEB_DIR)/ directory not found. Web UI source is required."; \
+		exit 1; \
+	fi
+	@echo "Building web UI..."
+	cd $(WEB_DIR) && npm install && npm run build
+	@echo "Web build complete: $(WEB_DIST_DIR)/"
+
+# Build server binary only (without web)
+server-build-binary:
+	@echo "Building server binary..."
+	mkdir -p bin
+	$(GO) build -o bin/server $(SERVER_CMD)
+	@echo "Server build complete: bin/server"
+
+# Build web + server together (recommended for production deployment)
+server-with-web: web-build server-build-binary
+	@echo ""
+	@echo "=== Full build complete ==="
+	@echo "  Server binary: bin/server"
+	@echo "  Web dist:      $(WEB_DIST_DIR)/"
+	@echo ""
+	@echo "To run: WEB_DIST_DIR=$(WEB_DIST_DIR) ./bin/server"
+
