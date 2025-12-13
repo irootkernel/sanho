@@ -1,393 +1,421 @@
-# Kkachi Web v2 Roadmap (kkachi-web)
+# Kkachi Web v2 Client Roadmap (kkachi-web)
 
-## 0. 전제
+## 0. 전제 (v2 범위 고정)
 
-- v1 기준 kkachi-server 기능 및 상태 모델(`docs_repos`, `project_to_docs_repo`, `workspaces`)이 이미 구현되어 있다.
-- v1 기준 kkachi CLI 및 Git hook 기반 워크플로우가 운영 중이며, v2는 이를 변경하지 않는다.
-- v2는 **서버의 기존 REST API**(특히 `/state`, `/docs/head`) 위에 구축되는 **읽기 전용 Web UI(kkachi-web)** 를 추가하는 범위이다.
-- 배포 환경은 개인 또는 소규모 팀의 로컬 네트워크를 전제로 하며, 인증/인가 없이 접근 가능하다고 가정한다.
-- SPA 공식 엔트리는 `/`로 고정한다. 서버는 `/assets/*`를 정적 asset으로 서빙하고, `/api/*` 및 기존 API 경로(`/state`, `/docs/*`, `/healthz` 등)를 제외한 `GET /*`에 대해 `index.html` SPA fallback을 제공하며, `/api/state`와 `/healthz`를 필수로 노출하고, 정적 빌드 미존재 시 친절한 안내를 반환한다.
-
----
-
-## 1. Client Roadmap (kkachi-web, React+TS+Vite)
-
-Web 쪽은 기능이 많기 때문에, 단계별로 쪼개어 정리한다.  
-각 단계는 독립적인 작업 단위로, 우선순위에 따라 점진적으로 도입할 수 있다.
-
-### 1.1 공통 원칙 (Agile Delivery)
-
-- 모든 CTASK는 **브라우저에서 실제로 동작하는 kkachi-web 빌드 산출물**을 목표로 한다.
-- 각 CTASK 안에 해당 범위를 검증하는 **테스트 코드(단위/컴포넌트/E2E 중 적절한 수준)** 와 **간단한 배포/빌드 가이드 업데이트**를 포함한다.
-- 테스트/배포만을 위한 별도의 Task는 만들지 않고, 각 CTASK의 완료 정의(DoD)에 포함해서 관리한다.
-
-### 1.2 Client Tasks 개요
-
-- **CTASK-1**: kkachi-web 기본 셋업 + `/api/state` 클라이언트 + Debug State 페이지  
-  - 내용: `web/` 패키지 생성, React+TS+Vite 템플릿, 라우터/레이아웃 기본 틀, API 타입 정의 및 HTTP 클라이언트, `RawStatePage`(URL: `/debug/state`)를 통해 `/api/state` 응답을 그대로 노출하는 최소 동작 가능한 버전.
-- **CTASK-2**: 프로젝트 리스트 대시보드(F2-1) 구현  
-  - 내용: 상태 fetch hook, 프로젝트별 집계 로직, `ProjectsPage` UI(테이블/정렬/필터), 기본 로딩·에러·빈 상태 처리까지 포함한 메인 대시보드.
-- **CTASK-3**: 프로젝트 상세 화면(F2-2) 구현  
-  - 내용: `ProjectDetailPage` 라우팅/데이터 준비, workspace 상태 계산(Up-to-date/Outdated/Unknown), 상세 테이블/필터/검색, `StatusBadge` 및 시간 포맷 유틸 적용.
-- **CTASK-4**: 공통 UX/상태 처리 + 비기능 요구사항  
-  - 내용: 공통 로딩/에러/빈 상태 컴포넌트 정리, 성능(캐싱/최소 호출), 설정화(`VITE_KKACHI_API_PREFIX`, path prefix 전용), 테스트 보강(상태 계산 유닛 테스트, 주요 페이지 컴포넌트 테스트, 선택적 E2E) 및 향후 라우팅 확장성 정리.
+- v1 기준 kkachi-server / kkachi CLI / Git hook 워크플로우는 **그대로 유지**한다. (v2 Web은 이를 변경하지 않는다.)
+- v2 Web(kkachi-web)은 **읽기 전용(Read-only)** 대시보드이며, Web에서 어떠한 쓰기 작업(`/docs/push` 등)도 수행하지 않는다.
+- 서버는 v2에서 다음을 이미 제공한다고 가정한다. (server-roadmap 완료 상태)
+  - `GET /api/state` : `GET /state`와 **동일 JSON 스키마**를 반환하는 alias
+  - `GET /healthz`
+  - 정적 파일 서빙: `GET /assets/*` → `web/dist/assets/*`
+  - SPA fallback: `GET /*` (단, `/api/*`, `/assets/*`, 기존 API 경로 제외) → `web/dist/index.html`
+- Web UI는 **항상** `/api/state`만 호출한다. (`/state` fallback은 두지 않는다.)
+- SPA 공식 엔트리는 `/`로 고정한다. (Vite `base`는 `/` 유지)
 
 ---
 
-### 2-1. 프로젝트 셋업 / 인프라
+## 1. v2 Client 목표/범위
 
-1. Monorepo 내 `web/` 패키지 생성
+요구사항(requirement.md) 기준 v2 Web은 아래 기능을 제공한다.
 
-   - 구조 예:
+- **F2-1 (필수)** 프로젝트 리스트(Dashboard)
+  - project별 docs HEAD, workspace 수, outdated 수, 마지막 업데이트 시각 요약
+- **F2-2 (필수)** 프로젝트 상세
+  - 특정 project의 workspace 리스트 + Up-to-date/Outdated/Unknown 상태 표시
+  - 필터(상태), 검색, 기본 정렬(last_reported_at desc)
+- **F2-3 (선택)** Raw state 보기
+  - `/api/state` JSON을 개발자 친화적으로 그대로 표시
+- **F2-4 (필수)** 로딩/에러/빈 상태
+  - 네트워크 오류, 완전 빈 state(docs_heads/workspaces 모두 비어있음) 등
 
-     ```text
-     kkachi/
-       web/
-         package.json
-         vite.config.ts
-         tsconfig.json
-         index.html
-         src/
-           main.tsx
-           App.tsx
-           router/
-           pages/
-           components/
-           api/
-     ```
-
-2. 기본 스택 구성
-
-   - React + TypeScript + Vite 초기 템플릿.
-   - ESLint / Prettier / 테스트 프레임워크(Jest or Vitest) 설정.
-   - Vite 빌드 `base`는 `/`(기본값)을 유지해 asset URL이 `/assets/...`로 생성되도록 한다. (예: `vite.config.ts`에서 `base: "/"` 또는 설정 생략)
-
-3. 라우터 도입
-
-   - React Router (v6 이상) 설치.
-   - `router/index.tsx` 에서 라우트 매핑:
-
-     - `/` → ProjectsPage (F2-1)
-     - `/projects/:projectName` → ProjectDetailPage (F2-2)
-     - `/debug/state` → RawStatePage (F2-3, optional, dev 전용 혹은 `?debug=1` 로만 노출)
-
-4. 공통 레이아웃 컴포넌트
-
-   - `<Layout>`: 상단 헤더, 좌/상단 navigation, 컨텐츠 영역.
-   - 헤더에:
-
-     - “Kkachi Web v2” 타이틀
-     - “새로고침” 버튼 (수동 `/api/state` refetch)
+비범위(명시): v2에서는 Web에서 docs 편집/푸시/프로젝트 변경/워크스페이스 등록 같은 쓰기 기능을 제공하지 않는다.
 
 ---
 
-### 2-2. API 클라이언트 계층
+## 2. 작업 방식 (Agile + Top-down + Clean Architecture)
 
-5. API 타입 정의 (`api/kkachi.ts`)
+### 2.1 Agile Delivery
 
-   - `/api/state` 응답 타입: (`/state`와 동일 스키마)
+- 모든 **CTASK는 “브라우저에서 실제로 동작하는 빌드 산출물”**을 목표로 한다.
+- 각 CTASK는 해당 범위를 검증하는 **테스트(유닛/컴포넌트/E2E 중 적절한 수준)** 를 포함한다.
+- “테스트만”, “문서만” 같은 별도 Task는 만들지 않고, **각 CTASK의 Done 정의(DoD)** 안에 포함한다.
 
-     ```ts
-     export interface KkachiState {
-       docs_heads: Record<string, string>;
-       workspaces: WorkspaceSummary[];
-     }
+### 2.2 Top-down 구현 규칙
 
-     export interface WorkspaceSummary {
-       workspace_id: string;
-       project: string;
-       docs_repo_id: string;
-       local_path: string;
-       repo_url: string;
-       docs_hash: string;
-       last_reported_at: string;
-       last_actor_email: string;
-     }
-     ```
+- 한 화면(또는 사용자 여정)을 **UI부터 먼저** 만들고, 버튼/토글/검색 같은 인터랙션을 먼저 배치한다.
+- 기능(데이터/로직)은 **아래 레이어를 점진적으로 채워 넣으며** 붙인다.
+- 아랫단이 아직 구현되지 않은 단계에서는, 해당 호출이 **명시적으로 `UnimplementedError`를 발생**시키도록 두고,
+  - 테스트는 그 시점에는 “미구현이므로 UnimplementedError가 노출되는 것이 정상”임을 기대한다.
+  - 다음 CTASK에서 해당 레이어가 구현되면, 테스트 기대를 “정상 동작”으로 업데이트한다.
 
-   - 타입 드리프트 방지:
+### 2.3 Clean Architecture 적용 방식
 
-     - v2에서는 수동 정의를 유지하되, `/api/state` 샘플 fixture(JSON)를 두고 파싱 테스트로 계약을 검증한다. (`/state`와 동일 스키마)
-     - 이후 Go struct → TS 타입 자동 생성(go2ts 등) 스크립트를 추가할 여지를 남긴다.
+요구사항이 단순하더라도 v3/v4 확장을 막지 않도록, v2부터 레이어 경계를 고정한다.
 
-6. HTTP 클라이언트 wrapper (`api/client.ts`)
+- **Domain**
+  - 엔티티/값 객체/순수 함수(상태 계산, 집계)만 포함
+  - React/HTTP/환경변수 접근 금지
+- **Presentation**
+  - React UI(페이지/컴포넌트), 라우팅, 사용자 이벤트 처리
+  - Application의 usecase/port에만 의존
+- **Application**
+  - 유스케이스(조회/리프레시), 캐시/스토어, 포트(interfaces)
+  - 구현체는 Data에 위임
+- **Data**
+  - `/api/state` 호출(fetch/axios), DTO↔Domain 매핑, 에러 매핑
 
-   - fetch 또는 axios 기반:
+의존 방향은 항상 다음만 허용한다.
 
-     - 기본 baseURL: `window.location.origin`.
-     - `/api/state` 호출 함수: `getState(): Promise<KkachiState>`.
-   - 공통 에러 처리 (에러 객체 통일).
+`presentation → application → domain`
 
-7. 상태 fetch hook 구현
-
-   - 예: `KkachiStateProvider` + `useKkachiState()`:
-
-     - 최상위 Layout/App에서 `/api/state`를 1회 호출해 context에 캐시.
-     - 하위 라우트는 context를 통해 `data`, `isLoading`, `error`, `refetch`를 공유.
-     - React Query를 도입해도 Provider 내부 구현만 교체하면 되도록 API를 고정한다.
+`data → application + domain`
 
 ---
 
-### 2-3. 공통 UI 컴포넌트
+## 3. 코드 구조 (제안)
 
-8. StatusBadge 컴포넌트
+> 실제 폴더명은 팀 컨벤션에 맞게 조정 가능하지만, 레이어 경계는 유지한다.
 
-   - props: `status: 'up_to_date' | 'outdated' | 'unknown'`.
-   - 텍스트 / 색상 매핑:
+```text
+web/
+  src/
+    app/
+      App.tsx
+      main.tsx
+      di/
+        AppRuntimeProvider.tsx
+        createRuntime.ts
+    domain/
+      errors/
+        UnimplementedError.ts
+      models/
+        KkachiState.ts
+        Workspace.ts
+        ProjectSummary.ts
+        Status.ts
+      services/
+        computeProjectSummaries.ts
+        computeWorkspaceStatus.ts
+    application/
+      ports/
+        KkachiStateRepository.ts
+      usecases/
+        GetKkachiState.ts
+      stores/
+        KkachiStateStore.ts
+    data/
+      http/
+        HttpClient.ts
+      repositories/
+        ApiKkachiStateRepository.ts
+    presentation/
+      router/
+        routes.tsx
+      layout/
+        Layout.tsx
+      components/
+        ErrorBanner.tsx
+        Loading.tsx
+        StatusBadge.tsx
+      pages/
+        ProjectsPage.tsx
+        ProjectDetailPage.tsx
+        RawStatePage.tsx
+  test/
+    fixtures/
+      api-state.sample.json
+```
 
-     - Up-to-date → 녹색.
-     - Outdated → 주황/빨강.
-     - Unknown → 회색.
+### DI(의존성 주입) 기본 규칙
 
-9. Time 표시 유틸
-
-   - `formatDateTime(isoString)` → `YYYY-MM-DD HH:MM`.
-   - `formatRelativeTime(isoString)` → “X분 전 / X시간 전” 형태.
-
-10. 테이블 컴포넌트
-
-    - `<Table>` / `<TableRow>` / `<TableCell>` 등 or 단순 CSS 테이블.
-    - 긴 경로에 대한 tooltip (local_path).
-
-11. ErrorBanner / LoadingSpinner
-
-    - API 에러 공통 배너: 상단에 메시지 + Retry 버튼.
-    - 로딩 시 스피너 또는 “불러오는 중…” 텍스트.
-
----
-
-### 2-4. F2-1 프로젝트 리스트 화면 (Dashboard)
-
-12. 프로젝트별 집계 로직 구현
-
-    - `docs_heads` + `workspaces` 로부터 다음을 계산:
-
-      - project 목록 = `Union(workspaces[].project, docs_heads 키)`.
-      - 각 project 대해:
-
-        - `docs_head = docs_heads[project] ?? null`
-        - `workspace_count` = 해당 project 의 workspace 개수.
-        - `unknown_count` = `docs_head`가 없을 때 해당 project 의 workspace 개수.
-        - `outdated_count` = `docs_head`가 있을 때만 `workspace.docs_hash !== docs_head` 인 개수. (`docs_head` 없으면 0)
-        - `last_reported_at_max` = 해당 project workspace 들의 `last_reported_at` 최대값.
-
-13. ProjectsPage UI 구현
-
-    - 컬럼:
-
-      - Project
-      - Docs HEAD
-      - Workspaces (총 개수)
-      - Outdated (개수)
-      - Last updated (포맷된 `last_reported_at_max`)
-	    - 각 row 클릭 시 `/projects/:projectName` 로 이동.
-
-14. 정렬/필터 옵션
-
-    - v2 최소 범위:
-
-      - 기본: project 이름 오름차순.
-      - 추가: “Outdated 있는 project 우선 보기” 토글 → `docs_head`가 있는 project 중 outdated_count > 0 인 행을 위로. (`docs_head` 없는 project는 Unknown으로 별도 표기)
-    - 다중 정렬·고급 필터는 v2 범위 밖(추가 CTASK로 분리)으로 둔다.
-
-15. 빈 상태/에러 처리
-
-    - `docs_heads` 와 `workspaces` 둘 다 비어 있는 경우는 전역 “완전 빈 state” 처리(2-7 참고).
-    - `workspaces.length === 0` 이지만 `docs_heads` 는 존재하는 경우:
-
-      - 프로젝트 목록은 표시하고, 상단 배너로 “아직 workspace가 없습니다. kkachi init 또는 kkachi workspace register를 실행해 주세요.”를 안내한다.
-    - API 실패:
-
-      - ErrorBanner + “Retry” 버튼 → `refetch()`.
+- `AppRuntimeProvider`(또는 유사)에서 **usecase/repository 구현체를 주입**한다.
+- 테스트에서는 Provider를 교체해
+  - unimplemented 구현체
+  - in-memory fake
+  - fetch mock 기반 real repository
+  를 상황에 맞게 주입한다.
 
 ---
 
-### 2-5. F2-2 프로젝트 상세 화면
+## 4. 테스트 전략 (v2 최소 세트)
 
-16. 라우팅 / 데이터 준비
+- **Unit (Domain)**
+  - status 계산(Up-to-date/Outdated/Unknown)
+  - project 집계 로직(workspace_count, outdated_count, last_reported_at_max 등)
+- **Component (Presentation)**
+  - ProjectsPage 렌더링/정렬 토글/라우팅
+  - ProjectDetailPage 필터/검색/빈 상태/경고 배너
+- **API Contract (Data)**
+  - `/api/state` 샘플 fixture를 파싱/매핑하는 테스트로 타입 드리프트 방지
+- **E2E (선택, 1개 시나리오만)**
+  - “Projects → Detail” happy path
 
-	    - URL: `/projects/:projectName`.
-	    - 진입 시:
+### “Unimplemented”를 테스트로 다루는 규칙
 
-	      - 이미 로드된 state 데이터를 재사용 (Context or 상위에서 props 전달).
-	      - 없으면 `useKkachiState()` 로 fetch.
-    - 필터링:
-
-      - `const projectWorkspaces = workspaces.filter(w => w.project === projectName);`
-      - `const docsHead = docs_heads[projectName];`
-
-17. Status 계산 로직
-
-    - 각 workspace 에 대해:
-
-      - if `!docsHead` → status = 'unknown'.
-      - else if `workspace.docs_hash === docsHead` → 'up_to_date'.
-      - else → 'outdated'.
-
-18. Workspace 테이블 UI
-
-    - 컬럼:
-
-      - Workspace ID
-      - Docs Repo ID
-      - Local Path (긴 경우 ellipsis + tooltip)
-      - Repo URL
-      - Docs Hash
-      - Docs HEAD (project 기준)
-      - Status (StatusBadge)
-      - Last Reported (absolute + relative time)
-      - Last Actor (last_actor_email)
-
-19. 정렬/필터 기능
-
-    - 기본 정렬: `last_reported_at` 내림차순.
-    - v2 최소 필터:
-
-      - Status 필터 (All / Up-to-date / Outdated).
-      - 단순 텍스트 검색: workspace_id, local_path, repo_url 대상 substring 검색.
-    - 복합 정렬·고급 필터는 후속 범위로 남긴다.
-
-20. UX 디테일
-
-    - Outdated workspace row:
-
-      - 옅은 배경색, 아이콘, 강조.
-    - 마지막 갱신 시간:
-
-      - “YYYY-MM-DD HH:MM (X시간 전)” 같이 복합 표기.
-
-21. 빈 상태 / docs_heads 없음 처리
-
-    - workspace는 있는데 `docs_heads[projectName]` 없음:
-
-      - 상단 경고 배너:
-
-        - “이 project에 대한 docs HEAD 정보가 서버 state에 없습니다. 서버 설정 또는 project 등록을 확인해 주세요.”
-    - `projectWorkspaces.length === 0`:
-
-      - “이 project에 등록된 workspace가 없습니다. kkachi workspace register 또는 kkachi init으로 workspace를 등록해 주세요.”
+- `UnimplementedError`는 Domain(errors)에 정의한다.
+- 아직 구현되지 않은 port/usecase/repository의 기본 구현은 `throw new UnimplementedError('...')` 로 통일한다.
+- Presentation은 ErrorBoundary(또는 공통 에러 핸들링)를 통해
+  - UnimplementedError는 “미구현(개발 중)” 메시지로 표시
+  - 네트워크/서버 오류는 “서버 연결 실패” 메시지로 표시
+- 해당 기능이 구현되는 CTASK에서 테스트 기대를 “정상 렌더링/정상 인터랙션”으로 갱신한다.
 
 ---
 
-### 2-6. F2-3 Raw State 화면 (옵션)
+## 5. CTASK 작업 순서 (v2)
 
-22. RawStatePage 구현
+아래 CTASK는 **순서대로 진행**하는 것을 전제로 한다.
+각 CTASK는 항상 “빌드 가능 + 테스트 green” 상태로 종료한다.
 
-	    - URL: `/debug/state`.
-	    - `/api/state` 응답을 pretty JSON 으로 그대로 노출. (`/state`와 동일 스키마)
-	    - Syntax highlighting (예: prism, highlight.js) 도입 여부는 선택.
-	    - 완전 읽기 전용. 운영 노출 여부를 명확히: dev 전용이거나 `?debug=1` 접근만 허용.
+### 5.1 CTASK ↔ 요구사항 매핑
 
----
-
-### 2-7. 공통 로딩/에러/빈 상태 처리
-
-23. Loading 상태
-
-	    - `/api/state` 호출 중:
-
-      - 중앙 스피너 + “불러오는 중…” 텍스트.
-
-24. 에러 상태
-
-    - 네트워크/5xx:
-
-      - ErrorBanner: “서버에 연결할 수 없습니다. 새로고침을 시도하거나 서버 상태를 확인해 주세요.”
-    - 4xx:
-
-      - 필요 시 “서버 설정/등록 문제”로 구분된 메시지.
-
-25. 전역 “완전 빈 state” 처리
-
-    - `docs_heads` 와 `workspaces` 둘 다 비어 있는 경우:
-
-      - 안내 메시지:
-
-        - “kkachi-server에 아직 project / workspace가 등록되지 않았습니다.”
-        - 아래에 CLI 명령 예시 짧게 노출 (텍스트만).
+| CTASK | 사용자 결과물(요약) | Requirement 매핑 |
+|---|---|---|
+| CTASK-1 | 라우팅/레이아웃/페이지 뼈대 + Unimplemented 기반 TDD 루프 시작 | F2-4(기본 골격) |
+| CTASK-2 | `/api/state` 수집 vertical slice + RawStatePage 실제 동작 | F2-3(+F2-4 일부) |
+| CTASK-3 | ProjectsPage(대시보드) 완성 + 집계 로직 | F2-1 |
+| CTASK-4 | ProjectDetailPage 완성 + 상태/필터/검색 | F2-2 |
+| CTASK-5 | 공통 UX/성능/설정/테스트 보강 + 선택 E2E | F2-4 + 비기능 |
 
 ---
 
-### 2-8. 비기능: 성능 / 보안 / 테스트
+## CTASK-1. Client Bootstrap + Clean Architecture Skeleton (Unimplemented-first)
 
-26. 성능 요구사항 반영
+### 목표
 
-	    - `/api/state`는 최상위 Provider에서 최초 로딩 시 1회 호출 후 context 캐시.
-	    - 프로젝트 상세 화면 이동 시, 기존 데이터를 캐시에서 사용 (리로드 시에만 refetch).
+- `web/` 패키지를 생성하고, **라우팅/레이아웃/페이지 뼈대**가 동작하는 SPA를 만든다.
+- Clean Architecture 레이어 골격을 만들고, 아직 미구현인 하위 레이어는 `UnimplementedError`로 통일한다.
 
-27. 보안 / 네트워크
+### 범위
 
-	    - 동일 Origin만 전제, CORS 설정 불필요.
-	    - 브라우저에서 다른 도메인 호출 금지.
-	    - 확장 고려: v3(Web Terminal)부터 옵션 토큰 기반 보호가 활성화될 수 있으니, API client 계층에서 (기본 비활성) auth header를 주입할 수 있는 설정 포인트를 남긴다.
+**Domain**
+- `KkachiState`, `Workspace`, `Status` 등 핵심 타입 정의
+- `UnimplementedError` 정의
 
-28. 유닛 테스트
+**Presentation**
+- 라우트 고정
+  - `/` → ProjectsPage
+  - `/projects/:projectName` → ProjectDetailPage
+  - `/debug/state` → RawStatePage
+- `<Layout>`
+  - 상단 타이틀(“Kkachi Web v2”)
+  - “새로고침” 버튼(동작은 우선 미구현이어도 버튼/이벤트는 존재)
+- 각 페이지는 최소 UI를 렌더링하되, 데이터 의존 부분은 usecase 호출 시 `UnimplementedError`가 발생하도록 둔다.
 
-    - 상태 계산 함수 테스트:
+**Application / Data**
+- Port/Usecase/Repository 인터페이스만 정의
+- 기본 구현체는 모두 UnimplementedError를 throw
 
-      - project 집계 (workspace_count, outdated_count).
-      - workspace status 계산 (Up-to-date/Outdated/Unknown).
-    - API client mock 테스트:
+### 테스트
 
-      - `/api/state` 응답 파싱 및 에러 처리.
+- 라우팅 테스트: 각 URL 진입 시 해당 페이지가 렌더링된다.
+- “새로고침” 클릭 시(또는 페이지 로드 시) 미구현 호출이 발생하면, Error UI에 **Unimplemented** 메시지가 표시된다.
+  - 이 테스트는 CTASK-2부터 RawStatePage에 대해서는 제거/변경된다.
 
-29. 컴포넌트 테스트
+### DoD
 
-    - `ProjectsPage`:
-
-      - mock state 응답을 주입하고, 테이블 렌더링 내용 검증.
-    - `ProjectDetailPage`:
-
-      - Outdated/Up-to-date 행 표현, 필터/검색 동작 테스트.
-
-30. E2E 테스트 (선택)
-
-    - Playwright/Cypress:
-
-	      - 서버에 fixture `/api/state` 응답 주입.
-      - “단 하나의 happy path” 시나리오만: 리스트 → 상세 페이지 정상 표시 확인.
-      - 에러/네트워크 실패 시나리오는 유닛/컴포넌트 테스트로 커버.
+- `npm run dev`, `npm run build`, `npm test`가 모두 성공한다.
+- 코드 구조가 레이어 경계를 지킨다(React 코드가 domain/data를 직접 import 하지 않음).
 
 ---
 
-### 2-9. 향후 확장 고려 (레이아웃/라우팅 관점)
+## CTASK-2. `/api/state` Vertical Slice + RawStatePage 구현 (F2-3)
 
-31. 라우팅 구조 확장성 확보
+### 목표
 
-	    - 향후:
+- 서버의 `GET /api/state`를 실제로 호출해 상태를 가져오고, `/debug/state` 화면에서 pretty JSON으로 보여준다.
+- 이후 F2-1/F2-2 구현에 재사용할 **State 조회 유스케이스/스토어**를 확정한다.
 
-	      - `/terminal` (Web Terminal) 추가 가능하도록 라우트 설계.
-	      - `/projects/:projectName/tasks` 탭 등 추가 용이한 레이아웃.
+### 범위
 
-32. 설정화
+**Domain**
+- `/api/state` 스키마에 맞는 domain 타입 고정
+  - `docs_heads: Record<string, string>`
+  - `workspaces: Workspace[]`
 
-    - API prefix를 `.env` 또는 Vite 환경 변수로 처리(same-origin path prefix 전용):
+**Presentation**
+- RawStatePage
+  - 로딩/에러/성공 상태 UI
+  - “새로고침” 버튼이 실제로 refetch를 트리거
 
-     - 예: `VITE_KKACHI_API_PREFIX=/api`.
-    - v2에서는 full URL을 허용하지 않고 path prefix만 지원한다. 별도 도메인 분리는 후속 CTASK로 분리한다.
+**Application**
+- `GetKkachiState` 유스케이스 구현
+- (권장) `KkachiStateStore` 도입
+  - `data`, `isLoading`, `error`, `refresh()`
+  - CTASK-3/4에서 재사용
+
+**Data**
+- `ApiKkachiStateRepository`
+  - `GET {VITE_KKACHI_API_PREFIX}/state` 호출(기본 `/api/state`)
+  - 에러 매핑(HTTP status, 네트워크 오류)
+- `/api/state` 샘플 fixture 추가(계약 테스트용)
+
+### 테스트
+
+- Data contract test
+  - 샘플 fixture가 repository/mapper를 통과해 domain 타입으로 파싱됨
+- Component test (RawStatePage)
+  - 성공 시 JSON 렌더링
+  - 실패 시 ErrorBanner + Retry(새로고침)
+- CTASK-1의 “RawStatePage는 Unimplemented” 테스트는 제거하고, 이제 “정상 호출”을 기대하도록 갱신
+
+### DoD
+
+- 로컬 서버 환경에서 `/debug/state`가 실제 상태를 표시한다.
+- `/api/state` 외 경로는 호출하지 않는다.
+- 테스트 green.
 
 ---
 
-### 2-10. 서버 연동 / 배포 체크리스트 (v2 필수)
+## CTASK-3. ProjectsPage 구현 (F2-1) + 집계 로직
 
-33. SPA 엔트리
+### 목표
 
-	    - 공식 URL: `/` → `index.html` (SPA).
+- 메인 대시보드(`/`)에서 project 리스트 요약을 표시한다.
+- 프로젝트별 집계 로직을 Domain으로 고정하고, UI는 이를 단순 렌더링만 한다.
 
-34. `/api/state` (Web 기본 엔드포인트)
+### 범위
 
-	    - 기존 `/state` 핸들러를 그대로 재사용해 `/api/state`에 매핑한다. (Web은 `/api/state`만 호출)
+**Domain**
+- `computeProjectSummaries(state)` 구현
+  - project 목록 = `Union(Object.keys(docs_heads), workspaces[].project)`
+  - 각 project 요약:
+    - `docs_head` (없으면 null)
+    - `workspace_count`
+    - `unknown_count` (= docs_head 없을 때 해당 project workspaces 수)
+    - `outdated_count` (= docs_head 있을 때 docs_hash != docs_head 인 workspaces 수)
+    - `last_reported_at_max` (= 해당 project workspaces의 max)
 
-35. `/healthz`
+**Presentation**
+- ProjectsPage
+  - 테이블(또는 카드)로 요약 표시
+  - 정렬
+    - 기본: project 이름 오름차순
+    - 토글: “Outdated 있는 project 우선”
+  - row 클릭 → `/projects/:projectName` 이동
 
-    - 200 OK + 간단 JSON(예: `{ ok: true }`)을 반환하는 헬스 체크 엔드포인트를 노출한다.
+**Application**
+- CTASK-2에서 만든 store/usecase 재사용
 
-36. 정적 빌드 미존재 시 UX
+**Data**
+- 변경 없음(CTASK-2 구현 재사용)
 
-	    - 서버 기동 시 `web/dist` 미존재 로그 경고.
-	    - `/` 요청 시 “kkachi-web 빌드가 없습니다. web/ 디렉토리에서 npm run build 후 서버를 재기동하세요.”와 같이 명시적 안내를 반환.
+### 테스트
 
-37. 빌드 순서 문서화
+- Unit test (Domain)
+  - 집계 로직(unknown/outdated/last_reported_at_max)
+- Component test (ProjectsPage)
+  - fixture state 주입 → 테이블 렌더링 검증
+  - 토글 동작 시 정렬 변화 검증
+  - row 클릭 시 라우팅 이동 검증
 
-    - Monorepo 빌드 순서: `web/`에서 `npm run build` → root에서 `go build` (또는 `make`).
-    - README/Makefile 등에 반영하여 CI/로컬 모두 동일하게 맞춘다.
+> 이 CTASK 종료 시점에는 ProjectDetailPage는 아직 미구현일 수 있다.
+> 이 경우 “상세 화면은 UnimplementedError를 표시한다”는 테스트를 유지한다.
+
+### DoD
+
+- `/`에서 project 요약이 정상 표시된다.
+- “workspace가 없지만 docs_heads는 존재” 케이스에서 요구사항 문구(안내 배너)가 노출된다.
+- 테스트 green.
+
+---
+
+## CTASK-4. ProjectDetailPage 구현 (F2-2) + 상태/필터/검색
+
+### 목표
+
+- 프로젝트 상세(`/projects/:projectName`)에서 workspace 테이블과 상태(Up-to-date/Outdated/Unknown)를 표시한다.
+- 최소 필터/검색/정렬 UX를 제공한다.
+
+### 범위
+
+**Domain**
+- `computeWorkspaceStatus(workspace, docsHead)` 구현
+  - docsHead 없음 → `unknown`
+  - 같음 → `up_to_date`
+  - 다름 → `outdated`
+- 정렬/필터/검색을 위한 순수 함수 구현
+
+**Presentation**
+- ProjectDetailPage
+  - projectWorkspaces 필터링
+  - docsHead 표시(없으면 `—`)
+  - 테이블 컬럼(요구사항 기준)
+    - Workspace ID, Docs Repo ID, Local Path, Repo URL, Docs Hash, Docs HEAD, Status, Last Reported, Last Actor
+  - 기본 정렬: `last_reported_at` desc
+  - 필터: Status(All / Up-to-date / Outdated)
+  - 검색: workspace_id/local_path/repo_url substring
+  - Outdated 행 강조
+  - docsHead 없음 경고 배너 / workspace 0개 빈 상태 처리
+
+**Application / Data**
+- CTASK-2/3 재사용
+
+### 테스트
+
+- Unit test (Domain)
+  - status 계산
+  - 필터/검색/정렬
+- Component test (ProjectDetailPage)
+  - outdated/up-to-date/unknown 렌더링
+  - status 필터/검색 동작
+  - docsHead 누락 경고 배너
+  - workspace 0개 빈 상태
+
+### DoD
+
+- F2-2 요구사항을 충족한다.
+- 테스트 green.
+
+---
+
+## CTASK-5. 공통 UX/성능/설정 마무리 + 선택 E2E
+
+### 목표
+
+- v2 비기능 요구사항을 충족한다.
+  - 최초 로딩 1회 `/api/state` 호출로 주요 화면 렌더링
+  - 공통 로딩/에러/빈 상태
+  - 환경변수 기반 API prefix
+- (선택) 최소 E2E 1개 시나리오로 회귀 안전장치 확보
+
+### 범위
+
+**Presentation**
+- 공통 컴포넌트 정리
+  - `Loading`, `ErrorBanner`, `EmptyState`, `StatusBadge`
+- 전역 “완전 빈 state”(docs_heads/workspaces 모두 비어있음) UX
+  - “kkachi-server에 아직 project/workspace가 등록되지 않았습니다.” + CLI 안내 문구
+- 날짜/시간 표기 유틸
+  - `YYYY-MM-DD HH:MM` + 상대 시간(“X분 전 / X시간 전”)
+
+**Application**
+- App-level 캐시 정책 확정
+  - App 진입 시 store가 1회 fetch
+  - 라우트 이동은 캐시 재사용
+  - “새로고침” 버튼만 refetch
+
+**Data**
+- `VITE_KKACHI_API_PREFIX` 지원(기본값 `/api`)
+  - same-origin path prefix만 허용 (full URL 비허용)
+
+**Test**
+- (선택) Playwright/Cypress E2E
+  - “Projects → Detail” happy path
+  - 네트워크는 fixture 또는 인터셉트
+
+### DoD
+
+- “최초 1회 호출 + 캐시 재사용”이 동작한다.
+- `/`, `/projects/:projectName`, `/debug/state` direct URL 진입(새로고침)에도 정상 렌더링된다.
+- 테스트 green.
+
+---
+
+## 6. 배포/운영 메모 (v2)
+
+- 빌드
+  - `cd web && npm ci && npm run build`
+  - 산출물: `web/dist/`
+- 서버는 `web/dist`를 정적 서빙한다. (서버 미구현/미배포 시 `/`에서 친절한 안내 필요)
+- Web은 인증/인가를 전제로 하지 않는다(로컬 네트워크). 다만 v3부터 토큰 인증 옵션이 붙을 수 있으므로,
+  - API client는 헤더 주입 포인트를 남겨두되 v2에서는 기본 비활성으로 둔다.
