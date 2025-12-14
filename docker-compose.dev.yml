@@ -1,0 +1,45 @@
+# Docker Compose for kkachi development environment
+# Usage: docker-compose -f docker-compose.dev.yml up
+
+services:
+  server:
+    build:
+      context: .
+      target: dev
+    container_name: kkachi-server
+    ports:
+      - "${PORT:-5789}:${PORT:-5789}"
+    environment:
+      - PORT=${PORT:-5789}
+      - STATE_FILE_PATH=${STATE_FILE_PATH:-data/kkachi_state.json}
+    volumes:
+      - .:/app
+      - /tmp:/tmp
+      - ~/.ssh:/root/.ssh:ro
+      - ~/.gitconfig:/root/.gitconfig:ro
+    networks:
+      - kkachi-net
+
+  web:
+    image: node:22-alpine
+    container_name: kkachi-web
+    working_dir: /app
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 5173"
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./web:/app
+      - web_node_modules:/app/node_modules
+    environment:
+      - VITE_KKACHI_API_URL=http://server:${PORT:-5789}
+    depends_on:
+      - server
+    networks:
+      - kkachi-net
+
+networks:
+  kkachi-net:
+    driver: bridge
+
+volumes:
+  web_node_modules:

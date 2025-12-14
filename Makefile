@@ -10,32 +10,37 @@ DOCKER_CONTAINER_NAME ?= kkachi-server
 # Mount host temp so in-container git can see host-created temp repos (e2e). Auto-add /var/folders on macOS.
 EXTRA_TMP_MOUNT ?= $(shell if [ -d /var/folders ]; then echo "-v /var/folders:/var/folders"; fi)
 
-.PHONY: server-test-prepare server-test-unit server-test-integration server-test-e2e server-test server-run server-build
+.PHONY: test-server-prepare test-server-unit test-server-int test-server-e2e test-server run-server build-server
+
+.PHONY: test-all
+
+# Run server + CLI test pipelines.
+test-all: test-server test-cli
 
 # Generate any code stubs, format, and run basic lint checks.
-server-test-prepare:
+test-server-prepare:
 	mkdir -p data
 	$(GO) generate ./...
 	$(GO) fmt ./...
 	$(GO) vet ./...
 
 # Run fast/unit-level tests (excludes e2e package).
-server-test-unit:
+test-server-unit:
 	$(GO) test ./cmd/... ./internal/...
 
 # In-process HTTP server + fake git repos.
-server-test-integration:
+test-server-int:
 	$(GO) test ./test/integration -count=1
 
 # Run end-to-end tests against a real kkachi-server process.
-server-test-e2e:
+test-server-e2e:
 	KKACHI_E2E_BASE_URL=$(E2E_BASE_URL) $(GO) test ./test/e2e -count=1
 
 # Full test pipeline.
-server-test: server-test-prepare server-test-unit server-test-integration server-test-e2e
+test-server: test-server-prepare test-server-unit test-server-int test-server-e2e
 
 # Launch the server with optional PORT and STATE_FILE_PATH overrides.
-server-run:
+run-server:
 	docker build --target dev -t $(DOCKER_IMAGE_DEV) .
 	docker rm -f $(DOCKER_CONTAINER_NAME) >/dev/null 2>&1 || true
 	docker run --rm -it \
@@ -51,7 +56,7 @@ server-run:
 		$(DOCKER_IMAGE_DEV)
 
 # Build a production image.
-server-build:
+build-server:
 	docker build -t $(DOCKER_IMAGE) .
 
 # ---- CLI Targets ----
@@ -63,46 +68,50 @@ COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_DATE ?= $(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
 LDFLAGS := -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.buildDate=$(BUILD_DATE)"
 
-.PHONY: cli-build cli-install cli-test cli-test-unit cli-test-integration cli-test-e2e cli-test-prepare
+.PHONY: build-cli install-cli test-cli test-cli-prepare test-cli-unit test-cli-int test-cli-e2e
 
 # Build the kkachi CLI binary.
-cli-build:
+build-cli:
 	mkdir -p bin
 	$(GO) build $(LDFLAGS) -o $(CLI_BINARY) $(CLI_CMD)
 
 # Install the kkachi CLI to $GOPATH/bin.
-cli-install:
+install-cli:
 	$(GO) install $(LDFLAGS) $(CLI_CMD)
 
 # Prepare for CLI tests (build binary first).
-cli-test-prepare: cli-build
+test-cli-prepare: build-cli
 	$(GO) fmt ./internal/interface/cli/...
 	$(GO) vet ./internal/interface/cli/...
 
 # Run CLI unit tests (in-package tests).
-cli-test-unit:
+test-cli-unit:
 	$(GO) test ./internal/interface/cli/...
 
 # Run CLI integration tests (CLI binary + fake server/temp dirs).
-cli-test-integration: cli-build
+test-cli-int: build-cli
 	KKACHI_CLI_BINARY=$(CURDIR)/$(CLI_BINARY) $(GO) test ./test/cli/integration -count=1 -v
 
 # Run CLI end-to-end tests (CLI binary + real kkachi-server).
-cli-test-e2e: cli-build
+test-cli-e2e: build-cli
 	KKACHI_CLI_BINARY=$(CURDIR)/$(CLI_BINARY) KKACHI_E2E_BASE_URL=$(E2E_BASE_URL) $(GO) test ./test/cli/e2e -count=1 -v
 
 # Full CLI test pipeline.
-cli-test: cli-test-prepare cli-test-unit cli-test-integration cli-test-e2e
+test-cli: test-cli-prepare test-cli-unit test-cli-int test-cli-e2e
 
 # ---- Web + Server Build Targets (v2) ----
 
 WEB_DIR := web
 WEB_DIST_DIR := $(WEB_DIR)/dist
 
-.PHONY: web-check web-build server-with-web server-build-binary
+.PHONY: run-web run-server-with-web check-web build-web build-server-binary build-server-with-web
 
+# Run web dev server (local, requires Node.js)
+run-web:
+	@echo "Starting web dev server..."
+	cd $(WEB_DIR) && npm run dev
 # Check if web dist exists
-web-check:
+check-web:
 	@if [ ! -d "$(WEB_DIST_DIR)" ]; then \
 		echo "Warning: $(WEB_DIST_DIR) not found. Run 'make web-build' or 'make server-with-web' first."; \
 		exit 1; \
@@ -110,7 +119,7 @@ web-check:
 	@echo "Web dist found: $(WEB_DIST_DIR)"
 
 # Build web UI (requires Node.js and npm)
-web-build:
+build-web:
 	@if [ ! -d "$(WEB_DIR)" ]; then \
 		echo "Error: $(WEB_DIR)/ directory not found. Web UI source is required."; \
 		exit 1; \
@@ -120,14 +129,14 @@ web-build:
 	@echo "Web build complete: $(WEB_DIST_DIR)/"
 
 # Build server binary only (without web)
-server-build-binary:
+build-server-binary:
 	@echo "Building server binary..."
 	mkdir -p bin
 	$(GO) build -o bin/server $(SERVER_CMD)
 	@echo "Server build complete: bin/server"
 
 # Build web + server together (recommended for production deployment)
-server-with-web: web-build server-build-binary
+build-server-with-web: build-web build-server-binary
 	@echo ""
 	@echo "=== Full build complete ==="
 	@echo "  Server binary: bin/server"
@@ -135,3 +144,41 @@ server-with-web: web-build server-build-binary
 	@echo ""
 	@echo "To run: WEB_DIST_DIR=$(WEB_DIST_DIR) ./bin/server"
 
+# Run server + web dev server together using Docker Compose
+run-server-with-web:
+	@echo "=== Starting kkachi-server + web dev server ==="
+	@echo "  Server API: http://localhost:$${PORT:-5789}"
+	@echo "  Web UI:     http://localhost:5173"
+	@echo ""
+	docker compose -f docker-compose.dev.yml up --build
+
+# Stop server + web dev server
+stop-server-with-web:
+	docker compose -f docker-compose.dev.yml down
+
+# ---- Backward-compatible aliases ----
+# Keep existing Make targets stable while we introduce the new naming scheme.
+
+.PHONY: server-test-prepare server-test-unit server-test-integration server-test-e2e server-test server-run server-build
+server-test-prepare: test-server-prepare
+server-test-unit: test-server-unit
+server-test-integration: test-server-int
+server-test-e2e: test-server-e2e
+server-test: test-server
+server-run: run-server
+server-build: build-server
+
+.PHONY: cli-build cli-install cli-test-prepare cli-test-unit cli-test-integration cli-test-e2e cli-test
+cli-build: build-cli
+cli-install: install-cli
+cli-test-prepare: test-cli-prepare
+cli-test-unit: test-cli-unit
+cli-test-integration: test-cli-int
+cli-test-e2e: test-cli-e2e
+cli-test: test-cli
+
+.PHONY: web-check web-build server-build-binary server-with-web
+web-check: check-web
+web-build: build-web
+server-build-binary: build-server-binary
+server-with-web: build-server-with-web
