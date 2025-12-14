@@ -22,8 +22,7 @@ export function createRuntime(): Runtime {
     return {
         getKkachiState,
         refreshState: async () => {
-            // In CTASK-1, this will throw UnimplementedError
-            // In CTASK-2+, this will trigger a state refresh
+            // Trigger a state refresh by executing the use case
             await getKkachiState.execute();
         },
     };

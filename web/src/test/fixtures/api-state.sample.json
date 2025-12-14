@@ -1,0 +1,38 @@
+{
+    "docs_heads": {
+        "sudal": "abc123def456",
+        "kkachi": "789ghi012jkl"
+    },
+    "workspaces": [
+        {
+            "workspace_id": "ws-001",
+            "project": "sudal",
+            "docs_repo_id": "docs-sudal",
+            "local_path": "/Users/dev/projects/sudal",
+            "repo_url": "https://github.com/example/sudal",
+            "docs_hash": "abc123def456",
+            "last_reported_at": "2024-12-14T10:00:00Z",
+            "last_actor_email": "dev@example.com"
+        },
+        {
+            "workspace_id": "ws-002",
+            "project": "sudal",
+            "docs_repo_id": "docs-sudal",
+            "local_path": "/Users/dev2/projects/sudal",
+            "repo_url": "https://github.com/example/sudal-fork",
+            "docs_hash": "old-hash-123",
+            "last_reported_at": "2024-12-13T15:30:00Z",
+            "last_actor_email": "dev2@example.com"
+        },
+        {
+            "workspace_id": "ws-003",
+            "project": "kkachi",
+            "docs_repo_id": "docs-kkachi",
+            "local_path": "/Users/dev/projects/kkachi",
+            "repo_url": "https://github.com/example/kkachi",
+            "docs_hash": "789ghi012jkl",
+            "last_reported_at": null,
+            "last_actor_email": "dev@example.com"
+        }
+    ]
+}

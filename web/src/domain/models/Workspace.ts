@@ -15,8 +15,8 @@ export interface Workspace {
     repo_url: string;
     /** Current docs hash in the workspace (.kkachi_docs_hash) */
     docs_hash: string;
-    /** ISO 8601 timestamp of last status report */
-    last_reported_at: string;
+    /** ISO 8601 timestamp of last status report, null if never reported */
+    last_reported_at: string | null;
     /** Email of the last actor who reported */
     last_actor_email: string;
 }

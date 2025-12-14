@@ -156,29 +156,22 @@ run-server-with-web:
 stop-server-with-web:
 	docker compose -f docker-compose.dev.yml down
 
-# ---- Backward-compatible aliases ----
-# Keep existing Make targets stable while we introduce the new naming scheme.
+# ---- Web Test Targets ----
 
-.PHONY: server-test-prepare server-test-unit server-test-integration server-test-e2e server-test server-run server-build
-server-test-prepare: test-server-prepare
-server-test-unit: test-server-unit
-server-test-integration: test-server-int
-server-test-e2e: test-server-e2e
-server-test: test-server
-server-run: run-server
-server-build: build-server
+.PHONY: test-web test-web-unit test-web-int test-web-e2e
 
-.PHONY: cli-build cli-install cli-test-prepare cli-test-unit cli-test-integration cli-test-e2e cli-test
-cli-build: build-cli
-cli-install: install-cli
-cli-test-prepare: test-cli-prepare
-cli-test-unit: test-cli-unit
-cli-test-integration: test-cli-int
-cli-test-e2e: test-cli-e2e
-cli-test: test-cli
+# Run web unit tests (domain, application pure logic)
+test-web-unit:
+	cd $(WEB_DIR) && npm run test:unit
 
-.PHONY: web-check web-build server-build-binary server-with-web
-web-check: check-web
-web-build: build-web
-server-build-binary: build-server-binary
-server-with-web: build-server-with-web
+# Run web integration tests (component tests with mocks)
+test-web-int:
+	cd $(WEB_DIR) && npm run test:int
+
+# Run web E2E tests (requires server + web running)
+# Note: E2E tests expect kkachi-server on port 5789 and web on port 5173
+test-web-e2e:
+	cd $(WEB_DIR) && npm run test:e2e
+
+# Full web test pipeline
+test-web: test-web-unit test-web-int test-web-e2e
