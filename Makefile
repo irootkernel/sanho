@@ -110,10 +110,11 @@ WEB_DIST_DIR := $(WEB_DIR)/dist
 run-web:
 	@echo "Starting web dev server..."
 	cd $(WEB_DIR) && npm run dev
+
 # Check if web dist exists
 check-web:
 	@if [ ! -d "$(WEB_DIST_DIR)" ]; then \
-		echo "Warning: $(WEB_DIST_DIR) not found. Run 'make web-build' or 'make server-with-web' first."; \
+		echo "Warning: $(WEB_DIST_DIR) not found. Run 'make build-web' or 'make build-server-with-web' first."; \
 		exit 1; \
 	fi
 	@echo "Web dist found: $(WEB_DIST_DIR)"
@@ -125,7 +126,7 @@ build-web:
 		exit 1; \
 	fi
 	@echo "Building web UI..."
-	cd $(WEB_DIR) && npm install && npm run build
+	cd $(WEB_DIR) && npm run build
 	@echo "Web build complete: $(WEB_DIST_DIR)/"
 
 # Build server binary only (without web)
@@ -158,20 +159,28 @@ stop-server-with-web:
 
 # ---- Web Test Targets ----
 
-.PHONY: test-web test-web-unit test-web-int test-web-e2e
+.PHONY: test-web test-web-prepare test-web-lint test-web-unit test-web-int test-web-e2e
+
+# Run web lint checks
+test-web-lint:
+	cd $(WEB_DIR) && npm run lint
+
+# Prepare web checks (lint + build before tests)
+test-web-prepare: test-web-lint
 
 # Run web unit tests (domain, application pure logic)
-test-web-unit:
+test-web-unit: test-web-prepare
 	cd $(WEB_DIR) && npm run test:unit
 
 # Run web integration tests (component tests with mocks)
-test-web-int:
+test-web-int: test-web-prepare
 	cd $(WEB_DIR) && npm run test:int
 
 # Run web E2E tests (requires server + web running)
 # Note: E2E tests expect kkachi-server on port 5789 and web on port 5173
-test-web-e2e:
+test-web-e2e: test-web-prepare
 	cd $(WEB_DIR) && npm run test:e2e
 
 # Full web test pipeline
-test-web: test-web-unit test-web-int test-web-e2e
+.NOTPARALLEL: test-web
+test-web: test-web-prepare test-web-unit test-web-int test-web-e2e

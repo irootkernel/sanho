@@ -89,5 +89,82 @@ describe('ApiKkachiStateRepository', () => {
 
             expect(mockFetch).toHaveBeenCalledWith('/api/state');
         });
+
+        it('should throw error when JSON parsing fails', async () => {
+            vi.stubGlobal(
+                'fetch',
+                vi.fn().mockResolvedValue({
+                    ok: true,
+                    json: () => Promise.reject(new SyntaxError('Unexpected token')),
+                }),
+            );
+
+            const repository = new ApiKkachiStateRepository();
+
+            await expect(repository.getState()).rejects.toThrow();
+        });
+
+        it('should throw DataError when docs_heads is missing', async () => {
+            vi.stubGlobal(
+                'fetch',
+                vi.fn().mockResolvedValue({
+                    ok: true,
+                    json: () => Promise.resolve({ workspaces: [] }),
+                }),
+            );
+
+            const repository = new ApiKkachiStateRepository();
+            await expect(repository.getState()).rejects.toThrow(
+                'Invalid response: missing or invalid "docs_heads"',
+            );
+        });
+
+        it('should throw DataError when workspaces is missing', async () => {
+            vi.stubGlobal(
+                'fetch',
+                vi.fn().mockResolvedValue({
+                    ok: true,
+                    json: () => Promise.resolve({ docs_heads: { test: 'abc' } }),
+                }),
+            );
+
+            const repository = new ApiKkachiStateRepository();
+
+            await expect(repository.getState()).rejects.toThrow(
+                'Invalid response: missing or invalid "workspaces"',
+            );
+        });
+
+        it('should handle undefined last_reported_at as null', async () => {
+            const stateWithUndefined = {
+                docs_heads: { test: 'abc' },
+                workspaces: [
+                    {
+                        workspace_id: 'ws-001',
+                        project: 'test',
+                        docs_repo_id: 'docs-test',
+                        local_path: '/path',
+                        repo_url: 'https://example.com',
+                        docs_hash: 'abc',
+                        // last_reported_at is undefined (not present)
+                        last_actor_email: 'dev@example.com',
+                    },
+                ],
+            };
+
+            vi.stubGlobal(
+                'fetch',
+                vi.fn().mockResolvedValue({
+                    ok: true,
+                    json: () => Promise.resolve(stateWithUndefined),
+                }),
+            );
+
+            const repository = new ApiKkachiStateRepository();
+            const result = await repository.getState();
+
+            // undefined should be converted to null
+            expect(result.workspaces[0].last_reported_at).toBeNull();
+        });
     });
 });

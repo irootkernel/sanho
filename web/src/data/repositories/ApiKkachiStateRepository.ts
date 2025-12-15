@@ -2,6 +2,7 @@ import type { KkachiState } from '@/domain';
 import type { KkachiStateRepository } from '@/application';
 import { buildApiUrl } from '../http/config';
 import { ApiError, NetworkError } from '../http/errors';
+import { DataError } from '@/domain/errors/DataError';
 
 /**
  * Response DTO from /api/state endpoint.
@@ -59,6 +60,17 @@ export class ApiKkachiStateRepository implements KkachiStateRepository {
     }
 
     private mapToKkachiState(dto: StateResponseDto): KkachiState {
+        // Strict runtime schema validation
+        if (!dto || typeof dto !== 'object') {
+            throw new DataError('Invalid response: response body is not an object');
+        }
+        if (!dto.docs_heads || typeof dto.docs_heads !== 'object') {
+            throw new DataError('Invalid response: missing or invalid "docs_heads"');
+        }
+        if (!Array.isArray(dto.workspaces)) {
+            throw new DataError('Invalid response: missing or invalid "workspaces"');
+        }
+
         return {
             docs_heads: dto.docs_heads,
             workspaces: dto.workspaces.map((ws) => ({

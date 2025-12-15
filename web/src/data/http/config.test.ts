@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { getApiConfig, buildApiUrl } from './config'
+import { getApiConfig, buildApiUrl, ApiConfigError } from './config'
 
 describe('config', () => {
     const originalEnv = { ...import.meta.env }
@@ -30,6 +30,35 @@ describe('config', () => {
             const config = getApiConfig()
 
             expect(config.apiPrefix).toBe('/custom-api')
+        })
+
+        it('should throw ApiConfigError for http:// URLs', () => {
+            import.meta.env.VITE_KKACHI_API_PREFIX = 'http://example.com/api'
+
+            expect(() => getApiConfig()).toThrow(ApiConfigError)
+            expect(() => getApiConfig()).toThrow(/full URLs are not allowed/)
+        })
+
+        it('should throw ApiConfigError for https:// URLs', () => {
+            import.meta.env.VITE_KKACHI_API_PREFIX = 'https://example.com/api'
+
+            expect(() => getApiConfig()).toThrow(ApiConfigError)
+            expect(() => getApiConfig()).toThrow(/full URLs are not allowed/)
+        })
+
+        it('should throw ApiConfigError for protocol-relative URLs', () => {
+            import.meta.env.VITE_KKACHI_API_PREFIX = '//example.com/api'
+
+            expect(() => getApiConfig()).toThrow(ApiConfigError)
+            expect(() => getApiConfig()).toThrow(/full URLs are not allowed/)
+        })
+
+        it('should allow relative paths without protocol', () => {
+            import.meta.env.VITE_KKACHI_API_PREFIX = '/my/api/v2'
+
+            const config = getApiConfig()
+
+            expect(config.apiPrefix).toBe('/my/api/v2')
         })
     })
 
@@ -64,6 +93,12 @@ describe('config', () => {
             const url = buildApiUrl('')
 
             expect(url).toBe('/api/')
+        })
+
+        it('should throw ApiConfigError when prefix is a full URL', () => {
+            import.meta.env.VITE_KKACHI_API_PREFIX = 'https://malicious.com'
+
+            expect(() => buildApiUrl('/state')).toThrow(ApiConfigError)
         })
     })
 })
