@@ -119,3 +119,213 @@ func TestHookInstaller_RemoveHookLine_PreservesPermissions(t *testing.T) {
 		t.Fatalf("expected other content preserved, got:\n%s", string(data))
 	}
 }
+
+// TestHookInstaller_InstallHook_WithExitAtEnd verifies that when an existing hook file
+// has an exit command at the end, the kkachi command is inserted before the exit.
+func TestHookInstaller_InstallHook_WithExitAtEnd(t *testing.T) {
+	tempDir := t.TempDir()
+	gitDir := filepath.Join(tempDir, ".git")
+	hooksDir := filepath.Join(gitDir, "hooks")
+	if err := os.MkdirAll(hooksDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	hookPath := filepath.Join(hooksDir, "pre-commit")
+	content := strings.Join([]string{
+		"#!/bin/sh",
+		"echo \"existing\"",
+		"exit 0",
+		"",
+	}, "\n")
+	if err := os.WriteFile(hookPath, []byte(content), 0755); err != nil {
+		t.Fatalf("failed to seed hook file: %v", err)
+	}
+
+	installer := NewHookInstaller()
+	if err := installer.InstallHook(context.Background(), tempDir, "pre-commit", "kkachi hook pre-commit"); err != nil {
+		t.Fatalf("InstallHook returned error: %v", err)
+	}
+
+	data, err := os.ReadFile(hookPath)
+	if err != nil {
+		t.Fatalf("failed to read hook file: %v", err)
+	}
+	text := string(data)
+
+	// Verify kkachi line is present
+	if !strings.Contains(text, "kkachi hook pre-commit") {
+		t.Fatalf("expected kkachi line to be present, content:\n%s", text)
+	}
+
+	// Verify kkachi line comes BEFORE exit 0
+	kkachiIdx := strings.Index(text, "kkachi hook pre-commit")
+	exitIdx := strings.Index(text, "exit 0")
+	if kkachiIdx > exitIdx {
+		t.Fatalf("expected kkachi line before exit 0, content:\n%s", text)
+	}
+}
+
+func TestHookInstaller_InstallHook_WithExitSemicolonAtEnd(t *testing.T) {
+	tempDir := t.TempDir()
+	gitDir := filepath.Join(tempDir, ".git")
+	hooksDir := filepath.Join(gitDir, "hooks")
+	if err := os.MkdirAll(hooksDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	hookPath := filepath.Join(hooksDir, "pre-commit")
+	content := strings.Join([]string{
+		"#!/bin/sh",
+		"echo \"existing\"",
+		"exit;",
+		"",
+	}, "\n")
+	if err := os.WriteFile(hookPath, []byte(content), 0755); err != nil {
+		t.Fatalf("failed to seed hook file: %v", err)
+	}
+
+	installer := NewHookInstaller()
+	if err := installer.InstallHook(context.Background(), tempDir, "pre-commit", "kkachi hook pre-commit"); err != nil {
+		t.Fatalf("InstallHook returned error: %v", err)
+	}
+
+	data, err := os.ReadFile(hookPath)
+	if err != nil {
+		t.Fatalf("failed to read hook file: %v", err)
+	}
+	text := string(data)
+
+	kkachiIdx := strings.Index(text, "kkachi hook pre-commit")
+	exitIdx := strings.Index(text, "exit;")
+	if kkachiIdx < 0 || exitIdx < 0 {
+		t.Fatalf("expected both kkachi and exit; lines, content:\n%s", text)
+	}
+	if kkachiIdx > exitIdx {
+		t.Fatalf("expected kkachi line before exit;, content:\n%s", text)
+	}
+}
+
+func TestHookInstaller_InstallHook_DoesNotTreatExitPrefixAsExitCommand(t *testing.T) {
+	tempDir := t.TempDir()
+	gitDir := filepath.Join(tempDir, ".git")
+	hooksDir := filepath.Join(gitDir, "hooks")
+	if err := os.MkdirAll(hooksDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	hookPath := filepath.Join(hooksDir, "pre-commit")
+	content := strings.Join([]string{
+		"#!/bin/sh",
+		"echo \"existing\"",
+		"exitStatus=0",
+		"",
+	}, "\n")
+	if err := os.WriteFile(hookPath, []byte(content), 0755); err != nil {
+		t.Fatalf("failed to seed hook file: %v", err)
+	}
+
+	installer := NewHookInstaller()
+	if err := installer.InstallHook(context.Background(), tempDir, "pre-commit", "kkachi hook pre-commit"); err != nil {
+		t.Fatalf("InstallHook returned error: %v", err)
+	}
+
+	data, err := os.ReadFile(hookPath)
+	if err != nil {
+		t.Fatalf("failed to read hook file: %v", err)
+	}
+	text := string(data)
+
+	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
+	lastLine := lines[len(lines)-1]
+	if lastLine != "kkachi hook pre-commit" {
+		t.Fatalf("expected kkachi line appended at end, got last line: %q, full content:\n%s", lastLine, text)
+	}
+}
+
+// TestHookInstaller_InstallHook_WithoutExit verifies that when an existing hook file
+// has no exit command, the kkachi command is appended at the end.
+func TestHookInstaller_InstallHook_WithoutExit(t *testing.T) {
+	tempDir := t.TempDir()
+	gitDir := filepath.Join(tempDir, ".git")
+	hooksDir := filepath.Join(gitDir, "hooks")
+	if err := os.MkdirAll(hooksDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	hookPath := filepath.Join(hooksDir, "pre-commit")
+	content := strings.Join([]string{
+		"#!/bin/sh",
+		"echo \"existing\"",
+		"",
+	}, "\n")
+	if err := os.WriteFile(hookPath, []byte(content), 0755); err != nil {
+		t.Fatalf("failed to seed hook file: %v", err)
+	}
+
+	installer := NewHookInstaller()
+	if err := installer.InstallHook(context.Background(), tempDir, "pre-commit", "kkachi hook pre-commit"); err != nil {
+		t.Fatalf("InstallHook returned error: %v", err)
+	}
+
+	data, err := os.ReadFile(hookPath)
+	if err != nil {
+		t.Fatalf("failed to read hook file: %v", err)
+	}
+	text := string(data)
+
+	// Verify kkachi line is present
+	if !strings.Contains(text, "kkachi hook pre-commit") {
+		t.Fatalf("expected kkachi line to be present, content:\n%s", text)
+	}
+
+	// Verify kkachi line is at the end (after existing content)
+	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
+	lastLine := lines[len(lines)-1]
+	if lastLine != "kkachi hook pre-commit" {
+		t.Fatalf("expected kkachi line at end, got last line: %q, full content:\n%s", lastLine, text)
+	}
+}
+
+// TestHookInstaller_InstallHook_NewFile verifies that when no hook file exists,
+// a new file is created with shebang and the kkachi command.
+func TestHookInstaller_InstallHook_NewFile(t *testing.T) {
+	tempDir := t.TempDir()
+	gitDir := filepath.Join(tempDir, ".git")
+	hooksDir := filepath.Join(gitDir, "hooks")
+	if err := os.MkdirAll(hooksDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	hookPath := filepath.Join(hooksDir, "pre-commit")
+	// No file exists initially
+
+	installer := NewHookInstaller()
+	if err := installer.InstallHook(context.Background(), tempDir, "pre-commit", "kkachi hook pre-commit"); err != nil {
+		t.Fatalf("InstallHook returned error: %v", err)
+	}
+
+	data, err := os.ReadFile(hookPath)
+	if err != nil {
+		t.Fatalf("failed to read hook file: %v", err)
+	}
+	text := string(data)
+
+	// Verify shebang is present
+	if !strings.HasPrefix(text, "#!/bin/sh\n") {
+		t.Fatalf("expected shebang at start, content:\n%s", text)
+	}
+
+	// Verify kkachi line is present
+	if !strings.Contains(text, "kkachi hook pre-commit") {
+		t.Fatalf("expected kkachi line to be present, content:\n%s", text)
+	}
+
+	// Verify file is executable
+	info, err := os.Stat(hookPath)
+	if err != nil {
+		t.Fatalf("failed to stat hook file: %v", err)
+	}
+	if info.Mode().Perm()&0111 == 0 {
+		t.Fatalf("expected hook file to be executable, mode: %v", info.Mode())
+	}
+}

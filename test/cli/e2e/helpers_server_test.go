@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -22,7 +23,7 @@ import (
 // createOriginRepo initializes a bare repo and seeds an initial commit in a cloned working tree.
 func createOriginRepo(t *testing.T, files map[string]string) (originPath string, head string) {
 	t.Helper()
-	tmp := t.TempDir()
+	tmp := sharedRepoTempDir(t)
 	originPath = filepath.Join(tmp, fmt.Sprintf("origin-%d", time.Now().UnixNano()))
 	mustMkDir(t, originPath)
 	runCmd(t, "", "git", "init", "--bare", originPath)
@@ -44,6 +45,25 @@ func createOriginRepo(t *testing.T, files map[string]string) (originPath string,
 	runCmd(t, localPath, "git", "push", "origin", "HEAD")
 	head = strings.TrimSpace(string(runCmd(t, localPath, "git", "rev-parse", "HEAD")))
 	return originPath, head
+}
+
+// sharedRepoTempDir returns a temp directory intended to be visible to kkachi-server
+// even when it's running inside a container. Our docker dev setup mounts /tmp by default.
+func sharedRepoTempDir(t *testing.T) string {
+	t.Helper()
+
+	base := os.TempDir()
+	if runtime.GOOS == "darwin" {
+		base = "/tmp"
+	}
+	dir, err := os.MkdirTemp(base, "kkachi-cli-e2e-*")
+	if err != nil {
+		t.Fatalf("failed to create shared temp dir: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.RemoveAll(dir)
+	})
+	return dir
 }
 
 func mustMkDir(t *testing.T, path string) {

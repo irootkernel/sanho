@@ -272,7 +272,7 @@ func createOriginRepo(t *testing.T, files map[string]string) (string, string) {
 		}
 	}
 
-	tmp := t.TempDir()
+	tmp := sharedRepoTempDir(t)
 
 	originPath := filepath.Join(tmp, "origin")
 	if err := os.Mkdir(originPath, 0755); err != nil {
@@ -301,6 +301,25 @@ func createOriginRepo(t *testing.T, files map[string]string) (string, string) {
 
 	head := strings.TrimSpace(string(runCmdE2E(t, localPath, nil, "git", "rev-parse", "HEAD")))
 	return originPath, head
+}
+
+// sharedRepoTempDir returns a temp directory intended to be visible to kkachi-server
+// even when it's running inside a container. Our docker dev setup mounts /tmp by default.
+func sharedRepoTempDir(t *testing.T) string {
+	t.Helper()
+
+	base := os.TempDir()
+	if runtime.GOOS == "darwin" {
+		base = "/tmp"
+	}
+	dir, err := os.MkdirTemp(base, "kkachi-e2e-*")
+	if err != nil {
+		t.Fatalf("failed to create shared temp dir: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.RemoveAll(dir)
+	})
+	return dir
 }
 
 // uniqueName returns a reasonably unique string with the given prefix.

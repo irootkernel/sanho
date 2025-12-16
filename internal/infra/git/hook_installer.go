@@ -55,11 +55,27 @@ func (h *HookInstaller) InstallHook(ctx context.Context, repoPath, hookName, lin
 	if existingContent == "" {
 		content = "#!/bin/sh\n" + line + "\n"
 	} else {
-		// Append to existing content
-		if !strings.HasSuffix(existingContent, "\n") {
-			existingContent += "\n"
+		// Check if last effective line is an exit command
+		lines := strings.Split(existingContent, "\n")
+		exitIdx := findLastExitLineIndex(lines)
+
+		if exitIdx >= 0 {
+			// Insert before the exit line
+			newLines := make([]string, 0, len(lines)+1)
+			newLines = append(newLines, lines[:exitIdx]...)
+			newLines = append(newLines, line)
+			newLines = append(newLines, lines[exitIdx:]...)
+			content = strings.Join(newLines, "\n")
+			if !strings.HasSuffix(content, "\n") {
+				content += "\n"
+			}
+		} else {
+			// Append to existing content
+			if !strings.HasSuffix(existingContent, "\n") {
+				existingContent += "\n"
+			}
+			content = existingContent + line + "\n"
 		}
-		content = existingContent + line + "\n"
 	}
 
 	// Write hook file
@@ -222,4 +238,37 @@ func (h *HookInstaller) RemoveHookLine(ctx context.Context, repoPath, hookName, 
 	}
 
 	return nil
+}
+
+// findLastExitLineIndex finds the index of the last effective line that is an exit command.
+// It ignores trailing empty lines and comments. Returns -1 if no exit is found at the end.
+func findLastExitLineIndex(lines []string) int {
+	// Find the last non-empty, non-comment line
+	lastEffectiveIdx := -1
+	for i := len(lines) - 1; i >= 0; i-- {
+		trimmed := strings.TrimSpace(lines[i])
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		lastEffectiveIdx = i
+		break
+	}
+
+	if lastEffectiveIdx < 0 {
+		return -1
+	}
+
+	// Check if the last effective line is an "exit" command.
+	trimmed := strings.TrimSpace(lines[lastEffectiveIdx])
+	fields := strings.Fields(trimmed)
+	if len(fields) == 0 {
+		return -1
+	}
+
+	cmd := strings.TrimRight(fields[0], ";")
+	if cmd == "exit" {
+		return lastEffectiveIdx
+	}
+
+	return -1
 }
