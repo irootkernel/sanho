@@ -7,6 +7,7 @@
   --color-success: #10b981;
   --color-warning: #f59e0b;
   --color-error: #ef4444;
+  --color-gray-50: #f9fafb;
   --color-gray-100: #f3f4f6;
   --color-gray-200: #e5e7eb;
   --color-gray-300: #d1d5db;
@@ -342,6 +343,37 @@ body {
   font-size: 0.875rem;
 }
 
+/* Empty Filter State (no matches) */
+.empty-filter-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-8);
+  text-align: center;
+  color: var(--color-gray-500);
+  min-height: 150px;
+}
+
+.empty-filter-state p {
+  margin-bottom: var(--spacing-3);
+}
+
+/* Text Button */
+.text-button {
+  background: none;
+  border: none;
+  color: var(--color-primary);
+  cursor: pointer;
+  font-size: 0.875rem;
+  text-decoration: underline;
+  padding: 0;
+}
+
+.text-button:hover {
+  color: var(--color-primary-hover);
+}
+
 /* Table Container */
 .table-container {
   overflow-x: auto;
@@ -431,6 +463,173 @@ body {
 .status-badge.unknown {
   background-color: var(--color-gray-200);
   color: var(--color-gray-700);
+}
+
+/* Project Detail Page Styles */
+.project-header {
+  margin-bottom: var(--spacing-6);
+  border-bottom: 1px solid var(--color-gray-200);
+  padding-bottom: var(--spacing-4);
+}
+
+.project-header h2 {
+  font-size: 1.875rem;
+  margin-bottom: var(--spacing-2);
+}
+
+.project-meta {
+  display: flex;
+  gap: var(--spacing-4);
+  color: var(--color-gray-500);
+  font-size: 0.875rem;
+  align-items: center;
+}
+
+.meta-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+}
+
+.controls-bar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-4);
+  background-color: var(--color-gray-50);
+  padding: var(--spacing-4);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--spacing-6);
+  border: 1px solid var(--color-gray-200);
+}
+
+@media (min-width: 768px) {
+  .controls-bar {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+}
+
+.filters {
+  display: flex;
+  gap: var(--spacing-3);
+  flex: 1;
+}
+
+.status-filter,
+.search-input {
+  padding: var(--spacing-2) var(--spacing-3);
+  border: 1px solid var(--color-gray-300);
+  border-radius: var(--radius-md);
+  font-size: 0.875rem;
+  background-color: white;
+}
+
+.search-input {
+  flex: 1;
+  max-width: 300px;
+}
+
+.sort-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+}
+
+.sort-btn {
+  background-color: white;
+  border: 1px solid var(--color-gray-300);
+  padding: var(--spacing-1) var(--spacing-3);
+  border-radius: var(--radius-md);
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: var(--color-gray-700);
+}
+
+.sort-btn:hover {
+  background-color: var(--color-gray-100);
+}
+
+.sort-btn.active {
+  background-color: var(--color-primary);
+  color: white;
+  border-color: var(--color-primary);
+}
+
+/* Workspace Table Specifics */
+.workspace-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.875rem;
+}
+
+.workspace-table th {
+  text-align: left;
+  padding: var(--spacing-3) var(--spacing-4);
+  background-color: var(--color-gray-50);
+  color: var(--color-gray-500);
+  font-weight: 600;
+  border-bottom: 2px solid var(--color-gray-200);
+  white-space: nowrap;
+}
+
+.workspace-table td {
+  padding: var(--spacing-4);
+  border-bottom: 1px solid var(--color-gray-100);
+  vertical-align: middle;
+}
+
+.workspace-table tr:last-child td {
+  border-bottom: none;
+}
+
+.workspace-table tr:hover td {
+  background-color: var(--color-gray-50);
+}
+
+.workspace-table tr.row-outdated td {
+  background-color: #fef2f2;
+}
+
+.workspace-table tr.row-outdated:hover td {
+  background-color: #fee2e2;
+}
+
+.ws-path code,
+.ws-hash code {
+  font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+  font-size: 0.85em;
+  color: var(--color-gray-700);
+  background-color: var(--color-gray-100);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.ws-repo a {
+  color: var(--color-primary);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.ws-repo a:hover {
+  text-decoration: underline;
+}
+
+.breadcrumbs {
+  margin-bottom: var(--spacing-6);
+  color: var(--color-gray-500);
+  font-size: 0.875rem;
+}
+
+.breadcrumbs a {
+  color: var(--color-primary);
+  text-decoration: none;
+}
+
+.breadcrumbs a:hover {
+  text-decoration: underline;
 }
 
 /* RawStatePage specific styles */

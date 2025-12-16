@@ -339,8 +339,9 @@ web/
 - ProjectDetailPage
   - projectWorkspaces 필터링
   - docsHead 표시(없으면 `—`)
-  - 테이블 컬럼(요구사항 기준)
-    - Workspace ID, Docs Repo ID, Local Path, Repo URL, Docs Hash, Docs HEAD, Status, Last Reported, Last Actor
+  - 테이블 컬럼 (v2 구현 기준)
+      - Local Path, Status, Repo URL, Docs Hash, Last Reported, Last Actor
+      - *(Workspace ID, Docs Repo ID, Docs HEAD 컬럼은 v2에서 생략 - 정보가 중복되거나 Local Path로 충분히 식별 가능)*
   - 기본 정렬: `last_reported_at` desc
   - 필터: Status(All / Up-to-date / Outdated)
   - 검색: workspace_id/local_path/repo_url substring

@@ -72,16 +72,15 @@ describe('Router', () => {
     });
 
     it('should render ProjectDetailPage on "/projects/:projectName" route', async () => {
-        renderWithProviders('/projects/test-project');
+        renderWithProviders('/projects/sudal');
 
         await waitFor(() => {
-            // ProjectDetailPage still shows unimplemented in CTASK-2
-            // It will be implemented in CTASK-4
             expect(
-                screen.getByText(/test-project|Feature in Development/i),
+                screen.getByRole('heading', { name: /Project: sudal/i }),
             ).toBeInTheDocument();
         });
     });
+
 
     it('should render RawStatePage and show JSON state on "/debug/state" route', async () => {
         renderWithProviders('/debug/state');
