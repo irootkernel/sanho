@@ -1,5 +1,5 @@
 import { RouterProvider } from 'react-router-dom';
-import { RuntimeProvider } from './di/RuntimeContext';
+import { AppProviders } from './AppProviders';
 import { router } from '@/presentation/router';
 
 /**
@@ -7,8 +7,8 @@ import { router } from '@/presentation/router';
  */
 export function App() {
     return (
-        <RuntimeProvider>
+        <AppProviders>
             <RouterProvider router={router} />
-        </RuntimeProvider>
+        </AppProviders>
     );
 }

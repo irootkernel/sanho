@@ -2,15 +2,15 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { RawStatePage } from './RawStatePage'
-import { RuntimeProvider } from '@/app/di/RuntimeContext'
+import { AppProviders } from '@/app'
 import sampleState from '@/test/fixtures/api-state.sample.json'
 
-// Helper to render RawStatePage with RuntimeProvider
+// Helper to render RawStatePage with AppProviders
 function renderRawStatePage() {
     return render(
-        <RuntimeProvider>
+        <AppProviders>
             <RawStatePage />
-        </RuntimeProvider>,
+        </AppProviders>,
     )
 }
 

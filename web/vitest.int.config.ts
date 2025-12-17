@@ -24,6 +24,8 @@ export default defineConfig(({ mode }) => {
             include: [
                 // React component tests
                 'src/presentation/**/*.test.tsx',
+                // Application stores with React hooks
+                'src/application/**/*.test.tsx',
                 // Repository tests (need fetch mocking)
                 'src/data/repositories/**/*.test.ts',
             ],

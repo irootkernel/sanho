@@ -1,20 +1,20 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, fireEvent, waitForElementToBeRemoved } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
-import { RuntimeProvider } from '@/app/di/RuntimeContext';
+import { AppProviders } from '@/app';
 import { ProjectDetailPage } from './ProjectDetailPage';
 import sampleState from '@/test/fixtures/api-state.sample.json';
 
 // Helper to render page with partial path
 function renderPage(projectName: string) {
     return render(
-        <RuntimeProvider>
+        <AppProviders>
             <MemoryRouter initialEntries={[`/projects/${projectName}`]}>
                 <Routes>
                     <Route path="/projects/:projectName" element={<ProjectDetailPage />} />
                 </Routes>
             </MemoryRouter>
-        </RuntimeProvider>
+        </AppProviders>
     );
 }
 

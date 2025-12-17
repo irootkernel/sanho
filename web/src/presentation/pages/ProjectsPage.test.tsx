@@ -3,14 +3,14 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { ProjectsPage } from './ProjectsPage';
-import { RuntimeProvider } from '@/app/di/RuntimeContext';
+import { AppProviders } from '@/app';
 import type { KkachiState } from '@/domain';
 
 // Helper to render ProjectsPage with necessary providers
 function renderProjectsPage() {
     return render(
         <MemoryRouter initialEntries={['/']}>
-            <RuntimeProvider>
+            <AppProviders>
                 <Routes>
                     <Route path="/" element={<ProjectsPage />} />
                     <Route
@@ -18,7 +18,7 @@ function renderProjectsPage() {
                         element={<div data-testid="detail-page">Detail Page</div>}
                     />
                 </Routes>
-            </RuntimeProvider>
+            </AppProviders>
         </MemoryRouter>
     );
 }

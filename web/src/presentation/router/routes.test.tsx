@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
-import { RuntimeProvider } from '@/app/di/RuntimeContext';
+import { AppProviders } from '@/app';
 import { Layout } from '@/presentation/layout';
 import {
     ProjectsPage,
@@ -10,10 +10,10 @@ import {
 } from '@/presentation/pages';
 import sampleState from '@/test/fixtures/api-state.sample.json';
 
-// Test helper to render with router and runtime
+// Test helper to render with router and app-level providers
 function renderWithProviders(initialRoute: string) {
     return render(
-        <RuntimeProvider>
+        <AppProviders>
             <MemoryRouter initialEntries={[initialRoute]}>
                 <Routes>
                     <Route path="/" element={<Layout />}>
@@ -26,7 +26,7 @@ function renderWithProviders(initialRoute: string) {
                     </Route>
                 </Routes>
             </MemoryRouter>
-        </RuntimeProvider>,
+        </AppProviders>,
     );
 }
 

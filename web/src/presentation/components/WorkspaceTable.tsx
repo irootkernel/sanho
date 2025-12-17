@@ -1,22 +1,9 @@
 import type { WorkspaceWithStatus } from '@/domain';
+import { formatAbsoluteTime, formatHash, formatRelativeTime } from '@/domain';
 import { StatusBadge } from './StatusBadge';
 
 interface WorkspaceTableProps {
     workspaces: WorkspaceWithStatus[];
-}
-
-function formatRelativeTime(isoTimestamp: string | null): string {
-    if (!isoTimestamp) return '—';
-    const date = new Date(isoTimestamp);
-    return date.toLocaleString();
-}
-
-/**
- * Truncates hash for display
- */
-function formatHash(hash: string | null): string {
-    if (!hash) return '—';
-    return hash.length > 8 ? `${hash.substring(0, 8)}...` : hash;
 }
 
 /**
@@ -73,7 +60,9 @@ export function WorkspaceTable({ workspaces }: WorkspaceTableProps) {
                             <code>{formatHash(ws.docs_hash)}</code>
                         </td>
                         <td className="ws-updated">
-                            {formatRelativeTime(ws.last_reported_at)}
+                            <span title={formatAbsoluteTime(ws.last_reported_at)}>
+                                {formatRelativeTime(ws.last_reported_at)}
+                            </span>
                         </td>
                         <td className="ws-actor">
                             {ws.last_actor_email || '—'}

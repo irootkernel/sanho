@@ -2,16 +2,25 @@ import { test, expect } from '@playwright/test'
 
 /**
  * E2E tests for RawStatePage (/debug/state)
- * 
- * Prerequisites:
- * - kkachi-server running on port 5789
- * - kkachi-web running on port 5173
- * 
- * Run with: npm run test:e2e
+ *
+ * These tests mock /api/state for determinism and do not require kkachi-server.
  */
+
+const MOCK_STATE = {
+    docs_heads: { test: 'abc123' },
+    workspaces: [],
+}
 
 test.describe('RawStatePage E2E', () => {
     test.beforeEach(async ({ page }) => {
+        await page.route('**/api/state*', async (route) => {
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify(MOCK_STATE),
+            })
+        })
+
         // Navigate to the debug state page
         await page.goto('/debug/state')
     })
@@ -39,8 +48,23 @@ test.describe('RawStatePage E2E', () => {
     })
 
     test('should have a working refresh button', async ({ page }) => {
-        // Wait for initial load
-        await expect(page.locator('.badge').first()).toBeVisible({ timeout: 10000 })
+        let apiCallCount = 0
+        await page.unroute('**/api/state*')
+        await page.route('**/api/state*', async (route) => {
+            apiCallCount++
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify(MOCK_STATE),
+            })
+        })
+
+        // Reload so the new route is used for initial load.
+        await page.reload()
+        await expect(page.locator('.badge').first()).toBeVisible({
+            timeout: 10000,
+        })
+        const initialCallCount = apiCallCount
 
         // Get initial JSON content
         const jsonDisplay = page.locator('.json-display')
@@ -49,8 +73,9 @@ test.describe('RawStatePage E2E', () => {
         // Click the refresh button in the main content area (not the header one)
         await page.getByRole('main').getByRole('button', { name: /🔄 Refresh/i }).click()
 
-        // Wait for refresh to complete (loading state might flash)
-        await page.waitForTimeout(500)
+        await expect
+            .poll(() => apiCallCount)
+            .toBeGreaterThan(initialCallCount)
 
         // Content should still be present (may be same or updated)
         const refreshedContent = await jsonDisplay.textContent()
@@ -91,8 +116,7 @@ test.describe('RawStatePage E2E', () => {
     })
 
     test('should display error state when server is down', async ({ page, context }) => {
-        // This test requires that the API returns an error
-        // We can intercept the request and simulate an error
+        await page.unroute('**/api/state*')
         await context.route('**/api/state*', (route) => {
             route.fulfill({
                 status: 500,
@@ -109,9 +133,8 @@ test.describe('RawStatePage E2E', () => {
     })
 
     test('should retry when retry button is clicked after error', async ({ page, context }) => {
-        // In dev, React StrictMode can trigger effects twice, resulting in multiple
-        // automatic requests on mount. Keep failing until the test explicitly
-        // allows success after verifying the error UI is visible.
+        await page.unroute('**/api/state*')
+
         let allowSuccess = false
 
         await context.route('**/api/state*', (route) => {

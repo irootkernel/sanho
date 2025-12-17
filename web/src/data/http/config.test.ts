@@ -53,6 +53,21 @@ describe('config', () => {
             expect(() => getApiConfig()).toThrow(/full URLs are not allowed/)
         })
 
+        it('should throw ApiConfigError for non-slash-prefixed values', () => {
+            import.meta.env.VITE_KKACHI_API_PREFIX = 'api'
+
+            expect(() => getApiConfig()).toThrow(ApiConfigError)
+            expect(() => getApiConfig()).toThrow(/must start with "\/"/)
+        })
+
+        it('should throw ApiConfigError for query strings or fragments', () => {
+            import.meta.env.VITE_KKACHI_API_PREFIX = '/api?x=1'
+            expect(() => getApiConfig()).toThrow(ApiConfigError)
+
+            import.meta.env.VITE_KKACHI_API_PREFIX = '/api#hash'
+            expect(() => getApiConfig()).toThrow(ApiConfigError)
+        })
+
         it('should allow relative paths without protocol', () => {
             import.meta.env.VITE_KKACHI_API_PREFIX = '/my/api/v2'
 

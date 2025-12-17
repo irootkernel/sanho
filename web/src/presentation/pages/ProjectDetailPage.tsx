@@ -1,34 +1,23 @@
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useState, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { useRuntime } from '@/app/di/RuntimeContext';
+import { useKkachiState } from '@/application';
 import type {
-    KkachiState,
     StatusFilter,
     SortOption,
     SortField,
     WorkspaceWithStatus,
 } from '@/domain';
+import { filterAndSortWorkspaces, formatHash, isEmptyState } from '@/domain';
 import {
-    isUnimplementedError,
-    filterAndSortWorkspaces,
-} from '@/domain';
-import { WorkspaceTable } from '@/presentation/components';
-
-/**
- * Truncates hash for display
- */
-function formatHash(hash: string | null): string {
-    if (!hash) return '—';
-    return hash.length > 8 ? `${hash.substring(0, 8)}...` : hash;
-}
+    Loading,
+    ErrorBanner,
+    EmptyState,
+    WorkspaceTable,
+} from '@/presentation/components';
 
 export function ProjectDetailPage() {
     const { projectName } = useParams<{ projectName: string }>();
-    const { getKkachiState } = useRuntime();
-
-    const [state, setState] = useState<KkachiState | null>(null);
-    const [error, setError] = useState<Error | null>(null);
-    const [isLoading, setIsLoading] = useState(true);
+    const { data: state, isLoading, error, refresh } = useKkachiState();
 
     // Filters
     const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
@@ -37,24 +26,6 @@ export function ProjectDetailPage() {
         field: 'last_reported_at',
         direction: 'desc',
     });
-
-    const fetchState = useCallback(async () => {
-        setIsLoading(true);
-        setError(null);
-        try {
-            const result = await getKkachiState.execute();
-            setState(result);
-        } catch (err) {
-            console.error('ProjectDetailPage Fetch Error:', err);
-            setError(err instanceof Error ? err : new Error('Unknown error'));
-        } finally {
-            setIsLoading(false);
-        }
-    }, [getKkachiState]);
-
-    useEffect(() => {
-        fetchState();
-    }, [fetchState]);
 
     const decodedProjectName = decodeURIComponent(projectName ?? '');
 
@@ -72,7 +43,6 @@ export function ProjectDetailPage() {
 
         return { docsHead, workspaces };
     }, [state, decodedProjectName]);
-
 
     const filteredWorkspaces = useMemo<WorkspaceWithStatus[]>(() => {
         if (!projectData) return [];
@@ -95,39 +65,53 @@ export function ProjectDetailPage() {
         }));
     };
 
-    if (isLoading) {
+    if (isLoading && !state) {
         return (
             <div className="page project-detail-page">
                 <div className="breadcrumbs">
-                    <Link to="/">Projects</Link> &gt; <span>{decodedProjectName}</span>
+                    <Link to="/">Projects</Link> &gt;{' '}
+                    <span>{decodedProjectName}</span>
                 </div>
                 <h2>Project: {decodedProjectName}</h2>
-                <div className="loading-container">
-                    <div className="loading-spinner"></div>
-                    <p>Loading project details...</p>
-                </div>
+                <Loading message="Loading project details..." />
             </div>
         );
     }
 
-    if (error) {
-        if (isUnimplementedError(error)) {
-            return (
-                <div className="error-container unimplemented">
-                    <div className="error-icon">🚧</div>
-                    <h2>Feature in Development</h2>
-                    <p>The feature is not yet implemented.</p>
-                </div>
-            );
-        }
+    if (error && !state) {
         return (
-            <div className="error-container error">
-                <div className="error-icon">⚠️</div>
-                <h2>An Error Occurred</h2>
-                <p>{error.message}</p>
-                <button onClick={fetchState} className="retry-button">
-                    Retry
-                </button>
+            <div className="page project-detail-page">
+                <div className="breadcrumbs">
+                    <Link to="/">Projects</Link> &gt;{' '}
+                    <span>{decodedProjectName}</span>
+                </div>
+                <ErrorBanner
+                    error={error}
+                    onRetry={refresh}
+                    title="Failed to Load Project"
+                />
+            </div>
+        );
+    }
+
+    if (state && isEmptyState(state)) {
+        return (
+            <div className="page project-detail-page">
+                <div className="breadcrumbs">
+                    <Link to="/">Projects</Link> &gt;{' '}
+                    <span>{decodedProjectName}</span>
+                </div>
+                <EmptyState
+                    icon="📁"
+                    title="No Projects Yet"
+                    description="kkachi-server has no registered projects or workspaces."
+                    hint={
+                        <>
+                            Use <code>kkachi init</code> in a Git repository to
+                            register your first workspace.
+                        </>
+                    }
+                />
             </div>
         );
     }
@@ -136,26 +120,30 @@ export function ProjectDetailPage() {
         return (
             <div className="page project-detail-page">
                 <div className="breadcrumbs">
-                    <Link to="/">Projects</Link> &gt; <span>{decodedProjectName}</span>
+                    <Link to="/">Projects</Link> &gt;{' '}
+                    <span>{decodedProjectName}</span>
                 </div>
                 <div className="error-container error">
                     <h3>Project Not Found</h3>
-                    <p>The project "{decodedProjectName}" does not exist in the state.</p>
-                    <Link to="/" className="retry-button">Go to Dashboard</Link>
+                    <p>
+                        The project "{decodedProjectName}" does not exist in the
+                        state.
+                    </p>
+                    <Link to="/" className="retry-button">
+                        Go to Dashboard
+                    </Link>
                 </div>
             </div>
         );
     }
 
-    // Determine status counts for badges
     const totalCount = projectData.workspaces.length;
-    // We can use simplified status counts from filtered list or recalculate
-    // Let's rely on filter options
 
     return (
         <div className="page project-detail-page">
             <div className="breadcrumbs">
-                <Link to="/">Projects</Link> &gt; <span>{decodedProjectName}</span>
+                <Link to="/">Projects</Link> &gt;{' '}
+                <span>{decodedProjectName}</span>
             </div>
 
             <header className="project-header">
@@ -178,7 +166,8 @@ export function ProjectDetailPage() {
                 <div className="warning-banner">
                     <span className="warning-icon">ℹ️</span>
                     <span>
-                        This project does not have a registered Docs HEAD yet. All workspaces are Unknown.
+                        This project does not have a registered Docs HEAD yet.
+                        All workspaces are Unknown.
                     </span>
                 </div>
             )}
@@ -187,7 +176,9 @@ export function ProjectDetailPage() {
                 <div className="filters">
                     <select
                         value={statusFilter}
-                        onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+                        onChange={(e) =>
+                            setStatusFilter(e.target.value as StatusFilter)
+                        }
                         className="status-filter"
                     >
                         <option value="all">All Status</option>
@@ -211,25 +202,34 @@ export function ProjectDetailPage() {
                         className={`sort-btn ${sort.field === 'last_reported_at' ? 'active' : ''}`}
                         onClick={() => handleSortChange('last_reported_at')}
                     >
-                        Last Reported {sort.field === 'last_reported_at' && (sort.direction === 'asc' ? '↑' : '↓')}
+                        Last Reported{' '}
+                        {sort.field === 'last_reported_at' &&
+                            (sort.direction === 'asc' ? '↑' : '↓')}
                     </button>
                     <button
                         className={`sort-btn ${sort.field === 'local_path' ? 'active' : ''}`}
                         onClick={() => handleSortChange('local_path')}
                     >
-                        Path {sort.field === 'local_path' && (sort.direction === 'asc' ? '↑' : '↓')}
+                        Path{' '}
+                        {sort.field === 'local_path' &&
+                            (sort.direction === 'asc' ? '↑' : '↓')}
                     </button>
                 </div>
             </div>
 
             <div className="table-container">
                 {projectData.workspaces.length === 0 ? (
-                    <div className="empty-state">
-                        <div className="empty-icon">📭</div>
-                        <h3>No Workspaces</h3>
-                        <p>This project has no registered workspaces yet.</p>
-                        <p className="hint">Use <code>kkachi init</code> to register a workspace.</p>
-                    </div>
+                    <EmptyState
+                        icon="📭"
+                        title="No Workspaces"
+                        description="This project has no registered workspaces yet."
+                        hint={
+                            <>
+                                Use <code>kkachi init</code> to register a
+                                workspace.
+                            </>
+                        }
+                    />
                 ) : filteredWorkspaces.length === 0 ? (
                     <div className="empty-filter-state">
                         <p>No workspaces match your filter.</p>

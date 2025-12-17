@@ -1,46 +1,16 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useRuntime } from '@/app/di/RuntimeContext';
-import type { KkachiState, ProjectSummary } from '@/domain';
+import { useKkachiState } from '@/application';
+import type { ProjectSummary } from '@/domain';
 import {
-    isUnimplementedError,
     isEmptyState,
     computeProjectSummaries,
     sortByOutdatedFirst,
+    formatRelativeTime,
+    formatAbsoluteTime,
+    formatHash,
 } from '@/domain';
-
-/**
- * Formats relative time from ISO timestamp
- */
-function formatRelativeTime(isoTimestamp: string | null): string {
-    if (!isoTimestamp) return '—';
-
-    const date = new Date(isoTimestamp);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMinutes = Math.floor(diffMs / (1000 * 60));
-    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-    if (diffMinutes < 1) return 'Just now';
-    if (diffMinutes < 60) return `${diffMinutes}m ago`;
-    if (diffHours < 24) return `${diffHours}h ago`;
-    if (diffDays < 7) return `${diffDays}d ago`;
-
-    return date.toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined,
-    });
-}
-
-/**
- * Truncates hash for display
- */
-function formatHash(hash: string | null): string {
-    if (!hash) return '—';
-    return hash.length > 8 ? `${hash.substring(0, 8)}...` : hash;
-}
+import { Loading, ErrorBanner, EmptyState } from '@/presentation/components';
 
 type SortMode = 'name' | 'outdated';
 
@@ -49,30 +19,9 @@ type SortMode = 'name' | 'outdated';
  * Displays project summaries with their docs HEAD and workspace status.
  */
 export function ProjectsPage() {
-    const { getKkachiState } = useRuntime();
+    const { data: state, isLoading, error, refresh } = useKkachiState();
     const navigate = useNavigate();
-
-    const [state, setState] = useState<KkachiState | null>(null);
-    const [error, setError] = useState<Error | null>(null);
-    const [isLoading, setIsLoading] = useState(true);
     const [sortMode, setSortMode] = useState<SortMode>('name');
-
-    const fetchState = useCallback(async () => {
-        setIsLoading(true);
-        setError(null);
-        try {
-            const result = await getKkachiState.execute();
-            setState(result);
-        } catch (err) {
-            setError(err instanceof Error ? err : new Error('Unknown error'));
-        } finally {
-            setIsLoading(false);
-        }
-    }, [getKkachiState]);
-
-    useEffect(() => {
-        fetchState();
-    }, [fetchState]);
 
     // Compute and sort project summaries
     const summaries = useMemo<ProjectSummary[]>(() => {
@@ -98,48 +47,25 @@ export function ProjectsPage() {
     };
 
     // Loading state
-    if (isLoading) {
+    if (isLoading && !state) {
         return (
             <div className="page projects-page">
                 <h2>Projects Dashboard</h2>
-                <div className="loading-container">
-                    <div className="loading-spinner"></div>
-                    <p>Loading projects...</p>
-                </div>
+                <Loading message="Loading projects..." />
             </div>
         );
     }
 
-    // Unimplemented error
-    if (error && isUnimplementedError(error)) {
-        return (
-            <div className="error-container unimplemented">
-                <div className="error-icon">🚧</div>
-                <h2>Feature in Development</h2>
-                <p>
-                    The feature <code>{error.featureName}</code> is not yet
-                    implemented.
-                </p>
-                <p className="hint">
-                    This feature will be available in a future update.
-                </p>
-            </div>
-        );
-    }
-
-    // Other errors
-    if (error) {
+    // Error state
+    if (error && !state) {
         return (
             <div className="page projects-page">
                 <h2>Projects Dashboard</h2>
-                <div className="error-container error">
-                    <div className="error-icon">⚠️</div>
-                    <h3>Failed to Load Projects</h3>
-                    <p>{error.message}</p>
-                    <button onClick={fetchState} className="retry-button">
-                        🔄 Retry
-                    </button>
-                </div>
+                <ErrorBanner
+                    error={error}
+                    onRetry={refresh}
+                    title="Failed to Load Projects"
+                />
             </div>
         );
     }
@@ -149,17 +75,17 @@ export function ProjectsPage() {
         return (
             <div className="page projects-page">
                 <h2>Projects Dashboard</h2>
-                <div className="empty-state">
-                    <div className="empty-icon">📁</div>
-                    <h3>No Projects Yet</h3>
-                    <p>
-                        kkachi-server has no registered projects or workspaces.
-                    </p>
-                    <p className="hint">
-                        Use <code>kkachi init</code> in a Git repository to
-                        register your first workspace.
-                    </p>
-                </div>
+                <EmptyState
+                    icon="📁"
+                    title="No Projects Yet"
+                    description="kkachi-server has no registered projects or workspaces."
+                    hint={
+                        <>
+                            Use <code>kkachi init</code> in a Git repository to
+                            register your first workspace.
+                        </>
+                    }
+                />
             </div>
         );
     }
@@ -178,7 +104,7 @@ export function ProjectsPage() {
                             ? '🔥 Outdated First'
                             : '🔤 Sort by Name'}
                     </button>
-                    <button onClick={fetchState} className="refresh-button small">
+                    <button onClick={refresh} className="refresh-button small">
                         🔄 Refresh
                     </button>
                 </div>
@@ -249,9 +175,15 @@ export function ProjectsPage() {
                                     )}
                                 </td>
                                 <td className="last-updated">
-                                    {formatRelativeTime(
-                                        summary.last_reported_at_max
-                                    )}
+                                    <span
+                                        title={formatAbsoluteTime(
+                                            summary.last_reported_at_max
+                                        )}
+                                    >
+                                        {formatRelativeTime(
+                                            summary.last_reported_at_max
+                                        )}
+                                    </span>
                                 </td>
                             </tr>
                         ))}

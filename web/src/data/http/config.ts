@@ -34,6 +34,27 @@ function validateApiPrefix(prefix: string): void {
             `Invalid API prefix "${prefix}": full URLs are not allowed. Use a relative path like "/api".`
         );
     }
+
+    // Enforce same-origin absolute path prefix (starts with "/")
+    if (!prefix.startsWith('/')) {
+        throw new ApiConfigError(
+            `Invalid API prefix "${prefix}": must start with "/". Use a path like "/api".`
+        );
+    }
+
+    // Disallow URL fragments/query strings in prefix (path prefix only)
+    if (prefix.includes('?') || prefix.includes('#')) {
+        throw new ApiConfigError(
+            `Invalid API prefix "${prefix}": query strings and fragments are not allowed. Use a path like "/api".`
+        );
+    }
+
+    // Disallow whitespace in prefix
+    if (/\s/.test(prefix)) {
+        throw new ApiConfigError(
+            `Invalid API prefix "${prefix}": whitespace is not allowed. Use a path like "/api".`
+        );
+    }
 }
 
 /**
@@ -65,4 +86,3 @@ export function buildApiUrl(endpoint: string): string {
     const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
     return `${normalizedPrefix}${normalizedEndpoint}`;
 }
-

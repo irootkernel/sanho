@@ -1,20 +1,15 @@
 import { Outlet, Link } from 'react-router-dom';
-import { useRuntime } from '@/app/di/RuntimeContext';
+import { useKkachiState } from '@/application';
 
 /**
  * Layout is the main layout component for the application.
  * It includes a header with title and refresh button.
  */
 export function Layout() {
-    const { refreshState } = useRuntime();
+    const { refresh } = useKkachiState();
 
     const handleRefresh = async (): Promise<void> => {
-        try {
-            await refreshState();
-        } catch (error) {
-            // Error will be caught by ErrorBoundary
-            console.error('Failed to refresh state:', error);
-        }
+        await refresh();
     };
 
     return (
