@@ -1,174 +1,287 @@
-# Kkachi Server v2 Roadmap
+# Server Roadmap (v3) — Web Terminal / PTY
 
-## 0. 전제
-
-- v1 기준 kkachi-server와 kkachi CLI, `/state`, `/docs/head` 등 핵심 기능은 이미 구현되어 있다.
-- v2는 **읽기 전용 Web 대시보드(kkachi-web)** 를 추가하고, 이를 위해 서버는 최소한의 API alias 및 정적 파일 서빙만 확장한다.
-- v2 범위에서는 새로운 쓰기 API를 추가하지 않으며, 기존 v1 워크플로우(kkachi CLI + Git hook)를 그대로 존중한다.
-- v2는 인증/인가 없이 접근 가능하다고 가정하되, v3(Web Terminal)부터 옵션 토큰 기반 보호를 붙일 수 있도록 auth middleware를 **비활성 기본값**으로 설계할 여지를 남긴다.
+> 이 문서는 v3 서버 구현을 **5개 PR(STASK-1~5)** 로 쪼개기 위한 로드맵이다.  
+> 각 STASK는 Git PR tag로 사용된다.
 
 ---
 
-## 1. Server Roadmap (kkachi-server v2 범위)
+## 0. PR 컨벤션
 
-서버는 v1에서 이미 존재하는 상태 모델과 API를 기준으로, Web UI가 요구하는 최소한의 확장을 수행한다.  
-기본 원칙은 **기존 API 계약을 깨지 않고 그대로 유지하는 것**이다.
-
-### 1.0 공통 원칙 (Agile Delivery)
-
-- 모든 STASK는 **항상 동작 가능한 서버 바이너리**를 산출하는 단위로 정의한다.
-- 각 STASK 안에서 필요한 **테스트 코드 추가/수정**과 **배포 스크립트·문서 업데이트**까지 포함해서 처리한다.
-- 별도의 “테스트만 하는 Task”, “배포 문서만 쓰는 Task”는 두지 않고, 각 STASK의 완료 정의(DoD)에 자연스럽게 녹인다.
+- PR 제목 예시: `[STASK-1] PTY session foundation (create/terminate + cwd allowlist)`
+- 원칙
+  - 각 PR은 “논리적으로 완결”되어야 한다(단독으로 리뷰/테스트 가능).
+  - 다음 STASK가 진행될 수 있을 만큼 계약(인터페이스/설정/테스트)을 고정한다.
 
 ---
 
-### 1.1 Server Tasks 개요
+## 1. v3 서버 산출물 요약(최종 상태)
 
-- **STASK-1**: 상태 모델 및 `/state` / `/docs/head` API 계약 고정 + 관련 단위 테스트
-- **STASK-2**: Web용 API alias(`/api/state`) 및 정적 파일 서빙/라우팅 + 통합 테스트
-- **STASK-3**: 빌드/배포 파이프라인 정리 및 배포 체크리스트 + 로깅/에러 핸들링
+### 1.1 필수 엔드포인트
+- `POST /api/pty/sessions`
+- `GET (WebSocket) /api/pty/sessions/{id}/ws`
+- `DELETE /api/pty/sessions/{id}`
 
-각 STASK는 **테스트와 배포 관점의 완료 기준(DoD)** 를 포함하여 정의한다.
-
----
-
-### STASK-1. 상태 모델 / API 스펙 고정
-
-**목표**
-
-- v2 Web이 기대하는 `/state` / `/docs/head` 스키마와 동작을 안정적으로 고정한다.
-- v2 이후에도 해당 스키마를 기준으로 클라이언트를 진화시킬 수 있도록, breaking change를 방지한다.
-
-**세부 작업**
-
-1. `/state` 응답 스키마 고정
-
-   - 응답이 항상 다음 형태를 만족하는지 확인 및 테스트 추가:
-
-     - `docs_heads: { [project: string]: docs_head_hash }`
-     - `workspaces: { workspace_id, project, docs_repo_id, local_path, repo_url, docs_hash, last_reported_at, last_actor_email }[]`
-   - v2 Web에서 이 구조를 그대로 가정하므로, 서버에서 임의로 필드명을 변경하거나 제거하지 않는다.
-
-2. `/docs/head` 의 동작 보장
-
-   - `GET /docs/head?project=<project>` 가 항상 `docs_heads[project]`와 일관된 값을 반환하는지 확인.
-   - 내부 구현에서 `docs_heads`와 별도 소스 간에 불일치가 생기지 않도록 정합성 점검.
-
-3. 상태 저장 로직 점검
-
-   - 내부 state(JSON 파일 등)에 `docs_repos`, `project_to_docs_repo`, `workspaces` 가 정확히 유지되는지 재점검.
-   - 특히 `workspaces[].last_reported_at`, `last_actor_email` 값이 `/state` 응답으로 노출되는지 확인.
-
-**테스트 / Done 기준 (DoD)**
-
-- `/state` 응답 JSON 구조를 검증하는 단위 테스트가 존재한다.
-- `/docs/head?project=...` 응답이 `docs_heads[project]`와 일관됨을 검증하는 테스트가 존재한다.
-- 실 서버 실행 후 `/state` 응답에서 `last_reported_at`, `last_actor_email` 필드를 실제로 확인할 수 있다.
+### 1.2 핵심 정책
+- **cwd allowlist 강제** (workspace → local_path 기반 cwd 해석)
+- **disconnect 정리 정책 일관**: `terminate_immediately`(권장) 또는 `idle_timeout`
+- **좀비/FD 누수 없이 종료** (kill + wait + close)
+- 보안 최소: command blacklist(가드레일), auth scaffolding(default off)
 
 ---
 
-### STASK-2. Web용 API alias 및 정적 서빙
+## 2. STASK 개요
 
-**목표**
-
-- kkachi-web이 same-origin에서 `/api/state`와 정적 자원을 통해 동작하도록 한다.
-- SPA 라우팅 및 정적 파일 서빙 규칙을 명확히 하고, Web 대시보드를 안정적으로 제공한다.
-
-**세부 작업**
-
-1. `/api/state` 엔드포인트 구현
-
-   - 메서드: `GET`
-   - 동작: 기존 `/state` 핸들러를 그대로 재사용 (동일 JSON 응답).
-   - 구현 방식:
-
-     - Router 레벨에서 `/api/state` → `/state` 핸들러로 바인딩.
-		   - 요구사항:
-
-		     - `/state` 와 응답 스키마 100% 동일.
-		     - Web UI 기본 호출 경로는 `/api/state` 로 **고정**한다. (`/state` fallback 전제 없음)
-
-2. 간단한 헬스체크 API (v2 필수)
-
-	   - `GET /healthz` → `{ ok: true }`
-	   - Web에서 직접 사용하지는 않지만, 배포 환경에서 상태 체크용으로 활용한다.
-
-3. Web 빌드 산출물 위치 확정
-
-   - 기본: `kkachi/web/dist/`
-   - 빌드 산출: `index.html`, `assets/*` 등.
-
-4. 정적 서빙 핸들러 구현
-
-		   - 라우팅 규칙 예:
-
-			     - `GET /api/*` → API (Web 전용 엔드포인트 prefix)
-			     - `GET /assets/*` → `web/dist/assets/*`
-			     - `GET /*` → `web/dist/index.html` (SPA 라우팅)
-		   - 구현 옵션:
-
-		     - Go `http.FileServer` 로 디렉토리 서빙.
-		     - 또는 embed(FS) 활용해 단일 바이너리로 패키징.
-
-5. 404 처리 / SPA fallback
-
-		   - SPA 내부 라우트(`/projects/...`, `/debug/...` 등)로 오는 요청은 항상 `index.html` 로 fallback.
-		   - `/api/*` 는 API로, `/assets/*` 는 정적 파일로 구분한다.
-		   - `/state`, `/docs/*`, `/healthz` 등 기존 API/정적 라우트는 먼저 매칭되고, 그 외만 SPA fallback 처리한다.
-
-6. CORS / Same-origin 정책 적용
-
-   - Web UI와 API를 동일 Origin에서 제공.
-   - 동일 Origin을 전제로 하므로, 별도 CORS 설정은 기본적으로 불필요.
-
-**테스트 / Done 기준 (DoD)**
-
-- 서버 단위/통합 테스트 또는 수동 검증으로 다음을 확인:
-
-	  - `/api/state` 응답이 `/state` 와 완전히 동일하다.
-		  - 서버 실행 후 `GET /` 요청 시 `web/dist/index.html` 이 로딩된다.
-		  - `GET /projects/...` 요청이 SPA fallback으로 `index.html` 을 반환한다.
-		  - `GET /assets/...` 요청이 실제 정적 파일로 응답한다.
+| STASK | 목표(한 줄) | 선행 | 핵심 테스트 |
+|---|---|---|---|
+| STASK-1 | 세션 리소스 모델 + HTTP create/terminate + cwd allowlist | - | create/terminate + wait 검증 |
+| STASK-2 | WS attach + 입출력 스트리밍 + resize + single-attach | STASK-1 | WS echo roundtrip |
+| STASK-3 | 라이프사이클 하드닝(정리 정책 고정/exit 처리/limits/logging) | STASK-2 | disconnect 종료 정책 검증 |
+| STASK-4 | command blacklist(서버 가드레일) | STASK-2 | blocked 패턴 차단 검증 |
+| STASK-5 | 옵션 토큰 인증 스캐폴딩(default off) + 폴리시 마감 | STASK-2 | auth on/off 회귀 테스트 |
 
 ---
 
-### STASK-3. 빌드/배포 파이프라인 및 운영
+## 3. STASK 상세
 
-**목표**
+## STASK-1 — PTY Foundation (SessionManager + HTTP create/terminate + CWD allowlist)
 
-- web 빌드 + server 빌드/배포 과정이 문서화/자동화되어, 동일한 절차로 재현 가능하게 만든다.
-- 정적 파일이 없거나 잘못 배포된 경우에도 원인을 빠르게 파악할 수 있도록 로깅/에러 메시지를 정리한다.
+### 목적
+- 서버에 “PTY 세션”이라는 리소스를 도입한다.
+- **세션 생성/종료가 정확히 동작**하고, **cwd allowlist**가 강제된다.
+- 이후 WS attach(STASK-2)가 얹힐 수 있는 내부 구조(세션 매니저/세션 구조체/에러 코드)를 고정한다.
 
-**세부 작업**
+### 포함 범위
+- in-memory session manager
+- PTY spawn (`creack/pty`)
+- cwd 해석: `workspace_id + cwd_rel → resolved_cwd`
+- allowlist 검증(필수)
+- HTTP:
+  - `POST /api/pty/sessions`
+  - `DELETE /api/pty/sessions/{id}`
 
-1. Monorepo 빌드 파이프라인 정의
+### 구현 가이드
+1) **모듈 경계**
+- `internal/pty` (권장) 하위에 다음을 위치
+  - `manager.go`: SessionManager (map + mutex)
+  - `session.go`: Session struct, terminate logic
+  - `resolve.go`: cwd resolution/allowlist validation
+  - `errors.go`: 에러 코드 상수
 
-   - 기본 순서:
+2) **workspace 조회**
+- 서버 state(기존)에서 `workspace_id`를 찾아 `local_path`를 얻는다.
+- workspace가 없으면 `unknown_workspace`로 실패(HTTP 400 또는 404 중 하나로 고정; v1의 unknown_* 관례를 고려하면 400도 무난).
 
-     1. `cd web && npm install && npm run build`
-     2. `go build ./cmd/server`
-   - 또는 서버 빌드 시 `web/dist` 존재 여부를 체크하고, 없으면 경고/에러를 출력.
+3) **cwd 정규화(중요)**
+- `resolved = filepath.Clean(filepath.Join(local_path, cwd_rel))`
+- 반드시 방어할 것
+  - `cwd_rel`에 절대경로/드라이브 경로가 들어오는 경우
+  - `..`로 탈출 시도
+  - (권장) `EvalSymlinks` 적용 후 allowlist 비교
 
-2. 환경 변수 / 설정 값 정의
+4) **allowlist 매칭**
+- 설정: `allowlist_paths: []string`
+- 정책: resolved_cwd가 allowlist prefix 하위면 허용
+- 거부 시 `cwd_not_allowed` (HTTP 403 권장)
 
-   - Web 정적 경로 root (예: `WEB_DIST_DIR`).
-   - Listen 포트, base URL 등은 v1과 동일하게 유지.
+5) **세션 생성**
+- 요청 `shell`은 allowlist로 제한 가능
+- PTY spawn 시 `Cmd.Dir = resolved_cwd`
+- `cols/rows`가 있으면 초기 window size 반영(없으면 기본)
 
-3. 로깅 / 에러 핸들링
+6) **세션 종료(좀비 방지의 핵심)**
+- `Terminate(id)`는 반드시 다음을 수행
+  - 프로세스 kill(필요 시 process group 포함)
+  - `Wait()` 수행
+  - PTY FD close
+  - 세션 제거
+- 멱등 종료(idempotent) 권장: 이미 종료됐거나 없는 id에도 “성공”으로 처리(프론트 단순화)
 
-   - `/api/state` 및 정적 파일 서빙에 대해 적절한 로그를 남긴다.
-   - 정적 파일이 없을 때 500 대신, 명확한 에러 메시지 출력(예: “web/dist 빌드 필요” 등).
+7) **응답 포맷**
+- 최소한 다음을 반환
+  - `session_id`
+  - `ws_url` (아직 STASK-2에서 구현되지만 경로 문자열은 제공)
+  - `resolved_cwd`
 
-4. 배포 문서화
+### 테스트/검증
+- Unit
+  - `ResolveCWD`의 탈출 방지 케이스
+  - allowlist 허용/거부
+  - SessionManager 멱등 terminate
+- Integration (`httptest`)
+  - 임시 디렉토리를 workspace local_path로 두고 allowlist에 포함
+  - create → terminate 후 프로세스가 남지 않는지 확인(가능하면 `ProcessState`/`Signal(0)` 방식)
 
-	   - v2 서버 배포 시 체크리스트:
+### 완료 기준
+- create/terminate가 반복되어도 프로세스/FD 누수가 관측되지 않는다.
+- allowlist가 없는/벗어나는 cwd 요청은 항상 거부된다.
 
-	     - web 빌드 수행 여부 (`web/dist` 생성 확인).
-	     - `/api/state` 응답 확인.
-	     - `/` 접속 시 SPA 로딩 여부.
+---
 
-**테스트 / Done 기준 (DoD)**
+## STASK-2 — WS Attach (I/O streaming + Resize + Single-attach)
 
-- 단일 커맨드(예: `make server-with-web`) 또는 문서화된 절차로 web + server 빌드를 재현할 수 있다.
-- `web/dist` 가 없을 때 서버 로그/에러 메시지에서 원인을 바로 파악할 수 있다.
-- 배포 체크리스트를 따라 실제 환경에 올린 뒤, `/`, `/api/state` 가 정상 동작하는 것을 확인했다.
+### 목적
+- v3 핵심 플로우인 “WS attach + 스트리밍”을 완성한다.
+- 클라이언트가 xterm에서 입력/출력을 실시간으로 사용할 수 있다.
+
+### 포함 범위
+- `GET (WS) /api/pty/sessions/{id}/ws`
+- WS ↔ PTY 양방향 I/O
+- Resize control message 처리
+- single-attach 정책
+
+### 구현 가이드
+1) **WS 프레임 규약(권장)**
+- binary frame: raw bytes
+- text frame(JSON): control 메시지(resize), 서버 이벤트(exit/error)
+
+2) **I/O 파이프**
+- WS read loop:
+  - binary → PTY write
+  - text(JSON) → control 처리
+- PTY read loop:
+  - PTY read → WS binary send
+
+3) **Resize**
+- `{type:"resize", cols, rows}` 수신 시 PTY size 반영
+
+4) **Single-attach**
+- 세션에 `attached bool`(mutex로 보호)
+- 이미 attached면 409 + `session_already_attached` 또는 WS close
+
+5) **Backpressure**
+- WS send가 지속적으로 막힐 때의 정책을 정한다.
+  - 권장: 버퍼 제한 초과 시 세션 종료 + `ws_backpressure` 에러 통지
+
+### 테스트/검증
+- Integration(WebSocket)
+  - create → ws connect → `echo __kkachi_test__\n` 전송 → 출력 수신
+  - resize 메시지를 보내도 WS가 죽지 않음(최소 보장)
+- Race
+  - `go test -race ./...`에서 attach 관련 경쟁 없음
+
+### 완료 기준
+- 서버 단독으로 “echo roundtrip”이 재현된다.
+- single-attach 정책이 결정된 방식대로 동작한다.
+
+---
+
+## STASK-3 — Lifecycle Hardening (disconnect 정책 고정 + exit 처리 + limits/logging)
+
+### 목적
+- v3 Exit Criteria의 핵심인 **정리 정책 일관성**과 **좀비 방지 회귀 차단**을 테스트로 고정한다.
+- 운영 중 runaway/누적을 막는 가드레일(세션 제한, 최소 로그)을 추가한다.
+
+### 포함 범위
+- disconnect 정책 결정 및 구현
+  - `terminate_immediately` (권장 기본)
+  - 또는 `idle_timeout` (옵션)
+- 프로세스 자연 종료(exit) 처리 및 WS 통지
+- 리소스 제한(최대 세션 수 등) 옵션
+- 최소 로깅(이벤트 단위)
+
+### 구현 가이드
+1) **disconnect 정책**
+- STASK-2의 WS handler에서 `OnClose`/read-loop 종료 시
+  - `terminate_immediately`: 즉시 `Terminate(session)`
+  - `idle_timeout`: deadline 설정 후 만료 시 terminate
+- 정책은 설정 값으로 고정하고 “부분적으로 다른 동작”이 없게 한다.
+
+2) **프로세스 자연 종료**
+- child process 종료 감지
+- (가능하면) WS에 `{type:"exit", exit_code,...}` 전송 후 close
+- 세션은 반드시 terminate/cleanup
+
+3) **세션 제한(권장)**
+- 설정: `max_sessions_per_client` 또는 `max_sessions_total`
+- 초과 시 429 또는 400으로 고정(프론트 메시지 매핑 가능)
+
+4) **로깅**
+- created / attached / detached / terminated / blocked 등을 구조화 로그로 남김
+
+### 테스트/검증
+- Integration
+  - WS close(클라이언트) → 서버가 정책대로 세션을 종료하는지 검증
+  - `exit\n` 입력 → exit 이벤트/cleanup 검증
+  - 세션 제한 도달 케이스 검증
+
+### 완료 기준
+- disconnect 시 정리 정책이 항상 동일하게 적용된다.
+- 좀비/FD 누수가 회귀 테스트로 잠긴다.
+
+---
+
+## STASK-4 — Command Blacklist (server-side guardrail)
+
+### 목적
+- v3 보안 최소 요구사항(초기 가드레일)인 위험 명령 blacklist를 서버에서 제공한다.
+
+### 포함 범위
+- blacklist 패턴 설정(기본값 + override)
+- stdin best-effort 라인 버퍼링 후 패턴 매칭
+- 차단 시 PTY로 전달하지 않고 client에 `command_blocked` 통지
+
+### 구현 가이드
+1) **정확성 목표**
+- interactive shell 특성상 100% 완벽한 차단은 불가능하므로, “가드레일”로 정의한다.
+
+2) **매칭 단위**
+- `\n`(Enter) 기준으로 라인을 구성하여 매칭(최소 구현)
+- 패턴은 substring 또는 regexp(운영 요구에 따라)로 구성
+
+3) **차단 동작**
+- 차단된 라인은 PTY에 쓰지 않는다.
+- WS에 `{type:"error", error:"command_blocked"}` 전송(또는 유사)
+
+### 테스트/검증
+- Integration
+  - 차단 패턴 입력 → `command_blocked` 수신
+  - 이후 정상 명령(`echo ok`) 동작 확인
+
+### 완료 기준
+- blacklist on/off가 설정으로 제어된다.
+- 최소한 대표 위험 패턴이 차단된다.
+
+---
+
+## STASK-5 — Auth Scaffolding (optional token auth default-off) + Final polish
+
+### 목적
+- 옵션 토큰 인증을 “붙일 수 있는 구조”로 제공하되, 기본값은 off로 유지한다.
+- v3 배포 품질을 위해 최종 폴리시(문서/에러/테스트)를 정리한다.
+
+### 포함 범위
+- auth 설정
+  - `auth_enabled: false` 기본
+  - `auth_token` (enabled 시 필수)
+- 적용 범위
+  - 최소: `/api/pty/*` 보호
+- HTTP + WS 인증
+- 폴리시 마감
+  - API 문서(간단 README)
+  - 에러 코드/HTTP status 일관화
+
+### 구현 가이드
+1) **HTTP 인증**
+- `Authorization: Bearer <token>`
+
+2) **WS 인증**
+- 브라우저는 WS에 커스텀 헤더 전송이 제한될 수 있음
+- 아래 중 **하나로 고정**
+  - (A) query param: `wss://.../ws?token=...`
+  - (B) cookie 기반
+- 선택한 방식은 requirement.md의 계약 섹션을 업데이트하고, CTASK-5에서 클라이언트에 반영한다.
+
+3) **기본 off 유지**
+- auth disabled일 때는 v2와 동일하게 “추가 설정 없이” 동작해야 한다.
+
+### 테스트/검증
+- Auth disabled(default)
+  - 기존 모든 테스트 통과
+- Auth enabled
+  - HTTP/WS 모두 토큰 없으면 거부
+  - 토큰 있으면 정상 동작
+
+### 완료 기준
+- 인증이 켜져도/꺼져도 회귀 없이 동작한다.
+- WS 인증 방식이 클라이언트와 합의된 형태로 문서화된다.
+

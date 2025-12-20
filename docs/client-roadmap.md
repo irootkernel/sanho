@@ -1,422 +1,275 @@
-# Kkachi Web v2 Client Roadmap (kkachi-web)
+# Client Roadmap (v3) — Web Terminal UI
 
-## 0. 전제 (v2 범위 고정)
-
-- v1 기준 kkachi-server / kkachi CLI / Git hook 워크플로우는 **그대로 유지**한다. (v2 Web은 이를 변경하지 않는다.)
-- v2 Web(kkachi-web)은 **읽기 전용(Read-only)** 대시보드이며, Web에서 어떠한 쓰기 작업(`/docs/push` 등)도 수행하지 않는다.
-- 서버는 v2에서 다음을 이미 제공한다고 가정한다. (server-roadmap 완료 상태)
-  - `GET /api/state` : `GET /state`와 **동일 JSON 스키마**를 반환하는 alias
-  - `GET /healthz`
-  - 정적 파일 서빙: `GET /assets/*` → `web/dist/assets/*`
-  - SPA fallback: `GET /*` (단, `/api/*`, `/assets/*`, 기존 API 경로 제외) → `web/dist/index.html`
-- Web UI는 **항상** `/api/state`만 호출한다. (`/state` fallback은 두지 않는다.)
-- SPA 공식 엔트리는 `/`로 고정한다. (Vite `base`는 `/` 유지)
+> 이 문서는 v3 클라이언트(kkachi-web) 구현을 **5개 PR(CTASK-1~5)** 로 쪼개기 위한 로드맵이다.  
+> 각 CTASK는 Git PR tag로 사용된다.
 
 ---
 
-## 1. v2 Client 목표/범위
+## 0. PR 컨벤션
 
-요구사항(requirement.md) 기준 v2 Web은 아래 기능을 제공한다.
-
-- **F2-1 (필수)** 프로젝트 리스트(Dashboard)
-  - project별 docs HEAD, workspace 수, outdated 수, 마지막 업데이트 시각 요약
-- **F2-2 (필수)** 프로젝트 상세
-  - 특정 project의 workspace 리스트 + Up-to-date/Outdated/Unknown 상태 표시
-  - 필터(상태), 검색, 기본 정렬(last_reported_at desc)
-- **F2-3 (선택)** Raw state 보기
-  - `/api/state` JSON을 개발자 친화적으로 그대로 표시
-- **F2-4 (필수)** 로딩/에러/빈 상태
-  - 네트워크 오류, 완전 빈 state(docs_heads/workspaces 모두 비어있음) 등
-
-비범위(명시): v2에서는 Web에서 docs 편집/푸시/프로젝트 변경/워크스페이스 등록 같은 쓰기 기능을 제공하지 않는다.
+- PR 제목 예시: `[CTASK-3] xterm + WebSocket attach (streaming + resize)`
+- 원칙
+  - 각 PR은 “논리적으로 완결”되어야 한다(단독으로 리뷰/테스트 가능).
+  - 서버 STASK 단계에 맞춰 계약(요청/응답/WS)을 점진적으로 확정한다.
+  - v3 비범위인 “세션 복구/재연결”을 암묵적으로 도입하지 않는다.
 
 ---
 
-## 2. 작업 방식 (Agile + Top-down + Clean Architecture)
+## 1. v3 클라이언트 산출물 요약(최종 상태)
 
-### 2.1 Agile Delivery
+### 1.1 `/terminal` 페이지 UX
+- 좌측: 열린 console(=PTY 세션) 리스트
+- 우측: 선택된 console의 터미널(xterm)
+- `New Console`로 workspace 선택 → 해당 cwd에서 쉘 오픈
+- console 복수 생성/전환
+- 드래그&드롭으로 console 순서 변경
+- console 닫기(세션 종료)
 
-- 모든 **CTASK는 “브라우저에서 실제로 동작하는 빌드 산출물”**을 목표로 한다.
-- 각 CTASK는 해당 범위를 검증하는 **테스트(유닛/컴포넌트/E2E 중 적절한 수준)** 를 포함한다.
-- “테스트만”, “문서만” 같은 별도 Task는 만들지 않고, **각 CTASK의 Done 정의(DoD)** 안에 포함한다.
-
-### 2.2 Top-down 구현 규칙
-
-- 한 화면(또는 사용자 여정)을 **UI부터 먼저** 만들고, 버튼/토글/검색 같은 인터랙션을 먼저 배치한다.
-- 기능(데이터/로직)은 **아래 레이어를 점진적으로 채워 넣으며** 붙인다.
-- 아랫단이 아직 구현되지 않은 단계에서는, 해당 호출이 **명시적으로 `UnimplementedError`를 발생**시키도록 두고,
-  - 테스트는 그 시점에는 “미구현이므로 UnimplementedError가 노출되는 것이 정상”임을 기대한다.
-  - 다음 CTASK에서 해당 레이어가 구현되면, 테스트 기대를 “정상 동작”으로 업데이트한다.
-
-### 2.3 Clean Architecture 적용 방식
-
-요구사항이 단순하더라도 v3/v4 확장을 막지 않도록, v2부터 레이어 경계를 고정한다.
-
-- **Domain**
-  - 엔티티/값 객체/순수 함수(상태 계산, 집계)만 포함
-  - React/HTTP/환경변수 접근 금지
-- **Presentation**
-  - React UI(페이지/컴포넌트), 라우팅, 사용자 이벤트 처리
-  - Application의 usecase/port에만 의존
-- **Application**
-  - 유스케이스(조회/리프레시), 캐시/스토어, 포트(interfaces)
-  - 구현체는 Data에 위임
-- **Data**
-  - `/api/state` 호출(fetch/axios), DTO↔Domain 매핑, 에러 매핑
-
-의존 방향은 항상 다음만 허용한다.
-
-`presentation → application → domain`
-
-`data → application + domain`
+### 1.2 데이터/계약
+- workspace 목록: `GET /api/state`의 `workspaces[]`
+- session create/terminate: `POST/DELETE /api/pty/sessions...`
+- streaming: `WS /api/pty/sessions/{id}/ws`
 
 ---
 
-## 3. 코드 구조 (제안)
+## 2. CTASK 개요
 
-> 실제 폴더명은 팀 컨벤션에 맞게 조정 가능하지만, 레이어 경계는 유지한다.
+| CTASK | 목표(한 줄) | 선행(권장) | 핵심 테스트 |
+|---|---|---|---|
+| CTASK-1 | /terminal 스캐폴딩 + 상태 모델 + api 모듈 골격 | - | 라우트/레이아웃 렌더 |
+| CTASK-2 | Workspace picker + 세션 생성(HTTP) + 콘솔 리스트(WS 없음) | STASK-1 | picker→create 호출 |
+| CTASK-3 | xterm + WS attach + 스트리밍(단일 콘솔 E2E) | STASK-2 | echo roundtrip (mock 또는 e2e) |
+| CTASK-4 | multi-console + 전환(연결 유지) + 정리 | STASK-2 | 2콘솔 생성/전환 |
+| CTASK-5 | DnD reorder + (선택)정렬 저장 + auth 토큰 대응 + UX/테스트 마감 | STASK-5(토큰) | reorder 회귀 + auth on/off |
 
-```text
-web/
-  src/
-    app/
-      App.tsx
-      main.tsx
-      di/
-        AppRuntimeProvider.tsx
-        createRuntime.ts
-    domain/
-      errors/
-        UnimplementedError.ts
-      models/
-        KkachiState.ts
-        Workspace.ts
-        ProjectSummary.ts
-        Status.ts
-      services/
-        computeProjectSummaries.ts
-        computeWorkspaceStatus.ts
-    application/
-      ports/
-        KkachiStateRepository.ts
-      usecases/
-        GetKkachiState.ts
-      stores/
-        KkachiStateStore.ts
-    data/
-      http/
-        HttpClient.ts
-      repositories/
-        ApiKkachiStateRepository.ts
-    presentation/
-      router/
-        routes.tsx
-      layout/
-        Layout.tsx
-      components/
-        ErrorBanner.tsx
-        Loading.tsx
-        StatusBadge.tsx
-      pages/
-        ProjectsPage.tsx
-        ProjectDetailPage.tsx
-        RawStatePage.tsx
-  test/
-    fixtures/
-      api-state.sample.json
+---
+
+## 3. CTASK 상세
+
+## CTASK-1 — /terminal 스캐폴딩 + 상태 모델 + API 모듈 골격
+
+### 목적
+- v2에서 확정한 프론트 구조를 유지하며 `/terminal` 페이지의 기본 골격을 만든다.
+- 이후 작업이 쌓이기 쉬운 **상태 모델/컴포넌트 경계/API 모듈**을 먼저 확정해, PR 간 충돌을 줄인다.
+
+### 포함 범위
+- 라우트 추가: `/terminal`
+- 페이지 레이아웃(좌측 리스트 / 우측 패널 / 상단 툴바)
+- console 상태 모델(타입, store/reducer/hook)
+- API 모듈 스텁
+  - `api/state.ts`
+  - `api/pty.ts`
+- 빈 상태/로딩/에러 공통 컴포넌트 재사용 구조
+
+### 구현 가이드
+1) **파일/폴더(권장)**
+- `web/src/pages/TerminalPage.tsx`
+- `web/src/components/terminal/ConsoleList.tsx`
+- `web/src/components/terminal/TerminalPane.tsx`
+- `web/src/components/terminal/WorkspacePickerModal.tsx` (placeholder)
+- `web/src/api/state.ts`
+- `web/src/api/pty.ts`
+
+2) **상태 모델(예시)**
+```ts
+export type ConsoleStatus = 'CREATED' | 'CONNECTING' | 'CONNECTED' | 'CLOSED' | 'ERROR';
+
+export type ConsoleRecord = {
+  consoleId: string;      // client uuid
+  sessionId?: string;     // server session id
+  workspaceId?: string;
+  project?: string;
+  title: string;
+  status: ConsoleStatus;
+  createdAt: number;
+  errorMessage?: string;
+
+  // runtime only
+  xterm?: any;
+  ws?: WebSocket;
+};
 ```
 
-### DI(의존성 주입) 기본 규칙
+3) **원칙**
+- 컴포넌트에서 fetch 직접 호출 금지: `api/*`에 모아둔다.
+- 세션 복구/재연결 비범위: 새로고침 시 열린 콘솔을 자동 복구하지 않는다.
 
-- `AppRuntimeProvider`(또는 유사)에서 **usecase/repository 구현체를 주입**한다.
-- 테스트에서는 Provider를 교체해
-  - unimplemented 구현체
-  - in-memory fake
-  - fetch mock 기반 real repository
-  를 상황에 맞게 주입한다.
+### 테스트/검증
+- 라우트 렌더 테스트
+- console reducer/hook 기본 동작(add/select/remove) 단위 테스트
 
----
-
-## 4. 테스트 전략 (v2 최소 세트)
-
-- **Unit (Domain)**
-  - status 계산(Up-to-date/Outdated/Unknown)
-  - project 집계 로직(workspace_count, outdated_count, last_reported_at_max 등)
-- **Component (Presentation)**
-  - ProjectsPage 렌더링/정렬 토글/라우팅
-  - ProjectDetailPage 필터/검색/빈 상태/경고 배너
-- **API Contract (Data)**
-  - `/api/state` 샘플 fixture를 파싱/매핑하는 테스트로 타입 드리프트 방지
-- **E2E (선택, 1개 시나리오만)**
-  - “Projects → Detail” happy path
-
-### “Unimplemented”를 테스트로 다루는 규칙
-
-- `UnimplementedError`는 Domain(errors)에 정의한다.
-- 아직 구현되지 않은 port/usecase/repository의 기본 구현은 `throw new UnimplementedError('...')` 로 통일한다.
-- Presentation은 ErrorBoundary(또는 공통 에러 핸들링)를 통해
-  - UnimplementedError는 “미구현(개발 중)” 메시지로 표시
-  - 네트워크/서버 오류는 “서버 연결 실패” 메시지로 표시
-- 해당 기능이 구현되는 CTASK에서 테스트 기대를 “정상 렌더링/정상 인터랙션”으로 갱신한다.
+### 완료 기준
+- `/terminal` 진입이 가능하고 UI 골격이 보인다.
+- 다음 CTASK에서 workspace picker/API를 얹기 쉬운 구조가 잡혔다.
 
 ---
 
-## 5. CTASK 작업 순서 (v2)
+## CTASK-2 — Workspace Picker + 세션 생성(HTTP) + 콘솔 리스트(WS 없음)
 
-아래 CTASK는 **순서대로 진행**하는 것을 전제로 한다.
-각 CTASK는 항상 “빌드 가능 + 테스트 green” 상태로 종료한다.
+### 목적
+- workspace를 선택해 **세션 생성(HTTP)** 까지 완료하고, 좌측 리스트에서 콘솔이 생성/선택되는 UX를 완성한다.
+- WS/xterm은 CTASK-3에서 다룬다.
 
-### 5.1 CTASK ↔ 요구사항 매핑
+### 선행
+- 서버 STASK-1(HTTP create/terminate)
 
-| CTASK | 사용자 결과물(요약) | Requirement 매핑 |
-|---|---|---|
-| CTASK-1 | 라우팅/레이아웃/페이지 뼈대 + Unimplemented 기반 TDD 루프 시작 | F2-4(기본 골격) |
-| CTASK-2 | `/api/state` 수집 vertical slice + RawStatePage 실제 동작 | F2-3(+F2-4 일부) |
-| CTASK-3 | ProjectsPage(대시보드) 완성 + 집계 로직 | F2-1 |
-| CTASK-4 | ProjectDetailPage 완성 + 상태/필터/검색 | F2-2 |
-| CTASK-5 | 공통 UX/성능/설정/테스트 보강 + 선택 E2E | F2-4 + 비기능 |
+### 포함 범위
+- workspace 목록 로딩: `GET /api/state`
+- Workspace picker(검색/선택)
+- `POST /api/pty/sessions` 호출
+- 콘솔 리스트 생성/선택/닫기(닫기는 `DELETE` 호출까지 포함)
 
----
+### 구현 가이드
+1) **Workspace Picker UI**
+- 표시: project, workspace_id, local_path(말줄임 + tooltip 권장)
+- 검색: workspace_id/local_path 부분 일치
 
-## CTASK-1. Client Bootstrap + Clean Architecture Skeleton (Unimplemented-first)
+2) **세션 생성 플로우**
+- 선택 → `createSession()` 호출
+- 응답의 `session_id`/`ws_url`을 console record에 저장
+- status는 `CREATED` 또는 `CONNECTING`으로 둔다(WS는 아직 안 붙음)
 
-### 목표
+3) **닫기(terminate) 플로우**
+- console 닫기 클릭 → `DELETE /api/pty/sessions/{id}` 호출
+- 성공/실패와 무관하게 UI에서는 콘솔을 제거하거나 `CLOSED`로 전환(정책 고정)
 
-- `web/` 패키지를 생성하고, **라우팅/레이아웃/페이지 뼈대**가 동작하는 SPA를 만든다.
-- Clean Architecture 레이어 골격을 만들고, 아직 미구현인 하위 레이어는 `UnimplementedError`로 통일한다.
+### 테스트/검증
+- Component 테스트: picker → 선택 → API 호출 → 리스트에 항목 생성
+- Error 테스트: `unknown_workspace` 등 에러 코드별 사용자 메시지 매핑(최소)
 
-### 범위
-
-**Domain**
-- `KkachiState`, `Workspace`, `Status` 등 핵심 타입 정의
-- `UnimplementedError` 정의
-
-**Presentation**
-- 라우트 고정
-  - `/` → ProjectsPage
-  - `/projects/:projectName` → ProjectDetailPage
-  - `/debug/state` → RawStatePage
-- `<Layout>`
-  - 상단 타이틀(“Kkachi Web v2”)
-  - “새로고침” 버튼(동작은 우선 미구현이어도 버튼/이벤트는 존재)
-- 각 페이지는 최소 UI를 렌더링하되, 데이터 의존 부분은 usecase 호출 시 `UnimplementedError`가 발생하도록 둔다.
-
-**Application / Data**
-- Port/Usecase/Repository 인터페이스만 정의
-- 기본 구현체는 모두 UnimplementedError를 throw
-
-### 테스트
-
-- 라우팅 테스트: 각 URL 진입 시 해당 페이지가 렌더링된다.
-- “새로고침” 클릭 시(또는 페이지 로드 시) 미구현 호출이 발생하면, Error UI에 **Unimplemented** 메시지가 표시된다.
-  - 이 테스트는 CTASK-2부터 RawStatePage에 대해서는 제거/변경된다.
-
-### DoD
-
-- `npm run dev`, `npm run build`, `npm test`가 모두 성공한다.
-- 코드 구조가 레이어 경계를 지킨다(React 코드가 domain/data를 직접 import 하지 않음).
+### 완료 기준
+- 사용자가 workspace를 선택하면 콘솔 항목이 생성되고, terminate로 닫을 수 있다.
 
 ---
 
-## CTASK-2. `/api/state` Vertical Slice + RawStatePage 구현 (F2-3)
+## CTASK-3 — xterm + WS attach + 스트리밍(단일 콘솔 E2E)
 
-### 목표
+### 목적
+- v3의 핵심 가치인 “브라우저 터미널 스트리밍”을 단일 콘솔 기준으로 완성한다.
 
-- 서버의 `GET /api/state`를 실제로 호출해 상태를 가져오고, `/debug/state` 화면에서 pretty JSON으로 보여준다.
-- 이후 F2-1/F2-2 구현에 재사용할 **State 조회 유스케이스/스토어**를 확정한다.
+### 선행
+- 서버 STASK-2(WS attach)
 
-### 범위
+### 포함 범위
+- `xterm` + `xterm-addon-fit` 도입
+- WS connect → output 수신 → terminal.write
+- terminal input(onData) → WS send
+- resize 이벤트 → WS control message(`{type:"resize"...}`)
+- 닫기: terminate + ws close + xterm dispose
 
-**Domain**
-- `/api/state` 스키마에 맞는 domain 타입 고정
-  - `docs_heads: Record<string, string>`
-  - `workspaces: Workspace[]`
+### 구현 가이드
+1) **xterm 초기화**
+- 콘솔 선택 시 해당 콘솔에 xterm 인스턴스가 없으면 생성
+- DOM mount 이후 FitAddon으로 사이즈 맞추기
 
-**Presentation**
-- RawStatePage
-  - 로딩/에러/성공 상태 UI
-  - “새로고침” 버튼이 실제로 refetch를 트리거
+2) **WS attach**
+- `ws_url`로 `new WebSocket(...)`
+- binaryType은 서버 구현에 맞춰 설정(보통 `arraybuffer`)
+- WS message:
+  - binary → string/bytes로 변환 후 `terminal.write`
+  - text(JSON) → `exit/error` 처리
 
-**Application**
-- `GetKkachiState` 유스케이스 구현
-- (권장) `KkachiStateStore` 도입
-  - `data`, `isLoading`, `error`, `refresh()`
-  - CTASK-3/4에서 재사용
+3) **resize**
+- `ResizeObserver` 또는 window resize 이벤트에서 fit 수행
+- fit 결과 cols/rows를 서버로 전송
 
-**Data**
-- `ApiKkachiStateRepository`
-  - `GET {VITE_KKACHI_API_PREFIX}/state` 호출(기본 `/api/state`)
-  - 에러 매핑(HTTP status, 네트워크 오류)
-- `/api/state` 샘플 fixture 추가(계약 테스트용)
+4) **오류 처리**
+- WS open 실패/close 시 status를 `ERROR` 또는 `CLOSED`로 전환
+- 사용자에게 재시도/닫기 선택지를 제공(재연결은 비범위이므로 재시도는 “새 세션 생성”을 권장)
 
-### 테스트
+### 테스트/검증
+- Unit(가능한 범위): WS 메시지 수신 → terminal.write 호출
+- Component: mock websocket으로 onData → send 호출
+- E2E(권장): `echo __kkachi_test__` 입력 시 화면에 출력 확인
 
-- Data contract test
-  - 샘플 fixture가 repository/mapper를 통과해 domain 타입으로 파싱됨
-- Component test (RawStatePage)
-  - 성공 시 JSON 렌더링
-  - 실패 시 ErrorBanner + Retry(새로고침)
-- CTASK-1의 “RawStatePage는 Unimplemented” 테스트는 제거하고, 이제 “정상 호출”을 기대하도록 갱신
-
-### DoD
-
-- 로컬 서버 환경에서 `/debug/state`가 실제 상태를 표시한다.
-- `/api/state` 외 경로는 호출하지 않는다.
-- 테스트 green.
+### 완료 기준
+- 단일 콘솔에서 echo roundtrip이 재현된다.
+- 닫기 시 자원이 정리되고 UI 상태가 정상 전환된다.
 
 ---
 
-## CTASK-3. ProjectsPage 구현 (F2-1) + 집계 로직
+## CTASK-4 — Multi-console + 전환(연결 유지) + 정리
 
-### 목표
+### 목적
+- “복수 콘솔” UX를 완성한다.
+- v3 비범위인 재연결을 피하기 위해, 기본 정책은 **전환 시 연결 유지**로 고정한다.
 
-- 메인 대시보드(`/`)에서 project 리스트 요약을 표시한다.
-- 프로젝트별 집계 로직을 Domain으로 고정하고, UI는 이를 단순 렌더링만 한다.
+### 선행
+- 서버 STASK-2 이후 가능
+- 정리 정책이 STASK-3에서 고정되면 안정성이 증가
 
-### 범위
+### 포함 범위
+- 콘솔 복수 생성
+- 좌측 리스트 전환
+- 비활성 콘솔의 WS/xterm 인스턴스 유지(기본)
+- 동시 콘솔 수 상한(권장: 5)
+- 페이지 언마운트 시 정리(WS close; 필요 시 terminate)
 
-**Domain**
-- `computeProjectSummaries(state)` 구현
-  - project 목록 = `Union(Object.keys(docs_heads), workspaces[].project)`
-  - 각 project 요약:
-    - `docs_head` (없으면 null)
-    - `workspace_count`
-    - `unknown_count` (= docs_head 없을 때 해당 project workspaces 수)
-    - `outdated_count` (= docs_head 있을 때 docs_hash != docs_head 인 workspaces 수)
-    - `last_reported_at_max` (= 해당 project workspaces의 max)
+### 구현 가이드
+1) **전환 정책**
+- 클릭 전환은 UI 레벨에서 활성 표시만 바꾸고, 각 콘솔 WS는 유지
+- 활성 콘솔만 화면에 표시(나머지는 숨김)
 
-**Presentation**
-- ProjectsPage
-  - 테이블(또는 카드)로 요약 표시
-  - 정렬
-    - 기본: project 이름 오름차순
-    - 토글: “Outdated 있는 project 우선”
-  - row 클릭 → `/projects/:projectName` 이동
+2) **리소스 가드레일**
+- 상한 도달 시 새 콘솔 생성 차단 + 안내 메시지
 
-**Application**
-- CTASK-2에서 만든 store/usecase 재사용
+3) **정리**
+- console 닫기: terminate → ws close → xterm dispose → 상태 제거
+- 페이지 종료: 모든 WS close(서버가 disconnect 즉시 종료 정책이면 충분)
 
-**Data**
-- 변경 없음(CTASK-2 구현 재사용)
+### 테스트/검증
+- Unit: add/select/remove 전이
+- Component: 2콘솔 생성 → 전환 → 각각 독립적으로 상태 유지
 
-### 테스트
-
-- Unit test (Domain)
-  - 집계 로직(unknown/outdated/last_reported_at_max)
-- Component test (ProjectsPage)
-  - fixture state 주입 → 테이블 렌더링 검증
-  - 토글 동작 시 정렬 변화 검증
-  - row 클릭 시 라우팅 이동 검증
-
-> 이 CTASK 종료 시점에는 ProjectDetailPage는 아직 미구현일 수 있다.
-> 이 경우 “상세 화면은 UnimplementedError를 표시한다”는 테스트를 유지한다.
-
-### DoD
-
-- `/`에서 project 요약이 정상 표시된다.
-- “workspace가 없지만 docs_heads는 존재” 케이스에서 요구사항 문구(안내 배너)가 노출된다.
-- 테스트 green.
+### 완료 기준
+- 복수 콘솔 생성/전환이 정상 동작한다.
+- 닫기/페이지 종료 시 콘솔 자원이 정리된다.
 
 ---
 
-## CTASK-4. ProjectDetailPage 구현 (F2-2) + 상태/필터/검색
+## CTASK-5 — DnD reorder + (선택)정렬 저장 + Auth 토큰 대응 + UX/테스트 마감
 
-### 목표
+### 목적
+- 사용자가 요구한 “드래그&드롭 순서 변경”을 구현하고, v3 보안 스캐폴딩(토큰 auth)에 클라이언트를 대응시킨다.
+- 릴리즈 가능한 수준으로 UX/테스트를 마감한다.
 
-- 프로젝트 상세(`/projects/:projectName`)에서 workspace 테이블과 상태(Up-to-date/Outdated/Unknown)를 표시한다.
-- 최소 필터/검색/정렬 UX를 제공한다.
+### 선행
+- DnD 자체는 독립 진행 가능
+- auth 토큰 전달 방식은 서버 STASK-5에서 확정 후 반영
 
-### 범위
+### 포함 범위
+- DnD reorder(좌측 콘솔 리스트)
+- (선택) 정렬 상태 localStorage 저장
+  - 단, v3는 세션 복구 비범위이므로 “정렬 선호” 수준만 저장하고 세션 자동 복구는 하지 않는다.
+- Auth 토큰 지원
+  - HTTP: `Authorization: Bearer <token>`
+  - WS: 서버 선택 방식에 맞춰 token 전달(query/cookie 중 하나)
+- 에러/빈 상태/로딩 polish
+- E2E 스모크 테스트 보강
 
-**Domain**
-- `computeWorkspaceStatus(workspace, docsHead)` 구현
-  - docsHead 없음 → `unknown`
-  - 같음 → `up_to_date`
-  - 다름 → `outdated`
-- 정렬/필터/검색을 위한 순수 함수 구현
+### 구현 가이드
+1) **DnD**
+- 라이브러리 추천: `@dnd-kit/sortable`
+- 주의: reorder 시 console record의 key(consoleId) 유지 → 터미널 re-mount 최소화
 
-**Presentation**
-- ProjectDetailPage
-  - projectWorkspaces 필터링
-  - docsHead 표시(없으면 `—`)
-  - 테이블 컬럼 (v2 구현 기준)
-      - Local Path, Status, Repo URL, Docs Hash, Last Reported, Last Actor
-      - *(Workspace ID, Docs Repo ID, Docs HEAD 컬럼은 v2에서 생략 - 정보가 중복되거나 Local Path로 충분히 식별 가능)*
-  - 기본 정렬: `last_reported_at` desc
-  - 필터: Status(All / Up-to-date / Outdated)
-  - 검색: workspace_id/local_path/repo_url substring
-  - Outdated 행 강조
-  - docsHead 없음 경고 배너 / workspace 0개 빈 상태 처리
+2) **정렬 저장(선택)**
+- 저장 대상: `consoleId` 순서(또는 workspaceId 기반)
+- 새로고침 시:
+  - 기존 세션을 복구하지 않으며(비범위), 새 세션 생성 시 기본 정렬을 재적용하는 정도로 제한
 
-**Application / Data**
-- CTASK-2/3 재사용
+3) **Auth 토큰**
+- 토큰 공급 경로(권장): `.env` 또는 런타임 config
+- WS token 전달 방식은 STASK-5 문서에 맞춘다.
 
-### 테스트
+### 테스트/검증
+- Unit: reorder 알고리즘
+- Component: DnD 후 DOM 순서 변경 확인
+- E2E(권장)
+  - 2콘솔 생성 → reorder → 선택 유지
+  - (auth on) 토큰 없으면 실패, 토큰 있으면 성공
 
-- Unit test (Domain)
-  - status 계산
-  - 필터/검색/정렬
-- Component test (ProjectDetailPage)
-  - outdated/up-to-date/unknown 렌더링
-  - status 필터/검색 동작
-  - docsHead 누락 경고 배너
-  - workspace 0개 빈 상태
+### 완료 기준
+- DnD reorder가 안정적으로 동작한다.
+- auth on/off 모두에서 클라이언트가 올바르게 동작한다.
+- 최소 E2E 스모크가 CI 또는 로컬에서 재현 가능하다.
 
-### DoD
-
-- F2-2 요구사항을 충족한다.
-- 테스트 green.
-
----
-
-## CTASK-5. 공통 UX/성능/설정 마무리 + 선택 E2E
-
-### 목표
-
-- v2 비기능 요구사항을 충족한다.
-  - 최초 로딩 1회 `/api/state` 호출로 주요 화면 렌더링
-  - 공통 로딩/에러/빈 상태
-  - 환경변수 기반 API prefix
-- (선택) 최소 E2E 1개 시나리오로 회귀 안전장치 확보
-
-### 범위
-
-**Presentation**
-- 공통 컴포넌트 정리
-  - `Loading`, `ErrorBanner`, `EmptyState`, `StatusBadge`
-- 전역 “완전 빈 state”(docs_heads/workspaces 모두 비어있음) UX
-  - “kkachi-server에 아직 project/workspace가 등록되지 않았습니다.” + CLI 안내 문구
-- 날짜/시간 표기 유틸
-  - `YYYY-MM-DD HH:MM` + 상대 시간(“X분 전 / X시간 전”)
-
-**Application**
-- App-level 캐시 정책 확정
-  - App 진입 시 store가 1회 fetch
-  - 라우트 이동은 캐시 재사용
-  - “새로고침” 버튼만 refetch
-
-**Data**
-- `VITE_KKACHI_API_PREFIX` 지원(기본값 `/api`)
-  - same-origin path prefix만 허용 (full URL 비허용)
-
-**Test**
-- (선택) Playwright/Cypress E2E
-  - “Projects → Detail” happy path
-  - 네트워크는 fixture 또는 인터셉트
-
-### DoD
-
-- “최초 1회 호출 + 캐시 재사용”이 동작한다.
-- `/`, `/projects/:projectName`, `/debug/state` direct URL 진입(새로고침)에도 정상 렌더링된다.
-- 테스트 green.
-
----
-
-## 6. 배포/운영 메모 (v2)
-
-- 빌드
-  - `cd web && npm ci && npm run build`
-  - 산출물: `web/dist/`
-- 서버는 `web/dist`를 정적 서빙한다. (서버 미구현/미배포 시 `/`에서 친절한 안내 필요)
-- Web은 인증/인가를 전제로 하지 않는다(로컬 네트워크). 다만 v3부터 토큰 인증 옵션이 붙을 수 있으므로,
-  - API client는 헤더 주입 포인트를 남겨두되 v2에서는 기본 비활성으로 둔다.
