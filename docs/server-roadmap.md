@@ -7,7 +7,7 @@
 
 ## 0. PR 컨벤션
 
-- PR 제목 예시: `[STASK-1] PTY session foundation (create/terminate + cwd allowlist)`
+- PR 제목 예시: `[STASK-1] PTY session foundation (create/terminate + cwd workspace boundary)`
 - 원칙
   - 각 PR은 “논리적으로 완결”되어야 한다(단독으로 리뷰/테스트 가능).
   - 다음 STASK가 진행될 수 있을 만큼 계약(인터페이스/설정/테스트)을 고정한다.
@@ -22,7 +22,7 @@
 - `DELETE /api/pty/sessions/{id}`
 
 ### 1.2 핵심 정책
-- **cwd allowlist 강제** (workspace → local_path 기반 cwd 해석)
+- **workspace 경계 강제** (workspace → local_path 기반 cwd 해석)
 - **disconnect 정리 정책 일관**: `terminate_immediately`(권장) 또는 `idle_timeout`
 - **좀비/FD 누수 없이 종료** (kill + wait + close)
 - 보안 최소: command blacklist(가드레일), auth scaffolding(default off)
@@ -33,7 +33,7 @@
 
 | STASK | 목표(한 줄) | 선행 | 핵심 테스트 |
 |---|---|---|---|
-| STASK-1 | 세션 리소스 모델 + HTTP create/terminate + cwd allowlist | - | create/terminate + wait 검증 |
+| STASK-1 | 세션 리소스 모델 + HTTP create/terminate + cwd workspace boundary | - | create/terminate + wait 검증 |
 | STASK-2 | WS attach + 입출력 스트리밍 + resize + single-attach | STASK-1 | WS echo roundtrip |
 | STASK-3 | 라이프사이클 하드닝(정리 정책 고정/exit 처리/limits/logging) | STASK-2 | disconnect 종료 정책 검증 |
 | STASK-4 | command blacklist(서버 가드레일) | STASK-2 | blocked 패턴 차단 검증 |
@@ -43,18 +43,18 @@
 
 ## 3. STASK 상세
 
-## STASK-1 — PTY Foundation (SessionManager + HTTP create/terminate + CWD allowlist)
+## STASK-1 — PTY Foundation (SessionManager + HTTP create/terminate + CWD workspace boundary)
 
 ### 목적
 - 서버에 “PTY 세션”이라는 리소스를 도입한다.
-- **세션 생성/종료가 정확히 동작**하고, **cwd allowlist**가 강제된다.
+- **세션 생성/종료가 정확히 동작**하고, **cwd가 workspace 경계 안에서만** 허용된다.
 - 이후 WS attach(STASK-2)가 얹힐 수 있는 내부 구조(세션 매니저/세션 구조체/에러 코드)를 고정한다.
 
 ### 포함 범위
 - in-memory session manager
 - PTY spawn (`creack/pty`)
 - cwd 해석: `workspace_id + cwd_rel → resolved_cwd`
-- allowlist 검증(필수)
+- workspace 경계 검증(필수)
 - HTTP:
   - `POST /api/pty/sessions`
   - `DELETE /api/pty/sessions/{id}`
@@ -64,7 +64,7 @@
 - `internal/pty` (권장) 하위에 다음을 위치
   - `manager.go`: SessionManager (map + mutex)
   - `session.go`: Session struct, terminate logic
-  - `resolve.go`: cwd resolution/allowlist validation
+  - `resolve.go`: cwd resolution/workspace boundary validation
   - `errors.go`: 에러 코드 상수
 
 2) **workspace 조회**
@@ -76,15 +76,14 @@
 - 반드시 방어할 것
   - `cwd_rel`에 절대경로/드라이브 경로가 들어오는 경우
   - `..`로 탈출 시도
-  - (권장) `EvalSymlinks` 적용 후 allowlist 비교
+  - (권장) `EvalSymlinks` 적용 후 workspace 경계 비교
 
-4) **allowlist 매칭**
-- 설정: `allowlist_paths: []string`
-- 정책: resolved_cwd가 allowlist prefix 하위면 허용
-- 거부 시 `cwd_not_allowed` (HTTP 403 권장)
+4) **workspace 경계 체크**
+- 정책: resolved_cwd가 workspace `local_path` 하위면 허용
+- 거부 시 `cwd_traversal_attempt` 또는 `absolute_path_not_allowed` (HTTP 400)
 
 5) **세션 생성**
-- 요청 `shell`은 allowlist로 제한 가능
+- 요청 `shell`은 allowed shells로 제한 가능
 - PTY spawn 시 `Cmd.Dir = resolved_cwd`
 - `cols/rows`가 있으면 초기 window size 반영(없으면 기본)
 
@@ -105,15 +104,14 @@
 ### 테스트/검증
 - Unit
   - `ResolveCWD`의 탈출 방지 케이스
-  - allowlist 허용/거부
   - SessionManager 멱등 terminate
 - Integration (`httptest`)
-  - 임시 디렉토리를 workspace local_path로 두고 allowlist에 포함
+  - 임시 디렉토리를 workspace local_path로 설정
   - create → terminate 후 프로세스가 남지 않는지 확인(가능하면 `ProcessState`/`Signal(0)` 방식)
 
 ### 완료 기준
 - create/terminate가 반복되어도 프로세스/FD 누수가 관측되지 않는다.
-- allowlist가 없는/벗어나는 cwd 요청은 항상 거부된다.
+- workspace 경계를 벗어나는 cwd 요청은 항상 거부된다.
 
 ---
 
@@ -284,4 +282,3 @@
 ### 완료 기준
 - 인증이 켜져도/꺼져도 회귀 없이 동작한다.
 - WS 인증 방식이 클라이언트와 합의된 형태로 문서화된다.
-

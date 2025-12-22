@@ -96,7 +96,7 @@
 - “세션 생성” → WebSocket 연결 → xterm.js attach
 - 입력/출력 스트리밍, “세션 종료”
 - 기본 실행 컨텍스트 지정(최소 1개):
-  - (권장) `project` 또는 `cwd` 파라미터(서버 allowlist 경로만)
+  - (권장) `project` 또는 `cwd` 파라미터(workspace 경계 안에서만)
 - (선택, v3 내 UX 확장) 복수 콘솔(세션) 지원:
   - workspace/cwd 선택 → 해당 디렉토리에서 새 콘솔(PTY 세션) 오픈
   - 좌측 리스트에서 열린 콘솔 전환(활성 콘솔 선택)

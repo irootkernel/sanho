@@ -19,7 +19,7 @@ import (
 )
 
 func TestHealthz(t *testing.T) {
-	srv := kkachihttp.NewHTTPServer(kkachihttp.ServerConfig{Addr: ":5789"}, nil, nil, nil, nil, nil, nil)
+	srv := kkachihttp.NewHTTPServer(kkachihttp.ServerConfig{Addr: ":5789"}, nil, nil, nil, nil, nil, nil, nil)
 	ts := httptest.NewServer(srv.Handler)
 	defer ts.Close()
 
@@ -44,7 +44,7 @@ func TestHealthz(t *testing.T) {
 }
 
 func TestAPIFallbackReturns404(t *testing.T) {
-	srv := kkachihttp.NewHTTPServer(kkachihttp.ServerConfig{Addr: ":5789"}, nil, nil, nil, nil, nil, nil)
+	srv := kkachihttp.NewHTTPServer(kkachihttp.ServerConfig{Addr: ":5789"}, nil, nil, nil, nil, nil, nil, nil)
 	ts := httptest.NewServer(srv.Handler)
 	defer ts.Close()
 
@@ -112,7 +112,7 @@ func TestAPIStateEndpoint(t *testing.T) {
 	}
 
 	stateHandler := handler.NewStateHandler(mockUC)
-	srv := kkachihttp.NewHTTPServer(kkachihttp.ServerConfig{Addr: ":0"}, nil, nil, nil, nil, nil, stateHandler)
+	srv := kkachihttp.NewHTTPServer(kkachihttp.ServerConfig{Addr: ":0"}, nil, nil, nil, nil, nil, stateHandler, nil)
 	ts := httptest.NewServer(srv.Handler)
 	defer ts.Close()
 
@@ -185,7 +185,7 @@ func TestStaticFileServing(t *testing.T) {
 	srv := kkachihttp.NewHTTPServer(kkachihttp.ServerConfig{
 		Addr:       ":0",
 		WebDistDir: tempDir,
-	}, nil, nil, nil, nil, nil, nil)
+	}, nil, nil, nil, nil, nil, nil, nil)
 	ts := httptest.NewServer(srv.Handler)
 	defer ts.Close()
 
@@ -307,7 +307,7 @@ func TestWebDistNotFound(t *testing.T) {
 	srv := kkachihttp.NewHTTPServer(kkachihttp.ServerConfig{
 		Addr:       ":0",
 		WebDistDir: "/nonexistent/web/dist",
-	}, nil, nil, nil, nil, nil, nil)
+	}, nil, nil, nil, nil, nil, nil, nil)
 	ts := httptest.NewServer(srv.Handler)
 	defer ts.Close()
 

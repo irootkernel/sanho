@@ -83,7 +83,7 @@ func TestIntegration_Server(t *testing.T) {
 	docsHeadHandler := handler.NewDocsHeadHandler(getDocsHeadUC)
 	docsSnapshotHandler := handler.NewDocsSnapshotHandler(getDocsSnapshotUC)
 
-	srv := kkachihttp.NewHTTPServer(kkachihttp.ServerConfig{Addr: ":0"}, projectHandler, workspaceHandler, docsHeadHandler, docsSnapshotHandler, nil, nil)
+	srv := kkachihttp.NewHTTPServer(kkachihttp.ServerConfig{Addr: ":0"}, projectHandler, workspaceHandler, docsHeadHandler, docsSnapshotHandler, nil, nil, nil)
 	ts := httptest.NewServer(srv.Handler)
 	defer ts.Close()
 
@@ -339,7 +339,7 @@ func TestIntegration_APIStateEndpoint(t *testing.T) {
 	projectHandler := handler.NewProjectHandler(nil, addProjectUC)
 	stateHandler := handler.NewStateHandler(getStateUC)
 
-	srv := kkachihttp.NewHTTPServer(kkachihttp.ServerConfig{Addr: ":0"}, projectHandler, nil, docsHeadHandler, nil, nil, stateHandler)
+	srv := kkachihttp.NewHTTPServer(kkachihttp.ServerConfig{Addr: ":0"}, projectHandler, nil, docsHeadHandler, nil, nil, stateHandler, nil)
 	ts := httptest.NewServer(srv.Handler)
 	defer ts.Close()
 

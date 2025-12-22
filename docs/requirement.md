@@ -4,7 +4,7 @@
 > - 목표/범위/비범위
 > - API/WS 프로토콜(클라-서버 계약)
 > - 세션 라이프사이클/정리 정책(Exit Criteria 직결)
-> - 보안 최소 요건(allowlist/blacklist/auth scaffolding)
+> - 보안 최소 요건(workspace 경계/blacklist/auth scaffolding)
 > - STASK/CTASK 태스크 맵(= PR tag 이름)
 
 ---
@@ -54,7 +54,7 @@ v3의 목표는 Web에서 PTY 기반 터미널을 열어 **쉘/AI CLI 실행이 
   - `GET (WS) /api/pty/sessions/{id}/ws`
   - `DELETE /api/pty/sessions/{id}` (세션 종료)
 - 실행 컨텍스트 최소 1개: **cwd**
-  - workspace 기반으로 cwd를 해석하되, **서버 allowlist 경로만 허용**
+  - workspace 기반으로 cwd를 해석하되, **workspace local_path 경계 안에서만 허용**
 - 보안 최소:
   - 위험 명령 blacklist(가드레일)
   - 옵션 토큰 인증(기본 off) 스캐폴딩
@@ -123,13 +123,13 @@ v3의 목표는 Web에서 PTY 기반 터미널을 열어 **쉘/AI CLI 실행이 
 - `workspace_id` (필수): `/api/state`에서 선택
 - `cwd_rel` (선택, default=""): workspace root 대비 상대 경로
 - `title` (선택): UI 표기용
-- `shell` (선택): 서버 allowlist로 제한 가능
+- `shell` (선택): 허용 쉘 목록으로 제한 가능
 - `cols/rows` (선택): 초기 터미널 크기
 
 #### 서버 동작
 - `workspace_id`로 state에서 workspace를 찾고 `local_path`를 root로 사용
 - `resolved_cwd = Clean(Join(local_path, cwd_rel))`
-- allowlist 검증 실패 시 거부
+- workspace 경계 검증 실패 시 거부
 - PTY 생성 후 세션 등록
 
 #### 응답(JSON)
@@ -202,8 +202,8 @@ v3의 목표는 Web에서 PTY 기반 터미널을 열어 **쉘/AI CLI 실행이 
 
 ## 9. 보안 최소 요건
 
-### 9.1 CWD allowlist(필수)
-- `resolved_cwd`는 서버 설정 allowlist의 prefix 하위 경로만 허용
+### 9.1 CWD workspace boundary(필수)
+- `resolved_cwd`는 workspace `local_path` 하위 경로만 허용
 - 경로 정규화/탈출 방지(`..`, 절대경로 override, symlink 등)
 
 ### 9.2 위험 명령 blacklist(필수, 가드레일)
@@ -234,7 +234,7 @@ v3의 목표는 Web에서 PTY 기반 터미널을 열어 **쉘/AI CLI 실행이 
 ## 11. 테스트 기대치
 
 ### 11.1 서버
-- unit: allowlist/path resolution, session manager 멱등 종료, blacklist 매칭, auth middleware
+- unit: path resolution(workspace 경계), session manager 멱등 종료, blacklist 매칭, auth middleware
 - integration:
   - HTTP create/terminate
   - WS attach + roundtrip(`echo` 출력 확인)
@@ -250,7 +250,7 @@ v3의 목표는 Web에서 PTY 기반 터미널을 열어 **쉘/AI CLI 실행이 
 ## 12. 태스크 맵(= PR Tag 이름)
 
 ### 12.1 Server Tasks
-- **STASK-1**: PTY Foundation (SessionManager + HTTP create/terminate + CWD allowlist)
+- **STASK-1**: PTY Foundation (SessionManager + HTTP create/terminate + CWD workspace boundary)
 - **STASK-2**: WS Attach (I/O streaming + resize + single-attach policy)
 - **STASK-3**: Lifecycle Hardening (disconnect 정책 고정 + exit 처리 + limits/logging)
 - **STASK-4**: Command Blacklist (server-side guardrail)
@@ -268,4 +268,3 @@ v3의 목표는 Web에서 PTY 기반 터미널을 열어 **쉘/AI CLI 실행이 
 - CTASK-3는 STASK-2 이후 진행
 - CTASK-4는 STASK-2 이후 가능(정리 정책은 STASK-3과 합의되면 안정)
 - CTASK-5의 auth 부분은 STASK-5 구현 방식 확정 후 맞춤
-

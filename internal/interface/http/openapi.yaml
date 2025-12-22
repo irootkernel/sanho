@@ -389,6 +389,90 @@ paths:
                   error:
                     type: string
 
+  /api/pty/sessions:
+    post:
+      summary: Create a new PTY session (v3)
+      description: Creates a PTY session in the specified workspace directory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - workspace_id
+              properties:
+                workspace_id:
+                  type: string
+                  description: The workspace ID to create the session in
+                cwd_rel:
+                  type: string
+                  description: Relative path within workspace (optional, defaults to workspace root)
+                shell:
+                  type: string
+                  description: Shell to use (optional, defaults to /bin/sh)
+                cols:
+                  type: integer
+                  description: Terminal columns (optional, defaults to 80)
+                  minimum: 20
+                  maximum: 400
+                rows:
+                  type: integer
+                  description: Terminal rows (optional, defaults to 24)
+                  minimum: 5
+                  maximum: 200
+      responses:
+        '201':
+          description: Session created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session_id:
+                    type: string
+                  ws_url:
+                    type: string
+                    description: WebSocket URL for attaching to the session
+                  resolved_cwd:
+                    type: string
+                    description: Resolved absolute path of the CWD
+        '400':
+          description: Bad Request (invalid input, unknown workspace, path traversal)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PTYErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PTYErrorResponse'
+
+  /api/pty/sessions/{id}:
+    delete:
+      summary: Terminate a PTY session (v3)
+      description: Terminates the PTY session. Idempotent - returns success even if session doesn't exist.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Session ID to terminate
+      responses:
+        '200':
+          description: Session terminated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+
 components:
   schemas:
     StateResponse:
@@ -421,3 +505,12 @@ components:
                 format: date-time
               last_actor_email:
                 type: string
+    PTYErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Error code
+        message:
+          type: string
+          description: Human-readable error message

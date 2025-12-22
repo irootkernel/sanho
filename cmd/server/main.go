@@ -10,6 +10,7 @@ import (
 	"github.com/SeventeenthEarth/kkachi/internal/infra/state"
 	"github.com/SeventeenthEarth/kkachi/internal/interface/http"
 	"github.com/SeventeenthEarth/kkachi/internal/interface/http/handler"
+	"github.com/SeventeenthEarth/kkachi/internal/pty"
 	"github.com/SeventeenthEarth/kkachi/internal/usecase/docs"
 	"github.com/SeventeenthEarth/kkachi/internal/usecase/project"
 	stateuc "github.com/SeventeenthEarth/kkachi/internal/usecase/state"
@@ -71,13 +72,18 @@ func main() {
 	docsPushHandler := handler.NewDocsPushHandler(pushDocsUC)
 	stateHandler := handler.NewStateHandler(getStateUC)
 
+	// PTY (v3)
+	ptyConfig := pty.LoadConfigFromEnv()
+	sessionManager := pty.NewSessionManager()
+	ptyHandler := handler.NewPTYHandler(sessionManager, workspaceRepo, ptyConfig)
+
 	// Server configuration
 	serverCfg := http.ServerConfig{
 		Addr:       addr,
 		WebDistDir: webDistDir,
 	}
 
-	srv := http.NewHTTPServer(serverCfg, projectHandler, workspaceHandler, docsHeadHandler, docsSnapshotHandler, docsPushHandler, stateHandler)
+	srv := http.NewHTTPServer(serverCfg, projectHandler, workspaceHandler, docsHeadHandler, docsSnapshotHandler, docsPushHandler, stateHandler, ptyHandler)
 	log.Printf("Starting server on %s (web dist: %s)", addr, webDistDir)
 	if err := srv.ListenAndServe(); err != nil {
 		log.Fatalf("Server failed: %v", err)

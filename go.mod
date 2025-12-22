@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	github.com/air-verse/air v1.61.4
+	github.com/creack/pty v1.1.23
 	github.com/spf13/cobra v1.10.2
 )
 
@@ -11,7 +12,6 @@ require (
 	dario.cat/mergo v1.0.2 // indirect
 	github.com/bep/godartsass/v2 v2.5.0 // indirect
 	github.com/bep/golibsass v1.2.0 // indirect
-	github.com/creack/pty v1.1.23 // indirect
 	github.com/fatih/color v1.18.0 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/gobwas/glob v0.2.3 // indirect

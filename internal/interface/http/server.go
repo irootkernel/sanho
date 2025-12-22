@@ -21,7 +21,7 @@ type ServerConfig struct {
 	WebDistDir string // Path to web distribution directory (default: "web/dist")
 }
 
-func NewHTTPServer(cfg ServerConfig, projectHandler *handler.ProjectHandler, workspaceHandler *handler.WorkspaceHandler, docsHeadHandler *handler.DocsHeadHandler, docsSnapshotHandler *handler.DocsSnapshotHandler, docsPushHandler *handler.DocsPushHandler, stateHandler *handler.StateHandler) *http.Server {
+func NewHTTPServer(cfg ServerConfig, projectHandler *handler.ProjectHandler, workspaceHandler *handler.WorkspaceHandler, docsHeadHandler *handler.DocsHeadHandler, docsSnapshotHandler *handler.DocsSnapshotHandler, docsPushHandler *handler.DocsPushHandler, stateHandler *handler.StateHandler, ptyHandler *handler.PTYHandler) *http.Server {
 	// Apply defaults
 	if cfg.WebDistDir == "" {
 		cfg.WebDistDir = "web/dist"
@@ -61,6 +61,12 @@ func NewHTTPServer(cfg ServerConfig, projectHandler *handler.ProjectHandler, wor
 		mux.Handle("GET /state", stateHandler)
 		// API alias for Web UI (v2)
 		mux.Handle("GET /api/state", stateHandler)
+	}
+
+	// PTY session endpoints (v3)
+	if ptyHandler != nil {
+		mux.HandleFunc("POST /api/pty/sessions", ptyHandler.Create)
+		mux.HandleFunc("DELETE /api/pty/sessions/{id}", ptyHandler.Terminate)
 	}
 
 	// Fallback for unknown /api/* paths - return 404 JSON instead of SPA
