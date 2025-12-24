@@ -326,3 +326,45 @@ func TestSessionManager_MultipleSessionsCleanup(t *testing.T) {
 		}
 	}
 }
+
+// TestSession_AttachDetach tests single-attach logic and detach.
+func TestSession_AttachDetach(t *testing.T) {
+	s := &Session{ID: "test"}
+
+	// First attach should succeed
+	if !s.Attach() {
+		t.Error("First Attach should succeed")
+	}
+
+	// Second attach should fail
+	if s.Attach() {
+		t.Error("Second Attach should fail")
+	}
+
+	// Detach
+	s.Detach()
+
+	// Third attach should succeed after detach
+	if !s.Attach() {
+		t.Error("Attach after Detach should succeed")
+	}
+}
+
+// TestSession_Resize tests that resize returns errors when session is terminated or PTY is nil.
+func TestSession_Resize(t *testing.T) {
+	t.Run("Terminated session", func(t *testing.T) {
+		s := &Session{ID: "test", terminated: true}
+		err := s.Resize(80, 24)
+		if err != ErrSessionTerminated {
+			t.Errorf("Expected ErrSessionTerminated, got %v", err)
+		}
+	})
+
+	t.Run("Nil PTY session", func(t *testing.T) {
+		s := &Session{ID: "test", terminated: false}
+		err := s.Resize(80, 24)
+		if err == nil || err.Error() != "PTY not initialized" {
+			t.Errorf("Expected 'PTY not initialized' error, got %v", err)
+		}
+	})
+}

@@ -1,6 +1,7 @@
 package pty
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"sync"
@@ -23,6 +24,9 @@ type Session struct {
 	CreatedAt   time.Time
 	terminateMu sync.Mutex
 	terminated  bool
+
+	attachMu sync.Mutex
+	attached bool
 }
 
 // Terminate gracefully terminates the PTY session.
@@ -50,10 +54,10 @@ func (s *Session) Terminate() error {
 		}
 
 		// Wait for process to exit (prevents zombie)
-		if _, err := s.Cmd.Process.Wait(); err != nil && firstErr == nil {
+		if _, err := s.Cmd.Process.Wait(); err != nil {
 			// Ignore "wait: no child processes" error which can happen
 			// if the process already exited
-			if !isNoChildError(err) {
+			if !isNoChildError(err) && firstErr == nil {
 				firstErr = err
 			}
 		}
@@ -132,4 +136,51 @@ func SpawnSession(cfg CreateSessionConfig) (*Session, error) {
 		PTY:         ptmx,
 		CreatedAt:   time.Now(),
 	}, nil
+}
+
+// Attach flags the session as attached.
+// It returns false if the session is already attached.
+func (s *Session) Attach() bool {
+	s.attachMu.Lock()
+	defer s.attachMu.Unlock()
+
+	if s.attached {
+		return false
+	}
+	s.attached = true
+	return true
+}
+
+// Detach flags the session as detached.
+func (s *Session) Detach() {
+	s.attachMu.Lock()
+	defer s.attachMu.Unlock()
+	s.attached = false
+}
+
+// IsAttached returns whether the session is currently attached.
+func (s *Session) IsAttached() bool {
+	s.attachMu.Lock()
+	defer s.attachMu.Unlock()
+	return s.attached
+}
+
+// Resize resizes the PTY window.
+func (s *Session) Resize(cols, rows uint16) error {
+	s.terminateMu.Lock()
+	terminated := s.terminated
+	s.terminateMu.Unlock()
+
+	if terminated {
+		return ErrSessionTerminated
+	}
+
+	if s.PTY == nil {
+		return errors.New("PTY not initialized")
+	}
+
+	return pty.Setsize(s.PTY, &pty.Winsize{
+		Cols: cols,
+		Rows: rows,
+	})
 }

@@ -67,6 +67,7 @@ func NewHTTPServer(cfg ServerConfig, projectHandler *handler.ProjectHandler, wor
 	if ptyHandler != nil {
 		mux.HandleFunc("POST /api/pty/sessions", ptyHandler.Create)
 		mux.HandleFunc("DELETE /api/pty/sessions/{id}", ptyHandler.Terminate)
+		mux.HandleFunc("GET /api/pty/sessions/{id}/ws", ptyHandler.WS)
 	}
 
 	// Fallback for unknown /api/* paths - return 404 JSON instead of SPA

@@ -23,4 +23,10 @@ var (
 
 	// ErrAbsolutePathNotAllowed indicates an absolute path was provided for cwd_rel.
 	ErrAbsolutePathNotAllowed = errors.New("absolute_path_not_allowed")
+
+	// ErrSessionTerminated indicates the session has already been terminated.
+	ErrSessionTerminated = errors.New("session_terminated")
+
+	// ErrSessionAlreadyAttached indicates the session is already attached to another client.
+	ErrSessionAlreadyAttached = errors.New("session_already_attached")
 )

@@ -21,3 +21,22 @@ type PTYErrorResponse struct {
 	Error   string `json:"error"`
 	Message string `json:"message,omitempty"`
 }
+
+// PTYWSControlMessage represents a control message sent over WebSocket.
+type PTYWSControlMessage struct {
+	Type string `json:"type"` // e.g., "resize"
+}
+
+// PTYWSResizeMessage represents a resize control message.
+type PTYWSResizeMessage struct {
+	Type string `json:"type"`
+	Cols uint16 `json:"cols"`
+	Rows uint16 `json:"rows"`
+}
+
+// PTYWSEventMessage represents an event message sent from server to client.
+type PTYWSEventMessage struct {
+	Type     string `json:"type"` // e.g., "exit", "error"
+	ExitCode int    `json:"exit_code,omitempty"`
+	Error    string `json:"error,omitempty"`
+}

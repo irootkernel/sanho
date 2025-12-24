@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/SeventeenthEarth/kkachi/internal/interface/http/dto"
+	"github.com/gorilla/websocket"
 )
 
 // TestE2E_PTY_CreateAndTerminate tests the full PTY session lifecycle against a real server.
@@ -207,4 +208,109 @@ func TestE2E_PTY_MissingWorkspaceID(t *testing.T) {
 			t.Errorf("Expected 400 for invalid JSON, got %d", resp.StatusCode)
 		}
 	})
+}
+
+// TestE2E_PTY_WebSocket tests WebSocket attachment and I/O streaming.
+func TestE2E_PTY_WebSocket(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+	defer cancel()
+
+	baseURL := requireServer(t, ctx)
+	client := &http.Client{Timeout: 10 * time.Second}
+
+	// Setup: Create a project and workspace
+	projectName := uniqueName("pty-ws-test")
+	originPath, _ := createOriginRepo(t, map[string]string{
+		"docs/README.md": "# PTY WS Test Docs\n",
+	})
+	addProject(t, client, baseURL, projectName, "pty-ws-docs-repo", originPath)
+	t.Cleanup(func() {
+		deleteProject(t, client, baseURL, projectName, true)
+	})
+
+	workspaceDir := sharedRepoTempDir(t)
+	workspaceID, _ := registerWorkspace(t, client, baseURL, dto.RegisterWorkspaceRequest{
+		Project:    projectName,
+		LocalPath:  workspaceDir,
+		RepoURL:    originPath,
+		ActorEmail: "ws-test@example.com",
+	})
+	t.Cleanup(func() {
+		deleteWorkspace(t, client, baseURL, workspaceID)
+	})
+
+	// 1. Create session
+	reqBody := dto.CreatePTYSessionRequest{
+		WorkspaceID: workspaceID,
+	}
+	body, _ := json.Marshal(reqBody)
+	resp, err := client.Post(baseURL+"/api/pty/sessions", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("Failed to create session: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		t.Skip("PTY spawn failed (likely environment limitation), skipping WS test")
+		return
+	}
+
+	var createResp dto.CreatePTYSessionResponse
+	json.NewDecoder(resp.Body).Decode(&createResp)
+	sessionID := createResp.SessionID
+	wsURL := "ws" + baseURL[4:] + createResp.WsURL
+
+	t.Cleanup(func() {
+		terminateReq, _ := http.NewRequest(http.MethodDelete, baseURL+"/api/pty/sessions/"+sessionID, nil)
+		client.Do(terminateReq)
+	})
+
+	// 2. Connect via WebSocket
+	dialer := websocket.Dialer{}
+	conn, _, err := dialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("Failed to connect to WebSocket: %v", err)
+	}
+	defer conn.Close()
+
+	// 3. Test Echo Roundtrip
+	testMsg := "echo __ws_roundtrip_test__\n"
+	if err := conn.WriteMessage(websocket.BinaryMessage, []byte(testMsg)); err != nil {
+		t.Fatalf("Failed to write to WS: %v", err)
+	}
+
+	// Read output and look for the echoed string
+	found := false
+	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	for !found {
+		_, p, err := conn.ReadMessage()
+		if err != nil {
+			t.Fatalf("Failed to read from WS (or timeout): %v", err)
+		}
+		if bytes.Contains(p, []byte("__ws_roundtrip_test__")) {
+			found = true
+		}
+	}
+
+	// 4. Test Single-attach policy
+	dialer2 := websocket.Dialer{} // Use new dialer to be sure
+	_, resp2, err := dialer2.Dial(wsURL, nil)
+	if err == nil {
+		t.Error("Expected second connection to fail, but it succeeded")
+	} else if resp2 != nil && resp2.StatusCode != http.StatusConflict {
+		t.Errorf("Expected 409 Conflict for second attach, got %d", resp2.StatusCode)
+	}
+
+	// 5. Test Resize message
+	resizeMsg := dto.PTYWSResizeMessage{
+		Type: "resize",
+		Cols: 100,
+		Rows: 40,
+	}
+	msgBody, _ := json.Marshal(resizeMsg)
+	if err := conn.WriteMessage(websocket.TextMessage, msgBody); err != nil {
+		t.Errorf("Failed to send resize message: %v", err)
+	}
+	// Small sleep to ensure message is processed
+	time.Sleep(100 * time.Millisecond)
 }

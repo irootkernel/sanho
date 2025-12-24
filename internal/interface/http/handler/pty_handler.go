@@ -7,11 +7,19 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"sync"
 
 	"github.com/SeventeenthEarth/kkachi/internal/domain/workspace"
 	"github.com/SeventeenthEarth/kkachi/internal/interface/http/dto"
 	"github.com/SeventeenthEarth/kkachi/internal/pty"
+	"github.com/gorilla/websocket"
 )
+
+var upgrader = websocket.Upgrader{
+	CheckOrigin: func(r *http.Request) bool {
+		return true // For now, allow all origins
+	},
+}
 
 // WorkspaceLookup provides workspace lookup capability.
 type WorkspaceLookup interface {
@@ -139,6 +147,113 @@ func (h *PTYHandler) Create(w http.ResponseWriter, r *http.Request) {
 		ResolvedCWD: resolvedCWD,
 	}); err != nil {
 		log.Printf("PTY: failed to write response: %v", err)
+	}
+}
+
+// safeWSConn wraps a websocket connection with a mutex to ensure thread-safe writes.
+type safeWSConn struct {
+	conn *websocket.Conn
+	mu   sync.Mutex
+}
+
+func (s *safeWSConn) WriteMessage(messageType int, data []byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.conn.WriteMessage(messageType, data)
+}
+
+func (s *safeWSConn) ReadMessage() (messageType int, p []byte, err error) {
+	// ReadMessage does not need a lock as it's typically called from a single loop,
+	// but gorilla/websocket documentation says "Connections support one concurrent reader and one concurrent writer."
+	// Since we only have one reader loop, this is fine.
+	return s.conn.ReadMessage()
+}
+
+func (s *safeWSConn) Close() error {
+	return s.conn.Close()
+}
+
+// WS handles GET /api/pty/sessions/{id}/ws - attaches to a PTY session via WebSocket.
+func (h *PTYHandler) WS(w http.ResponseWriter, r *http.Request) {
+	sessionID := r.PathValue("id")
+	if sessionID == "" {
+		h.writeError(w, "missing_session_id", "Session ID is required", http.StatusBadRequest)
+		return
+	}
+
+	session, exists := h.sessionManager.GetSession(sessionID)
+	if !exists {
+		h.writeError(w, "session_not_found", "Session not found", http.StatusNotFound)
+		return
+	}
+
+	// Enforce single-attach policy
+	if !session.Attach() {
+		h.writeError(w, "session_already_attached", "Session is already attached to another client", http.StatusConflict)
+		return
+	}
+	defer session.Detach()
+
+	// Upgrade to WebSocket
+	rawConn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Printf("PTY: failed to upgrade to WS: %v", err)
+		return
+	}
+	conn := &safeWSConn{conn: rawConn}
+	defer conn.Close()
+
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+
+	// PTY -> WS loop
+	go func() {
+		defer cancel()
+		buf := make([]byte, 8192)
+		for {
+			n, err := session.PTY.Read(buf)
+			if err != nil {
+				// Process might have exited
+				return
+			}
+			if err := conn.WriteMessage(websocket.BinaryMessage, buf[:n]); err != nil {
+				return
+			}
+		}
+	}()
+
+	// WS -> PTY loop
+	for {
+		messageType, p, err := conn.ReadMessage()
+		if err != nil {
+			break
+		}
+
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		if messageType == websocket.BinaryMessage {
+			// Raw input to PTY
+			if _, err := session.PTY.Write(p); err != nil {
+				break
+			}
+		} else if messageType == websocket.TextMessage {
+			// Control messages (JSON)
+			var ctrl dto.PTYWSControlMessage
+			if err := json.Unmarshal(p, &ctrl); err != nil {
+				continue
+			}
+
+			if ctrl.Type == "resize" {
+				var resize dto.PTYWSResizeMessage
+				if err := json.Unmarshal(p, &resize); err == nil {
+					_ = session.Resize(resize.Cols, resize.Rows)
+				}
+			}
+		}
 	}
 }
 
