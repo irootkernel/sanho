@@ -5,8 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
+	"os/exec"
 	"sync"
 
 	"github.com/SeventeenthEarth/kkachi/internal/domain/workspace"
@@ -63,7 +64,7 @@ func (h *PTYHandler) Create(w http.ResponseWriter, r *http.Request) {
 	// Lookup workspace
 	ws, err := h.workspaceLookup.Get(r.Context(), workspace.WorkspaceID(req.WorkspaceID))
 	if err != nil {
-		log.Printf("PTY: workspace lookup error: %v", err)
+		slog.Error("pty_workspace_lookup_failed", "error", err, "workspace_id", req.WorkspaceID)
 		h.writeError(w, "internal_server_error", "Failed to lookup workspace", http.StatusInternalServerError)
 		return
 	}
@@ -118,6 +119,12 @@ func (h *PTYHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check session limits
+	if h.config.MaxSessions > 0 && h.sessionManager.SessionCount() >= h.config.MaxSessions {
+		h.writeError(w, "session_limit_exceeded", "Maximum number of concurrent sessions reached", http.StatusTooManyRequests)
+		return
+	}
+
 	// Create session
 	session, err := h.sessionManager.CreateSession(pty.CreateSessionConfig{
 		WorkspaceID: req.WorkspaceID,
@@ -131,7 +138,7 @@ func (h *PTYHandler) Create(w http.ResponseWriter, r *http.Request) {
 			h.writeError(w, "pty_spawn_failed", "Failed to create PTY session", http.StatusInternalServerError)
 			return
 		}
-		log.Printf("PTY: session creation error: %v", err)
+		slog.Error("pty_session_creation_failed", "error", err, "workspace_id", req.WorkspaceID)
 		h.writeError(w, "internal_server_error", "Failed to create session", http.StatusInternalServerError)
 		return
 	}
@@ -146,7 +153,7 @@ func (h *PTYHandler) Create(w http.ResponseWriter, r *http.Request) {
 		WsURL:       wsURL,
 		ResolvedCWD: resolvedCWD,
 	}); err != nil {
-		log.Printf("PTY: failed to write response: %v", err)
+		slog.Error("pty_create_response_write_failed", "error", err, "session_id", session.ID)
 	}
 }
 
@@ -197,23 +204,73 @@ func (h *PTYHandler) WS(w http.ResponseWriter, r *http.Request) {
 	// Upgrade to WebSocket
 	rawConn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Printf("PTY: failed to upgrade to WS: %v", err)
+		slog.Error("pty_ws_upgrade_failed", "error", err, "session_id", sessionID)
 		return
 	}
 	conn := &safeWSConn{conn: rawConn}
 	defer conn.Close()
 
+	slog.Info("pty_ws_attached", "id", sessionID, "remote_addr", r.RemoteAddr)
+	defer slog.Info("pty_ws_detached", "id", sessionID)
+
+	// Safe exit channel access
+	exitCh := session.ExitCh
+	if exitCh == nil {
+		slog.Warn("pty_session_exit_ch_nil", "id", sessionID)
+		exitCh = make(chan error) // Dummy channel that never receives
+	}
+
+	// NOTE on defer order:
+	// 1. cancel() is called first (LIFO), stopping internal goroutines.
+	// 2. disconnect policy is applied, potentially terminating the session.
+	// 3. log "pty_ws_detached".
+	// 4. conn.Close() closes the WebSocket.
+	// 5. session.Detach() unlocks the session attachment.
+
+	// Apply disconnect policy when the handler exits
+	defer func() {
+		if h.config.DisconnectPolicy == pty.DisconnectPolicyTerminate {
+			_ = h.sessionManager.TerminateSession(session.ID)
+		}
+	}()
+
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 
+	// Channel to receive messages from WebSocket
+	type wsMsg struct {
+		msgType int
+		data    []byte
+	}
+	wsReadCh := make(chan wsMsg)
+	wsErrCh := make(chan error, 1)
+
+	// WS -> Handler loop
+	go func() {
+		defer close(wsReadCh)
+		for {
+			messageType, p, err := conn.ReadMessage()
+			if err != nil {
+				wsErrCh <- err
+				return
+			}
+			if messageType == websocket.TextMessage || messageType == websocket.BinaryMessage {
+				select {
+				case wsReadCh <- wsMsg{msgType: messageType, data: p}:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}
+	}()
+
 	// PTY -> WS loop
 	go func() {
-		defer cancel()
 		buf := make([]byte, 8192)
 		for {
 			n, err := session.PTY.Read(buf)
 			if err != nil {
-				// Process might have exited
+				// Process might have exited or PTY closed.
 				return
 			}
 			if err := conn.WriteMessage(websocket.BinaryMessage, buf[:n]); err != nil {
@@ -222,37 +279,62 @@ func (h *PTYHandler) WS(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	// WS -> PTY loop
+	// Main event loop
 	for {
-		messageType, p, err := conn.ReadMessage()
-		if err != nil {
-			break
-		}
-
 		select {
 		case <-ctx.Done():
 			return
-		default:
-		}
-
-		if messageType == websocket.BinaryMessage {
-			// Raw input to PTY
-			if _, err := session.PTY.Write(p); err != nil {
-				break
+		case err := <-wsErrCh:
+			// WebSocket error or closed by client
+			if !websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
+				slog.Warn("pty_ws_read_error", "error", err, "id", sessionID)
 			}
-		} else if messageType == websocket.TextMessage {
-			// Control messages (JSON)
-			var ctrl dto.PTYWSControlMessage
-			if err := json.Unmarshal(p, &ctrl); err != nil {
-				continue
-			}
+			return
+		case msg := <-wsReadCh:
+			if msg.msgType == websocket.BinaryMessage {
+				// Raw input to PTY
+				if _, err := session.PTY.Write(msg.data); err != nil {
+					slog.Error("pty_write_error", "error", err, "id", sessionID)
+					return
+				}
+			} else if msg.msgType == websocket.TextMessage {
+				// Control messages (JSON)
+				var ctrl dto.PTYWSControlMessage
+				if err := json.Unmarshal(msg.data, &ctrl); err != nil {
+					continue
+				}
 
-			if ctrl.Type == "resize" {
-				var resize dto.PTYWSResizeMessage
-				if err := json.Unmarshal(p, &resize); err == nil {
-					_ = session.Resize(resize.Cols, resize.Rows)
+				if ctrl.Type == "resize" {
+					var resize dto.PTYWSResizeMessage
+					if err := json.Unmarshal(msg.data, &resize); err == nil {
+						if err := session.Resize(resize.Cols, resize.Rows); err != nil {
+							slog.Error("pty_resize_failed", "error", err, "id", sessionID)
+						}
+					}
 				}
 			}
+		case err := <-exitCh:
+			// Process exited
+			exitCode := 0
+			var exitErr *exec.ExitError
+			if errors.As(err, &exitErr) {
+				exitCode = exitErr.ExitCode()
+			} else if err != nil {
+				// Some other error
+				exitCode = 1
+				slog.Error("pty_process_wait_error", "error", err, "id", sessionID)
+			}
+
+			slog.Info("pty_process_exited", "id", sessionID, "exit_code", exitCode)
+
+			// Notify client
+			msg := dto.PTYWSEventMessage{
+				Type:     "exit",
+				ExitCode: exitCode,
+			}
+			payload, _ := json.Marshal(msg)
+			_ = conn.WriteMessage(websocket.TextMessage, payload)
+			return
 		}
 	}
 }
@@ -267,14 +349,14 @@ func (h *PTYHandler) Terminate(w http.ResponseWriter, r *http.Request) {
 
 	// Terminate is idempotent - success even if session doesn't exist
 	if err := h.sessionManager.TerminateSession(sessionID); err != nil {
-		log.Printf("PTY: session termination error: %v", err)
-		// Still return success for idempotency
+		// Log error but continue
+		slog.Error("pty_terminate_handler_failed", "error", err, "id", sessionID)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(map[string]bool{"ok": true}); err != nil {
-		log.Printf("PTY: failed to write response: %v", err)
+		slog.Error("pty_terminate_response_write_failed", "error", err, "id", sessionID)
 	}
 }
 
@@ -286,6 +368,6 @@ func (h *PTYHandler) writeError(w http.ResponseWriter, errorCode, message string
 		Error:   errorCode,
 		Message: message,
 	}); err != nil {
-		log.Printf("PTY: failed to write error response: %v", err)
+		slog.Error("pty_error_response_write_failed", "error", err, "error_code", errorCode)
 	}
 }

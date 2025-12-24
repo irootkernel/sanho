@@ -34,6 +34,32 @@ func TestLoadConfigFromEnv_Defaults(t *testing.T) {
 	if cfg.DefaultRows != 24 {
 		t.Errorf("Expected default rows 24, got %d", cfg.DefaultRows)
 	}
+
+	if cfg.DisconnectPolicy != DisconnectPolicyTerminate {
+		t.Errorf("Expected default disconnect policy %s, got %s", DisconnectPolicyTerminate, cfg.DisconnectPolicy)
+	}
+}
+
+func TestLoadConfigFromEnv_DisconnectPolicy(t *testing.T) {
+	os.Setenv("PTY_DISCONNECT_POLICY", "stay")
+	defer os.Unsetenv("PTY_DISCONNECT_POLICY")
+
+	cfg := LoadConfigFromEnv()
+
+	if cfg.DisconnectPolicy != DisconnectPolicyStay {
+		t.Errorf("Expected disconnect policy stay, got %s", cfg.DisconnectPolicy)
+	}
+}
+
+func TestLoadConfigFromEnv_MaxSessions(t *testing.T) {
+	os.Setenv("PTY_MAX_SESSIONS", "50")
+	defer os.Unsetenv("PTY_MAX_SESSIONS")
+
+	cfg := LoadConfigFromEnv()
+
+	if cfg.MaxSessions != 50 {
+		t.Errorf("Expected max sessions 50, got %d", cfg.MaxSessions)
+	}
 }
 
 func TestLoadConfigFromEnv_AllowedShells(t *testing.T) {

@@ -3,6 +3,7 @@ package pty
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"log/slog"
 	"sync"
 )
 
@@ -28,6 +29,7 @@ func (m *SessionManager) CreateSession(cfg CreateSessionConfig) (*Session, error
 
 	session, err := SpawnSession(cfg)
 	if err != nil {
+		slog.Error("pty_session_create_failed", "error", err, "workspace_id", cfg.WorkspaceID)
 		return nil, err
 	}
 
@@ -35,7 +37,18 @@ func (m *SessionManager) CreateSession(cfg CreateSessionConfig) (*Session, error
 	m.sessions[session.ID] = session
 	m.mu.Unlock()
 
+	slog.Info("pty_session_created", "id", session.ID, "workspace_id", cfg.WorkspaceID, "shell", cfg.Shell)
+
 	return session, nil
+}
+
+// AddSession directly adds a session to the manager.
+// This is primarily used for testing or internal registration.
+func (m *SessionManager) AddSession(session *Session) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.sessions[session.ID] = session
+	slog.Debug("pty_session_added", "id", session.ID, "workspace_id", session.WorkspaceID)
 }
 
 // GetSession retrieves a session by ID.
@@ -63,7 +76,13 @@ func (m *SessionManager) TerminateSession(id string) error {
 		return nil
 	}
 
-	return session.Terminate()
+	err := session.Terminate()
+	if err != nil {
+		slog.Error("pty_session_termination_failed", "id", id, "error", err)
+	} else {
+		slog.Info("pty_session_terminated", "id", id)
+	}
+	return err
 }
 
 // ListSessions returns all active session IDs.

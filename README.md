@@ -230,6 +230,10 @@ The following is a typical end-to-end flow:
 | `PORT` | `5789` | Server listen port |
 | `STATE_FILE_PATH` | `data/kkachi_state.json` | Path to state persistence file |
 | `WEB_DIST_DIR` | `web/dist` | Path to web UI build directory (v2) |
+| `PTY_DISCONNECT_POLICY` | `terminate` | Action on client disconnect (`terminate`, `stay`) |
+| `PTY_MAX_SESSIONS` | `100` | Maximum number of concurrent sessions |
+| `PTY_ALLOWED_SHELLS` | `/bin/sh,/bin/bash,/bin/zsh` | Comma-separated list of allowed shells |
+| `PTY_DEFAULT_SHELL` | `/bin/sh` | Default shell if not specified |
 
 ### Makefile Targets
 

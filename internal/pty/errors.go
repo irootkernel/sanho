@@ -29,4 +29,7 @@ var (
 
 	// ErrSessionAlreadyAttached indicates the session is already attached to another client.
 	ErrSessionAlreadyAttached = errors.New("session_already_attached")
+
+	// ErrSessionLimitExceeded indicates the maximum number of sessions has been reached.
+	ErrSessionLimitExceeded = errors.New("session_limit_exceeded")
 )

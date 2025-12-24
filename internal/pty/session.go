@@ -22,6 +22,8 @@ type Session struct {
 	Cmd         *exec.Cmd
 	PTY         *os.File
 	CreatedAt   time.Time
+	ExitCh      chan error
+
 	terminateMu sync.Mutex
 	terminated  bool
 
@@ -125,6 +127,14 @@ func SpawnSession(cfg CreateSessionConfig) (*Session, error) {
 		return nil, ErrPTYSpawnFailed
 	}
 
+	exitCh := make(chan error, 1)
+	go func() {
+		// Wait for the process to exit and send the result to ExitCh.
+		// If Wait returns an error, it might be an ExitError (non-zero exit) or something else.
+		exitCh <- cmd.Wait()
+		close(exitCh)
+	}()
+
 	return &Session{
 		ID:          cfg.ID,
 		WorkspaceID: cfg.WorkspaceID,
@@ -135,6 +145,7 @@ func SpawnSession(cfg CreateSessionConfig) (*Session, error) {
 		Cmd:         cmd,
 		PTY:         ptmx,
 		CreatedAt:   time.Now(),
+		ExitCh:      exitCh,
 	}, nil
 }
 
