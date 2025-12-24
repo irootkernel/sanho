@@ -8,6 +8,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/SeventeenthEarth/kkachi/internal/domain/guardrail"
 	"github.com/creack/pty"
 )
 
@@ -23,12 +24,16 @@ type Session struct {
 	PTY         *os.File
 	CreatedAt   time.Time
 	ExitCh      chan error
+	Guardrail   guardrail.Guardrail
 
 	terminateMu sync.Mutex
 	terminated  bool
 
 	attachMu sync.Mutex
 	attached bool
+
+	inputMu  sync.Mutex
+	inputBuf []byte
 }
 
 // Terminate gracefully terminates the PTY session.
@@ -93,6 +98,7 @@ type CreateSessionConfig struct {
 	ResolvedCWD string
 	Cols        uint16
 	Rows        uint16
+	Guardrail   guardrail.Guardrail
 }
 
 // SpawnSession creates a new PTY session with the given configuration.
@@ -146,6 +152,7 @@ func SpawnSession(cfg CreateSessionConfig) (*Session, error) {
 		PTY:         ptmx,
 		CreatedAt:   time.Now(),
 		ExitCh:      exitCh,
+		Guardrail:   cfg.Guardrail,
 	}, nil
 }
 
@@ -174,6 +181,48 @@ func (s *Session) IsAttached() bool {
 	s.attachMu.Lock()
 	defer s.attachMu.Unlock()
 	return s.attached
+}
+
+// HandleInput processes raw input from the client.
+// It buffers input until a newline character is encountered, then validates
+// the command against the Guardrail.
+// Returns (blocked, reason, error).
+func (s *Session) HandleInput(data []byte) (bool, string, error) {
+	s.inputMu.Lock()
+	defer s.inputMu.Unlock()
+
+	for _, b := range data {
+		if b == '\r' || b == '\n' {
+			cmd := string(s.inputBuf)
+
+			if s.Guardrail != nil {
+				result := s.Guardrail.Validate(cmd)
+				if result.Blocked {
+					s.inputBuf = nil // Clear buffer on block
+					return true, result.Reason, nil
+				}
+			}
+
+			s.inputBuf = nil // Clear buffer for next command
+			if _, err := s.PTY.Write([]byte{b}); err != nil {
+				return false, "", err
+			}
+		} else if b == '\b' || b == 0x7f {
+			if len(s.inputBuf) > 0 {
+				s.inputBuf = s.inputBuf[:len(s.inputBuf)-1]
+			}
+			if _, err := s.PTY.Write([]byte{b}); err != nil {
+				return false, "", err
+			}
+		} else {
+			s.inputBuf = append(s.inputBuf, b)
+			if _, err := s.PTY.Write([]byte{b}); err != nil {
+				return false, "", err
+			}
+		}
+	}
+
+	return false, "", nil
 }
 
 // Resize resizes the PTY window.

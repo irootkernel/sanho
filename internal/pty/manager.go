@@ -5,18 +5,22 @@ import (
 	"encoding/hex"
 	"log/slog"
 	"sync"
+
+	"github.com/SeventeenthEarth/kkachi/internal/domain/guardrail"
 )
 
 // SessionManager manages active PTY sessions in memory.
 type SessionManager struct {
-	mu       sync.RWMutex
-	sessions map[string]*Session
+	mu        sync.RWMutex
+	sessions  map[string]*Session
+	guardrail guardrail.Guardrail
 }
 
 // NewSessionManager creates a new session manager.
-func NewSessionManager() *SessionManager {
+func NewSessionManager(g guardrail.Guardrail) *SessionManager {
 	return &SessionManager{
-		sessions: make(map[string]*Session),
+		sessions:  make(map[string]*Session),
+		guardrail: g,
 	}
 }
 
@@ -25,6 +29,11 @@ func (m *SessionManager) CreateSession(cfg CreateSessionConfig) (*Session, error
 	// Generate session ID if not provided
 	if cfg.ID == "" {
 		cfg.ID = generateSessionID()
+	}
+
+	// Use manager's guardrail if not provided in config
+	if cfg.Guardrail == nil {
+		cfg.Guardrail = m.guardrail
 	}
 
 	session, err := SpawnSession(cfg)

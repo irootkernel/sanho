@@ -57,7 +57,7 @@ func TestPTY_Integration(t *testing.T) {
 		DefaultCols:   80,
 		DefaultRows:   24,
 	}
-	sessionManager := pty.NewSessionManager()
+	sessionManager := pty.NewSessionManager(nil)
 	defer sessionManager.Close()
 
 	ptyHandler := handler.NewPTYHandler(sessionManager, workspaceRepo, ptyConfig)

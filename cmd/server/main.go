@@ -6,12 +6,15 @@ import (
 	"os"
 
 	"github.com/SeventeenthEarth/kkachi/internal/config"
+	"github.com/SeventeenthEarth/kkachi/internal/domain/guardrail"
+	"github.com/SeventeenthEarth/kkachi/internal/infra/fs"
 	"github.com/SeventeenthEarth/kkachi/internal/infra/git"
 	"github.com/SeventeenthEarth/kkachi/internal/infra/state"
 	"github.com/SeventeenthEarth/kkachi/internal/interface/http"
 	"github.com/SeventeenthEarth/kkachi/internal/interface/http/handler"
 	"github.com/SeventeenthEarth/kkachi/internal/pty"
 	"github.com/SeventeenthEarth/kkachi/internal/usecase/docs"
+	guardrailuc "github.com/SeventeenthEarth/kkachi/internal/usecase/guardrail"
 	"github.com/SeventeenthEarth/kkachi/internal/usecase/project"
 	stateuc "github.com/SeventeenthEarth/kkachi/internal/usecase/state"
 	"github.com/SeventeenthEarth/kkachi/internal/usecase/workspace"
@@ -74,7 +77,23 @@ func main() {
 
 	// PTY (v3)
 	ptyConfig := pty.LoadConfigFromEnv()
-	sessionManager := pty.NewSessionManager()
+
+	// Load Security Rules for Guardrail (STASK-4)
+	securityLoader := fs.NewFileSecurityLoader("config/security_rules.yaml")
+	var guardrailInstance guardrail.Guardrail
+	securityCfg, err := securityLoader.Load()
+	if err != nil {
+		log.Printf("Warning: Failed to load security rules: %v. Guardrail will be disabled.", err)
+	} else {
+		matcher, err := guardrailuc.NewRegexMatcher(securityCfg.Blacklist)
+		if err != nil {
+			log.Printf("Warning: Failed to initialize guardrail: %v. Guardrail will be disabled.", err)
+		} else {
+			guardrailInstance = matcher
+		}
+	}
+
+	sessionManager := pty.NewSessionManager(guardrailInstance)
 	ptyHandler := handler.NewPTYHandler(sessionManager, workspaceRepo, ptyConfig)
 
 	// Server configuration

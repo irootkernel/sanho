@@ -292,10 +292,21 @@ func (h *PTYHandler) WS(w http.ResponseWriter, r *http.Request) {
 			return
 		case msg := <-wsReadCh:
 			if msg.msgType == websocket.BinaryMessage {
-				// Raw input to PTY
-				if _, err := session.PTY.Write(msg.data); err != nil {
+				// Raw input to PTY (STASK-4: with Guardrail)
+				blocked, reason, err := session.HandleInput(msg.data)
+				if err != nil {
 					slog.Error("pty_write_error", "error", err, "id", sessionID)
 					return
+				}
+
+				if blocked {
+					slog.Warn("pty_command_blocked", "session_id", sessionID, "reason", reason)
+					// Send warning back to the terminal (as output)
+					warning := fmt.Sprintf("\r\nBlocked by security policy: %s\r\n", reason)
+					if err := conn.WriteMessage(websocket.BinaryMessage, []byte(warning)); err != nil {
+						return
+					}
+					continue
 				}
 			} else if msg.msgType == websocket.TextMessage {
 				// Control messages (JSON)

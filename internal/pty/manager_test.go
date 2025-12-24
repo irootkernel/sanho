@@ -5,9 +5,9 @@ import (
 )
 
 func TestNewSessionManager(t *testing.T) {
-	m := NewSessionManager()
+	m := NewSessionManager(nil)
 	if m == nil {
-		t.Fatal("NewSessionManager() returned nil")
+		t.Fatal("NewSessionManager(nil) returned nil")
 	}
 	if m.SessionCount() != 0 {
 		t.Errorf("Expected 0 sessions, got %d", m.SessionCount())
@@ -15,7 +15,7 @@ func TestNewSessionManager(t *testing.T) {
 }
 
 func TestSessionManager_TerminateIdempotent(t *testing.T) {
-	m := NewSessionManager()
+	m := NewSessionManager(nil)
 
 	// Terminating non-existent session should succeed (idempotent)
 	err := m.TerminateSession("nonexistent")
@@ -33,7 +33,7 @@ func TestSessionManager_TerminateIdempotent(t *testing.T) {
 }
 
 func TestSessionManager_GetSession_NotFound(t *testing.T) {
-	m := NewSessionManager()
+	m := NewSessionManager(nil)
 
 	session, exists := m.GetSession("nonexistent")
 	if exists {
@@ -45,7 +45,7 @@ func TestSessionManager_GetSession_NotFound(t *testing.T) {
 }
 
 func TestSessionManager_ListSessions_Empty(t *testing.T) {
-	m := NewSessionManager()
+	m := NewSessionManager(nil)
 
 	sessions := m.ListSessions()
 	if len(sessions) != 0 {
@@ -54,7 +54,7 @@ func TestSessionManager_ListSessions_Empty(t *testing.T) {
 }
 
 func TestSessionManager_Close_Empty(t *testing.T) {
-	m := NewSessionManager()
+	m := NewSessionManager(nil)
 
 	// Close should succeed on empty manager
 	err := m.Close()

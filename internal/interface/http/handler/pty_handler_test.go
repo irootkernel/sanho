@@ -33,7 +33,7 @@ func newTestPTYHandler(workspaces map[string]*workspace.Workspace) *PTYHandler {
 		DefaultRows:   24,
 	}
 	return NewPTYHandler(
-		pty.NewSessionManager(),
+		pty.NewSessionManager(nil),
 		&mockWorkspaceLookup{workspaces: workspaces},
 		cfg,
 	)
@@ -271,7 +271,7 @@ func TestPTYHandler_Terminate_Idempotent(t *testing.T) {
 
 func TestPTYHandler_WS_DisconnectPolicy_Terminate(t *testing.T) {
 	workspaceDir := t.TempDir()
-	sessionManager := pty.NewSessionManager()
+	sessionManager := pty.NewSessionManager(nil)
 	handler := NewPTYHandler(
 		sessionManager,
 		&mockWorkspaceLookup{workspaces: map[string]*workspace.Workspace{
@@ -329,7 +329,7 @@ func TestPTYHandler_WS_DisconnectPolicy_Terminate(t *testing.T) {
 
 func TestPTYHandler_WS_DisconnectPolicy_Stay(t *testing.T) {
 	workspaceDir := t.TempDir()
-	sessionManager := pty.NewSessionManager()
+	sessionManager := pty.NewSessionManager(nil)
 	handler := NewPTYHandler(
 		sessionManager,
 		&mockWorkspaceLookup{workspaces: map[string]*workspace.Workspace{
@@ -382,7 +382,7 @@ func TestPTYHandler_WS_DisconnectPolicy_Stay(t *testing.T) {
 
 func TestPTYHandler_WS_ProcessExit(t *testing.T) {
 	workspaceDir := t.TempDir()
-	sessionManager := pty.NewSessionManager()
+	sessionManager := pty.NewSessionManager(nil)
 	handler := NewPTYHandler(
 		sessionManager,
 		&mockWorkspaceLookup{workspaces: map[string]*workspace.Workspace{
@@ -455,7 +455,7 @@ func TestPTYHandler_WS_ProcessExit(t *testing.T) {
 
 func TestPTYHandler_Create_SessionLimitExceeded(t *testing.T) {
 	workspaceDir := t.TempDir()
-	sessionManager := pty.NewSessionManager()
+	sessionManager := pty.NewSessionManager(nil)
 
 	// Add one session
 	sessionManager.AddSession(&pty.Session{

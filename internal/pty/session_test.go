@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SeventeenthEarth/kkachi/internal/domain/guardrail"
 	"github.com/creack/pty"
 )
 
@@ -219,7 +220,7 @@ func TestSessionManager_CreateAndTerminate(t *testing.T) {
 	}
 	defer os.RemoveAll(tempDir)
 
-	m := NewSessionManager()
+	m := NewSessionManager(nil)
 	defer m.Close()
 
 	// Create session
@@ -287,7 +288,7 @@ func TestSessionManager_MultipleSessionsCleanup(t *testing.T) {
 	}
 	defer os.RemoveAll(tempDir)
 
-	m := NewSessionManager()
+	m := NewSessionManager(nil)
 
 	pids := make([]int, 0, 3)
 
@@ -324,6 +325,73 @@ func TestSessionManager_MultipleSessionsCleanup(t *testing.T) {
 		if err := process.Signal(syscall.Signal(0)); err == nil {
 			t.Errorf("Process %d (pid %d) should be terminated", i, pid)
 		}
+	}
+}
+
+// TestSession_HandleInput_Blocking tests the command blocking logic
+func TestSession_HandleInput_Blocking(t *testing.T) {
+	skipIfPTYUnavailable(t)
+
+	tempDir, err := os.MkdirTemp("", "pty-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	mockG := &mockGuardrail{
+		validateFunc: func(command string) guardrail.Result {
+			if command == "rm -rf /" {
+				return guardrail.Result{Blocked: true, Reason: "Dangerous"}
+			}
+			return guardrail.Result{Blocked: false}
+		},
+	}
+
+	cfg := CreateSessionConfig{
+		ID:          "test-session",
+		WorkspaceID: "test-ws",
+		Shell:       "/bin/sh",
+		ResolvedCWD: tempDir,
+		Guardrail:   mockG,
+	}
+
+	session, err := SpawnSession(cfg)
+	if err != nil {
+		t.Fatalf("SpawnSession failed: %v", err)
+	}
+	defer session.Terminate()
+
+	// Simulate typing "rm -rf /" followed by Enter
+	input := []byte("rm -rf /")
+	blocked, reason, err := session.HandleInput(input)
+	if err != nil {
+		t.Fatalf("HandleInput failed: %v", err)
+	}
+	if blocked {
+		t.Error("Command should not be blocked until Enter is pressed")
+	}
+
+	// Now press Enter
+	blocked, reason, err = session.HandleInput([]byte("\r"))
+	if err != nil {
+		t.Fatalf("HandleInput failed: %v", err)
+	}
+	if !blocked {
+		t.Error("Expected command to be blocked")
+	}
+	if reason != "Dangerous" {
+		t.Errorf("Expected reason 'Dangerous', got '%s'", reason)
+	}
+
+	// Verify safe command is NOT blocked
+	input = []byte("ls")
+	blocked, _, _ = session.HandleInput(input)
+	if blocked {
+		t.Error("Safe command prefix should not be blocked")
+	}
+	blocked, _, _ = session.HandleInput([]byte("\r"))
+	if blocked {
+		t.Error("Safe command should not be blocked")
 	}
 }
 
