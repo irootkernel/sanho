@@ -133,18 +133,17 @@ v3의 목표는 Web에서 PTY 기반 터미널을 열어 **쉘/AI CLI 실행이 
 - PTY 생성 후 세션 등록
 
 #### 응답(JSON)
+- 성공(201 Created)
 ```json
 {
-  "ok": true,
-  "data": {
-    "session_id": "pty_01HZ...",
-    "ws_url": "/api/pty/sessions/pty_01HZ.../ws",
-    "workspace_id": "sudal:/Users/karl/dev/sudal",
-    "resolved_cwd": "/Users/karl/dev/sudal",
-    "created_at": "2025-12-18T00:00:00Z"
-  }
+  "session_id": "pty_01HZ...",
+  "ws_url": "/api/pty/sessions/pty_01HZ.../ws",
+  "resolved_cwd": "/Users/karl/dev/sudal"
 }
 ```
+- 인증 실패(401 Unauthorized): `auth_enabled=true`인데 토큰이 없거나 틀린 경우
+- 요청 오류(400 Bad Request): `unknown_workspace`, `cwd_traversal_attempt`, `invalid_terminal_size` 등
+- 제한 초과(429 Too Many Requests): `session_limit_exceeded`
 
 ### 7.2 `DELETE /api/pty/sessions/{id}` (세션 종료)
 - 멱등(idempotent) 동작을 권장한다.
@@ -157,8 +156,12 @@ v3의 목표는 Web에서 PTY 기반 터미널을 열어 **쉘/AI CLI 실행이 
 ### 7.3 `GET (WebSocket) /api/pty/sessions/{id}/ws` (세션 attach)
 
 #### attach 정책
-- v3 기본 정책: **세션당 WS 1개만 허용**(중복 attach는 409 등으로 거부).
+- v3 기본 정책: **세션당 WS 1개만 허용**(중복 attach는 409 `session_already_attached` 등으로 거부).
 - v3는 “재연결/복구”가 비범위이므로, 중복 attach 허용(기존 연결 강제 종료 후 새 연결)은 가급적 피한다.
+
+#### 인증 (Auth)
+- `auth_enabled=true`일 때, 요청 헤더에 유효한 `auth_token` 쿠키가 포함되어야 함.
+- 인증 실패 시 **401 Unauthorized** 반환.
 
 #### WS 프레임 규약(권장)
 - **binary frame**: raw bytes
@@ -217,7 +220,7 @@ v3의 목표는 Web에서 PTY 기반 터미널을 열어 **쉘/AI CLI 실행이 
 - 서버 설정으로 `auth_enabled=false` 기본
 - on일 때:
   - HTTP: `Authorization: Bearer <token>`
-  - WS: 서버 구현에 맞춰 query param 또는 cookie 기반 중 1개로 고정(CTASK-5에서 클라이언트 반영)
+  - WS: **Cookie 기반 인증 (`auth_token` 쿠키)** 으로 확정 (STASK-5에서 구현 완료)
 
 ---
 

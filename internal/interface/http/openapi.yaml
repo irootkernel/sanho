@@ -392,7 +392,9 @@ paths:
   /api/pty/sessions:
     post:
       summary: Create a new PTY session (v3)
-      description: Creates a PTY session in the specified workspace directory
+      description: Creates a PTY session in the specified workspace directory. Requires Bearer token if auth is enabled.
+      security:
+        - BearerAuth: []
       requestBody:
         required: true
         content:
@@ -443,6 +445,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PTYErrorResponse'
+        '401':
+          description: Unauthorized (missing or invalid token)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PTYErrorResponse'
+        '429':
+          description: Too Many Requests (session limit exceeded)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PTYErrorResponse'
         '500':
           description: Internal Server Error
           content:
@@ -453,7 +467,9 @@ paths:
   /api/pty/sessions/{id}:
     delete:
       summary: Terminate a PTY session (v3)
-      description: Terminates the PTY session. Idempotent - returns success even if session doesn't exist.
+      description: Terminates the PTY session. Idempotent - returns success even if session doesn't exist. Requires Bearer token if auth is enabled.
+      security:
+        - BearerAuth: []
       parameters:
         - name: id
           in: path
@@ -472,8 +488,53 @@ paths:
                   ok:
                     type: boolean
                     example: true
+        '401':
+          description: Unauthorized (missing or invalid token)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PTYErrorResponse'
+
+  /api/pty/sessions/{id}/ws:
+    get:
+      summary: Attach to a PTY session via WebSocket (v3)
+      description: |
+        Establishes a WebSocket connection to stream PTY input/output.
+        If auth is enabled, requires an `auth_token` cookie.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Session ID to attach to
+      responses:
+        '101':
+          description: WebSocket protocol handshake successful
+        '401':
+          description: Unauthorized (missing or invalid cookie)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PTYErrorResponse'
+        '404':
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PTYErrorResponse'
+        '409':
+          description: Conflict (session already attached)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PTYErrorResponse'
 
 components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
   schemas:
     StateResponse:
       type: object
@@ -510,7 +571,23 @@ components:
       properties:
         error:
           type: string
-          description: Error code
+          description: |
+            Error code. Possible values:
+            - `invalid_request_body`
+            - `missing_workspace_id`
+            - `unknown_workspace`
+            - `cwd_traversal_attempt`
+            - `absolute_path_not_allowed`
+            - `invalid_cwd`
+            - `shell_not_allowed`
+            - `invalid_terminal_size`
+            - `session_limit_exceeded`
+            - `pty_spawn_failed`
+            - `missing_session_id`
+            - `session_not_found`
+            - `session_already_attached`
+            - `unauthorized`
+            - `internal_server_error`
         message:
           type: string
           description: Human-readable error message

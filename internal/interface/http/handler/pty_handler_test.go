@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SeventeenthEarth/kkachi/internal/config"
 	"github.com/SeventeenthEarth/kkachi/internal/domain/workspace"
 	"github.com/SeventeenthEarth/kkachi/internal/interface/http/dto"
 	"github.com/SeventeenthEarth/kkachi/internal/pty"
@@ -36,6 +37,7 @@ func newTestPTYHandler(workspaces map[string]*workspace.Workspace) *PTYHandler {
 		pty.NewSessionManager(nil),
 		&mockWorkspaceLookup{workspaces: workspaces},
 		cfg,
+		config.AuthConfig{},
 	)
 }
 
@@ -285,6 +287,7 @@ func TestPTYHandler_WS_DisconnectPolicy_Terminate(t *testing.T) {
 			DefaultShell:     "/bin/sh",
 			DisconnectPolicy: pty.DisconnectPolicyTerminate,
 		},
+		config.AuthConfig{},
 	)
 
 	// Inject a fake session directly to avoid PTY spawn failures in restricted environments
@@ -343,6 +346,7 @@ func TestPTYHandler_WS_DisconnectPolicy_Stay(t *testing.T) {
 			DefaultShell:     "/bin/sh",
 			DisconnectPolicy: pty.DisconnectPolicyStay,
 		},
+		config.AuthConfig{},
 	)
 
 	// Inject a fake session
@@ -396,6 +400,7 @@ func TestPTYHandler_WS_ProcessExit(t *testing.T) {
 			DefaultShell:     "/bin/sh",
 			DisconnectPolicy: pty.DisconnectPolicyTerminate,
 		},
+		config.AuthConfig{},
 	)
 
 	// Inject a fake session
@@ -478,6 +483,7 @@ func TestPTYHandler_Create_SessionLimitExceeded(t *testing.T) {
 			DefaultRows:   24,
 			MaxSessions:   1, // Limit to 1 session
 		},
+		config.AuthConfig{},
 	)
 
 	// Try to create another session

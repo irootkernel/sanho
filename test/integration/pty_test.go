@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/SeventeenthEarth/kkachi/internal/config"
 	"github.com/SeventeenthEarth/kkachi/internal/infra/state"
 	kkachihttp "github.com/SeventeenthEarth/kkachi/internal/interface/http"
 	"github.com/SeventeenthEarth/kkachi/internal/interface/http/dto"
@@ -60,7 +61,7 @@ func TestPTY_Integration(t *testing.T) {
 	sessionManager := pty.NewSessionManager(nil)
 	defer sessionManager.Close()
 
-	ptyHandler := handler.NewPTYHandler(sessionManager, workspaceRepo, ptyConfig)
+	ptyHandler := handler.NewPTYHandler(sessionManager, workspaceRepo, ptyConfig, config.AuthConfig{})
 
 	// Create minimal server with only PTY endpoint
 	srv := kkachihttp.NewHTTPServer(

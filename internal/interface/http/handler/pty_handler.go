@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"sync"
 
+	"github.com/SeventeenthEarth/kkachi/internal/config"
 	"github.com/SeventeenthEarth/kkachi/internal/domain/workspace"
 	"github.com/SeventeenthEarth/kkachi/internal/interface/http/dto"
 	"github.com/SeventeenthEarth/kkachi/internal/pty"
@@ -32,6 +33,7 @@ type PTYHandler struct {
 	sessionManager  *pty.SessionManager
 	workspaceLookup WorkspaceLookup
 	config          pty.Config
+	authConfig      config.AuthConfig
 }
 
 // NewPTYHandler creates a new PTY handler.
@@ -39,11 +41,13 @@ func NewPTYHandler(
 	sessionManager *pty.SessionManager,
 	workspaceLookup WorkspaceLookup,
 	config pty.Config,
+	authConfig config.AuthConfig,
 ) *PTYHandler {
 	return &PTYHandler{
 		sessionManager:  sessionManager,
 		workspaceLookup: workspaceLookup,
 		config:          config,
+		authConfig:      authConfig,
 	}
 }
 
@@ -51,13 +55,13 @@ func NewPTYHandler(
 func (h *PTYHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var req dto.CreatePTYSessionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.writeError(w, "invalid_request_body", "Failed to parse request body", http.StatusBadRequest)
+		h.writeError(w, pty.CodeInvalidRequestBody, "Failed to parse request body", http.StatusBadRequest)
 		return
 	}
 
 	// Validate required fields
 	if req.WorkspaceID == "" {
-		h.writeError(w, "missing_workspace_id", "workspace_id is required", http.StatusBadRequest)
+		h.writeError(w, pty.CodeMissingWorkspaceID, "workspace_id is required", http.StatusBadRequest)
 		return
 	}
 
@@ -65,11 +69,11 @@ func (h *PTYHandler) Create(w http.ResponseWriter, r *http.Request) {
 	ws, err := h.workspaceLookup.Get(r.Context(), workspace.WorkspaceID(req.WorkspaceID))
 	if err != nil {
 		slog.Error("pty_workspace_lookup_failed", "error", err, "workspace_id", req.WorkspaceID)
-		h.writeError(w, "internal_server_error", "Failed to lookup workspace", http.StatusInternalServerError)
+		h.writeError(w, pty.CodeInternalServerError, "Failed to lookup workspace", http.StatusInternalServerError)
 		return
 	}
 	if ws == nil {
-		h.writeError(w, "unknown_workspace", fmt.Sprintf("Workspace '%s' not found", req.WorkspaceID), http.StatusBadRequest)
+		h.writeError(w, pty.CodeUnknownWorkspace, fmt.Sprintf("Workspace '%s' not found", req.WorkspaceID), http.StatusBadRequest)
 		return
 	}
 
@@ -77,14 +81,14 @@ func (h *PTYHandler) Create(w http.ResponseWriter, r *http.Request) {
 	resolvedCWD, err := pty.ResolveCWD(ws.LocalPath, req.CwdRel)
 	if err != nil {
 		if errors.Is(err, pty.ErrAbsolutePathNotAllowed) {
-			h.writeError(w, "absolute_path_not_allowed", "cwd_rel must be a relative path", http.StatusBadRequest)
+			h.writeError(w, pty.CodeAbsolutePathNotAllowed, "cwd_rel must be a relative path", http.StatusBadRequest)
 			return
 		}
 		if errors.Is(err, pty.ErrCWDTraversal) {
-			h.writeError(w, "cwd_traversal_attempt", "Path traversal not allowed", http.StatusBadRequest)
+			h.writeError(w, pty.CodeCWDTraversal, "Path traversal not allowed", http.StatusBadRequest)
 			return
 		}
-		h.writeError(w, "invalid_cwd", err.Error(), http.StatusBadRequest)
+		h.writeError(w, pty.CodeInvalidCWD, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -96,7 +100,7 @@ func (h *PTYHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	// Validate shell
 	if err := pty.ValidateShell(shell, h.config.AllowedShells); err != nil {
-		h.writeError(w, "shell_not_allowed", fmt.Sprintf("Shell '%s' is not allowed", shell), http.StatusBadRequest)
+		h.writeError(w, pty.CodeShellNotAllowed, fmt.Sprintf("Shell '%s' is not allowed", shell), http.StatusBadRequest)
 		return
 	}
 
@@ -112,7 +116,7 @@ func (h *PTYHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if cols < pty.MinCols || cols > pty.MaxCols || rows < pty.MinRows || rows > pty.MaxRows {
 		h.writeError(
 			w,
-			"invalid_terminal_size",
+			pty.CodeInvalidTerminalSize,
 			fmt.Sprintf("cols must be between %d and %d, rows between %d and %d", pty.MinCols, pty.MaxCols, pty.MinRows, pty.MaxRows),
 			http.StatusBadRequest,
 		)
@@ -121,7 +125,7 @@ func (h *PTYHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	// Check session limits
 	if h.config.MaxSessions > 0 && h.sessionManager.SessionCount() >= h.config.MaxSessions {
-		h.writeError(w, "session_limit_exceeded", "Maximum number of concurrent sessions reached", http.StatusTooManyRequests)
+		h.writeError(w, pty.CodeSessionLimitExceeded, "Maximum number of concurrent sessions reached", http.StatusTooManyRequests)
 		return
 	}
 
@@ -135,11 +139,11 @@ func (h *PTYHandler) Create(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		if errors.Is(err, pty.ErrPTYSpawnFailed) {
-			h.writeError(w, "pty_spawn_failed", "Failed to create PTY session", http.StatusInternalServerError)
+			h.writeError(w, pty.CodePTYSpawnFailed, "Failed to create PTY session", http.StatusInternalServerError)
 			return
 		}
 		slog.Error("pty_session_creation_failed", "error", err, "workspace_id", req.WorkspaceID)
-		h.writeError(w, "internal_server_error", "Failed to create session", http.StatusInternalServerError)
+		h.writeError(w, pty.CodeInternalServerError, "Failed to create session", http.StatusInternalServerError)
 		return
 	}
 
@@ -182,21 +186,38 @@ func (s *safeWSConn) Close() error {
 
 // WS handles GET /api/pty/sessions/{id}/ws - attaches to a PTY session via WebSocket.
 func (h *PTYHandler) WS(w http.ResponseWriter, r *http.Request) {
+	// Authentication (STASK-5)
+	if h.authConfig.AuthEnabled {
+		cookie, err := r.Cookie("auth_token")
+		if err != nil {
+			// Cookie missing
+			slog.Warn("pty_ws_auth_failed", "reason", "missing_cookie", "remote_addr", r.RemoteAddr)
+			h.writeError(w, pty.CodeUnauthorized, "Missing authentication cookie", http.StatusUnauthorized)
+			return
+		}
+		if cookie.Value != h.authConfig.AuthToken {
+			// Invalid token
+			slog.Warn("pty_ws_auth_failed", "reason", "invalid_token", "remote_addr", r.RemoteAddr)
+			h.writeError(w, pty.CodeUnauthorized, "Invalid authentication token", http.StatusUnauthorized)
+			return
+		}
+	}
+
 	sessionID := r.PathValue("id")
 	if sessionID == "" {
-		h.writeError(w, "missing_session_id", "Session ID is required", http.StatusBadRequest)
+		h.writeError(w, pty.CodeMissingSessionID, "Session ID is required", http.StatusBadRequest)
 		return
 	}
 
 	session, exists := h.sessionManager.GetSession(sessionID)
 	if !exists {
-		h.writeError(w, "session_not_found", "Session not found", http.StatusNotFound)
+		h.writeError(w, pty.CodeSessionNotFound, "Session not found", http.StatusNotFound)
 		return
 	}
 
 	// Enforce single-attach policy
 	if !session.Attach() {
-		h.writeError(w, "session_already_attached", "Session is already attached to another client", http.StatusConflict)
+		h.writeError(w, pty.CodeSessionAlreadyAttached, "Session is already attached to another client", http.StatusConflict)
 		return
 	}
 	defer session.Detach()
@@ -354,7 +375,7 @@ func (h *PTYHandler) WS(w http.ResponseWriter, r *http.Request) {
 func (h *PTYHandler) Terminate(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.PathValue("id")
 	if sessionID == "" {
-		h.writeError(w, "missing_session_id", "Session ID is required", http.StatusBadRequest)
+		h.writeError(w, pty.CodeMissingSessionID, "Session ID is required", http.StatusBadRequest)
 		return
 	}
 

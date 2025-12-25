@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"log/slog"
 	"os"
 
 	"github.com/SeventeenthEarth/kkachi/internal/config"
@@ -93,13 +94,26 @@ func main() {
 		}
 	}
 
+	// Auth Config (STASK-5)
+	authConfig := config.LoadAuthConfigFromEnv()
+	if authConfig.AuthEnabled {
+		if authConfig.AuthToken == "" {
+			slog.Error("Critical: AUTH_TOKEN must be set when AUTH_ENABLED is true")
+			os.Exit(1)
+		}
+		slog.Info("Authentication enabled")
+	} else {
+		slog.Info("Authentication disabled")
+	}
+
 	sessionManager := pty.NewSessionManager(guardrailInstance)
-	ptyHandler := handler.NewPTYHandler(sessionManager, workspaceRepo, ptyConfig)
+	ptyHandler := handler.NewPTYHandler(sessionManager, workspaceRepo, ptyConfig, authConfig)
 
 	// Server configuration
 	serverCfg := http.ServerConfig{
 		Addr:       addr,
 		WebDistDir: webDistDir,
+		AuthConfig: authConfig,
 	}
 
 	srv := http.NewHTTPServer(serverCfg, projectHandler, workspaceHandler, docsHeadHandler, docsSnapshotHandler, docsPushHandler, stateHandler, ptyHandler)

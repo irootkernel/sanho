@@ -9,7 +9,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/SeventeenthEarth/kkachi/internal/config"
 	"github.com/SeventeenthEarth/kkachi/internal/interface/http/handler"
+	"github.com/SeventeenthEarth/kkachi/internal/interface/http/middleware"
 )
 
 //go:embed openapi.yaml
@@ -19,6 +21,7 @@ var openapiSpec []byte
 type ServerConfig struct {
 	Addr       string
 	WebDistDir string // Path to web distribution directory (default: "web/dist")
+	AuthConfig config.AuthConfig
 }
 
 func NewHTTPServer(cfg ServerConfig, projectHandler *handler.ProjectHandler, workspaceHandler *handler.WorkspaceHandler, docsHeadHandler *handler.DocsHeadHandler, docsSnapshotHandler *handler.DocsSnapshotHandler, docsPushHandler *handler.DocsPushHandler, stateHandler *handler.StateHandler, ptyHandler *handler.PTYHandler) *http.Server {
@@ -65,8 +68,27 @@ func NewHTTPServer(cfg ServerConfig, projectHandler *handler.ProjectHandler, wor
 
 	// PTY session endpoints (v3)
 	if ptyHandler != nil {
-		mux.HandleFunc("POST /api/pty/sessions", ptyHandler.Create)
-		mux.HandleFunc("DELETE /api/pty/sessions/{id}", ptyHandler.Terminate)
+		authMiddleware := middleware.NewAuthMiddleware(cfg.AuthConfig)
+
+		// Helper to wrap handler with auth middleware
+		withAuth := func(h http.HandlerFunc) http.Handler {
+			return authMiddleware(h)
+		}
+
+		mux.Handle("POST /api/pty/sessions", withAuth(ptyHandler.Create))
+		mux.Handle("DELETE /api/pty/sessions/{id}", withAuth(ptyHandler.Terminate))
+		// WebSocket endpoint (GET /api/pty/sessions/{id}/ws) will handle auth internally or via middleware if applicable.
+		// For now, applying same middleware (assuming it handles Upgrade request correctly or we check Cookie in handler)
+		// The spec says: WebSocket: Cookie based auth.
+		// If we use the same middleware, it checks Bearer token in Header.
+		// WebSocket requests might NOT have the header if using standard browser API without subprotocol trick.
+		// The spec says: "WebSocket: Cookie based auth".
+		// So we should NOT apply the Bearer token middleware to the WS endpoint.
+		// We will handle cookie auth inside the WS handler (Phase 2).
+		// But for now, let's keep it as is or leave it open.
+		// Actually, Phase 2 task is: "WebSocket 쿠키 검증 로직 구현".
+		// So for Phase 1, we only apply middleware to HTTP endpoints.
+
 		mux.HandleFunc("GET /api/pty/sessions/{id}/ws", ptyHandler.WS)
 	}
 
