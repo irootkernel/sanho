@@ -17,10 +17,11 @@ export function Layout() {
             <header className="header">
                 <div className="header-content">
                     <Link to="/" className="header-title">
-                        <h1>Kkachi Web v2</h1>
+                        <h1>Kkachi Web</h1>
                     </Link>
                     <nav className="header-nav">
                         <Link to="/" className="nav-link">Dashboard</Link>
+                        <Link to="/terminal" className="nav-link">Terminal</Link>
                         <Link to="/debug/state" className="nav-link">Debug</Link>
                     </nav>
                     <button onClick={handleRefresh} className="refresh-button">

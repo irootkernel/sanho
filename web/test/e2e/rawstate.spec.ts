@@ -106,8 +106,8 @@ test.describe('RawStatePage E2E', () => {
         await expect(page.getByRole('heading', { name: /Debug: Raw State/i })).toBeVisible()
     })
 
-    test('should show header with Kkachi Web v2 title', async ({ page }) => {
-        await expect(page.getByRole('heading', { name: /Kkachi Web v2/i })).toBeVisible()
+    test('should show header with Kkachi Web title', async ({ page }) => {
+        await expect(page.getByRole('heading', { name: /Kkachi Web/i })).toBeVisible()
     })
 
     test('should have navigation links', async ({ page }) => {

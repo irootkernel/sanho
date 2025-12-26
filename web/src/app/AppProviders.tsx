@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { useMemo } from 'react';
 import type { KkachiStateRepository } from '@/application';
-import { KkachiStateStoreProvider } from '@/application';
+import { KkachiStateStoreProvider, TerminalStoreProvider } from '@/application';
 import { ApiKkachiStateRepository } from '@/data';
 
 interface AppProvidersProps {
@@ -21,7 +21,9 @@ export function AppProviders({ children, repository }: AppProvidersProps) {
 
     return (
         <KkachiStateStoreProvider repository={resolvedRepository}>
-            {children}
+            <TerminalStoreProvider>
+                {children}
+            </TerminalStoreProvider>
         </KkachiStateStoreProvider>
     );
 }

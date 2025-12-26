@@ -1,6 +1,6 @@
 import { createBrowserRouter, type RouteObject } from 'react-router-dom';
 import { Layout } from '@/presentation/layout';
-import { ProjectsPage, ProjectDetailPage, RawStatePage } from '@/presentation/pages';
+import { ProjectsPage, ProjectDetailPage, RawStatePage, TerminalPage } from '@/presentation/pages';
 import { ErrorBoundary } from '@/presentation/components';
 
 /**
@@ -25,6 +25,14 @@ const routes: RouteObject[] = [
                 element: (
                     <ErrorBoundary>
                         <ProjectDetailPage />
+                    </ErrorBoundary>
+                ),
+            },
+            {
+                path: 'terminal',
+                element: (
+                    <ErrorBoundary>
+                        <TerminalPage />
                     </ErrorBoundary>
                 ),
             },

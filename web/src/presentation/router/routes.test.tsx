@@ -7,6 +7,7 @@ import {
     ProjectsPage,
     ProjectDetailPage,
     RawStatePage,
+    TerminalPage,
 } from '@/presentation/pages';
 import sampleState from '@/test/fixtures/api-state.sample.json';
 
@@ -22,6 +23,7 @@ function renderWithProviders(initialRoute: string) {
                             path="projects/:projectName"
                             element={<ProjectDetailPage />}
                         />
+                        <Route path="terminal" element={<TerminalPage />} />
                         <Route path="debug/state" element={<RawStatePage />} />
                     </Route>
                 </Routes>
@@ -50,7 +52,7 @@ describe('Router', () => {
     it('should render Layout with header on all routes', async () => {
         renderWithProviders('/');
 
-        expect(screen.getByText('Kkachi Web v2')).toBeInTheDocument();
+        expect(screen.getByText('Kkachi Web')).toBeInTheDocument();
         expect(screen.getByText('🔄 Refresh')).toBeInTheDocument();
 
         // Wait for async state to settle
@@ -81,6 +83,19 @@ describe('Router', () => {
         });
     });
 
+
+    it('should render TerminalPage on "/terminal" route', async () => {
+        renderWithProviders('/terminal');
+
+        await waitFor(() => {
+            expect(
+                screen.getByRole('heading', { name: /Consoles/i }),
+            ).toBeInTheDocument();
+        });
+
+        // Should show empty state message
+        expect(screen.getByText(/No active consoles/i)).toBeInTheDocument();
+    });
 
     it('should render RawStatePage and show JSON state on "/debug/state" route', async () => {
         renderWithProviders('/debug/state');
