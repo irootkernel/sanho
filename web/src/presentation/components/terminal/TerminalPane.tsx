@@ -1,9 +1,32 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useTerminal } from '@/application';
+import { terminateSession } from '@/api/pty';
 
 export const TerminalPane: React.FC = () => {
     const { consoles, selectedConsoleId, removeConsole } = useTerminal();
+    const [isTerminating, setIsTerminating] = useState(false);
+    
     const activeConsole = consoles.find((c) => c.consoleId === selectedConsoleId);
+
+    const handleClose = async () => {
+        if (!activeConsole) return;
+
+        // If it's already in error state or has no sessionId, just remove from UI
+        if (activeConsole.status === 'ERROR' || !activeConsole.sessionId) {
+            removeConsole(activeConsole.consoleId);
+            return;
+        }
+
+        setIsTerminating(true);
+        try {
+            await terminateSession(activeConsole.sessionId);
+        } catch {
+            // Silently fail and remove from UI as per spec
+        } finally {
+            setIsTerminating(false);
+            removeConsole(activeConsole.consoleId);
+        }
+    };
 
     if (!activeConsole) {
         return (
@@ -27,21 +50,34 @@ export const TerminalPane: React.FC = () => {
                 <div className="terminal-actions">
                     <button 
                         className="btn btn-sm btn-outline-light border-0"
-                        onClick={() => removeConsole(activeConsole.consoleId)}
+                        onClick={handleClose}
+                        disabled={isTerminating}
                     >
-                        <i className="bi bi-x-lg"></i>
+                        {isTerminating ? (
+                            <span className="spinner-border spinner-border-sm" role="status"></span>
+                        ) : (
+                            <i className="bi bi-x-lg"></i>
+                        )}
                     </button>
                 </div>
             </div>
             <div className="terminal-container flex-grow-1 p-0 bg-black">
-                {/* xterm will be mounted here in CTASK-3 */}
-                <div className="h-100 d-flex align-items-center justify-content-center">
-                    <div className="text-center p-4">
-                        <div className="spinner-border spinner-border-sm text-primary mb-3" role="status"></div>
-                        <p className="text-muted small">Terminal streaming will be implemented in CTASK-3</p>
-                        <p className="text-info small">{activeConsole.workspaceId}</p>
+                {activeConsole.status === 'ERROR' ? (
+                    <div className="h-100 d-flex align-items-center justify-content-center p-4">
+                        <div className="alert alert-danger mb-0">
+                            <h6 className="alert-heading">Session Error</h6>
+                            <p className="mb-0 small">{activeConsole.errorMessage}</p>
+                        </div>
                     </div>
-                </div>
+                ) : (
+                    <div className="h-100 d-flex align-items-center justify-content-center">
+                        <div className="text-center p-4">
+                            <div className="spinner-border spinner-border-sm text-primary mb-3" role="status"></div>
+                            <p className="text-muted small">Terminal streaming will be implemented in CTASK-3</p>
+                            <p className="text-info small">{activeConsole.workspaceId}</p>
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );

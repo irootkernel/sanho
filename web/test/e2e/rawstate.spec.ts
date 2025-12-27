@@ -13,7 +13,7 @@ const MOCK_STATE = {
 
 test.describe('RawStatePage E2E', () => {
     test.beforeEach(async ({ page }) => {
-        await page.route('**/api/state*', async (route) => {
+        await page.route(/\/api\/state(\?.*)?$/, async (route) => {
             await route.fulfill({
                 status: 200,
                 contentType: 'application/json',
@@ -49,8 +49,8 @@ test.describe('RawStatePage E2E', () => {
 
     test('should have a working refresh button', async ({ page }) => {
         let apiCallCount = 0
-        await page.unroute('**/api/state*')
-        await page.route('**/api/state*', async (route) => {
+        await page.unroute(/\/api\/state(\?.*)?$/)
+        await page.route(/\/api\/state(\?.*)?$/, async (route) => {
             apiCallCount++
             await route.fulfill({
                 status: 200,
@@ -116,8 +116,8 @@ test.describe('RawStatePage E2E', () => {
     })
 
     test('should display error state when server is down', async ({ page, context }) => {
-        await page.unroute('**/api/state*')
-        await context.route('**/api/state*', (route) => {
+        await page.unroute(/\/api\/state(\?.*)?$/)
+        await context.route(/\/api\/state(\?.*)?$/, (route) => {
             route.fulfill({
                 status: 500,
                 contentType: 'application/json',
@@ -133,11 +133,11 @@ test.describe('RawStatePage E2E', () => {
     })
 
     test('should retry when retry button is clicked after error', async ({ page, context }) => {
-        await page.unroute('**/api/state*')
+        await page.unroute(/\/api\/state(\?.*)?$/)
 
         let allowSuccess = false
 
-        await context.route('**/api/state*', (route) => {
+        await context.route(/\/api\/state(\?.*)?$/, (route) => {
             if (!allowSuccess) {
                 return route.fulfill({
                     status: 500,

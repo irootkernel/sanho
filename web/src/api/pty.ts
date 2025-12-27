@@ -1,5 +1,5 @@
-// web/src/api/pty.ts
-// Stub for PTY session management APIs
+import { buildApiUrl } from '@/data/http/config';
+import { ApiError, NetworkError } from '@/data/http/errors';
 
 export interface CreateSessionRequest {
     workspace_id: string;
@@ -10,14 +10,61 @@ export interface CreateSessionRequest {
     rows?: number;
 }
 
-export const createSession = async (request: CreateSessionRequest) => {
-    console.log('API: createSession (STUB)', request);
-    // Will be implemented in CTASK-2
-    throw new Error('Not implemented');
+export interface CreateSessionResponse {
+    session_id: string;
+    ws_url: string;
+    resolved_cwd: string;
+}
+
+export const createSession = async (request: CreateSessionRequest): Promise<CreateSessionResponse> => {
+    const url = buildApiUrl('/pty/sessions');
+
+    let response: Response;
+    try {
+        response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(request),
+        });
+    } catch (error) {
+        throw new NetworkError(
+            'Failed to connect to server',
+            error instanceof Error ? error : undefined,
+        );
+    }
+
+    if (!response.ok) {
+        throw new ApiError(
+            `Server returned ${response.status}: ${response.statusText}`,
+            response.status,
+        );
+    }
+
+    const data: CreateSessionResponse = await response.json();
+    return data;
 };
 
-export const terminateSession = async (sessionId: string) => {
-    console.log('API: terminateSession (STUB)', sessionId);
-    // Will be implemented in CTASK-2
-    throw new Error('Not implemented');
+export const terminateSession = async (sessionId: string): Promise<void> => {
+    const url = buildApiUrl(`/pty/sessions/${sessionId}`);
+
+    let response: Response;
+    try {
+        response = await fetch(url, {
+            method: 'DELETE',
+        });
+    } catch (error) {
+        throw new NetworkError(
+            'Failed to connect to server',
+            error instanceof Error ? error : undefined,
+        );
+    }
+
+    if (!response.ok) {
+        throw new ApiError(
+            `Server returned ${response.status}: ${response.statusText}`,
+            response.status,
+        );
+    }
 };

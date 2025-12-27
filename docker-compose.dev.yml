@@ -7,6 +7,11 @@ services:
       context: .
       target: dev
     container_name: kkachi-server
+    privileged: true
+    security_opt:
+      - seccomp:unconfined
+    tty: true
+    stdin_open: true
     ports:
       - "${PORT:-5789}:${PORT:-5789}"
     environment:
@@ -17,6 +22,7 @@ services:
       - /tmp:/tmp
       - ~/.ssh:/root/.ssh:ro
       - ~/.gitconfig:/root/.gitconfig:ro
+      - /Users/draccoon/Workspace/SeventeenthEarth:/Users/draccoon/Workspace/SeventeenthEarth
     networks:
       - kkachi-net
 

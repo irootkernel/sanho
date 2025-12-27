@@ -2,6 +2,7 @@ package pty
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"sync"
@@ -120,17 +121,15 @@ func SpawnSession(cfg CreateSessionConfig) (*Session, error) {
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
 
 	// Start the command with a PTY
-	// Use Setpgid to create a new process group (for clean termination)
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setpgid: true,
-	}
+	// Note: SysProcAttr with Setpgid is removed to avoid "operation not permitted" in Docker environment.
+	// This might impact zombie process cleanup, but it is necessary for now.
 
 	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{
 		Cols: cols,
 		Rows: rows,
 	})
 	if err != nil {
-		return nil, ErrPTYSpawnFailed
+		return nil, fmt.Errorf("%w: %v", ErrPTYSpawnFailed, err)
 	}
 
 	exitCh := make(chan error, 1)

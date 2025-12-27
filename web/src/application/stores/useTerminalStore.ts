@@ -7,7 +7,7 @@ export interface TerminalStore {
     addConsole: (record: ConsoleRecord) => void;
     removeConsole: (consoleId: string) => void;
     selectConsole: (consoleId: string) => void;
-    updateConsoleStatus: (consoleId: string, status: ConsoleRecord['status'], error?: string) => void;
+    updateConsole: (consoleId: string, updates: Partial<ConsoleRecord>) => void;
     reorderConsoles: (startIndex: number, endIndex: number) => void;
 }
 
@@ -31,10 +31,10 @@ export function useTerminalStore(): TerminalStore {
         setSelectedConsoleId(consoleId);
     }, []);
 
-    const updateConsoleStatus = useCallback((consoleId: string, status: ConsoleRecord['status'], error?: string) => {
+    const updateConsole = useCallback((consoleId: string, updates: Partial<ConsoleRecord>) => {
         setConsoles((prev) =>
             prev.map((c) =>
-                c.consoleId === consoleId ? { ...c, status, errorMessage: error } : c
+                c.consoleId === consoleId ? { ...c, ...updates } : c
             )
         );
     }, []);
@@ -55,9 +55,9 @@ export function useTerminalStore(): TerminalStore {
             addConsole,
             removeConsole,
             selectConsole,
-            updateConsoleStatus,
+            updateConsole,
             reorderConsoles,
         }),
-        [consoles, selectedConsoleId, addConsole, removeConsole, selectConsole, updateConsoleStatus, reorderConsoles]
+        [consoles, selectedConsoleId, addConsole, removeConsole, selectConsole, updateConsole, reorderConsoles]
     );
 }

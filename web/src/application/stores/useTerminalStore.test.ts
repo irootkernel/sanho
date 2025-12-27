@@ -74,10 +74,28 @@ describe('useTerminalStore', () => {
         });
 
         act(() => {
-            result.current.updateConsoleStatus('test-id-1', 'CONNECTED');
+            result.current.updateConsole('test-id-1', { status: 'CONNECTED' });
         });
 
         expect(result.current.consoles[0].status).toBe('CONNECTED');
+    });
+
+    it('should update console with partial data', () => {
+        const { result } = renderHook(() => useTerminalStore());
+        
+        act(() => {
+            result.current.addConsole(sampleRecord);
+        });
+
+        act(() => {
+            result.current.updateConsole('test-id-1', {
+                status: 'CONNECTED',
+                sessionId: 'server-sess-1',
+            });
+        });
+
+        expect(result.current.consoles[0].status).toBe('CONNECTED');
+        expect(result.current.consoles[0].sessionId).toBe('server-sess-1');
     });
 
     it('should reorder consoles', () => {

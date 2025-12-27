@@ -138,15 +138,14 @@ func (h *PTYHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Rows:        uint16(rows),
 	})
 	if err != nil {
+		slog.Error("pty_session_creation_failed", "error", err, "workspace_id", req.WorkspaceID)
 		if errors.Is(err, pty.ErrPTYSpawnFailed) {
 			h.writeError(w, pty.CodePTYSpawnFailed, "Failed to create PTY session", http.StatusInternalServerError)
 			return
 		}
-		slog.Error("pty_session_creation_failed", "error", err, "workspace_id", req.WorkspaceID)
 		h.writeError(w, pty.CodeInternalServerError, "Failed to create session", http.StatusInternalServerError)
 		return
 	}
-
 	// Build WebSocket URL (will be implemented in STASK-2)
 	wsURL := fmt.Sprintf("/api/pty/sessions/%s/ws", session.ID)
 

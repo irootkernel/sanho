@@ -99,8 +99,15 @@ func TestPTY_Integration(t *testing.T) {
 			if createResp.WsURL == "" {
 				t.Error("Expected ws_url to be set")
 			}
-			if createResp.ResolvedCWD != workspaceDir {
-				t.Errorf("Expected resolved_cwd '%s', got '%s'", workspaceDir, createResp.ResolvedCWD)
+			// On macOS, /var is a symlink to /private/var.
+			// ResolveCWD uses EvalSymlinks, so we must do the same for the expected path.
+			expectedCWD, err := filepath.EvalSymlinks(workspaceDir)
+			if err != nil {
+				t.Fatalf("Failed to eval symlinks for %s: %v", workspaceDir, err)
+			}
+
+			if createResp.ResolvedCWD != expectedCWD {
+				t.Errorf("Expected resolved_cwd '%s', got '%s'", expectedCWD, createResp.ResolvedCWD)
 			}
 		} else if resp.StatusCode == http.StatusInternalServerError {
 			// PTY spawn failed - acceptable in some CI environments

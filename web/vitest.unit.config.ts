@@ -29,6 +29,8 @@ export default defineConfig(({ mode }) => {
                 'src/application/**/*.test.ts',
                 // Data layer pure logic tests
                 'src/data/http/**/*.test.ts',
+                // API skeleton tests
+                'src/api/**/*.test.ts',
             ],
             exclude: [
                 '**/*.test.tsx', // Exclude React component tests
