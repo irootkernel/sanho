@@ -38,6 +38,7 @@ export const TerminalPage: React.FC = () => {
             updateConsole(consoleId, {
                 status: 'CREATED',
                 sessionId: response.session_id,
+                wsUrl: response.ws_url,
             });
         } catch (err) {
             // 5. Handle error

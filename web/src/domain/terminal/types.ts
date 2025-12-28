@@ -1,8 +1,12 @@
+import { Terminal } from '@xterm/xterm';
+import { FitAddon } from '@xterm/addon-fit';
+
 export type ConsoleStatus = 'CREATED' | 'CONNECTING' | 'CONNECTED' | 'CLOSED' | 'ERROR';
 
 export interface ConsoleRecord {
     consoleId: string;      // Client-side unique UUID
     sessionId?: string;     // Server-side session ID
+    wsUrl?: string;         // WebSocket URL for streaming
     workspaceId?: string;
     project?: string;
     title: string;
@@ -11,6 +15,7 @@ export interface ConsoleRecord {
     errorMessage?: string;
 
     // runtime objects
-    // xterm?: any; (We will add these later when implementing CTASK-3)
-    // ws?: WebSocket;
+    xterm?: Terminal;
+    fitAddon?: FitAddon;
+    ws?: WebSocket;
 }

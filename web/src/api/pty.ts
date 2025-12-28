@@ -46,6 +46,12 @@ export const createSession = async (request: CreateSessionRequest): Promise<Crea
     return data;
 };
 
+export const connectConsole = (url: string): WebSocket => {
+    const ws = new WebSocket(url);
+    ws.binaryType = 'arraybuffer';
+    return ws;
+};
+
 export const terminateSession = async (sessionId: string): Promise<void> => {
     const url = buildApiUrl(`/pty/sessions/${sessionId}`);
 
