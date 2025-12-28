@@ -36,9 +36,36 @@ const (
 
 // DefaultConfig returns the default PTY configuration.
 func DefaultConfig() Config {
+	// 1. Detect default shell from environment or fallback list
+	defaultShell := os.Getenv("SHELL")
+	if defaultShell == "" {
+		for _, s := range []string{"/bin/zsh", "/bin/bash", "/bin/sh"} {
+			if _, err := os.Stat(s); err == nil {
+				defaultShell = s
+				break
+			}
+		}
+	}
+	if defaultShell == "" {
+		defaultShell = "/bin/sh"
+	}
+
+	// 2. Setup allowed shells (common paths + detected default)
+	allowed := []string{"/bin/sh", "/bin/bash", "/bin/zsh", "/usr/bin/bash", "/usr/bin/zsh"}
+	isAllowed := false
+	for _, a := range allowed {
+		if a == defaultShell {
+			isAllowed = true
+			break
+		}
+	}
+	if !isAllowed {
+		allowed = append(allowed, defaultShell)
+	}
+
 	return Config{
-		AllowedShells:    []string{"/bin/sh", "/bin/bash", "/bin/zsh"},
-		DefaultShell:     "/bin/sh",
+		AllowedShells:    allowed,
+		DefaultShell:     defaultShell,
 		DefaultCols:      80,
 		DefaultRows:      24,
 		DisconnectPolicy: DisconnectPolicyTerminate,

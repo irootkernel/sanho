@@ -36,10 +36,18 @@ export const createSession = async (request: CreateSessionRequest): Promise<Crea
     }
 
     if (!response.ok) {
-        throw new ApiError(
-            `Server returned ${response.status}: ${response.statusText}`,
-            response.status,
-        );
+        let message = `Server returned ${response.status}: ${response.statusText}`;
+        try {
+            const errorData = await response.json();
+            if (errorData.message) {
+                message = errorData.message;
+            } else if (errorData.error) {
+                message = errorData.error;
+            }
+        } catch {
+            // Ignore parse error
+        }
+        throw new ApiError(message, response.status);
     }
 
     const data: CreateSessionResponse = await response.json();
@@ -68,9 +76,17 @@ export const terminateSession = async (sessionId: string): Promise<void> => {
     }
 
     if (!response.ok) {
-        throw new ApiError(
-            `Server returned ${response.status}: ${response.statusText}`,
-            response.status,
-        );
+        let message = `Server returned ${response.status}: ${response.statusText}`;
+        try {
+            const errorData = await response.json();
+            if (errorData.message) {
+                message = errorData.message;
+            } else if (errorData.error) {
+                message = errorData.error;
+            }
+        } catch {
+            // Ignore parse error
+        }
+        throw new ApiError(message, response.status);
     }
 };

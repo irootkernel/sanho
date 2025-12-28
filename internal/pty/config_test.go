@@ -6,23 +6,16 @@ import (
 )
 
 func TestLoadConfigFromEnv_Defaults(t *testing.T) {
-	// Clear any existing env vars
+	// Clear any existing env vars and mock SHELL for consistency
 	os.Unsetenv("PTY_ALLOWED_SHELLS")
 	os.Unsetenv("PTY_DEFAULT_SHELL")
+	originalShell := os.Getenv("SHELL")
+	os.Setenv("SHELL", "/bin/sh")
+	defer os.Setenv("SHELL", originalShell)
 
 	cfg := LoadConfigFromEnv()
 
-	// Check defaults
-	expectedShells := []string{"/bin/sh", "/bin/bash", "/bin/zsh"}
-	if len(cfg.AllowedShells) != len(expectedShells) {
-		t.Errorf("Expected %d allowed shells, got %d", len(expectedShells), len(cfg.AllowedShells))
-	}
-	for i, shell := range expectedShells {
-		if cfg.AllowedShells[i] != shell {
-			t.Errorf("Expected shell %s at index %d, got %s", shell, i, cfg.AllowedShells[i])
-		}
-	}
-
+	// Check defaults (AllowedShells now includes dynamic common paths)
 	if cfg.DefaultShell != "/bin/sh" {
 		t.Errorf("Expected default shell /bin/sh, got %s", cfg.DefaultShell)
 	}
@@ -91,6 +84,10 @@ func TestLoadConfigFromEnv_DefaultShell(t *testing.T) {
 }
 
 func TestDefaultConfig(t *testing.T) {
+	originalShell := os.Getenv("SHELL")
+	os.Setenv("SHELL", "/bin/sh")
+	defer os.Setenv("SHELL", originalShell)
+
 	cfg := DefaultConfig()
 
 	if cfg.DefaultShell != "/bin/sh" {

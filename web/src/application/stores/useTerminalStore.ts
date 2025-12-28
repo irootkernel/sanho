@@ -1,6 +1,8 @@
 import { useState, useCallback, useMemo } from 'react';
 import type { ConsoleRecord } from '@/domain/terminal/types';
 
+export const MAX_CONSOLES = 5;
+
 export interface TerminalStore {
     consoles: ConsoleRecord[];
     selectedConsoleId: string | null;
@@ -16,8 +18,15 @@ export function useTerminalStore(): TerminalStore {
     const [selectedConsoleId, setSelectedConsoleId] = useState<string | null>(null);
 
     const addConsole = useCallback((record: ConsoleRecord) => {
-        setConsoles((prev) => [...prev, record]);
-        setSelectedConsoleId(record.consoleId);
+        setConsoles((prev) => {
+            if (prev.length >= MAX_CONSOLES) {
+                return prev;
+            }
+            // Use setTimeout to defer setSelectedConsoleId to ensure it happens after state update if needed,
+            // or just set it here since it's a separate state.
+            setSelectedConsoleId(record.consoleId);
+            return [...prev, record];
+        });
     }, []);
 
     const removeConsole = useCallback((consoleId: string) => {

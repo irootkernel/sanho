@@ -3,6 +3,7 @@ firebase-debug.log
 
 .vscode
 data/kkachi_state.json
+data/cache/
 tmp/
 docs_repos/
 bin/

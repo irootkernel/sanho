@@ -22,6 +22,10 @@ services:
       - /tmp:/tmp
       - ~/.ssh:/root/.ssh:ro
       - ~/.gitconfig:/root/.gitconfig:ro
+      - ${OH_MY_ZSH_PATH:-~/.oh-my-zsh}:/root/.oh-my-zsh:ro
+      - ./zshrc.template:/root/.zshrc:ro
+      - ${P10K_CONFIG_PATH:-~/.p10k.zsh}:/root/.p10k.zsh:ro
+      - ./data/cache:/root/.cache
       - /Users/draccoon/Workspace/SeventeenthEarth:/Users/draccoon/Workspace/SeventeenthEarth
     networks:
       - kkachi-net

@@ -98,6 +98,23 @@ describe('useTerminalStore', () => {
         expect(result.current.consoles[0].sessionId).toBe('server-sess-1');
     });
 
+    it('should respect MAX_CONSOLES limit', () => {
+        const { result } = renderHook(() => useTerminalStore());
+        
+        act(() => {
+            for (let i = 0; i < 10; i++) {
+                result.current.addConsole({
+                    ...sampleRecord,
+                    consoleId: `id-${i}`,
+                    title: `Console ${i}`,
+                });
+            }
+        });
+
+        expect(result.current.consoles).toHaveLength(5); // MAX_CONSOLES is 5
+        expect(result.current.consoles[4].consoleId).toBe('id-4');
+    });
+
     it('should reorder consoles', () => {
         const { result } = renderHook(() => useTerminalStore());
         const record2 = { ...sampleRecord, consoleId: 'id-2', title: 'Second' };

@@ -1,47 +1,67 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ConsoleList } from '../components/terminal/ConsoleList';
 import { TerminalPane } from '../components/terminal/TerminalPane';
 import { WorkspacePickerModal } from '../components/terminal/WorkspacePickerModal';
 import { useTerminal } from '@/application';
+import { MAX_CONSOLES } from '@/application/stores/useTerminalStore';
 import { createSession } from '@/api/pty';
 import type { Workspace } from '@/api/state';
 
 export const TerminalPage: React.FC = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
-    const { addConsole, updateConsole } = useTerminal();
+    const { consoles, selectedConsoleId, addConsole, updateConsole } = useTerminal();
+    
+    const consolesRef = useRef(consoles);
+    useEffect(() => {
+        consolesRef.current = consoles;
+    }, [consoles]);
+
+    useEffect(() => {
+        return () => {
+            consolesRef.current.forEach(c => {
+                if (c.ws && c.ws.readyState === WebSocket.OPEN) {
+                    c.ws.close();
+                }
+            });
+        };
+    }, []);
 
     const handleCreateSession = async (workspace: Workspace) => {
+        if (consoles.length >= MAX_CONSOLES) return;
         setIsModalOpen(false);
-
-        // 1. Create a client-side ID
         const consoleId = crypto.randomUUID();
 
-        // 2. Add to list with CONNECTING status
+        // Robust title extraction: 
+        // 1. If ID contains ':', take the last part (usually path or custom name)
+        // 2. If that part looks like a path, take the last segment
+        // 3. Fallback to project name if extraction fails
+        const rawId = workspace.workspace_id.includes(':') 
+            ? workspace.workspace_id.split(':').pop() || "" 
+            : workspace.workspace_id;
+        const extractedTitle = rawId.split('/').filter(Boolean).pop() || workspace.project;
+
         addConsole({
             consoleId,
             workspaceId: workspace.workspace_id,
             project: workspace.project,
-            title: workspace.project, // Initial title
+            title: extractedTitle,
             status: 'CONNECTING',
             createdAt: Date.now(),
         });
 
         try {
-            // 3. Call server API
             const response = await createSession({
                 workspace_id: workspace.workspace_id,
-                cwd_rel: "", // Explicitly send empty string as root
+                cwd_rel: "",
                 title: workspace.project,
             });
 
-            // 4. Update status and store sessionId
             updateConsole(consoleId, {
                 status: 'CREATED',
                 sessionId: response.session_id,
                 wsUrl: response.ws_url,
             });
         } catch (err) {
-            // 5. Handle error
             const message = err instanceof Error ? err.message : 'Failed to create session';
             updateConsole(consoleId, {
                 status: 'ERROR',
@@ -51,14 +71,49 @@ export const TerminalPage: React.FC = () => {
     };
 
     return (
-        <div className="container-fluid py-4" style={{ height: 'calc(100vh - 100px)' }}>
-            <div className="row h-100">
-                <div className="col-md-3 h-100 border-end overflow-auto">
-                    <ConsoleList onNew={() => setIsModalOpen(true)} />
-                </div>
-                <div className="col-md-9 h-100 d-flex flex-column">
-                    <TerminalPane />
-                </div>
+        <div style={{ 
+            height: '100%',
+            display: 'flex', 
+            backgroundColor: '#fff',
+            overflow: 'hidden'
+        }}>
+            {/* Sidebar */}
+            <ConsoleList 
+                onNew={() => setIsModalOpen(true)} 
+                isNewDisabled={consoles.length >= MAX_CONSOLES}
+            />
+            
+            {/* Main Content Area */}
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' }}>
+                {consoles.length === 0 ? (
+                    <div 
+                        data-testid="no-active-consoles"
+                        style={{ 
+                            flex: 1, display: 'flex', flexDirection: 'column', 
+                            alignItems: 'center', justifyContent: 'center', color: '#adb5bd',
+                            backgroundColor: '#f8f9fa'
+                        }}
+                    >
+                        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '24px', opacity: 0.2 }}><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+                        <h3 style={{ margin: 0, fontWeight: '600', color: '#6c757d' }}>No active consoles</h3>
+                        <p style={{ marginTop: '8px', fontSize: '0.95rem' }}>Select a workspace from the 'New' menu to get started.</p>
+                    </div>
+                ) : (
+                    <div style={{ flex: 1, position: 'relative' }}>
+                        {consoles.map((c) => (
+                            <div 
+                                key={c.consoleId} 
+                                style={{ 
+                                    position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
+                                    display: c.consoleId === selectedConsoleId ? 'flex' : 'none',
+                                    flexDirection: 'column'
+                                }}
+                            >
+                                <TerminalPane consoleId={c.consoleId} />
+                            </div>
+                        ))}
+                    </div>
+                )}
             </div>
 
             <WorkspacePickerModal

@@ -33,12 +33,13 @@ vi.mock('@xterm/xterm', () => {
     return { Terminal };
 });
 
-// Mock ResizeObserver
-global.ResizeObserver = vi.fn().mockImplementation(() => ({
-    observe: vi.fn(),
-    unobserve: vi.fn(),
-    disconnect: vi.fn(),
-}));
+// Mock ResizeObserver properly using a class
+class MockResizeObserver {
+    observe = vi.fn();
+    unobserve = vi.fn();
+    disconnect = vi.fn();
+}
+vi.stubGlobal('ResizeObserver', MockResizeObserver);
 
 vi.mock('@xterm/addon-fit', () => {
     class FitAddon {
@@ -48,7 +49,7 @@ vi.mock('@xterm/addon-fit', () => {
 });
 
 vi.mock('@xterm/addon-web-links', () => {
-    class WebLinksAddon {}
+    class WebLinksAddon { }
     return { WebLinksAddon };
 });
 
@@ -69,9 +70,9 @@ describe('TerminalPane', () => {
         });
     });
 
-    it('should render empty state when no console is selected', () => {
-        render(<TerminalPane />);
-        expect(screen.getByText(/Select a console from the list to start/i)).toBeInTheDocument();
+    it('should render nothing when no console is selected', () => {
+        const { container } = render(<TerminalPane />);
+        expect(container.firstChild).toBeNull();
     });
 
     it('should render terminal toolbar when a console is selected', () => {
