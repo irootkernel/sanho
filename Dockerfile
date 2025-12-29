@@ -3,6 +3,11 @@
 FROM golang:1.25 AS base
 WORKDIR /app
 
+# Define build arguments with defaults
+ARG USERNAME=linuxbrew
+ARG UID=1000
+ARG GID=1000
+
 # Install ALL required system dependencies
 RUN apt-get update && apt-get install -y \
     zsh \
@@ -29,13 +34,21 @@ RUN apt-get update && apt-get install -y \
 # Fix ALL dubious ownership issues by trusting everything system-wide
 RUN git config --system --add safe.directory '*'
 
-# Setup non-root user for Homebrew
-RUN useradd -m -s /bin/zsh linuxbrew && \
-    usermod -aG sudo linuxbrew && \
-    echo "linuxbrew ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+# Setup non-root user
+RUN if getent group $GID; then \
+        group_name=$(getent group $GID | cut -d: -f1); \
+    else \
+        groupadd -g $GID $USERNAME; \
+        group_name=$USERNAME; \
+    fi && \
+    useradd -m -s /bin/zsh -u $UID -g $GID $USERNAME && \
+    usermod -aG sudo $USERNAME && \
+    echo "$USERNAME ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
-# Install Homebrew as linuxbrew user
-USER linuxbrew
+# Install Homebrew as a common non-root location but run as dynamic user
+# Homebrew expects to be in /home/linuxbrew/.linuxbrew for pre-built binaries
+RUN mkdir -p /home/linuxbrew/.linuxbrew && chown -R $USERNAME /home/linuxbrew
+USER $USERNAME
 RUN NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 ENV PATH="/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:${PATH}"
 
@@ -61,18 +74,29 @@ RUN mkdir -p /opt && ln -s /home/linuxbrew/.linuxbrew /opt/homebrew \
     && mkdir -p /Users/draccoon/.dart-cli-completion \
     && touch /Users/draccoon/.dart-cli-completion/zsh-config.zsh
 
+# Fix ownership for global tools so non-root user can use them
+RUN chown -R $USERNAME /opt/flutter /opt/rubies
+
 # Pre-fetch brew API data
-USER linuxbrew
+USER $USERNAME
 RUN brew update
 
 # Development image
 FROM base AS dev
+ARG USERNAME=linuxbrew
 USER root
-COPY go.mod go.sum ./
+
+# Fix permissions for Go and App directories
+RUN mkdir -p /go/pkg/mod && \
+    chown -R $USERNAME /go && \
+    chown -R $USERNAME /app
+
+USER $USERNAME
+COPY --chown=$USERNAME:$USERNAME go.mod go.sum ./
 RUN go mod download
 RUN go install github.com/air-verse/air
 
-COPY .air.toml .
+COPY --chown=$USERNAME:$USERNAME .air.toml .
 ENV RUBIES=/opt/rubies
 ENV HOMEBREW_NO_AUTO_UPDATE=1
 ENV HOMEBREW_NO_INSTALL_CLEANUP=1
@@ -103,6 +127,7 @@ ARG TARGETARCH
 RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build -o /build/server ./cmd/server
 
 FROM debian:bookworm-slim AS final
+ARG USERNAME=linuxbrew
 WORKDIR /app
 
 # Install runtime dependencies
@@ -111,14 +136,14 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy setups
-COPY --from=base /home/linuxbrew /home/linuxbrew
+COPY --from=base /home/$USERNAME /home/$USERNAME
 COPY --from=base /opt/rubies /opt/rubies
 COPY --from=base /opt/flutter /opt/flutter
 COPY --from=base /Users/draccoon /Users/draccoon
 COPY --from=base /etc/gitconfig /etc/gitconfig
 
-ENV PATH="/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:${PATH}"
-RUN mkdir -p /opt && ln -s /home/linuxbrew/.linuxbrew /opt/homebrew
+ENV PATH="/home/$USERNAME/.linuxbrew/bin:/home/$USERNAME/.linuxbrew/sbin:${PATH}"
+RUN mkdir -p /opt && ln -s /home/$USERNAME/.linuxbrew /opt/homebrew
 
 COPY --from=builder /build/server /app/server
 ENV PORT=5789

@@ -35,7 +35,15 @@ export function RawStatePage() {
 
     return (
         <div className="page raw-state-page container-fluid">
-            <h2 className="mb-4">Debug: Raw State</h2>
+            <header className="d-flex justify-content-between align-items-center mb-4">
+                <h2 className="mb-0">Debug: Raw State</h2>
+                <button 
+                    className="btn btn-outline-primary btn-sm d-flex align-items-center gap-2"
+                    onClick={() => refresh()}
+                >
+                    🔄 Refresh
+                </button>
+            </header>
             
             <div className="card shadow-sm border-0 mb-4">
                 <div className="card-body d-flex align-items-center gap-3">

@@ -6,6 +6,10 @@ services:
     build:
       context: .
       target: dev
+      args:
+        USERNAME: draccoon
+        UID: 501
+        GID: 20
     container_name: kkachi-server
     privileged: true
     security_opt:
@@ -20,12 +24,12 @@ services:
     volumes:
       - .:/app
       - /tmp:/tmp
-      - ~/.ssh:/root/.ssh:ro
-      - ~/.gitconfig:/root/.gitconfig:ro
-      - ${OH_MY_ZSH_PATH:-~/.oh-my-zsh}:/root/.oh-my-zsh:ro
-      - ./zshrc.template:/root/.zshrc:ro
-      - ${P10K_CONFIG_PATH:-~/.p10k.zsh}:/root/.p10k.zsh:ro
-      - ./data/cache:/root/.cache
+      - ~/.ssh:/home/draccoon/.ssh:ro
+      - ~/.gitconfig:/home/draccoon/.gitconfig:ro
+      - ${OH_MY_ZSH_PATH:-~/.oh-my-zsh}:/home/draccoon/.oh-my-zsh:ro
+      - ./zshrc.template:/home/draccoon/.zshrc:ro
+      - ${P10K_CONFIG_PATH:-~/.p10k.zsh}:/home/draccoon/.p10k.zsh:ro
+      - ./data/cache:/home/draccoon/.cache
       - /Users/draccoon/Workspace/SeventeenthEarth:/Users/draccoon/Workspace/SeventeenthEarth
     networks:
       - kkachi-net

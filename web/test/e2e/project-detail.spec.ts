@@ -48,11 +48,15 @@ test.describe('ProjectDetailPage', () => {
         // Check for project title
         await expect(page.getByRole('heading', { name: 'sudal' })).toBeVisible();
 
-        // Check for Docs HEAD (use regex as it is truncated)
-        await expect(page.locator('.project-meta').getByText(/abc123de/)).toBeVisible();
+        // Check for Docs HEAD (find the label "Docs HEAD" and check the code element nearby)
+        // Structure: <div class="d-flex flex-column"><span class="text-muted small">Docs HEAD</span><code ...>...</code></div>
+        const docsHeadSection = page.locator('div.d-flex.flex-column').filter({ hasText: 'Docs HEAD' });
+        await expect(docsHeadSection.locator('code')).toContainText('abc123de');
 
-        // Check for Workspace count (look for "Workspaces: 2")
-        await expect(page.locator('.project-meta')).toContainText('2');
+        // Check for Workspace count
+        // Structure: <div class="d-flex flex-column"><span class="text-muted small">Workspaces</span><strong ...>2</strong></div>
+        const workspaceCountSection = page.locator('div.d-flex.flex-column').filter({ hasText: 'Workspaces' });
+        await expect(workspaceCountSection.locator('strong')).toHaveText('2');
     });
 
     test('should list workspaces with correct columns', async ({ page }) => {
