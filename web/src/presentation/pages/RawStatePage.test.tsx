@@ -75,38 +75,6 @@ describe('RawStatePage', () => {
                 expect(screen.getByText(/"workspaces"/)).toBeInTheDocument()
             })
         })
-
-        it('should display refresh button', async () => {
-            renderRawStatePage()
-
-            await waitFor(() => {
-                expect(screen.getByRole('button', { name: /🔄 Refresh/i })).toBeInTheDocument()
-            })
-        })
-
-        it('should refetch data when refresh button is clicked', async () => {
-            const user = userEvent.setup()
-            const mockFetch = vi.fn().mockResolvedValue({
-                ok: true,
-                json: () => Promise.resolve(sampleState),
-            })
-            vi.stubGlobal('fetch', mockFetch)
-
-            renderRawStatePage()
-
-            await waitFor(() => {
-                expect(screen.getByText(/2 projects/i)).toBeInTheDocument()
-            })
-
-            // Click refresh button
-            const refreshButton = screen.getByRole('button', { name: /🔄 Refresh/i })
-            await user.click(refreshButton)
-
-            // Fetch should be called again
-            await waitFor(() => {
-                expect(mockFetch).toHaveBeenCalledTimes(2)
-            })
-        })
     })
 
     describe('Empty state', () => {
@@ -225,20 +193,6 @@ describe('RawStatePage', () => {
             await waitFor(() => {
                 const heading = screen.getByRole('heading', { level: 2 })
                 expect(heading).toHaveTextContent('Debug: Raw State')
-            })
-        })
-
-        it('should have accessible buttons', async () => {
-            vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-                ok: true,
-                json: () => Promise.resolve(sampleState),
-            }))
-
-            renderRawStatePage()
-
-            await waitFor(() => {
-                const refreshButton = screen.getByRole('button', { name: /Refresh/i })
-                expect(refreshButton).toBeEnabled()
             })
         })
     })

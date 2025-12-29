@@ -33,27 +33,21 @@ describe('ProjectDetailPage', () => {
     });
 
     it('renders project details correctly', async () => {
-        const { container } = renderPage('sudal');
-
-        // Wait for loading to finish
-        await waitForElementToBeRemoved(() => screen.queryByText(/Loading/));
+        renderPage('sudal');
 
         await waitFor(() => {
-            expect(screen.getByText('Docs HEAD:')).toBeInTheDocument();
-        }, { timeout: 5000 });
-
-        await waitFor(() => {
-            expect(screen.getAllByText(/sudal/i).length).toBeGreaterThan(0);
+            // Header (now just the project name)
+            expect(screen.getByRole('heading', { level: 2, name: /^sudal$/i })).toBeInTheDocument();
+            
+            // Meta info
+            expect(screen.getByText('Docs HEAD')).toBeInTheDocument();
+            const hashes = screen.getAllByText('abc123de...');
+            expect(hashes.length).toBeGreaterThanOrEqual(1);
+            
+            // Workspaces count
+            expect(screen.getByText('Workspaces')).toBeInTheDocument();
+            expect(screen.getByText('2')).toBeInTheDocument();
         });
-
-        // Check workspace table rows
-        // ID should NOT be displayed
-        expect(screen.queryByText('ws-001')).not.toBeInTheDocument();
-        expect(screen.queryByText('ws-002')).not.toBeInTheDocument();
-
-        // Path SHOULD be displayed
-        expect(container).toHaveTextContent('/Users/dev/projects/sudal');
-        expect(container).toHaveTextContent('/Users/dev2/projects/sudal');
     });
 
     it('displays status badges correctly', async () => {

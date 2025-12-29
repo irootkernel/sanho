@@ -122,8 +122,8 @@ export function ProjectsPage() {
             )}
 
             <div className="table-container">
-                <table className="projects-table">
-                    <thead>
+                <table className="table table-hover table-bordered align-middle projects-table">
+                    <thead className="table-light">
                         <tr>
                             <th>Project</th>
                             <th>Docs HEAD</th>

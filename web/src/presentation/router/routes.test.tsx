@@ -78,7 +78,7 @@ describe('Router', () => {
 
         await waitFor(() => {
             expect(
-                screen.getByRole('heading', { name: /Project: sudal/i }),
+                screen.getByRole('heading', { name: /^sudal$/i }),
             ).toBeInTheDocument();
         });
     });

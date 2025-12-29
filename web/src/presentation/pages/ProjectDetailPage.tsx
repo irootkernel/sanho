@@ -67,12 +67,13 @@ export function ProjectDetailPage() {
 
     if (isLoading && !state) {
         return (
-            <div className="page project-detail-page">
-                <div className="breadcrumbs">
-                    <Link to="/">Projects</Link> &gt;{' '}
-                    <span>{decodedProjectName}</span>
-                </div>
-                <h2>Project: {decodedProjectName}</h2>
+            <div className="page project-detail-page container-fluid">
+                <nav aria-label="breadcrumb" className="mb-4">
+                    <ol className="breadcrumb">
+                        <li className="breadcrumb-item"><Link to="/">Projects</Link></li>
+                        <li className="breadcrumb-item active" aria-current="page">{decodedProjectName}</li>
+                    </ol>
+                </nav>
                 <Loading message="Loading project details..." />
             </div>
         );
@@ -80,11 +81,13 @@ export function ProjectDetailPage() {
 
     if (error && !state) {
         return (
-            <div className="page project-detail-page">
-                <div className="breadcrumbs">
-                    <Link to="/">Projects</Link> &gt;{' '}
-                    <span>{decodedProjectName}</span>
-                </div>
+            <div className="page project-detail-page container-fluid">
+                <nav aria-label="breadcrumb" className="mb-4">
+                    <ol className="breadcrumb">
+                        <li className="breadcrumb-item"><Link to="/">Projects</Link></li>
+                        <li className="breadcrumb-item active" aria-current="page">{decodedProjectName}</li>
+                    </ol>
+                </nav>
                 <ErrorBanner
                     error={error}
                     onRetry={refresh}
@@ -96,11 +99,13 @@ export function ProjectDetailPage() {
 
     if (state && isEmptyState(state)) {
         return (
-            <div className="page project-detail-page">
-                <div className="breadcrumbs">
-                    <Link to="/">Projects</Link> &gt;{' '}
-                    <span>{decodedProjectName}</span>
-                </div>
+            <div className="page project-detail-page container-fluid">
+                <nav aria-label="breadcrumb" className="mb-4">
+                    <ol className="breadcrumb">
+                        <li className="breadcrumb-item"><Link to="/">Projects</Link></li>
+                        <li className="breadcrumb-item active" aria-current="page">{decodedProjectName}</li>
+                    </ol>
+                </nav>
                 <EmptyState
                     icon="📁"
                     title="No Projects Yet"
@@ -118,18 +123,21 @@ export function ProjectDetailPage() {
 
     if (!projectData) {
         return (
-            <div className="page project-detail-page">
-                <div className="breadcrumbs">
-                    <Link to="/">Projects</Link> &gt;{' '}
-                    <span>{decodedProjectName}</span>
-                </div>
-                <div className="error-container error">
-                    <h3>Project Not Found</h3>
+            <div className="page project-detail-page container-fluid">
+                <nav aria-label="breadcrumb" className="mb-4">
+                    <ol className="breadcrumb">
+                        <li className="breadcrumb-item"><Link to="/">Projects</Link></li>
+                        <li className="breadcrumb-item active" aria-current="page">{decodedProjectName}</li>
+                    </ol>
+                </nav>
+                <div className="alert alert-danger" role="alert">
+                    <h4 className="alert-heading">Project Not Found</h4>
                     <p>
                         The project "{decodedProjectName}" does not exist in the
                         state.
                     </p>
-                    <Link to="/" className="retry-button">
+                    <hr />
+                    <Link to="/" className="btn btn-outline-danger">
                         Go to Dashboard
                     </Link>
                 </div>
@@ -140,112 +148,120 @@ export function ProjectDetailPage() {
     const totalCount = projectData.workspaces.length;
 
     return (
-        <div className="page project-detail-page">
-            <div className="breadcrumbs">
-                <Link to="/">Projects</Link> &gt;{' '}
-                <span>{decodedProjectName}</span>
-            </div>
+        <div className="page project-detail-page container-fluid">
+            <nav aria-label="breadcrumb" className="mb-4">
+                <ol className="breadcrumb">
+                    <li className="breadcrumb-item"><Link to="/">Projects</Link></li>
+                    <li className="breadcrumb-item active" aria-current="page">{decodedProjectName}</li>
+                </ol>
+            </nav>
 
-            <header className="project-header">
-                <div>
-                    <h2>{decodedProjectName}</h2>
-                    <div className="project-meta">
-                        <span className="meta-item">
-                            <span className="label">Docs HEAD:</span>{' '}
-                            <code>{formatHash(projectData.docsHead)}</code>
-                        </span>
-                        <span className="meta-item">
-                            <span className="label">Workspaces:</span>{' '}
-                            <strong>{totalCount}</strong>
-                        </span>
+            <header className="card mb-4 shadow-sm border-0">
+                <div className="card-body d-flex justify-content-between align-items-center">
+                    <div>
+                        <h2 className="card-title h3 mb-1">{decodedProjectName}</h2>
+                        <div className="text-muted small">Project Overview</div>
+                    </div>
+                    <div className="d-flex gap-3 text-end">
+                        <div className="d-flex flex-column">
+                            <span className="text-muted small">Docs HEAD</span>
+                            <code className="bg-light px-2 py-1 rounded">{formatHash(projectData.docsHead)}</code>
+                        </div>
+                        <div className="vr"></div>
+                        <div className="d-flex flex-column">
+                            <span className="text-muted small">Workspaces</span>
+                            <strong className="fs-5">{totalCount}</strong>
+                        </div>
                     </div>
                 </div>
             </header>
 
             {projectData.docsHead === null && (
-                <div className="warning-banner">
-                    <span className="warning-icon">ℹ️</span>
-                    <span>
-                        This project does not have a registered Docs HEAD yet.
-                        All workspaces are Unknown.
-                    </span>
+                <div className="alert alert-warning d-flex align-items-center mb-4" role="alert">
+                    <i className="bi bi-info-circle-fill me-2"></i>
+                    <div>
+                        This project does not have a registered Docs HEAD yet. All workspaces are Unknown.
+                    </div>
                 </div>
             )}
 
-            <div className="controls-bar">
-                <div className="filters">
-                    <select
-                        value={statusFilter}
-                        onChange={(e) =>
-                            setStatusFilter(e.target.value as StatusFilter)
-                        }
-                        className="status-filter"
-                    >
-                        <option value="all">All Status</option>
-                        <option value="up_to_date">Up-to-date</option>
-                        <option value="outdated">Outdated</option>
-                        <option value="unknown">Unknown</option>
-                    </select>
-
-                    <input
-                        type="text"
-                        placeholder="Search workspace..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="search-input"
-                    />
-                </div>
-
-                <div className="sort-controls">
-                    <span className="label">Sort by:</span>
-                    <button
-                        className={`sort-btn ${sort.field === 'last_reported_at' ? 'active' : ''}`}
-                        onClick={() => handleSortChange('last_reported_at')}
-                    >
-                        Last Reported{' '}
-                        {sort.field === 'last_reported_at' &&
-                            (sort.direction === 'asc' ? '↑' : '↓')}
-                    </button>
-                    <button
-                        className={`sort-btn ${sort.field === 'local_path' ? 'active' : ''}`}
-                        onClick={() => handleSortChange('local_path')}
-                    >
-                        Path{' '}
-                        {sort.field === 'local_path' &&
-                            (sort.direction === 'asc' ? '↑' : '↓')}
-                    </button>
-                </div>
-            </div>
-
-            <div className="table-container">
-                {projectData.workspaces.length === 0 ? (
-                    <EmptyState
-                        icon="📭"
-                        title="No Workspaces"
-                        description="This project has no registered workspaces yet."
-                        hint={
-                            <>
-                                Use <code>kkachi init</code> to register a
-                                workspace.
-                            </>
-                        }
-                    />
-                ) : filteredWorkspaces.length === 0 ? (
-                    <div className="empty-filter-state">
-                        <p>No workspaces match your filter.</p>
-                        <button
-                            className="text-button"
-                            onClick={() => {
-                                setStatusFilter('all');
-                                setSearchQuery('');
-                            }}
-                        >
-                            Reset Filters
-                        </button>
+            <div className="card shadow-sm border-0">
+                <div className="card-header bg-white py-3">
+                    <div className="row g-3 align-items-center">
+                        <div className="col-auto">
+                            <select
+                                className="form-select form-select-sm"
+                                value={statusFilter}
+                                onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+                            >
+                                <option value="all">All Status</option>
+                                <option value="up_to_date">Up-to-date</option>
+                                <option value="outdated">Outdated</option>
+                                <option value="unknown">Unknown</option>
+                            </select>
+                        </div>
+                        <div className="col">
+                            <input
+                                type="text"
+                                className="form-control form-control-sm"
+                                placeholder="Search workspace..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                            />
+                        </div>
+                        <div className="col-auto d-flex gap-2">
+                             <span className="col-form-label col-form-label-sm text-muted me-1">Sort by:</span>
+                             <div className="btn-group btn-group-sm" role="group">
+                                <button
+                                    type="button"
+                                    className={`btn btn-outline-secondary ${sort.field === 'last_reported_at' ? 'active' : ''}`}
+                                    onClick={() => handleSortChange('last_reported_at')}
+                                >
+                                    Last Reported {sort.field === 'last_reported_at' && (sort.direction === 'asc' ? '↑' : '↓')}
+                                </button>
+                                <button
+                                    type="button"
+                                    className={`btn btn-outline-secondary ${sort.field === 'local_path' ? 'active' : ''}`}
+                                    onClick={() => handleSortChange('local_path')}
+                                >
+                                    Path {sort.field === 'local_path' && (sort.direction === 'asc' ? '↑' : '↓')}
+                                </button>
+                             </div>
+                        </div>
                     </div>
-                ) : (
-                    <WorkspaceTable workspaces={filteredWorkspaces} />
-                )}
+                </div>
+                
+                <div className="card-body p-0">
+                    {projectData.workspaces.length === 0 ? (
+                        <div className="p-5">
+                             <EmptyState
+                                icon="📭"
+                                title="No Workspaces"
+                                description="This project has no registered workspaces yet."
+                                hint={
+                                    <>
+                                        Use <code>kkachi init</code> to register a workspace.
+                                    </>
+                                }
+                            />
+                        </div>
+                    ) : filteredWorkspaces.length === 0 ? (
+                        <div className="text-center py-5">
+                            <p className="text-muted mb-3">No workspaces match your filter.</p>
+                            <button
+                                className="btn btn-outline-primary btn-sm"
+                                onClick={() => {
+                                    setStatusFilter('all');
+                                    setSearchQuery('');
+                                }}
+                            >
+                                Reset Filters
+                            </button>
+                        </div>
+                    ) : (
+                        <WorkspaceTable workspaces={filteredWorkspaces} />
+                    )}
+                </div>
             </div>
         </div>
     );

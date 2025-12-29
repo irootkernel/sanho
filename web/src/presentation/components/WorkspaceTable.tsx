@@ -16,8 +16,8 @@ function isValidRepoUrl(url: string): boolean {
 
 export function WorkspaceTable({ workspaces }: WorkspaceTableProps) {
     return (
-        <table className="workspace-table">
-            <thead>
+        <table className="table table-hover table-bordered align-middle mb-0 workspace-table">
+            <thead className="table-light">
                 <tr>
                     <th>Local Path</th>
                     <th>Status</th>

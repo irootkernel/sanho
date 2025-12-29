@@ -10,8 +10,8 @@ export function RawStatePage() {
 
     if (isLoading && !data) {
         return (
-            <div className="page raw-state-page">
-                <h2>Debug: Raw State</h2>
+            <div className="page raw-state-page container-fluid">
+                <h2 className="mb-4">Debug: Raw State</h2>
                 <Loading message="Loading state..." />
             </div>
         );
@@ -19,8 +19,8 @@ export function RawStatePage() {
 
     if (error && !data) {
         return (
-            <div className="page raw-state-page">
-                <h2>Debug: Raw State</h2>
+            <div className="page raw-state-page container-fluid">
+                <h2 className="mb-4">Debug: Raw State</h2>
                 <ErrorBanner
                     error={error}
                     onRetry={refresh}
@@ -30,21 +30,35 @@ export function RawStatePage() {
         );
     }
 
+    const projectCount = Object.keys(data?.docs_heads ?? {}).length;
+    const workspaceCount = data?.workspaces.length ?? 0;
+
     return (
-        <div className="page raw-state-page">
-            <h2>Debug: Raw State</h2>
-            <div className="state-info">
-                <span className="badge">
-                    {Object.keys(data?.docs_heads ?? {}).length} projects
-                </span>
-                <span className="badge">
-                    {data?.workspaces.length ?? 0} workspaces
-                </span>
-                <button onClick={refresh} className="refresh-button small">
-                    🔄 Refresh
-                </button>
+        <div className="page raw-state-page container-fluid">
+            <h2 className="mb-4">Debug: Raw State</h2>
+            
+            <div className="card shadow-sm border-0 mb-4">
+                <div className="card-body d-flex align-items-center gap-3">
+                    <span className="badge bg-primary rounded-pill fs-6 px-3">
+                        {projectCount} projects
+                    </span>
+                    <span className="badge bg-success rounded-pill fs-6 px-3">
+                        {workspaceCount} workspaces
+                    </span>
+                </div>
             </div>
-            <pre className="json-display">{JSON.stringify(data, null, 2)}</pre>
+
+            <div className="card shadow-sm border-0">
+                <div className="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+                    <span className="font-monospace small">state.json</span>
+                    <span className="badge bg-secondary">JSON</span>
+                </div>
+                <div className="card-body p-0 bg-light">
+                    <pre className="m-0 p-3 json-display font-monospace" style={{ fontSize: '0.9rem', overflow: 'auto', maxHeight: '70vh' }}>
+                        {JSON.stringify(data, null, 2)}
+                    </pre>
+                </div>
+            </div>
         </div>
     );
 }
