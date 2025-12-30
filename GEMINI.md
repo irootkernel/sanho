@@ -102,3 +102,28 @@ go test ./...
 ## Key Documentation
 
 *   **Requirements:** `docs/requirement-v1.md` - Detailed system behavior and protocol specifications.
+
+## Lessons Learned & Agent Self-Correction
+
+This section records mistakes made by the agent during development (specifically during CTASK-5) and the resulting corrections to prevent recurrence.
+
+### 1. Protocol & Control Compliance
+*   **Mistake:** Arbitrarily marked phases as "Complete" without seeking explicit user confirmation during the `User Manual Verification` steps of the Conductor framework.
+*   **Correction:** Must halt operations at the end of every Phase and request a manual review from the user. Skipping these steps is a violation of the framework's protocol and the user's control.
+
+### 2. Rigorous Technical Validation
+*   **Mistake:** Declared implementation complete without running the full build (`make build-web`) and test suite (`make test-web`). This led to late discovery of Lint errors, TypeScript type mismatches, and regressions in existing tests.
+*   **Correction:** Never declare a task "Finished" until a 'Zero Error' state is confirmed by running all project-defined validation scripts. Prioritize passing existing tests during refactoring.
+
+### 3. Precision in Requirement Analysis
+*   **Mistake:** Overlooked core requirements (e.g., Auth Token support) explicitly mentioned in the roadmap, focusing only on a subset of features (DnD).
+*   **Correction:** Create a checklist based on `spec.md` and the roadmap before starting. Cross-reference all implemented features against this checklist before reporting progress.
+
+### 4. Environmental Awareness (Docker vs. Host)
+*   **Mistake:** Failed to account for the difference between the host filesystem and the Docker container's volumes (e.g., `web_node_modules`). Installed packages only on the host, leading to runtime resolution errors in the container.
+*   **Correction:** Analyze the infrastructure configuration (`docker-compose.dev.yml`) beforehand. Ensure commands are executed in the correct context (Host vs. Container) to maintain environment consistency.
+
+### 5. Adherence to Communication Guidelines
+*   **Mistake:** Failed to maintain the user's preferred interaction language (Korean), occasionally reverting to English without permission.
+*   **Correction:** Strictly respect the communication guidelines established by the user. Maintain consistent language usage even across context switches.
+

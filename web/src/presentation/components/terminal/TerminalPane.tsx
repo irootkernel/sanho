@@ -4,14 +4,16 @@ import { terminateSession, connectConsole } from '@/api/pty';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
+import type { ConsoleRecord } from '@/domain/terminal/types';
 import '@xterm/xterm/css/xterm.css';
 
 interface TerminalPaneProps {
-    consoleId?: string;
+    console: ConsoleRecord;
+    isSelected: boolean;
 }
 
-export const TerminalPane: React.FC<TerminalPaneProps> = ({ consoleId }) => {
-    const { consoles, selectedConsoleId, removeConsole, updateConsole } = useTerminal();
+export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ console: activeConsole, isSelected }) => {
+    const { removeConsole, updateConsole } = useTerminal();
     const [isTerminating, setIsTerminating] = useState(false);
     const terminalRef = useRef<HTMLDivElement>(null);
 
@@ -21,8 +23,7 @@ export const TerminalPane: React.FC<TerminalPaneProps> = ({ consoleId }) => {
     const fitAddonRef = useRef<FitAddon | null>(null);
     const consoleIdRef = useRef<string | null>(null);
 
-    const activeConsole = consoles.find((c) => c.consoleId === (consoleId || selectedConsoleId));
-    const targetId = consoleId || selectedConsoleId;
+    const targetId = activeConsole?.consoleId;
 
     // Helper to sync size with server
     const syncSizeWithServer = () => {
@@ -178,17 +179,17 @@ export const TerminalPane: React.FC<TerminalPaneProps> = ({ consoleId }) => {
 
     // Effect 4: Focus when active
     useEffect(() => {
-        if (selectedConsoleId === targetId && xtermRef.current) {
+        if (isSelected && xtermRef.current) {
             xtermRef.current.focus();
             setTimeout(syncSizeWithServer, 100); // Re-sync size when switching back
         }
-    }, [selectedConsoleId, targetId]);
+    }, [isSelected, targetId]);
 
     const handleClose = async () => {
-        if (!activeConsole || !targetId) return;
+        if (!targetId) return;
         setIsTerminating(true);
         try {
-            if (activeConsole.sessionId) await terminateSession(activeConsole.sessionId);
+            if (activeConsole?.sessionId) await terminateSession(activeConsole.sessionId);
         } catch {
             // ignore
         } finally {
@@ -261,4 +262,4 @@ export const TerminalPane: React.FC<TerminalPaneProps> = ({ consoleId }) => {
             </div>
         </div >
     );
-};
+});

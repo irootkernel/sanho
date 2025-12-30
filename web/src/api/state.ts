@@ -1,4 +1,4 @@
-import { buildApiUrl } from '@/data/http/config';
+import { buildApiUrl, getApiHeaders } from '@/data/http/config';
 import { ApiError, NetworkError } from '@/data/http/errors';
 
 export interface Workspace {
@@ -22,7 +22,9 @@ export const fetchWorkspaces = async (): Promise<Workspace[]> => {
 
     let response: Response;
     try {
-        response = await fetch(url);
+        response = await fetch(url, {
+            headers: getApiHeaders(),
+        });
     } catch (error) {
         throw new NetworkError(
             'Failed to connect to server',

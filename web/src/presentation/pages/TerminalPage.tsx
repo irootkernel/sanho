@@ -2,14 +2,20 @@ import React, { useState, useEffect, useRef } from 'react';
 import { ConsoleList } from '../components/terminal/ConsoleList';
 import { TerminalPane } from '../components/terminal/TerminalPane';
 import { WorkspacePickerModal } from '../components/terminal/WorkspacePickerModal';
+import { RenameSessionModal } from '../components/terminal/RenameSessionModal';
+import { Toast } from '../components/common/Toast';
 import { useTerminal } from '@/application';
+import { useToast } from '../hooks/useToast';
 import { MAX_CONSOLES } from '@/application/stores/useTerminalStore';
 import { createSession } from '@/api/pty';
 import type { Workspace } from '@/api/state';
+import type { ConsoleRecord } from '@/domain/terminal/types';
 
 export const TerminalPage: React.FC = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [renamingConsole, setRenamingConsole] = useState<ConsoleRecord | null>(null);
     const { consoles, selectedConsoleId, addConsole, updateConsole } = useTerminal();
+    const { toasts, showToast, removeToast } = useToast();
     
     const consolesRef = useRef(consoles);
     useEffect(() => {
@@ -27,7 +33,10 @@ export const TerminalPage: React.FC = () => {
     }, []);
 
     const handleCreateSession = async (workspace: Workspace) => {
-        if (consoles.length >= MAX_CONSOLES) return;
+        if (consoles.length >= MAX_CONSOLES) {
+            showToast('Maximum number of consoles reached', 'danger');
+            return;
+        }
         setIsModalOpen(false);
         const consoleId = crypto.randomUUID();
 
@@ -61,12 +70,21 @@ export const TerminalPage: React.FC = () => {
                 sessionId: response.session_id,
                 wsUrl: response.ws_url,
             });
+            showToast(`Session created: ${extractedTitle}`, 'success');
         } catch (err) {
             const message = err instanceof Error ? err.message : 'Failed to create session';
             updateConsole(consoleId, {
                 status: 'ERROR',
                 errorMessage: message,
             });
+            showToast(`Failed to create session: ${message}`, 'danger');
+        }
+    };
+
+    const handleRename = (newTitle: string) => {
+        if (renamingConsole) {
+            updateConsole(renamingConsole.consoleId, { title: newTitle });
+            showToast(`Session renamed to: ${newTitle}`, 'success');
         }
     };
 
@@ -81,6 +99,7 @@ export const TerminalPage: React.FC = () => {
             <ConsoleList 
                 onNew={() => setIsModalOpen(true)} 
                 isNewDisabled={consoles.length >= MAX_CONSOLES}
+                onRenameRequest={setRenamingConsole}
             />
             
             {/* Main Content Area */}
@@ -109,7 +128,10 @@ export const TerminalPage: React.FC = () => {
                                     flexDirection: 'column'
                                 }}
                             >
-                                <TerminalPane consoleId={c.consoleId} />
+                                <TerminalPane 
+                                    console={c} 
+                                    isSelected={c.consoleId === selectedConsoleId} 
+                                />
                             </div>
                         ))}
                     </div>
@@ -121,6 +143,25 @@ export const TerminalPage: React.FC = () => {
                 onClose={() => setIsModalOpen(false)}
                 onSelect={handleCreateSession}
             />
+
+            <RenameSessionModal
+                key={renamingConsole?.consoleId || 'none'}
+                isOpen={!!renamingConsole}
+                initialTitle={renamingConsole?.title || ""}
+                onClose={() => setRenamingConsole(null)}
+                onRename={handleRename}
+            />
+
+            {/* Toasts */}
+            {toasts.map((toast, index) => (
+                <Toast 
+                    key={toast.id}
+                    message={toast.message}
+                    type={toast.type}
+                    index={index}
+                    onClose={() => removeToast(toast.id)}
+                />
+            ))}
         </div>
     );
 };

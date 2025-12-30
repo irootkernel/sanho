@@ -16,9 +16,9 @@ vi.mock('../components/terminal/ConsoleList', () => ({
 }));
 
 vi.mock('../components/terminal/TerminalPane', () => ({
-    TerminalPane: vi.fn(({ consoleId }) => (
-        <div data-testid={`terminal-pane-${consoleId || 'empty'}`}>
-            Terminal {consoleId}
+    TerminalPane: vi.fn(({ console: c }) => (
+        <div data-testid={`terminal-pane-${c?.consoleId || 'empty'}`}>
+            Terminal {c?.consoleId}
         </div>
     )),
 }));

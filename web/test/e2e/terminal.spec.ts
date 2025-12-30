@@ -152,6 +152,6 @@ test.describe('TerminalPage E2E', () => {
         await expect(consoleItem).toBeVisible();
 
         // Should show error message in main pane
-        await expect(page.getByText(/Internal Server Error/i)).toBeVisible();
+        await expect(page.getByText(/Internal Server Error/i).first()).toBeVisible();
     });
 });

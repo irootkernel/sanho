@@ -1,7 +1,18 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { fetchWorkspaces, type Workspace } from '@/api/state';
+import { sortWorkspacesByPath } from '@/domain';
 import { useTerminal } from '@/application';
 import { WorkspaceGrid } from './WorkspaceGrid';
+import { WorkspaceCard } from './WorkspaceCard';
+import {
+    DndContext,
+    DragOverlay,
+    closestCenter,
+    type DragEndEvent,
+    type DragStartEvent,
+} from '@dnd-kit/core';
+import { arrayMove } from '@dnd-kit/sortable';
+import { useCommonSensors } from '../../hooks/useCommonSensors';
 
 interface WorkspacePickerModalProps {
     isOpen: boolean;
@@ -20,6 +31,8 @@ export const WorkspacePickerModal: React.FC<WorkspacePickerModalProps> = ({
     const [error, setError] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [focusedIndex, setFocusedIndex] = useState(0);
+    const [activeId, setActiveId] = useState<string | null>(null);
+    const sensors = useCommonSensors();
 
     const activeWorkspaceIds = useMemo(() => 
         new Set(consoles.map(c => c.workspaceId).filter((id): id is string => !!id)), 
@@ -38,7 +51,8 @@ export const WorkspacePickerModal: React.FC<WorkspacePickerModalProps> = ({
         setError(null);
         try {
             const data = await fetchWorkspaces();
-            setWorkspaces(data);
+            // Default sort: Path ASC
+            setWorkspaces(sortWorkspacesByPath(data));
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to load workspaces');
         } finally {
@@ -47,14 +61,19 @@ export const WorkspacePickerModal: React.FC<WorkspacePickerModalProps> = ({
     };
 
     const filteredWorkspaces = useMemo(() => {
-        if (!searchQuery.trim()) return workspaces;
-        const query = searchQuery.toLowerCase();
-        return workspaces.filter(
-            (ws) =>
-                ws.project.toLowerCase().includes(query) ||
-                ws.workspace_id.toLowerCase().includes(query) ||
-                ws.local_path.toLowerCase().includes(query)
-        );
+        let result = workspaces;
+        if (searchQuery.trim()) {
+            const query = searchQuery.toLowerCase();
+            result = workspaces.filter(
+                (ws) =>
+                    ws.project.toLowerCase().includes(query) ||
+                    ws.workspace_id.toLowerCase().includes(query) ||
+                    ws.local_path.toLowerCase().includes(query)
+            );
+            // Re-sort filtered results by path to maintain consistency
+            return sortWorkspacesByPath(result);
+        }
+        return result;
     }, [workspaces, searchQuery]);
 
     useEffect(() => {
@@ -81,6 +100,28 @@ export const WorkspacePickerModal: React.FC<WorkspacePickerModalProps> = ({
                 break;
         }
     }, [filteredWorkspaces, focusedIndex, onSelect, onClose]);
+
+    const handleDragStart = (event: DragStartEvent) => {
+        setActiveId(event.active.id as string);
+    };
+
+    const handleDragEnd = (event: DragEndEvent) => {
+        const { active, over } = event;
+
+        if (over && active.id !== over.id) {
+            setWorkspaces((prev) => {
+                const oldIndex = prev.findIndex((w) => w.workspace_id === active.id);
+                const newIndex = prev.findIndex((w) => w.workspace_id === over.id);
+                return arrayMove(prev, oldIndex, newIndex);
+            });
+        }
+        setActiveId(null);
+    };
+
+    const activeWorkspace = useMemo(
+        () => workspaces.find((w) => w.workspace_id === activeId),
+        [activeId, workspaces]
+    );
 
     if (!isOpen) return null;
 
@@ -141,12 +182,31 @@ export const WorkspacePickerModal: React.FC<WorkspacePickerModalProps> = ({
                             <button className="btn btn-sm btn-outline-danger" onClick={loadWorkspaces}>Retry</button>
                         </div>
                     ) : (
-                        <WorkspaceGrid 
-                            workspaces={filteredWorkspaces}
-                            activeWorkspaceIds={activeWorkspaceIds}
-                            focusedIndex={focusedIndex}
-                            onSelect={onSelect}
-                        />
+                        <DndContext
+                            sensors={sensors}
+                            collisionDetection={closestCenter}
+                            onDragStart={handleDragStart}
+                            onDragEnd={handleDragEnd}
+                        >
+                            <WorkspaceGrid 
+                                workspaces={filteredWorkspaces}
+                                activeWorkspaceIds={activeWorkspaceIds}
+                                focusedIndex={focusedIndex}
+                                onSelect={onSelect}
+                            />
+                            <DragOverlay>
+                                {activeWorkspace ? (
+                                    <div style={{ width: '280px' }}>
+                                        <WorkspaceCard
+                                            workspace={activeWorkspace}
+                                            isActive={activeWorkspaceIds.has(activeWorkspace.workspace_id)}
+                                            isFocused={false}
+                                            onSelect={() => {}}
+                                        />
+                                    </div>
+                                ) : null}
+                            </DragOverlay>
+                        </DndContext>
                     )}
                 </div>
 

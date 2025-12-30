@@ -1,4 +1,4 @@
-import { buildApiUrl } from '@/data/http/config';
+import { buildApiUrl, getApiHeaders, getApiConfig } from '@/data/http/config';
 import { ApiError, NetworkError } from '@/data/http/errors';
 
 export interface CreateSessionRequest {
@@ -23,9 +23,7 @@ export const createSession = async (request: CreateSessionRequest): Promise<Crea
     try {
         response = await fetch(url, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
+            headers: getApiHeaders(),
             body: JSON.stringify(request),
         });
     } catch (error) {
@@ -55,6 +53,14 @@ export const createSession = async (request: CreateSessionRequest): Promise<Crea
 };
 
 export const connectConsole = (url: string): WebSocket => {
+    const { authToken } = getApiConfig();
+    
+    // Set auth_token cookie for WebSocket authentication if token is present
+    if (authToken) {
+        // Set cookie with SameSite=Strict and path=/ for security
+        document.cookie = `auth_token=${authToken}; Path=/; SameSite=Strict`;
+    }
+
     const ws = new WebSocket(url);
     ws.binaryType = 'arraybuffer';
     return ws;
@@ -67,6 +73,7 @@ export const terminateSession = async (sessionId: string): Promise<void> => {
     try {
         response = await fetch(url, {
             method: 'DELETE',
+            headers: getApiHeaders(),
         });
     } catch (error) {
         throw new NetworkError(

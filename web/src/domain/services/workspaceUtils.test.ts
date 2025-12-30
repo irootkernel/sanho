@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { filterAndSortWorkspaces } from './workspaceUtils';
+import { filterAndSortWorkspaces, sortWorkspacesByPath } from './workspaceUtils';
 import type { Workspace } from '../models/Workspace';
 
 describe('filterAndSortWorkspaces', () => {
@@ -135,3 +135,54 @@ describe('filterAndSortWorkspaces', () => {
         expect(result.map((w) => w.workspace_id)).toEqual(['ws-1', 'ws-2', 'ws-3']);
     });
 });
+
+describe('sortWorkspacesByPath', () => {
+    const mockWorkspaces: Workspace[] = [
+        {
+            workspace_id: 'ws-b',
+            project: 'proj',
+            local_path: '/path/b',
+            repo_url: '',
+            docs_repo_id: '',
+            docs_hash: '',
+            last_reported_at: '',
+            last_actor_email: '',
+        },
+        {
+            workspace_id: 'ws-a',
+            project: 'proj',
+            local_path: '/path/a',
+            repo_url: '',
+            docs_repo_id: '',
+            docs_hash: '',
+            last_reported_at: '',
+            last_actor_email: '',
+        },
+        {
+            workspace_id: 'ws-c',
+            project: 'proj',
+            local_path: '/path/c',
+            repo_url: '',
+            docs_repo_id: '',
+            docs_hash: '',
+            last_reported_at: '',
+            last_actor_email: '',
+        },
+    ];
+
+    it('should sort workspaces by local_path ascending', () => {
+        const sorted = sortWorkspacesByPath(mockWorkspaces);
+        expect(sorted).toHaveLength(3);
+        expect(sorted[0].local_path).toBe('/path/a');
+        expect(sorted[1].local_path).toBe('/path/b');
+        expect(sorted[2].local_path).toBe('/path/c');
+    });
+
+    it('should not mutate the original array', () => {
+        const original = [...mockWorkspaces];
+        const sorted = sortWorkspacesByPath(original);
+        expect(original).toEqual(mockWorkspaces); // Should be unchanged
+        expect(sorted).not.toBe(original); // Should return a new array
+    });
+});
+

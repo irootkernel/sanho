@@ -8,6 +8,8 @@
 export interface ApiConfig {
     /** Base path prefix for API calls (e.g., "/api") */
     apiPrefix: string;
+    /** Optional authentication token for API calls */
+    authToken?: string;
 }
 
 /**
@@ -65,9 +67,11 @@ function validateApiPrefix(prefix: string): void {
  */
 export function getApiConfig(): ApiConfig {
     const prefix = import.meta.env.VITE_KKACHI_API_PREFIX || '/api';
+    const token = import.meta.env.VITE_KKACHI_AUTH_TOKEN;
     validateApiPrefix(prefix);
     return {
         apiPrefix: prefix,
+        authToken: token,
     };
 }
 
@@ -85,4 +89,23 @@ export function buildApiUrl(endpoint: string): string {
     // Ensure endpoint starts with a slash
     const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
     return `${normalizedPrefix}${normalizedEndpoint}`;
+}
+
+/**
+ * Get standard headers for API calls, including Authorization if token is set.
+ * @returns Headers object
+ */
+export function getApiHeaders(contentType = 'application/json'): Record<string, string> {
+    const { authToken } = getApiConfig();
+    const headers: Record<string, string> = {};
+
+    if (contentType) {
+        headers['Content-Type'] = contentType;
+    }
+
+    if (authToken) {
+        headers['Authorization'] = `Bearer ${authToken}`;
+    }
+
+    return headers;
 }

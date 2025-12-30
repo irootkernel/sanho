@@ -66,6 +66,9 @@ describe('pty API', () => {
 
             expect(fetchMock).toHaveBeenCalledWith(buildApiUrl(`/pty/sessions/${sessionId}`), {
                 method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
             });
         });
 

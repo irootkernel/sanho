@@ -70,8 +70,9 @@ describe('TerminalPane', () => {
         });
     });
 
-    it('should render nothing when no console is selected', () => {
-        const { container } = render(<TerminalPane />);
+    it('should render nothing when no console is provided', () => {
+        // @ts-expect-error - testing missing console
+        const { container } = render(<TerminalPane console={undefined} isSelected={false} />);
         expect(container.firstChild).toBeNull();
     });
 
@@ -82,6 +83,7 @@ describe('TerminalPane', () => {
             status: 'CONNECTED' as const,
             createdAt: Date.now(),
             workspaceId: 'ws-1',
+            project: 'Test Project',
         };
 
         vi.mocked(useTerminal).mockReturnValue({
@@ -92,9 +94,9 @@ describe('TerminalPane', () => {
             selectConsole: vi.fn(),
             updateConsole: mockUpdateConsole,
             reorderConsoles: vi.fn(),
-        });
+        } as unknown as ReturnType<typeof useTerminal>);
 
-        render(<TerminalPane />);
+        render(<TerminalPane console={mockConsole} isSelected={true} />);
         expect(screen.getByText(/Test Console/i)).toBeInTheDocument();
     });
 });

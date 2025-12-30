@@ -74,3 +74,12 @@ export function filterAndSortWorkspaces(
 
     return result;
 }
+
+/**
+ * Sorts a list of items by their local path in ascending order.
+ * @param items - List of items with local_path to sort
+ * @returns Sorted list of items
+ */
+export function sortWorkspacesByPath<T extends { local_path: string }>(items: T[]): T[] {
+    return [...items].sort((a, b) => a.local_path.localeCompare(b.local_path));
+}
