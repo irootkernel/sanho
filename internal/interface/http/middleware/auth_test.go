@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -11,10 +12,11 @@ import (
 
 func TestAuthMiddleware(t *testing.T) {
 	tests := []struct {
-		name           string
-		authConfig     config.AuthConfig
-		authHeader     string
-		expectedStatus int
+		name            string
+		authConfig      config.AuthConfig
+		authHeader      string
+		expectedStatus  int
+		expectedMessage string
 	}{
 		{
 			name: "Auth disabled",
@@ -39,8 +41,9 @@ func TestAuthMiddleware(t *testing.T) {
 				AuthEnabled: true,
 				AuthToken:   "valid-token",
 			},
-			authHeader:     "",
-			expectedStatus: http.StatusUnauthorized,
+			authHeader:      "",
+			expectedStatus:  http.StatusUnauthorized,
+			expectedMessage: "missing_authorization_header",
 		},
 		{
 			name: "Auth enabled, invalid token",
@@ -48,8 +51,9 @@ func TestAuthMiddleware(t *testing.T) {
 				AuthEnabled: true,
 				AuthToken:   "valid-token",
 			},
-			authHeader:     "Bearer invalid-token",
-			expectedStatus: http.StatusUnauthorized,
+			authHeader:      "Bearer invalid-token",
+			expectedStatus:  http.StatusUnauthorized,
+			expectedMessage: "invalid_token",
 		},
 		{
 			name: "Auth enabled, malformed header",
@@ -57,8 +61,9 @@ func TestAuthMiddleware(t *testing.T) {
 				AuthEnabled: true,
 				AuthToken:   "valid-token",
 			},
-			authHeader:     "Basic user:pass",
-			expectedStatus: http.StatusUnauthorized,
+			authHeader:      "Basic user:pass",
+			expectedStatus:  http.StatusUnauthorized,
+			expectedMessage: "malformed_authorization_header",
 		},
 	}
 
@@ -78,6 +83,14 @@ func TestAuthMiddleware(t *testing.T) {
 			handler.ServeHTTP(w, req)
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
+			if tt.expectedStatus == http.StatusUnauthorized {
+				var resp authErrorResponse
+				if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+					t.Fatalf("Failed to decode response: %v", err)
+				}
+				assert.Equal(t, "unauthorized", resp.Error)
+				assert.Equal(t, tt.expectedMessage, resp.Message)
+			}
 		})
 	}
 }

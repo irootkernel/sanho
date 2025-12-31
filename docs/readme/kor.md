@@ -231,6 +231,13 @@ git push origin main
 | `PORT` | `5789` | 서버 리슨 포트 |
 | `STATE_FILE_PATH` | `data/kkachi_state.json` | 상태 저장 파일 경로 |
 | `WEB_DIST_DIR` | `web/dist` | Web UI 빌드 디렉토리 (v2) |
+| `AUTH_ENABLED` | `false` | Bearer/WS 쿠키 인증 활성화 여부 |
+| `AUTH_TOKEN` | (없음) | 인증 토큰(`AUTH_ENABLED=true`일 때 필수) |
+| `PTY_ALLOWED_SHELLS` | (기본 allowlist) | PTY 허용 쉘 목록(콤마 구분) |
+| `PTY_DEFAULT_SHELL` | (SHELL 또는 `/bin/sh`) | 기본 쉘 경로 |
+| `PTY_MAX_SESSIONS` | `100` | 동시 PTY 세션 최대치(0=제한 없음) |
+| `PTY_WS_ALLOWED_ORIGINS` | (비어있음) | WS Origin allowlist(콤마 구분, 기본 same-origin만 허용) |
+| `PTY_DISCONNECT_POLICY` | (deprecated) | v3에서는 무시됨(terminate-only 고정) |
 
 ### Makefile 타겟
 

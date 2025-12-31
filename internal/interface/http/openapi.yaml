@@ -517,6 +517,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PTYErrorResponse'
+        '403':
+          description: Forbidden (origin not allowed)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PTYErrorResponse'
         '404':
           description: Session not found
           content:
@@ -587,6 +593,7 @@ components:
             - `session_not_found`
             - `session_already_attached`
             - `unauthorized`
+            - `origin_not_allowed`
             - `internal_server_error`
         message:
           type: string

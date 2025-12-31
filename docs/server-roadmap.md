@@ -228,7 +228,7 @@
 
 3) **차단 동작**
 - 차단된 라인은 PTY에 쓰지 않는다.
-- WS에 `{type:"error", error:"command_blocked"}` 전송(또는 유사)
+- WS에 `{type:"error", error:"command_blocked", reason:"..."}` 전송
 
 ### 테스트/검증
 - Integration

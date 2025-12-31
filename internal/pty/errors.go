@@ -22,6 +22,7 @@ const (
 	CodeInvalidTerminalSize    = "invalid_terminal_size"
 	CodeMissingSessionID       = "missing_session_id"
 	CodeUnauthorized           = "unauthorized"
+	CodeOriginNotAllowed       = "origin_not_allowed"
 	CodeInternalServerError    = "internal_server_error"
 )
 

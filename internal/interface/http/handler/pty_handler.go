@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os/exec"
+	"strings"
 	"sync"
 
 	"github.com/SeventeenthEarth/kkachi/internal/config"
@@ -16,12 +18,6 @@ import (
 	"github.com/SeventeenthEarth/kkachi/internal/pty"
 	"github.com/gorilla/websocket"
 )
-
-var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool {
-		return true // For now, allow all origins
-	},
-}
 
 // WorkspaceLookup provides workspace lookup capability.
 type WorkspaceLookup interface {
@@ -185,6 +181,10 @@ func (s *safeWSConn) Close() error {
 
 // WS handles GET /api/pty/sessions/{id}/ws - attaches to a PTY session via WebSocket.
 func (h *PTYHandler) WS(w http.ResponseWriter, r *http.Request) {
+	if !h.enforceOriginPolicy(w, r) {
+		return
+	}
+
 	// Authentication (STASK-5)
 	if h.authConfig.AuthEnabled {
 		cookie, err := r.Cookie("auth_token")
@@ -222,6 +222,11 @@ func (h *PTYHandler) WS(w http.ResponseWriter, r *http.Request) {
 	defer session.Detach()
 
 	// Upgrade to WebSocket
+	upgrader := websocket.Upgrader{
+		CheckOrigin: func(_ *http.Request) bool {
+			return true
+		},
+	}
 	rawConn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		slog.Error("pty_ws_upgrade_failed", "error", err, "session_id", sessionID)
@@ -247,11 +252,9 @@ func (h *PTYHandler) WS(w http.ResponseWriter, r *http.Request) {
 	// 4. conn.Close() closes the WebSocket.
 	// 5. session.Detach() unlocks the session attachment.
 
-	// Apply disconnect policy when the handler exits
+	// Terminate session when the handler exits
 	defer func() {
-		if h.config.DisconnectPolicy == pty.DisconnectPolicyTerminate {
-			_ = h.sessionManager.TerminateSession(session.ID)
-		}
+		_ = h.sessionManager.TerminateSession(session.ID)
 	}()
 
 	ctx, cancel := context.WithCancel(r.Context())
@@ -321,6 +324,15 @@ func (h *PTYHandler) WS(w http.ResponseWriter, r *http.Request) {
 
 				if blocked {
 					slog.Warn("pty_command_blocked", "session_id", sessionID, "reason", reason)
+					event := dto.PTYWSEventMessage{
+						Type:   "error",
+						Error:  pty.CodeCommandBlocked,
+						Reason: reason,
+					}
+					payload, _ := json.Marshal(event)
+					if err := conn.WriteMessage(websocket.TextMessage, payload); err != nil {
+						return
+					}
 					// Send warning back to the terminal (as output)
 					warning := fmt.Sprintf("\r\nBlocked by security policy: %s\r\n", reason)
 					if err := conn.WriteMessage(websocket.BinaryMessage, []byte(warning)); err != nil {
@@ -401,4 +413,50 @@ func (h *PTYHandler) writeError(w http.ResponseWriter, errorCode, message string
 	}); err != nil {
 		slog.Error("pty_error_response_write_failed", "error", err, "error_code", errorCode)
 	}
+}
+
+func (h *PTYHandler) enforceOriginPolicy(w http.ResponseWriter, r *http.Request) bool {
+	origin := strings.TrimSpace(r.Header.Get("Origin"))
+	if origin == "" || strings.EqualFold(origin, "null") {
+		h.writeOriginError(w, r, "missing_origin_header")
+		return false
+	}
+
+	normalized, err := pty.NormalizeOrigin(origin)
+	if err != nil {
+		h.writeOriginError(w, r, "invalid_origin_header")
+		return false
+	}
+
+	if h.isOriginAllowed(normalized, r.Host) {
+		return true
+	}
+
+	h.writeOriginError(w, r, "origin_not_allowed")
+	return false
+}
+
+func (h *PTYHandler) isOriginAllowed(normalizedOrigin, host string) bool {
+	for _, allowed := range h.config.WSAllowedOrigins {
+		if normalizedOrigin == allowed {
+			return true
+		}
+	}
+
+	parsed, err := url.Parse(normalizedOrigin)
+	if err != nil {
+		return false
+	}
+
+	return strings.EqualFold(parsed.Host, host)
+}
+
+func (h *PTYHandler) writeOriginError(w http.ResponseWriter, r *http.Request, message string) {
+	slog.Warn(
+		"pty_ws_origin_rejected",
+		"origin", r.Header.Get("Origin"),
+		"host", r.Host,
+		"reason", message,
+	)
+	h.writeError(w, pty.CodeOriginNotAllowed, message, http.StatusForbidden)
 }

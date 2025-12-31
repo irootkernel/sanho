@@ -267,7 +267,9 @@ func TestE2E_PTY_WebSocket(t *testing.T) {
 
 	// 2. Connect via WebSocket
 	dialer := websocket.Dialer{}
-	conn, _, err := dialer.Dial(wsURL, nil)
+	header := http.Header{}
+	header.Set("Origin", baseURL)
+	conn, _, err := dialer.Dial(wsURL, header)
 	if err != nil {
 		t.Fatalf("Failed to connect to WebSocket: %v", err)
 	}
@@ -294,7 +296,7 @@ func TestE2E_PTY_WebSocket(t *testing.T) {
 
 	// 4. Test Single-attach policy
 	dialer2 := websocket.Dialer{} // Use new dialer to be sure
-	_, resp2, err := dialer2.Dial(wsURL, nil)
+	_, resp2, err := dialer2.Dial(wsURL, header)
 	if err == nil {
 		t.Error("Expected second connection to fail, but it succeeded")
 	} else if resp2 != nil && resp2.StatusCode != http.StatusConflict {

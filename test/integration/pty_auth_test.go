@@ -1,6 +1,7 @@
 package integration
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -53,6 +54,7 @@ func TestPTY_WS_Auth(t *testing.T) {
 
 	t.Run("WS Auth missing cookie", func(t *testing.T) {
 		req, _ := http.NewRequest("GET", ts.URL+"/api/pty/sessions/dummy-id/ws", nil)
+		req.Header.Set("Origin", ts.URL)
 		resp, err := client.Do(req)
 		if err != nil {
 			t.Fatalf("Request failed: %v", err)
@@ -61,12 +63,20 @@ func TestPTY_WS_Auth(t *testing.T) {
 
 		if resp.StatusCode != http.StatusUnauthorized {
 			t.Errorf("Expected 401, got %d", resp.StatusCode)
+		}
+		var errResp map[string]string
+		if err := json.NewDecoder(resp.Body).Decode(&errResp); err != nil {
+			t.Fatalf("Failed to decode response: %v", err)
+		}
+		if errResp["error"] != "unauthorized" {
+			t.Errorf("Expected error 'unauthorized', got %q", errResp["error"])
 		}
 	})
 
 	t.Run("WS Auth invalid cookie", func(t *testing.T) {
 		req, _ := http.NewRequest("GET", ts.URL+"/api/pty/sessions/dummy-id/ws", nil)
 		req.AddCookie(&http.Cookie{Name: "auth_token", Value: "wrong-token"})
+		req.Header.Set("Origin", ts.URL)
 		resp, err := client.Do(req)
 		if err != nil {
 			t.Fatalf("Request failed: %v", err)
@@ -76,11 +86,19 @@ func TestPTY_WS_Auth(t *testing.T) {
 		if resp.StatusCode != http.StatusUnauthorized {
 			t.Errorf("Expected 401, got %d", resp.StatusCode)
 		}
+		var errResp map[string]string
+		if err := json.NewDecoder(resp.Body).Decode(&errResp); err != nil {
+			t.Fatalf("Failed to decode response: %v", err)
+		}
+		if errResp["error"] != "unauthorized" {
+			t.Errorf("Expected error 'unauthorized', got %q", errResp["error"])
+		}
 	})
 
 	t.Run("WS Auth success (Session not found)", func(t *testing.T) {
 		req, _ := http.NewRequest("GET", ts.URL+"/api/pty/sessions/dummy-id/ws", nil)
 		req.AddCookie(&http.Cookie{Name: "auth_token", Value: "secret-token"})
+		req.Header.Set("Origin", ts.URL)
 		resp, err := client.Do(req)
 		if err != nil {
 			t.Fatalf("Request failed: %v", err)
@@ -115,6 +133,7 @@ func TestPTY_WS_Auth(t *testing.T) {
 
 		header := http.Header{}
 		header.Add("Cookie", "auth_token=secret-token")
+		header.Set("Origin", ts.URL)
 
 		ws, resp, err := websocket.DefaultDialer.Dial(wsURL, header)
 		if err != nil {
@@ -140,6 +159,16 @@ func TestPTY_WS_Auth(t *testing.T) {
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusUnauthorized {
 			t.Errorf("Expected 401 for HTTP, got %d", resp.StatusCode)
+		}
+		var errResp map[string]string
+		if err := json.NewDecoder(resp.Body).Decode(&errResp); err != nil {
+			t.Fatalf("Failed to decode response: %v", err)
+		}
+		if errResp["error"] != "unauthorized" {
+			t.Errorf("Expected error 'unauthorized', got %q", errResp["error"])
+		}
+		if errResp["message"] != "missing_authorization_header" {
+			t.Errorf("Expected message 'missing_authorization_header', got %q", errResp["message"])
 		}
 	})
 }

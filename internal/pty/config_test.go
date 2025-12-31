@@ -9,6 +9,8 @@ func TestLoadConfigFromEnv_Defaults(t *testing.T) {
 	// Clear any existing env vars and mock SHELL for consistency
 	os.Unsetenv("PTY_ALLOWED_SHELLS")
 	os.Unsetenv("PTY_DEFAULT_SHELL")
+	os.Unsetenv("PTY_WS_ALLOWED_ORIGINS")
+	os.Unsetenv("PTY_DISCONNECT_POLICY")
 	originalShell := os.Getenv("SHELL")
 	os.Setenv("SHELL", "/bin/sh")
 	defer os.Setenv("SHELL", originalShell)
@@ -27,20 +29,8 @@ func TestLoadConfigFromEnv_Defaults(t *testing.T) {
 	if cfg.DefaultRows != 24 {
 		t.Errorf("Expected default rows 24, got %d", cfg.DefaultRows)
 	}
-
-	if cfg.DisconnectPolicy != DisconnectPolicyTerminate {
-		t.Errorf("Expected default disconnect policy %s, got %s", DisconnectPolicyTerminate, cfg.DisconnectPolicy)
-	}
-}
-
-func TestLoadConfigFromEnv_DisconnectPolicy(t *testing.T) {
-	os.Setenv("PTY_DISCONNECT_POLICY", "stay")
-	defer os.Unsetenv("PTY_DISCONNECT_POLICY")
-
-	cfg := LoadConfigFromEnv()
-
-	if cfg.DisconnectPolicy != DisconnectPolicyStay {
-		t.Errorf("Expected disconnect policy stay, got %s", cfg.DisconnectPolicy)
+	if len(cfg.WSAllowedOrigins) != 0 {
+		t.Errorf("Expected no WS allowed origins by default, got %v", cfg.WSAllowedOrigins)
 	}
 }
 
@@ -80,6 +70,26 @@ func TestLoadConfigFromEnv_DefaultShell(t *testing.T) {
 
 	if cfg.DefaultShell != "/bin/zsh" {
 		t.Errorf("Expected default shell /bin/zsh, got %s", cfg.DefaultShell)
+	}
+}
+
+func TestLoadConfigFromEnv_WSAllowedOrigins(t *testing.T) {
+	os.Setenv("PTY_WS_ALLOWED_ORIGINS", "http://localhost:5173, http://127.0.0.1:5173/ ,invalid")
+	defer os.Unsetenv("PTY_WS_ALLOWED_ORIGINS")
+
+	cfg := LoadConfigFromEnv()
+
+	expected := []string{
+		"http://localhost:5173",
+		"http://127.0.0.1:5173",
+	}
+	if len(cfg.WSAllowedOrigins) != len(expected) {
+		t.Fatalf("Expected %d WS allowed origins, got %d", len(expected), len(cfg.WSAllowedOrigins))
+	}
+	for i, origin := range expected {
+		if cfg.WSAllowedOrigins[i] != origin {
+			t.Errorf("Expected origin %s at index %d, got %s", origin, i, cfg.WSAllowedOrigins[i])
+		}
 	}
 }
 

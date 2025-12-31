@@ -68,7 +68,9 @@ func TestE2E_Guardrail_Blocking(t *testing.T) {
 
 	// 2. Connect via WebSocket
 	dialer := websocket.Dialer{}
-	conn, _, err := dialer.Dial(wsURL, nil)
+	header := http.Header{}
+	header.Set("Origin", baseURL)
+	conn, _, err := dialer.Dial(wsURL, header)
 	if err != nil {
 		t.Fatalf("Failed to connect to WebSocket: %v", err)
 	}
@@ -81,16 +83,27 @@ func TestE2E_Guardrail_Blocking(t *testing.T) {
 		t.Fatalf("Failed to write to WS: %v", err)
 	}
 
-	// 4. Expect "Blocked by security policy" in output
-	found := false
+	// 4. Expect "Blocked by security policy" in output and JSON error frame
+	foundBinary := false
+	foundJSON := false
 	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-	for !found {
-		_, p, err := conn.ReadMessage()
+	for !(foundBinary && foundJSON) {
+		msgType, p, err := conn.ReadMessage()
 		if err != nil {
 			t.Fatalf("Failed to read from WS (timeout?): %v", err)
 		}
-		if bytes.Contains(p, []byte("Blocked by security policy")) {
-			found = true
+		if msgType == websocket.BinaryMessage && bytes.Contains(p, []byte("Blocked by security policy")) {
+			foundBinary = true
+			continue
+		}
+		if msgType == websocket.TextMessage {
+			var evt dto.PTYWSEventMessage
+			if err := json.Unmarshal(p, &evt); err != nil {
+				continue
+			}
+			if evt.Type == "error" && evt.Error == "command_blocked" {
+				foundJSON = true
+			}
 		}
 	}
 }

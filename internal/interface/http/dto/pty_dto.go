@@ -39,4 +39,5 @@ type PTYWSEventMessage struct {
 	Type     string `json:"type"` // e.g., "exit", "error"
 	ExitCode int    `json:"exit_code,omitempty"`
 	Error    string `json:"error,omitempty"`
+	Reason   string `json:"reason,omitempty"`
 }

@@ -137,7 +137,8 @@ export const TerminalPane: React.FC<TerminalPaneProps> = React.memo(({ console: 
                             term.writeln(`\r\n\x1b[33mProcess exited with code ${msg.exit_code}\x1b[0m`);
                             updateConsole(activeConsole.consoleId, { status: 'CLOSED' });
                         } else if (msg.type === 'error') {
-                            term.writeln(`\r\n\x1b[31mError: ${msg.error}\x1b[0m`);
+                            const detail = msg.reason ? ` (${msg.reason})` : '';
+                            term.writeln(`\r\n\x1b[31mError: ${msg.error}${detail}\x1b[0m`);
                         }
                     } catch { /* ignore */ }
                 }

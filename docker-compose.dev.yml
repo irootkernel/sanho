@@ -21,6 +21,7 @@ services:
     environment:
       - PORT=${PORT:-5789}
       - STATE_FILE_PATH=${STATE_FILE_PATH:-data/kkachi_state.json}
+      - PTY_WS_ALLOWED_ORIGINS=${PTY_WS_ALLOWED_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
     volumes:
       - .:/app
       - /tmp:/tmp

@@ -163,6 +163,12 @@ v3의 목표는 Web에서 PTY 기반 터미널을 열어 **쉘/AI CLI 실행이 
 - `auth_enabled=true`일 때, 요청 헤더에 유효한 `auth_token` 쿠키가 포함되어야 함.
 - 인증 실패 시 **401 Unauthorized** 반환.
 
+#### Origin 정책
+- 기본: **same-origin**만 허용(요청 Host와 Origin의 host:port 일치).
+- 예외: `PTY_WS_ALLOWED_ORIGINS` allowlist에 포함된 Origin은 허용.
+- `Origin` 헤더가 없거나 `null`이면 거부(403).
+- allowlist는 `http(s)://host[:port]` 형태만 허용(정확 매칭).
+
 #### WS 프레임 규약(권장)
 - **binary frame**: raw bytes
   - client → server: stdin
@@ -181,20 +187,16 @@ v3의 목표는 Web에서 PTY 기반 터미널을 열어 **쉘/AI CLI 실행이 
 
 ##### Error notify (server → client)
 ```json
-{ "type": "error", "error": "command_blocked" }
+{ "type": "error", "error": "command_blocked", "reason": "..." }
 ```
 
 ---
 
 ## 8. 라이프사이클/정리 정책
 
-### 8.1 기본 정책(권장)
-- **terminate_immediately**: WS 연결이 끊기면 즉시 세션 종료
-  - v3는 재연결/복구가 비범위이므로 dangling 세션을 남기지 않는 것이 단순/안전
-
-### 8.2 대안 정책(선택)
-- **idle_timeout**: WS disconnect 후 N초 이내 재attach가 없으면 종료
-  - v3에서는 재attach 자체가 비범위이므로 UX 효익이 작아 선택 옵션으로 둔다.
+### 8.1 disconnect 정책 (v3 고정)
+- WS 연결이 끊기면 **즉시 세션 종료(terminate-only)**.
+- stay/idle timeout 기반 재연결 정책은 v3 비범위.
 
 ### 8.3 프로세스 자연 종료
 - 쉘이 `exit` 등으로 자연 종료되면 서버는:
@@ -214,7 +216,7 @@ v3의 목표는 Web에서 PTY 기반 터미널을 열어 **쉘/AI CLI 실행이 
 - 서버는 stdin best-effort 라인 버퍼링 후 패턴 매칭
 - 매칭 시:
   - 해당 라인을 PTY로 전달하지 않음
-  - 클라이언트에 `command_blocked` 통지
+  - 클라이언트에 `command_blocked` 통지(JSON error + 터미널 출력 안내)
 
 ### 9.3 옵션 토큰 인증(기본 off) 스캐폴딩
 - 서버 설정으로 `auth_enabled=false` 기본

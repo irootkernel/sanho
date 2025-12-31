@@ -271,7 +271,7 @@ func TestPTYHandler_Terminate_Idempotent(t *testing.T) {
 	}
 }
 
-func TestPTYHandler_WS_DisconnectPolicy_Terminate(t *testing.T) {
+func TestPTYHandler_WS_DisconnectTerminatesSession(t *testing.T) {
 	workspaceDir := t.TempDir()
 	sessionManager := pty.NewSessionManager(nil)
 	handler := NewPTYHandler(
@@ -283,9 +283,8 @@ func TestPTYHandler_WS_DisconnectPolicy_Terminate(t *testing.T) {
 			},
 		}},
 		pty.Config{
-			AllowedShells:    []string{"/bin/sh"},
-			DefaultShell:     "/bin/sh",
-			DisconnectPolicy: pty.DisconnectPolicyTerminate,
+			AllowedShells: []string{"/bin/sh"},
+			DefaultShell:  "/bin/sh",
 		},
 		config.AuthConfig{},
 	)
@@ -307,7 +306,9 @@ func TestPTYHandler_WS_DisconnectPolicy_Terminate(t *testing.T) {
 
 	// Connect to WebSocket
 	wsURL := "ws" + server.URL[4:]
-	ws, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	header := http.Header{}
+	header.Set("Origin", server.URL)
+	ws, _, err := websocket.DefaultDialer.Dial(wsURL, header)
 	if err != nil {
 		t.Fatalf("Failed to connect to WS: %v", err)
 	}
@@ -330,57 +331,80 @@ func TestPTYHandler_WS_DisconnectPolicy_Terminate(t *testing.T) {
 	}
 }
 
-func TestPTYHandler_WS_DisconnectPolicy_Stay(t *testing.T) {
-	workspaceDir := t.TempDir()
-	sessionManager := pty.NewSessionManager(nil)
-	handler := NewPTYHandler(
-		sessionManager,
-		&mockWorkspaceLookup{workspaces: map[string]*workspace.Workspace{
-			"test-ws": {
-				ID:        "test-ws",
-				LocalPath: workspaceDir,
-			},
-		}},
-		pty.Config{
-			AllowedShells:    []string{"/bin/sh"},
-			DefaultShell:     "/bin/sh",
-			DisconnectPolicy: pty.DisconnectPolicyStay,
-		},
-		config.AuthConfig{},
-	)
+func TestPTYHandler_WS_OriginRejected(t *testing.T) {
+	handler := newTestPTYHandler(nil)
 
-	// Inject a fake session
-	sessionID := "test-session-stay"
-	session := &pty.Session{
-		ID:          sessionID,
-		WorkspaceID: "test-ws",
-	}
-	sessionManager.AddSession(session)
-
-	// Create a test server for WebSocket
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r.SetPathValue("id", sessionID)
+		r.SetPathValue("id", "dummy")
 		handler.WS(w, r)
 	}))
 	defer server.Close()
 
-	// Connect to WebSocket
-	wsURL := "ws" + server.URL[4:]
-	ws, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	client := server.Client()
+
+	req, err := http.NewRequest(http.MethodGet, server.URL, nil)
 	if err != nil {
-		t.Fatalf("Failed to connect to WS: %v", err)
+		t.Fatalf("Failed to create request: %v", err)
+	}
+	req.Header.Set("Origin", "http://example.com")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("Request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("Expected 403, got %d", resp.StatusCode)
 	}
 
-	// Close WebSocket
-	ws.Close()
+	var errResp dto.PTYErrorResponse
+	if err := json.NewDecoder(resp.Body).Decode(&errResp); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+	if errResp.Error != pty.CodeOriginNotAllowed {
+		t.Errorf("Expected error %q, got %q", pty.CodeOriginNotAllowed, errResp.Error)
+	}
+	if errResp.Message != "origin_not_allowed" {
+		t.Errorf("Expected message 'origin_not_allowed', got %q", errResp.Message)
+	}
+}
 
-	// Wait a bit
-	time.Sleep(50 * time.Millisecond)
+func TestPTYHandler_WS_OriginMissing(t *testing.T) {
+	handler := newTestPTYHandler(nil)
 
-	// Session should still exist
-	_, found := sessionManager.GetSession(sessionID)
-	if !found {
-		t.Error("Session should stay after disconnect when policy is 'stay'")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.SetPathValue("id", "dummy")
+		handler.WS(w, r)
+	}))
+	defer server.Close()
+
+	client := server.Client()
+
+	req, err := http.NewRequest(http.MethodGet, server.URL, nil)
+	if err != nil {
+		t.Fatalf("Failed to create request: %v", err)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("Request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("Expected 403, got %d", resp.StatusCode)
+	}
+
+	var errResp dto.PTYErrorResponse
+	if err := json.NewDecoder(resp.Body).Decode(&errResp); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+	if errResp.Error != pty.CodeOriginNotAllowed {
+		t.Errorf("Expected error %q, got %q", pty.CodeOriginNotAllowed, errResp.Error)
+	}
+	if errResp.Message != "missing_origin_header" {
+		t.Errorf("Expected message 'missing_origin_header', got %q", errResp.Message)
 	}
 }
 
@@ -396,9 +420,8 @@ func TestPTYHandler_WS_ProcessExit(t *testing.T) {
 			},
 		}},
 		pty.Config{
-			AllowedShells:    []string{"/bin/sh"},
-			DefaultShell:     "/bin/sh",
-			DisconnectPolicy: pty.DisconnectPolicyTerminate,
+			AllowedShells: []string{"/bin/sh"},
+			DefaultShell:  "/bin/sh",
 		},
 		config.AuthConfig{},
 	)
@@ -422,7 +445,9 @@ func TestPTYHandler_WS_ProcessExit(t *testing.T) {
 
 	// Connect to WebSocket
 	wsURL := "ws" + server.URL[4:]
-	ws, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	header := http.Header{}
+	header.Set("Origin", server.URL)
+	ws, _, err := websocket.DefaultDialer.Dial(wsURL, header)
 	if err != nil {
 		t.Fatalf("Failed to connect to WS: %v", err)
 	}
