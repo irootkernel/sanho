@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -118,7 +119,12 @@ func (r *GitDocsRepository) PushSnapshot(ctx context.Context, project docs.Proje
 		return docs.DocsPushResult{}, fmt.Errorf("apply snapshot failed: %w", err)
 	}
 
-	// 8. Stage changes
+	// 8. Remove .DS_Store files before staging (macOS Finder metadata)
+	if err := r.removeDSStore(repoPath); err != nil {
+		return docs.DocsPushResult{}, fmt.Errorf("remove .DS_Store failed: %w", err)
+	}
+
+	// 9. Stage changes
 	if err := r.git.AddDocs(ctx, repoPath); err != nil {
 		return docs.DocsPushResult{}, fmt.Errorf("git add failed: %w", err)
 	}
@@ -292,4 +298,25 @@ func (r *GitDocsRepository) Push(ctx context.Context, project docs.ProjectName) 
 		return err
 	}
 	return r.git.Push(ctx, repoConfig.Path)
+}
+
+// removeDSStore recursively removes .DS_Store files from the given root path.
+// It skips the .git directory to avoid modifying Git metadata.
+func (r *GitDocsRepository) removeDSStore(rootPath string) error {
+	return filepath.WalkDir(rootPath, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		// Skip .git directory
+		if d.Name() == ".git" && d.IsDir() {
+			return filepath.SkipDir
+		}
+		// Remove .DS_Store files
+		if d.Name() == ".DS_Store" && !d.IsDir() {
+			if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+				return err
+			}
+		}
+		return nil
+	})
 }

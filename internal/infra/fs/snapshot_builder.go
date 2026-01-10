@@ -56,6 +56,11 @@ func (b *SnapshotBuilder) Build(sourceDir string) ([]byte, error) {
 			return nil
 		}
 
+		// Skip .DS_Store files (macOS Finder metadata)
+		if entry.Name() == ".DS_Store" {
+			return nil
+		}
+
 		// Use path relative to sourceDir to keep archive layout consistent
 		tarPath := filepath.ToSlash(relPath)
 
