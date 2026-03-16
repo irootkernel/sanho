@@ -4,15 +4,10 @@ PORT ?= 5789
 STATE_FILE_PATH ?= data/kkachi_state.json
 E2E_BASE_URL ?= http://127.0.0.1:5789
 SERVER_CMD := ./cmd/server
-DOCKER_IMAGE ?= kkachi-server
-DOCKER_IMAGE_DEV ?= $(DOCKER_IMAGE):dev
-DOCKER_CONTAINER_NAME ?= kkachi-server
-# Mount host temp so in-container git can see host-created temp repos (e2e). Auto-add /var/folders on macOS.
-EXTRA_TMP_MOUNT ?= $(shell if [ -d /var/folders ]; then echo "-v /var/folders:/var/folders"; fi)
 
 .PHONY: test-server-prepare test-server-unit test-server-int test-server-e2e test-server run-server build-server
 
-.PHONY: test-all
+.PHONY: test-all run-server-local run-server-dev-local run-web-local run-local-dev-with-web
 
 # Run server + CLI test pipelines.
 test-all: test-server test-cli
@@ -39,25 +34,64 @@ test-server-e2e:
 # Full test pipeline.
 test-server: test-server-prepare test-server-unit test-server-int test-server-e2e
 
-# Launch the server with optional PORT and STATE_FILE_PATH overrides.
-run-server:
-	docker build --target dev -t $(DOCKER_IMAGE_DEV) .
-	docker rm -f $(DOCKER_CONTAINER_NAME) >/dev/null 2>&1 || true
-	docker run --rm -it \
-		--name $(DOCKER_CONTAINER_NAME) \
-		-p $(PORT):$(PORT) \
-		-e PORT=$(PORT) \
-		-e STATE_FILE_PATH=$(STATE_FILE_PATH) \
-		-v $(CURDIR):/app \
-		-v /tmp:/tmp \
-		-v $(HOME)/.ssh:/root/.ssh:ro \
-		-v $(HOME)/.gitconfig:/root/.gitconfig:ro \
-		$(EXTRA_TMP_MOUNT) \
-		$(DOCKER_IMAGE_DEV)
+# ---- Local Server Development Targets ----
 
-# Build a production image.
-build-server:
-	docker build -t $(DOCKER_IMAGE) .
+# Run server locally (production binary)
+run-server-local: build-server-binary
+	@echo "=== Starting server (production binary) ==="
+	@echo "  Server API: http://localhost:$${PORT:-5789}"
+	@echo "  Web UI:     http://localhost:$${PORT:-5789}"
+	@echo ""
+	@if [ ! -d "$(WEB_DIST_DIR)" ]; then \
+		echo "Warning: $(WEB_DIST_DIR) not found. Web UI will not be available."; \
+		echo "Run 'make build-web' to build web UI."; \
+	fi
+	@mkdir -p data
+	@WEB_DIST_DIR=$(WEB_DIST_DIR) ./bin/server
+
+# Run server locally with hot reload (requires air)
+# Note: Install air first: go install github.com/air-verse/air@latest
+run-server-dev-local:
+	@echo "=== Starting server with hot reload (air) ==="
+	@echo "  Server API: http://localhost:$${PORT:-5789}"
+	@echo "  Web UI:     http://localhost:$${PORT:-5789}"
+	@echo ""
+	@mkdir -p data
+	@if [ ! -d "$(WEB_DIST_DIR)" ]; then \
+		echo "Building web first..."; \
+		$(MAKE) build-web; \
+	fi
+	@WEB_DIST_DIR=$(WEB_DIST_DIR) air
+
+# Start web dev server only
+run-web-local:
+	@echo "=== Starting web dev server ==="
+	@echo "  Web UI: http://localhost:5173"
+	@echo ""
+	@cd $(WEB_DIR) && npm run dev
+
+# Run server with web dev server (local, no Docker)
+# This starts server binary and web dev server in separate processes
+run-local-dev-with-web:
+	@echo "=== Starting kkachi-server + web dev server (Docker-free) ==="
+	@echo "  Server API: http://localhost:$${PORT:-5789}"
+	@echo "  Web UI:     http://localhost:5173"
+	@echo ""
+	@mkdir -p data
+	@# Build web first for production serving
+	@if [ ! -d "$(WEB_DIST_DIR)" ]; then \
+		echo "Building web..."; \
+		$(MAKE) build-web; \
+	fi
+	@# Start server in background, capture PID, and start web dev server
+	@trap 'kill $$$$! 2>/dev/null || true' EXIT; \
+	WEB_DIST_DIR=$(WEB_DIST_DIR) ./bin/server & \
+	SERVER_PID=$$$$!; \
+	echo "Server PID: $$$$SERVER_PID"; \
+	echo ""; \
+	echo "Press Ctrl+C to stop both servers"; \
+	echo ""; \
+	cd $(WEB_DIR) && npm run dev
 
 # ---- CLI Targets ----
 
@@ -77,7 +111,7 @@ build-cli:
 
 # Install the kkachi CLI to $GOPATH/bin.
 install-cli:
-	$(GO) install $(LDFLAGS) $(CLI_CMD)
+	$(GO) build $(LDFLAGS) -o $(shell $(GO) env GOPATH)/bin/kkachi-cli $(CLI_CMD)
 
 # Prepare for CLI tests (build binary first).
 test-cli-prepare: build-cli
@@ -144,18 +178,6 @@ build-server-with-web: build-web build-server-binary
 	@echo "  Web dist:      $(WEB_DIST_DIR)/"
 	@echo ""
 	@echo "To run: WEB_DIST_DIR=$(WEB_DIST_DIR) ./bin/server"
-
-# Run server + web dev server together using Docker Compose
-run-server-with-web:
-	@echo "=== Starting kkachi-server + web dev server ==="
-	@echo "  Server API: http://localhost:$${PORT:-5789}"
-	@echo "  Web UI:     http://localhost:5173"
-	@echo ""
-	docker compose -f docker-compose.dev.yml up --build
-
-# Stop server + web dev server
-stop-server-with-web:
-	docker compose -f docker-compose.dev.yml down
 
 # ---- Web Test Targets ----
 

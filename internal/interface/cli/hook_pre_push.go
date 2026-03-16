@@ -25,7 +25,7 @@ func runPrePushHook(cmd *cobra.Command) error {
 	// Get current working directory
 	cwd, err := os.Getwd()
 	if err != nil {
-		cmd.PrintErrf("kkachi hook pre-push: failed to get current directory: %v\n", err)
+		cmd.PrintErrf("kkachi-cli hook pre-push: failed to get current directory: %v\n", err)
 		return err
 	}
 
@@ -54,7 +54,7 @@ func runPrePushHook(cmd *cobra.Command) error {
 		case errors.Is(err, hook.ErrPrePushPendingFixExists):
 			// Message already printed by output
 		default:
-			cmd.PrintErrf("kkachi hook pre-push: %v\n", err)
+			cmd.PrintErrf("kkachi-cli hook pre-push: %v\n", err)
 		}
 		return err
 	}

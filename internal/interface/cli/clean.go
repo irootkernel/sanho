@@ -121,12 +121,12 @@ func newCleanCmd() *cobra.Command {
 			if !dryRun {
 				cleaner := git.NewHookInstaller()
 				hookLines := map[string]string{
-					"pre-commit":    "kkachi hook pre-commit",
-					"post-checkout": "kkachi hook post-checkout",
-					"post-merge":    "kkachi hook post-merge",
-					"post-rewrite":  "kkachi hook post-rewrite \"$@\"",
-					"pre-push":      "kkachi hook pre-push",
-					"commit-msg":    "kkachi hook commit-msg \"$1\"",
+					"pre-commit":    "kkachi-cli hook pre-commit",
+					"post-checkout": "kkachi-cli hook post-checkout",
+					"post-merge":    "kkachi-cli hook post-merge",
+					"post-rewrite":  "kkachi-cli hook post-rewrite \"$@\"",
+					"pre-push":      "kkachi-cli hook pre-push",
+					"commit-msg":    "kkachi-cli hook commit-msg \"$1\"",
 				}
 				for hookName, line := range hookLines {
 					if err := cleaner.RemoveHookLine(cmd.Context(), cwd, hookName, line); err != nil {

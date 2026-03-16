@@ -76,7 +76,7 @@ func TestE2E_CliClean_RemovesWorkspaceAndLocalFiles(t *testing.T) {
 		t.Fatalf("failed to create hooks dir: %v", err)
 	}
 	hookPath := filepath.Join(hooksDir, "pre-commit")
-	hookContent := "#!/bin/sh\necho keep\nkkachi hook pre-commit\n"
+	hookContent := "#!/bin/sh\necho keep\nkkachi-cli hook pre-commit\n"
 	if err := os.WriteFile(hookPath, []byte(hookContent), 0755); err != nil {
 		t.Fatalf("failed to write hook: %v", err)
 	}
@@ -113,7 +113,7 @@ func TestE2E_CliClean_RemovesWorkspaceAndLocalFiles(t *testing.T) {
 		t.Fatalf("failed to read hook after clean: %v", err)
 	}
 	text := string(data)
-	if strings.Contains(text, "kkachi hook pre-commit") {
+	if strings.Contains(text, "kkachi-cli hook pre-commit") {
 		t.Fatalf("expected kkachi hook line removed, content:\n%s", text)
 	}
 	if !strings.Contains(text, "echo keep") {

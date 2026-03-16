@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/SeventeenthEarth/kkachi/internal/config"
 )
@@ -21,6 +22,9 @@ func NewDocsRepoManager(client *Client) *DocsRepoManager {
 func (m *DocsRepoManager) Sync(ctx context.Context, repos []config.DocsRepoConfig) error {
 	for _, repo := range repos {
 		if _, err := os.Stat(repo.Path); os.IsNotExist(err) {
+			if err := os.MkdirAll(filepath.Dir(repo.Path), 0755); err != nil {
+				return fmt.Errorf("failed to create directory for %s: %w", repo.ID, err)
+			}
 			if err := m.client.Clone(ctx, repo.RepoURL, repo.Path); err != nil {
 				return fmt.Errorf("failed to clone %s: %w", repo.ID, err)
 			}

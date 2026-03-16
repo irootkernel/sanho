@@ -20,7 +20,7 @@ func TestHookInstaller_RemoveHookLine(t *testing.T) {
 	content := strings.Join([]string{
 		"#!/bin/sh",
 		"echo keep-me",
-		"kkachi hook pre-commit",
+		"kkachi-cli hook pre-commit",
 		"echo also-keep",
 		"",
 	}, "\n")
@@ -29,7 +29,7 @@ func TestHookInstaller_RemoveHookLine(t *testing.T) {
 	}
 
 	installer := NewHookInstaller()
-	if err := installer.RemoveHookLine(context.Background(), tempDir, "pre-commit", "kkachi hook pre-commit"); err != nil {
+	if err := installer.RemoveHookLine(context.Background(), tempDir, "pre-commit", "kkachi-cli hook pre-commit"); err != nil {
 		t.Fatalf("RemoveHookLine returned error: %v", err)
 	}
 
@@ -38,7 +38,7 @@ func TestHookInstaller_RemoveHookLine(t *testing.T) {
 		t.Fatalf("failed to read hook file: %v", err)
 	}
 	text := string(data)
-	if strings.Contains(text, "kkachi hook pre-commit") {
+	if strings.Contains(text, "kkachi-cli hook pre-commit") {
 		t.Fatalf("expected kkachi line to be removed, content:\n%s", text)
 	}
 	if !strings.Contains(text, "echo keep-me") || !strings.Contains(text, "echo also-keep") {
@@ -55,13 +55,13 @@ func TestHookInstaller_RemoveHookLine_FileBecomesEmpty(t *testing.T) {
 	}
 
 	hookPath := filepath.Join(hooksDir, "pre-commit")
-	content := "kkachi hook pre-commit\n"
+	content := "kkachi-cli hook pre-commit\n"
 	if err := os.WriteFile(hookPath, []byte(content), 0755); err != nil {
 		t.Fatalf("failed to seed hook file: %v", err)
 	}
 
 	installer := NewHookInstaller()
-	if err := installer.RemoveHookLine(context.Background(), tempDir, "pre-commit", "kkachi hook pre-commit"); err != nil {
+	if err := installer.RemoveHookLine(context.Background(), tempDir, "pre-commit", "kkachi-cli hook pre-commit"); err != nil {
 		t.Fatalf("RemoveHookLine returned error: %v", err)
 	}
 
@@ -77,7 +77,7 @@ func TestHookInstaller_RemoveHookLine_NoFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	installer := NewHookInstaller()
-	if err := installer.RemoveHookLine(context.Background(), tempDir, "pre-commit", "kkachi hook pre-commit"); err != nil {
+	if err := installer.RemoveHookLine(context.Background(), tempDir, "pre-commit", "kkachi-cli hook pre-commit"); err != nil {
 		t.Fatalf("expected no error when hook file is missing, got %v", err)
 	}
 }
@@ -91,13 +91,13 @@ func TestHookInstaller_RemoveHookLine_PreservesPermissions(t *testing.T) {
 	}
 
 	hookPath := filepath.Join(hooksDir, "pre-commit")
-	content := "kkachi hook pre-commit\necho keep\n"
+	content := "kkachi-cli hook pre-commit\necho keep\n"
 	if err := os.WriteFile(hookPath, []byte(content), 0644); err != nil {
 		t.Fatalf("failed to seed hook file: %v", err)
 	}
 
 	installer := NewHookInstaller()
-	if err := installer.RemoveHookLine(context.Background(), tempDir, "pre-commit", "kkachi hook pre-commit"); err != nil {
+	if err := installer.RemoveHookLine(context.Background(), tempDir, "pre-commit", "kkachi-cli hook pre-commit"); err != nil {
 		t.Fatalf("RemoveHookLine returned error: %v", err)
 	}
 
@@ -112,7 +112,7 @@ func TestHookInstaller_RemoveHookLine_PreservesPermissions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to read hook: %v", err)
 	}
-	if strings.Contains(string(data), "kkachi hook pre-commit") {
+	if strings.Contains(string(data), "kkachi-cli hook pre-commit") {
 		t.Fatalf("expected kkachi line removed, got:\n%s", string(data))
 	}
 	if !strings.Contains(string(data), "echo keep") {
@@ -142,7 +142,7 @@ func TestHookInstaller_InstallHook_WithExitAtEnd(t *testing.T) {
 	}
 
 	installer := NewHookInstaller()
-	if err := installer.InstallHook(context.Background(), tempDir, "pre-commit", "kkachi hook pre-commit"); err != nil {
+	if err := installer.InstallHook(context.Background(), tempDir, "pre-commit", "kkachi-cli hook pre-commit"); err != nil {
 		t.Fatalf("InstallHook returned error: %v", err)
 	}
 
@@ -153,12 +153,12 @@ func TestHookInstaller_InstallHook_WithExitAtEnd(t *testing.T) {
 	text := string(data)
 
 	// Verify kkachi line is present
-	if !strings.Contains(text, "kkachi hook pre-commit") {
+	if !strings.Contains(text, "kkachi-cli hook pre-commit") {
 		t.Fatalf("expected kkachi line to be present, content:\n%s", text)
 	}
 
 	// Verify kkachi line comes BEFORE exit 0
-	kkachiIdx := strings.Index(text, "kkachi hook pre-commit")
+	kkachiIdx := strings.Index(text, "kkachi-cli hook pre-commit")
 	exitIdx := strings.Index(text, "exit 0")
 	if kkachiIdx > exitIdx {
 		t.Fatalf("expected kkachi line before exit 0, content:\n%s", text)
@@ -185,7 +185,7 @@ func TestHookInstaller_InstallHook_WithExitSemicolonAtEnd(t *testing.T) {
 	}
 
 	installer := NewHookInstaller()
-	if err := installer.InstallHook(context.Background(), tempDir, "pre-commit", "kkachi hook pre-commit"); err != nil {
+	if err := installer.InstallHook(context.Background(), tempDir, "pre-commit", "kkachi-cli hook pre-commit"); err != nil {
 		t.Fatalf("InstallHook returned error: %v", err)
 	}
 
@@ -195,7 +195,7 @@ func TestHookInstaller_InstallHook_WithExitSemicolonAtEnd(t *testing.T) {
 	}
 	text := string(data)
 
-	kkachiIdx := strings.Index(text, "kkachi hook pre-commit")
+	kkachiIdx := strings.Index(text, "kkachi-cli hook pre-commit")
 	exitIdx := strings.Index(text, "exit;")
 	if kkachiIdx < 0 || exitIdx < 0 {
 		t.Fatalf("expected both kkachi and exit; lines, content:\n%s", text)
@@ -225,7 +225,7 @@ func TestHookInstaller_InstallHook_DoesNotTreatExitPrefixAsExitCommand(t *testin
 	}
 
 	installer := NewHookInstaller()
-	if err := installer.InstallHook(context.Background(), tempDir, "pre-commit", "kkachi hook pre-commit"); err != nil {
+	if err := installer.InstallHook(context.Background(), tempDir, "pre-commit", "kkachi-cli hook pre-commit"); err != nil {
 		t.Fatalf("InstallHook returned error: %v", err)
 	}
 
@@ -237,7 +237,7 @@ func TestHookInstaller_InstallHook_DoesNotTreatExitPrefixAsExitCommand(t *testin
 
 	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
 	lastLine := lines[len(lines)-1]
-	if lastLine != "kkachi hook pre-commit" {
+	if lastLine != "kkachi-cli hook pre-commit" {
 		t.Fatalf("expected kkachi line appended at end, got last line: %q, full content:\n%s", lastLine, text)
 	}
 }
@@ -263,7 +263,7 @@ func TestHookInstaller_InstallHook_WithoutExit(t *testing.T) {
 	}
 
 	installer := NewHookInstaller()
-	if err := installer.InstallHook(context.Background(), tempDir, "pre-commit", "kkachi hook pre-commit"); err != nil {
+	if err := installer.InstallHook(context.Background(), tempDir, "pre-commit", "kkachi-cli hook pre-commit"); err != nil {
 		t.Fatalf("InstallHook returned error: %v", err)
 	}
 
@@ -274,14 +274,14 @@ func TestHookInstaller_InstallHook_WithoutExit(t *testing.T) {
 	text := string(data)
 
 	// Verify kkachi line is present
-	if !strings.Contains(text, "kkachi hook pre-commit") {
+	if !strings.Contains(text, "kkachi-cli hook pre-commit") {
 		t.Fatalf("expected kkachi line to be present, content:\n%s", text)
 	}
 
 	// Verify kkachi line is at the end (after existing content)
 	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
 	lastLine := lines[len(lines)-1]
-	if lastLine != "kkachi hook pre-commit" {
+	if lastLine != "kkachi-cli hook pre-commit" {
 		t.Fatalf("expected kkachi line at end, got last line: %q, full content:\n%s", lastLine, text)
 	}
 }
@@ -300,7 +300,7 @@ func TestHookInstaller_InstallHook_NewFile(t *testing.T) {
 	// No file exists initially
 
 	installer := NewHookInstaller()
-	if err := installer.InstallHook(context.Background(), tempDir, "pre-commit", "kkachi hook pre-commit"); err != nil {
+	if err := installer.InstallHook(context.Background(), tempDir, "pre-commit", "kkachi-cli hook pre-commit"); err != nil {
 		t.Fatalf("InstallHook returned error: %v", err)
 	}
 
@@ -316,7 +316,7 @@ func TestHookInstaller_InstallHook_NewFile(t *testing.T) {
 	}
 
 	// Verify kkachi line is present
-	if !strings.Contains(text, "kkachi hook pre-commit") {
+	if !strings.Contains(text, "kkachi-cli hook pre-commit") {
 		t.Fatalf("expected kkachi line to be present, content:\n%s", text)
 	}
 

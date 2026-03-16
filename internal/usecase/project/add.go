@@ -28,10 +28,7 @@ type AddProjectInput struct {
 }
 
 func (uc *AddProjectUseCase) Execute(ctx context.Context, input AddProjectInput) error {
-	// Determine local path
-	// Use relative path "docs_repos/<id>" for now, or absolute if we had a base dir config.
-	// I'll use "docs_repos/<id>" relative to CWD.
-	repoPath, err := filepath.Abs(filepath.Join("docs_repos", input.DocsRepoID))
+	repoPath, err := filepath.Abs(filepath.Join("data", "docs_repos", input.DocsRepoID))
 	if err != nil {
 		return fmt.Errorf("could not determine absolute path for repo: %w", err)
 	}

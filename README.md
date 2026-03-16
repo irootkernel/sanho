@@ -109,17 +109,38 @@ From these primitives, Kkachi can always answer:
 
 ### 1. Run the server
 
-As a team, you deploy **kkachi-server** once. For local development with hot reload:
+As a team, you deploy **kkachi-server** once. For local development:
 
+**Option 1: Quick start (no hot reload)**
 ```bash
-# Requires Docker
-make server-run
+make build-server-with-web
+make run-server-local
 ```
 
-This builds a dev Docker image and runs the server on port 5789 with hot reload enabled.
+**Option 2: With hot reload (requires air)**
+```bash
+# Install air first
+go install github.com/air-verse/air@latest
 
-For a quick test without Docker:
+# Run with hot reload
+make run-server-dev-local
+```
 
+**Option 3: Separate web dev server + server (recommended for development)**
+```bash
+# Terminal 1: Web dev server (hot reload)
+make run-web-local
+
+# Terminal 2: Server
+make run-server-local
+```
+
+**Option 4: Both servers together**
+```bash
+make run-local-dev-with-web
+```
+
+For a quick test:
 ```bash
 go run ./cmd/server
 ```
@@ -220,8 +241,68 @@ The following is a typical end-to-end flow:
 ### Prerequisites
 
 - **Go** 1.25+
-- **Docker** (for `make server-run`)
+- **Node.js** 22+ (for web UI)
+- **npm** (for web UI)
 - **Git** available in PATH
+
+Optional for hot reload:
+- **air** (`go install github.com/air-verse/air@latest`)
+
+### Development
+
+For local development, use one of these approaches:
+
+**1. Quick development (no hot reload)**
+```bash
+make build-server-with-web
+make run-server-local
+```
+
+**2. With hot reload (requires air)**
+```bash
+make run-server-dev-local
+```
+
+**3. Separate web dev server + server (recommended)**
+```bash
+# Terminal 1
+make run-web-local
+
+# Terminal 2
+make run-server-local
+```
+
+**4. Both servers together**
+```bash
+make run-local-dev-with-web
+```
+
+### Production Deployment
+
+#### Build
+```bash
+make build-server-with-web
+```
+
+This creates:
+- Server binary: `bin/server`
+- Web dist: `web/dist/`
+
+#### Run
+```bash
+# Set environment variables
+export PORT=5789
+export STATE_FILE_PATH=data/kkachi_state.json
+export WEB_DIST_DIR=web/dist
+
+# Run server
+./bin/server
+```
+
+Or use make target:
+```bash
+make run-server-local
+```
 
 ### Environment Variables
 
@@ -237,13 +318,34 @@ The following is a typical end-to-end flow:
 
 ### Makefile Targets
 
+#### Server
 | Target | Description |
 |--------|-------------|
-| `make server-run` | Run dev server with Docker + hot reload |
-| `make server-build` | Build production Docker image |
-| `make server-test` | Run full server test suite |
-| `make cli-build` | Build the kkachi CLI binary |
-| `make cli-install` | Install CLI to `$GOPATH/bin` |
+| `make run-server-local` | Run server (production binary) |
+| `make run-server-dev-local` | Run server with hot reload (requires air) |
+| `make build-server-binary` | Build server binary only |
+| `make build-server-with-web` | Build web + server together |
+
+#### Web
+| Target | Description |
+|--------|-------------|
+| `make run-web-local` | Run web dev server (hot reload) |
+| `make build-web` | Build web UI (production) |
+| `make run-local-dev-with-web` | Run web dev server + server together |
+
+#### Testing
+| Target | Description |
+|--------|-------------|
+| `make test-server` | Run full server test suite |
+| `make test-web` | Run full web test suite |
+| `make test-cli` | Run full CLI test suite |
+| `make test-all` | Run all test suites |
+
+#### CLI
+| Target | Description |
+|--------|-------------|
+| `make build-cli` | Build the kkachi CLI binary |
+| `make install-cli` | Install CLI to `$GOPATH/bin` |
 
 ### Deployment Checklist
 

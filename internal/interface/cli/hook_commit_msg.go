@@ -20,7 +20,7 @@ const commitMsgTimeout = 10 * time.Second
 func runCommitMsgHook(cmd *cobra.Command, args []string) error {
 	// Git passes the message file path as the first argument
 	if len(args) == 0 {
-		cmd.PrintErrln("kkachi hook commit-msg: message file path not provided")
+		cmd.PrintErrln("kkachi-cli hook commit-msg: message file path not provided")
 		return nil // Don't block commit
 	}
 	msgFilePath := args[0]
@@ -31,7 +31,7 @@ func runCommitMsgHook(cmd *cobra.Command, args []string) error {
 	// Get current working directory
 	cwd, err := os.Getwd()
 	if err != nil {
-		cmd.PrintErrf("kkachi hook commit-msg: failed to get current directory: %v\n", err)
+		cmd.PrintErrf("kkachi-cli hook commit-msg: failed to get current directory: %v\n", err)
 		return nil // Don't block commit
 	}
 

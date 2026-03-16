@@ -156,12 +156,12 @@ func (h *HookInstaller) resolveHooksDirViaGit(ctx context.Context, repoPath stri
 // InstallAllHooks installs all kkachi Git hooks.
 func (h *HookInstaller) InstallAllHooks(ctx context.Context, repoPath string) error {
 	hooks := map[string]string{
-		"pre-commit":    "kkachi hook pre-commit",
-		"post-checkout": "kkachi hook post-checkout",
-		"post-merge":    "kkachi hook post-merge",
-		"post-rewrite":  "kkachi hook post-rewrite \"$@\"",
-		"pre-push":      "kkachi hook pre-push",
-		"commit-msg":    "kkachi hook commit-msg \"$1\"",
+		"pre-commit":    "kkachi-cli hook pre-commit",
+		"post-checkout": "kkachi-cli hook post-checkout",
+		"post-merge":    "kkachi-cli hook post-merge",
+		"post-rewrite":  "kkachi-cli hook post-rewrite \"$@\"",
+		"pre-push":      "kkachi-cli hook pre-push",
+		"commit-msg":    "kkachi-cli hook commit-msg \"$1\"",
 	}
 
 	for hookName, line := range hooks {

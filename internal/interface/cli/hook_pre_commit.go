@@ -29,7 +29,7 @@ func runPreCommitHook(cmd *cobra.Command) error {
 	// Get current working directory
 	cwd, err := os.Getwd()
 	if err != nil {
-		cmd.PrintErrf("kkachi hook pre-commit: failed to get current directory: %v\n", err)
+		cmd.PrintErrf("kkachi-cli hook pre-commit: failed to get current directory: %v\n", err)
 		return err
 	}
 
@@ -46,7 +46,7 @@ func runPreCommitHook(cmd *cobra.Command) error {
 	// Load config first to get server URL
 	config, err := configLoader.Load(cwd)
 	if err != nil {
-		cmd.PrintErrf("kkachi hook pre-commit: %v\n", err)
+		cmd.PrintErrf("kkachi-cli hook pre-commit: %v\n", err)
 		cmd.PrintErrf("kkachi configuration is broken or missing (.kkachi.json / .kkachi_docs_hash).\n")
 		return err
 	}
@@ -83,7 +83,7 @@ func runPreCommitHook(cmd *cobra.Command) error {
 		case errors.Is(err, hook.ErrUnknownDocsCommit):
 			// Message already printed by output
 		default:
-			cmd.PrintErrf("kkachi hook pre-commit: %v\n", err)
+			cmd.PrintErrf("kkachi-cli hook pre-commit: %v\n", err)
 		}
 		return err
 	}

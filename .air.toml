@@ -11,3 +11,6 @@ exclude_file = ["**/*_test.go"]
 pre_cmd = ["mkdir -p data"]
 delay = 200
 stop_on_error = true
+
+[env]
+WEB_DIST_DIR = "web/dist"

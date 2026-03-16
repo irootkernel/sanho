@@ -34,7 +34,7 @@ func TestCLIClean_RemovesFilesAndHooks(t *testing.T) {
 		t.Fatal(err)
 	}
 	hookPath := filepath.Join(hooksDir, "pre-commit")
-	hookContent := "#!/bin/sh\necho keep-me\nkkachi hook pre-commit\n"
+	hookContent := "#!/bin/sh\necho keep-me\nkkachi-cli hook pre-commit\n"
 	if err := os.WriteFile(hookPath, []byte(hookContent), 0755); err != nil {
 		t.Fatalf("failed to write hook file: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestCLIClean_RemovesFilesAndHooks(t *testing.T) {
 		t.Fatalf("failed to read hook file: %v", err)
 	}
 	text := string(data)
-	if strings.Contains(text, "kkachi hook pre-commit") {
+	if strings.Contains(text, "kkachi-cli hook pre-commit") {
 		t.Fatalf("expected kkachi hook line removed, content:\n%s", text)
 	}
 	if !strings.Contains(text, "echo keep-me") {
