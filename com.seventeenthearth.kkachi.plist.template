@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.seventeenthearth.kkachi</string>
+
+	<key>Program</key>
+	<string>__KKACHI_ROOT__/run-kkachi.sh</string>
+
+	<key>WorkingDirectory</key>
+	<string>__KKACHI_ROOT__</string>
+
+	<key>RunAtLoad</key>
+	<true/>
+
+	<key>KeepAlive</key>
+	<dict>
+		<key>SuccessfulExit</key>
+		<false/>
+	</dict>
+
+	<key>ThrottleInterval</key>
+	<integer>30</integer>
+
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>PATH</key>
+		<string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+	</dict>
+
+	<key>StandardOutPath</key>
+	<string>__KKACHI_LOG_DIR__/kkachi.out.log</string>
+
+	<key>StandardErrorPath</key>
+	<string>__KKACHI_LOG_DIR__/kkachi.err.log</string>
+</dict>
+</plist>

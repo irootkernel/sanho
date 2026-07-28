@@ -83,15 +83,51 @@ run-local-dev-with-web:
 		echo "Building web..."; \
 		$(MAKE) build-web; \
 	fi
-	@# Start server in background, capture PID, and start web dev server
-	@trap 'kill $$$$! 2>/dev/null || true' EXIT; \
+	@# Build server binary if not present
+	@if [ ! -f "./bin/server" ]; then \
+		$(MAKE) build-server-binary; \
+	fi
+	@if [ ! -x "$(WEB_DIR)/node_modules/.bin/vite" ]; then \
+		cd $(WEB_DIR) && npm ci; \
+	fi
+	@# Start and supervise both processes so launchd can observe either failure.
+	@set -u; \
+	SERVER_PID=""; \
+	WEB_PID=""; \
+	cleanup() { \
+		status=$$?; \
+		trap - EXIT INT TERM; \
+		if [ -n "$$SERVER_PID" ]; then kill "$$SERVER_PID" 2>/dev/null || true; fi; \
+		if [ -n "$$WEB_PID" ]; then kill "$$WEB_PID" 2>/dev/null || true; fi; \
+		if [ -n "$$SERVER_PID" ]; then wait "$$SERVER_PID" 2>/dev/null || true; fi; \
+		if [ -n "$$WEB_PID" ]; then wait "$$WEB_PID" 2>/dev/null || true; fi; \
+		exit "$$status"; \
+	}; \
+	trap cleanup EXIT; \
+	trap 'exit 130' INT; \
+	trap 'exit 143' TERM; \
 	WEB_DIST_DIR=$(WEB_DIST_DIR) ./bin/server & \
-	SERVER_PID=$$$$!; \
-	echo "Server PID: $$$$SERVER_PID"; \
+	SERVER_PID=$$!; \
+	(cd $(WEB_DIR) && exec env WEB_DEV_PORT=$(WEB_DEV_PORT) ./node_modules/.bin/vite) & \
+	WEB_PID=$$!; \
+	echo "Server PID: $$SERVER_PID"; \
+	echo "Web PID:    $$WEB_PID"; \
 	echo ""; \
 	echo "Press Ctrl+C to stop both servers"; \
 	echo ""; \
-	cd $(WEB_DIR) && npm run dev
+	while kill -0 "$$SERVER_PID" 2>/dev/null && kill -0 "$$WEB_PID" 2>/dev/null; do \
+		sleep 1; \
+	done; \
+	status=1; \
+	if ! kill -0 "$$SERVER_PID" 2>/dev/null; then \
+		wait "$$SERVER_PID"; \
+		status=$$?; \
+	else \
+		wait "$$WEB_PID"; \
+		status=$$?; \
+	fi; \
+	if [ "$$status" -eq 0 ]; then status=1; fi; \
+	exit "$$status"
 
 # ---- CLI Targets ----
 
@@ -161,7 +197,7 @@ build-web:
 		exit 1; \
 	fi
 	@echo "Building web UI..."
-	cd $(WEB_DIR) && npm run build
+	cd $(WEB_DIR) && npm ci && npm run build
 	@echo "Web build complete: $(WEB_DIST_DIR)/"
 
 # Build server binary only (without web)
@@ -207,3 +243,72 @@ test-web-e2e: test-web-prepare
 # Full web test pipeline
 .NOTPARALLEL: test-web
 test-web: test-web-prepare test-web-unit test-web-int test-web-e2e
+
+# ---- LaunchAgent Targets ----
+
+LAUNCH_LABEL := com.seventeenthearth.kkachi
+PLIST_NAME := $(LAUNCH_LABEL).plist
+PLIST_TEMPLATE := $(CURDIR)/$(PLIST_NAME).template
+PLIST_DST := $(HOME)/Library/LaunchAgents/$(PLIST_NAME)
+LOG_DIR := $(HOME)/Library/Logs/kkachi
+LAUNCH_DOMAIN := gui/$(shell id -u)
+LAUNCH_SERVICE := $(LAUNCH_DOMAIN)/$(LAUNCH_LABEL)
+
+.PHONY: check-github-ssh install-launchagent status-launchagent uninstall-launchagent
+
+# Verify that the current repository origin is reachable with non-interactive SSH.
+check-github-ssh:
+	@echo "=== Checking GitHub SSH access ==="
+	@GIT_SSH_COMMAND='ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new' \
+		git ls-remote origin HEAD >/dev/null
+	@echo "GitHub SSH access confirmed."
+
+# Install LaunchAgent for auto-start on login
+install-launchagent: check-github-ssh build-server-with-web
+	@echo "=== Installing kkachi LaunchAgent ==="
+	@if [ "$$(uname -s)" != "Darwin" ]; then \
+		echo "Error: LaunchAgent installation is supported only on macOS."; \
+		exit 1; \
+	fi
+	@mkdir -p "$(LOG_DIR)"
+	@mkdir -p "$(HOME)/Library/LaunchAgents"
+	@tmp_plist="$$(mktemp "$${TMPDIR:-/tmp}/kkachi-launchagent.XXXXXX")"; \
+	trap 'rm -f "$$tmp_plist"' EXIT; \
+	cp "$(PLIST_TEMPLATE)" "$$tmp_plist"; \
+	plutil -replace Program -string "$(CURDIR)/run-kkachi.sh" "$$tmp_plist"; \
+	plutil -replace WorkingDirectory -string "$(CURDIR)" "$$tmp_plist"; \
+	plutil -replace StandardOutPath -string "$(LOG_DIR)/kkachi.out.log" "$$tmp_plist"; \
+	plutil -replace StandardErrorPath -string "$(LOG_DIR)/kkachi.err.log" "$$tmp_plist"; \
+	plutil -lint "$$tmp_plist"; \
+	old_pid="$$(launchctl print "$(LAUNCH_SERVICE)" 2>/dev/null | awk '$$1 == "pid" { print $$3; exit }')"; \
+	launchctl bootout "$(LAUNCH_SERVICE)" 2>/dev/null || true; \
+	if [ -n "$$old_pid" ]; then \
+		attempt=0; \
+		while kill -0 "$$old_pid" 2>/dev/null && [ "$$attempt" -lt 50 ]; do \
+			sleep 0.1; \
+			attempt=$$((attempt + 1)); \
+		done; \
+		if kill -0 "$$old_pid" 2>/dev/null; then \
+			echo "Error: previous LaunchAgent process did not stop: $$old_pid"; \
+			exit 1; \
+		fi; \
+	fi; \
+	sleep 1; \
+	install -m 0644 "$$tmp_plist" "$(PLIST_DST)"; \
+	launchctl bootstrap "$(LAUNCH_DOMAIN)" "$(PLIST_DST)"; \
+	launchctl kickstart -k "$(LAUNCH_SERVICE)"
+	@echo "LaunchAgent installed and started."
+	@echo "  Logs: $(LOG_DIR)/"
+	@echo ""
+	@echo "Verify with: make status-launchagent"
+
+# Print LaunchAgent status.
+status-launchagent:
+	@launchctl print "$(LAUNCH_SERVICE)"
+
+# Uninstall LaunchAgent
+uninstall-launchagent:
+	@echo "=== Uninstalling kkachi LaunchAgent ==="
+	@launchctl bootout "$(LAUNCH_SERVICE)" 2>/dev/null || true
+	@rm -f "$(PLIST_DST)"
+	@echo "LaunchAgent uninstalled."

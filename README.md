@@ -347,6 +347,14 @@ make run-server-local
 | `make build-cli` | Build the kkachi CLI binary |
 | `make install-cli` | Install CLI to `$GOPATH/bin` |
 
+#### LaunchAgent (macOS)
+| Target | Description |
+|--------|-------------|
+| `make check-github-ssh` | Verify non-interactive GitHub access before installation |
+| `make install-launchagent` | Install LaunchAgent for auto-start on login |
+| `make status-launchagent` | Show the loaded LaunchAgent status |
+| `make uninstall-launchagent` | Uninstall LaunchAgent |
+
 ### Deployment Checklist
 
 After deploying, verify:
@@ -366,6 +374,50 @@ curl http://localhost:5789/api/state
 
 # API state (v1)
 curl http://localhost:5789/state
+```
+
+---
+
+## Auto-start on macOS Login
+
+Kkachi server can be configured to start automatically when you log in to macOS using a LaunchAgent.
+
+### Install
+
+```bash
+make install-launchagent
+```
+
+The install target:
+
+- verifies non-interactive access to the current Git origin;
+- builds the server and web UI;
+- renders a plist with the current checkout and home-directory paths;
+- installs it under `~/Library/LaunchAgents/`; and
+- starts the service with `launchctl`.
+
+The API server uses port 5789 and the Vite development server uses port 5790 by default. Override `WEB_DEV_PORT` only when an isolated development or test run needs a different port.
+
+The server performs the actual docs repository clone or pull before opening its HTTP port. If the network or SSH credentials are unavailable, startup fails closed and launchd retries after its throttle interval. The launcher does not disable SSH host-key verification or wait forever.
+
+### Verify
+
+```bash
+make status-launchagent
+curl http://localhost:5789/healthz
+curl http://localhost:5790/
+```
+
+### Logs
+
+Logs are written to `~/Library/Logs/kkachi/`:
+- `kkachi.out.log` — standard output
+- `kkachi.err.log` — standard error
+
+### Uninstall
+
+```bash
+make uninstall-launchagent
 ```
 
 ---
