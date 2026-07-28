@@ -1,5 +1,9 @@
 firebase-debug.log
 .DS_Store
+.omx/
+.omc/
+.codex/
+.claude/
 
 .vscode
 data/kkachi_state.json
