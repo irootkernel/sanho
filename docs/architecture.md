@@ -51,6 +51,19 @@ snapshot을 읽기 전에 다음 순서로 clone을 갱신한다.
 
 갱신에 실패하면 stale HEAD를 반환하지 않는다.
 
+## 프로젝트 상태 비교 계약
+
+`GET /projects/{project}/status`는 호출자가 전달한 `workspace_id`와 로컬
+`docs_hash`를 기준으로 같은 프로젝트의 작업공간을 비교한다. daemon은
+작업공간이 해당 프로젝트에 속하는지 확인한 뒤 docs repo 잠금을 한 번
+획득하고 clone도 한 번만 갱신한다.
+
+각 commit은 Git commit object로 먼저 resolve한다. 기준 commit을 찾을 수
+없으면 요청 전체를 `unknown_docs_commit`으로 실패시킨다. 다른 작업공간의
+저장된 commit만 찾을 수 없다면 그 행을 `unknown`으로 반환하고 나머지
+비교는 유지한다. 알려진 commit끼리는 `git rev-list --left-right --count`로
+`same`, `ahead`, `behind`, `diverged` 관계와 양쪽 commit 수를 계산한다.
+
 ## 문서 push 계약
 
 문서 snapshot을 게시하는 동안 같은 repo의 잠금을 끝까지 유지한다.
@@ -85,6 +98,7 @@ state 변경은 메모리의 복사본에 먼저 적용한다. 디스크 저장�
 | `GET` | `/healthz` | daemon 생존 확인 |
 | `POST` | `/projects` | 프로젝트와 docs repo 등록 |
 | `DELETE` | `/projects/{project}` | 프로젝트 삭제 |
+| `GET` | `/projects/{project}/status` | 로컬 docs 기준과 프로젝트 작업공간 비교 |
 | `POST` | `/workspaces/register` | 작업공간 등록 |
 | `DELETE` | `/workspaces/{workspace_id}` | 작업공간 등록 해제 |
 | `GET` | `/docs/head` | 원격 기준 docs HEAD 조회 |

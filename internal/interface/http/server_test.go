@@ -16,7 +16,7 @@ import (
 )
 
 func TestHealthz(t *testing.T) {
-	srv := kkachihttp.NewHTTPServer(kkachihttp.ServerConfig{Addr: ":5789"}, nil, nil, nil, nil, nil, nil)
+	srv := kkachihttp.NewHTTPServer(kkachihttp.ServerConfig{Addr: ":5789"}, nil, nil, nil, nil, nil, nil, nil)
 	ts := httptest.NewServer(srv.Handler)
 	defer ts.Close()
 
@@ -39,7 +39,7 @@ func TestHealthz(t *testing.T) {
 }
 
 func TestRemovedAndUnknownEndpointsReturnJSON404(t *testing.T) {
-	srv := kkachihttp.NewHTTPServer(kkachihttp.ServerConfig{Addr: ":5789"}, nil, nil, nil, nil, nil, nil)
+	srv := kkachihttp.NewHTTPServer(kkachihttp.ServerConfig{Addr: ":5789"}, nil, nil, nil, nil, nil, nil, nil)
 	ts := httptest.NewServer(srv.Handler)
 	defer ts.Close()
 
@@ -102,7 +102,7 @@ func TestStateEndpointRemainsAvailable(t *testing.T) {
 		},
 	}
 	stateHandler := handler.NewStateHandler(mockUC)
-	srv := kkachihttp.NewHTTPServer(kkachihttp.ServerConfig{Addr: ":0"}, nil, nil, nil, nil, nil, stateHandler)
+	srv := kkachihttp.NewHTTPServer(kkachihttp.ServerConfig{Addr: ":0"}, nil, nil, nil, nil, nil, stateHandler, nil)
 	ts := httptest.NewServer(srv.Handler)
 	defer ts.Close()
 

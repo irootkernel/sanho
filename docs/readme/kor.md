@@ -40,11 +40,27 @@ kkachi init \
 ## 일상 작업
 
 ```bash
-kkachi status  # 로컬 기준 commit과 원격 docs HEAD 비교
+kkachi status  # 로컬 기준과 HEAD, 같은 프로젝트 작업공간 비교
 kkachi pull    # 최신 docs snapshot 반영
 kkachi fix     # 충돌을 직접 해결한 뒤 merge 결과 게시
 kkachi state   # 등록된 프로젝트와 작업공간 상태 조회
 ```
+
+`kkachi status`는 현재 작업공간의 전체 docs commit과 HEAD를 보여주고,
+같은 프로젝트에 등록된 모든 작업공간을 현재 로컬
+`.kkachi_docs_hash` 기준으로 비교한다. 관계는 다음과 같다.
+
+- `same`: 같은 docs commit
+- `ahead N`: 대상 작업공간에만 `N`개 commit이 있음
+- `behind N`: 현재 기준에만 `N`개 commit이 있음
+- `diverged +N/-M`: 양쪽에 서로 다른 commit이 있음
+- `unknown`: 저장된 commit을 현재 docs 이력에서 확인할 수 없음
+
+목록은 `ahead`, `same`, `behind`, `diverged`, `unknown` 순으로 표시한다.
+이 비교는 각 애플리케이션 저장소의 branch 상태가 아니라 docs 저장소의
+commit graph를 기준으로 한다. 새 상태 endpoint가 없는 구버전 daemon과
+함께 실행하면 기존 HEAD 비교는 유지하고 작업공간 목록에는 daemon
+업그레이드가 필요하다고 표시한다.
 
 로컬 docs 변경이 있을 때 `kkachi pull`로 덮어쓰려면 명시적으로
 `--force`를 사용해야 한다. 설정만 제거하려면 `kkachi clean`을 사용하고,

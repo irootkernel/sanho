@@ -390,6 +390,127 @@ func setupKkachiConfig(t *testing.T, tempDir, serverURL string) {
 	}
 }
 
+func TestStatusShowsProjectWorkspaceComparisons(t *testing.T) {
+	cliBinary := getCliBinary(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/projects/test-project/status" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.URL.Query().Get("workspace_id") != "test-workspace-123" {
+			t.Errorf("workspace_id = %q", r.URL.Query().Get("workspace_id"))
+		}
+		if r.URL.Query().Get("docs_hash") != "initial-hash-123" {
+			t.Errorf("docs_hash = %q", r.URL.Query().Get("docs_hash"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"project":                "test-project",
+			"reference_workspace_id": "test-workspace-123",
+			"reference_docs_hash":    "initial-hash-123",
+			"docs_head":              "head-hash-456",
+			"reference_to_head": map[string]interface{}{
+				"status": "behind",
+				"ahead":  0,
+				"behind": 2,
+			},
+			"workspaces": []map[string]interface{}{
+				{
+					"workspace_id": "peer-ahead",
+					"repo_url":     "git@github.com:org/ahead.git",
+					"docs_hash":    "ahead-hash-123456",
+					"relative_to_reference": map[string]interface{}{
+						"status": "ahead",
+						"ahead":  2,
+						"behind": 0,
+					},
+					"relative_to_head": map[string]interface{}{
+						"status": "same",
+						"ahead":  0,
+						"behind": 0,
+					},
+				},
+				{
+					"workspace_id": "test-workspace-123",
+					"repo_url":     "https://github.com/org/current.git",
+					"docs_hash":    "initial-hash-123",
+					"relative_to_reference": map[string]interface{}{
+						"status": "same",
+						"ahead":  0,
+						"behind": 0,
+					},
+					"relative_to_head": map[string]interface{}{
+						"status": "behind",
+						"ahead":  0,
+						"behind": 2,
+					},
+				},
+			},
+		})
+	}))
+	defer server.Close()
+
+	tempDir := t.TempDir()
+	setupKkachiConfig(t, tempDir, server.URL)
+	cmd := exec.Command(cliBinary, "status")
+	cmd.Dir = tempDir
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("status failed: %v\n%s", err, output)
+	}
+	text := string(output)
+	for _, expected := range []string{
+		"project       : test-project",
+		"docs head     : head-hash-456",
+		"status        : outdated",
+		"docs relation : behind 2",
+		"ahead 2",
+		"current (current)",
+	} {
+		if !strings.Contains(text, expected) {
+			t.Errorf("output missing %q:\n%s", expected, text)
+		}
+	}
+	if strings.Index(text, "ahead") > strings.Index(text, "current (current)") {
+		t.Errorf("ahead workspace was not listed first:\n%s", text)
+	}
+}
+
+func TestStatusFallsBackToDocsHeadForOlderServer(t *testing.T) {
+	cliBinary := getCliBinary(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/projects/test-project/status":
+			w.WriteHeader(http.StatusNotFound)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "not_found"})
+		case "/docs/head":
+			_ = json.NewEncoder(w).Encode(map[string]string{"head": "initial-hash-123"})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	tempDir := t.TempDir()
+	setupKkachiConfig(t, tempDir, server.URL)
+	cmd := exec.Command(cliBinary, "status")
+	cmd.Dir = tempDir
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("status failed: %v\n%s", err, output)
+	}
+	text := string(output)
+	for _, expected := range []string{
+		"status        : up_to_date",
+		"docs relation : same",
+		"server upgrade required for workspace comparisons",
+	} {
+		if !strings.Contains(text, expected) {
+			t.Errorf("output missing %q:\n%s", expected, text)
+		}
+	}
+}
+
 // TestStateAllWithServerURLOutsideWorkspace verifies state --all --server-url works outside a workspace.
 func TestStateAllWithServerURLOutsideWorkspace(t *testing.T) {
 	cliBinary := getCliBinary(t)

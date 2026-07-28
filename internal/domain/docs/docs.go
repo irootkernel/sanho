@@ -18,6 +18,49 @@ type DocsReadRepository interface {
 	GetSnapshot(ctx context.Context, project ProjectName, commit CommitHash) (DocsSnapshot, CommitHash, error)
 }
 
+// CommitRelationStatus describes how one commit relates to another commit.
+type CommitRelationStatus string
+
+const (
+	CommitRelationSame     CommitRelationStatus = "same"
+	CommitRelationAhead    CommitRelationStatus = "ahead"
+	CommitRelationBehind   CommitRelationStatus = "behind"
+	CommitRelationDiverged CommitRelationStatus = "diverged"
+	CommitRelationUnknown  CommitRelationStatus = "unknown"
+)
+
+// CommitRelation reports commits reachable only from the compared commit
+// (Ahead) and only from the target commit (Behind).
+type CommitRelation struct {
+	Status CommitRelationStatus
+	Ahead  int
+	Behind int
+}
+
+// CommitComparison contains a workspace commit's relationship to the caller's
+// reference commit and to the current docs HEAD.
+type CommitComparison struct {
+	RelativeToReference CommitRelation
+	RelativeToHead      CommitRelation
+}
+
+// ProjectCommitComparison is a consistent comparison snapshot for one project.
+type ProjectCommitComparison struct {
+	Head                 CommitHash
+	ReferenceToHead      CommitRelation
+	WorkspaceComparisons map[CommitHash]CommitComparison
+}
+
+// DocsStatusRepository compares workspace commits in a docs repository.
+type DocsStatusRepository interface {
+	CompareProjectCommits(
+		ctx context.Context,
+		project ProjectName,
+		reference CommitHash,
+		workspaceCommits []CommitHash,
+	) (ProjectCommitComparison, error)
+}
+
 // DocsPushStatus represents the result status of a docs push operation.
 type DocsPushStatus string
 

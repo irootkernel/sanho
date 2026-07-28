@@ -84,6 +84,103 @@ func (r *GitDocsRepository) GetSnapshot(ctx context.Context, project docs.Projec
 	return docs.DocsSnapshot(snapshot), docs.CommitHash(resolvedCommit), nil
 }
 
+func (r *GitDocsRepository) CompareProjectCommits(
+	ctx context.Context,
+	project docs.ProjectName,
+	reference docs.CommitHash,
+	workspaceCommits []docs.CommitHash,
+) (docs.ProjectCommitComparison, error) {
+	repoConfig, err := r.getRepoConfig(project)
+	if err != nil {
+		return docs.ProjectCommitComparison{}, err
+	}
+	repoID := docs.DocsRepoID(repoConfig.ID)
+	if err := r.coordinator.Lock(ctx, repoID); err != nil {
+		return docs.ProjectCommitComparison{}, err
+	}
+	defer r.coordinator.Unlock(repoID)
+
+	if err := refreshRepo(ctx, r.git, repoConfig.Path); err != nil {
+		return docs.ProjectCommitComparison{}, fmt.Errorf("refresh docs repo: %w", err)
+	}
+	head, err := r.git.RevParseHead(ctx, repoConfig.Path)
+	if err != nil {
+		return docs.ProjectCommitComparison{}, fmt.Errorf("rev-parse HEAD failed: %w", err)
+	}
+	resolvedReference, err := r.git.ResolveCommit(ctx, repoConfig.Path, string(reference))
+	if err != nil {
+		if errors.Is(err, ErrUnknownCommit) {
+			return docs.ProjectCommitComparison{}, docs.ErrUnknownDocsCommit
+		}
+		return docs.ProjectCommitComparison{}, err
+	}
+
+	referenceToHead, err := r.compareResolvedCommits(ctx, repoConfig.Path, resolvedReference, head)
+	if err != nil {
+		return docs.ProjectCommitComparison{}, err
+	}
+	result := docs.ProjectCommitComparison{
+		Head:                 docs.CommitHash(head),
+		ReferenceToHead:      referenceToHead,
+		WorkspaceComparisons: make(map[docs.CommitHash]docs.CommitComparison),
+	}
+
+	for _, commit := range workspaceCommits {
+		if _, ok := result.WorkspaceComparisons[commit]; ok {
+			continue
+		}
+		resolved, err := r.git.ResolveCommit(ctx, repoConfig.Path, string(commit))
+		if err != nil {
+			if errors.Is(err, ErrUnknownCommit) {
+				unknown := docs.CommitRelation{Status: docs.CommitRelationUnknown}
+				result.WorkspaceComparisons[commit] = docs.CommitComparison{
+					RelativeToReference: unknown,
+					RelativeToHead:      unknown,
+				}
+				continue
+			}
+			return docs.ProjectCommitComparison{}, err
+		}
+
+		toReference, err := r.compareResolvedCommits(ctx, repoConfig.Path, resolved, resolvedReference)
+		if err != nil {
+			return docs.ProjectCommitComparison{}, err
+		}
+		toHead, err := r.compareResolvedCommits(ctx, repoConfig.Path, resolved, head)
+		if err != nil {
+			return docs.ProjectCommitComparison{}, err
+		}
+		result.WorkspaceComparisons[commit] = docs.CommitComparison{
+			RelativeToReference: toReference,
+			RelativeToHead:      toHead,
+		}
+	}
+	return result, nil
+}
+
+func (r *GitDocsRepository) compareResolvedCommits(
+	ctx context.Context,
+	repoPath string,
+	left string,
+	right string,
+) (docs.CommitRelation, error) {
+	ahead, behind, err := r.git.CompareCommits(ctx, repoPath, left, right)
+	if err != nil {
+		return docs.CommitRelation{}, err
+	}
+
+	status := docs.CommitRelationSame
+	switch {
+	case ahead > 0 && behind > 0:
+		status = docs.CommitRelationDiverged
+	case ahead > 0:
+		status = docs.CommitRelationAhead
+	case behind > 0:
+		status = docs.CommitRelationBehind
+	}
+	return docs.CommitRelation{Status: status, Ahead: ahead, Behind: behind}, nil
+}
+
 func (r *GitDocsRepository) PushSnapshot(ctx context.Context, project docs.ProjectName, base docs.CommitHash, snapshot docs.DocsSnapshot, actorEmail string) (docs.DocsPushResult, error) {
 	repoConfig, err := r.getRepoConfig(project)
 	if err != nil {

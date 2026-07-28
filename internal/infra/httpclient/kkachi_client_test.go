@@ -265,3 +265,73 @@ func TestHTTPClient_GetState_Success(t *testing.T) {
 		t.Errorf("expected 1 workspace, got %d", len(resp.Workspaces))
 	}
 }
+
+func TestHTTPClientGetProjectStatus(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/projects/test-project/status" {
+			t.Errorf("path = %q", r.URL.Path)
+		}
+		if r.URL.Query().Get("workspace_id") != "ws-1" || r.URL.Query().Get("docs_hash") != "base" {
+			t.Errorf("query = %v", r.URL.Query())
+		}
+		_ = json.NewEncoder(w).Encode(ProjectStatusResponse{
+			Project:              "test-project",
+			ReferenceWorkspaceID: "ws-1",
+			ReferenceDocsHash:    "base",
+			DocsHead:             "head",
+			ReferenceToHead: CommitRelation{
+				Status: docs.CommitRelationBehind,
+				Behind: 1,
+			},
+			Workspaces: []ProjectStatusWorkspace{{
+				WorkspaceID: "ws-2",
+				DocsHash:    "head",
+				RelativeToReference: CommitRelation{
+					Status: docs.CommitRelationAhead,
+					Ahead:  1,
+				},
+			}},
+		})
+	}))
+	defer server.Close()
+
+	client := NewHTTPClient(server.URL)
+	response, err := client.GetProjectStatus(context.Background(), "test-project", "ws-1", "base")
+	if err != nil {
+		t.Fatalf("GetProjectStatus() error = %v", err)
+	}
+	if response.DocsHead != "head" || response.ReferenceToHead.Behind != 1 {
+		t.Fatalf("response = %#v", response)
+	}
+	if len(response.Workspaces) != 1 || response.Workspaces[0].RelativeToReference.Status != docs.CommitRelationAhead {
+		t.Fatalf("workspaces = %#v", response.Workspaces)
+	}
+}
+
+func TestHTTPClientGetProjectStatusProjectMismatch(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "workspace_project_mismatch"})
+	}))
+	defer server.Close()
+
+	client := NewHTTPClient(server.URL)
+	_, err := client.GetProjectStatus(context.Background(), "test-project", "ws-1", "base")
+	if !errors.Is(err, ErrWorkspaceProjectMismatch) {
+		t.Fatalf("GetProjectStatus() error = %v, want workspace project mismatch", err)
+	}
+}
+
+func TestHTTPClientGetProjectStatusEndpointNotFound(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "not_found"})
+	}))
+	defer server.Close()
+
+	client := NewHTTPClient(server.URL)
+	_, err := client.GetProjectStatus(context.Background(), "test-project", "ws-1", "base")
+	if !errors.Is(err, ErrEndpointNotFound) {
+		t.Fatalf("GetProjectStatus() error = %v, want endpoint not found", err)
+	}
+}

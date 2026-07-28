@@ -30,12 +30,16 @@ var (
 	ErrUnknownProject = errors.New("project not registered on server")
 	// ErrUnknownWorkspace is returned when the server responds with unknown_workspace.
 	ErrUnknownWorkspace = errors.New("workspace not registered on server")
+	// ErrWorkspaceProjectMismatch is returned when a workspace belongs to another project.
+	ErrWorkspaceProjectMismatch = errors.New("workspace belongs to another project")
 	// ErrUnknownDocsCommit is returned when the server responds with unknown_docs_commit.
 	ErrUnknownDocsCommit = errors.New("docs commit not found in history")
 	// ErrDocsRepoBusy is returned when the docs repo is being updated by another request.
 	ErrDocsRepoBusy = errors.New("docs repo is busy")
 	// ErrProjectHasWorkspaces is returned when trying to delete a project with workspaces.
 	ErrProjectHasWorkspaces = errors.New("project has registered workspaces")
+	// ErrEndpointNotFound is returned when the server does not expose an endpoint.
+	ErrEndpointNotFound = errors.New("server endpoint not found")
 	// ErrServerError is returned for non-specific server errors.
 	ErrServerError = errors.New("server error")
 )
@@ -101,6 +105,34 @@ type WorkspaceSummary struct {
 	LastActorEmail string  `json:"last_actor_email"`
 }
 
+type CommitRelation struct {
+	Status docs.CommitRelationStatus `json:"status"`
+	Ahead  int                       `json:"ahead"`
+	Behind int                       `json:"behind"`
+}
+
+type ProjectStatusWorkspace struct {
+	WorkspaceID         string         `json:"workspace_id"`
+	Project             string         `json:"project"`
+	DocsRepoID          string         `json:"docs_repo_id"`
+	LocalPath           string         `json:"local_path"`
+	RepoURL             string         `json:"repo_url"`
+	DocsHash            string         `json:"docs_hash"`
+	LastReportedAt      *string        `json:"last_reported_at,omitempty"`
+	LastActorEmail      string         `json:"last_actor_email"`
+	RelativeToReference CommitRelation `json:"relative_to_reference"`
+	RelativeToHead      CommitRelation `json:"relative_to_head"`
+}
+
+type ProjectStatusResponse struct {
+	Project              string                   `json:"project"`
+	ReferenceWorkspaceID string                   `json:"reference_workspace_id"`
+	ReferenceDocsHash    string                   `json:"reference_docs_hash"`
+	DocsHead             string                   `json:"docs_head"`
+	ReferenceToHead      CommitRelation           `json:"reference_to_head"`
+	Workspaces           []ProjectStatusWorkspace `json:"workspaces"`
+}
+
 // ---- Client Interface ----
 
 // KkachiClient defines the interface for communicating with kkachi-server.
@@ -119,6 +151,14 @@ type KkachiClient interface {
 
 	// GetState retrieves the server state (optionally filtered by project).
 	GetState(ctx context.Context, project *docs.ProjectName) (StateResponse, error)
+
+	// GetProjectStatus compares all project workspaces to the caller's local docs hash.
+	GetProjectStatus(
+		ctx context.Context,
+		project docs.ProjectName,
+		workspaceID workspace.WorkspaceID,
+		docsHash docs.CommitHash,
+	) (ProjectStatusResponse, error)
 
 	// CreateOrUpdateProject creates or updates a project on the server.
 	CreateOrUpdateProject(ctx context.Context, req CreateProjectRequest) error
@@ -363,6 +403,42 @@ func (c *HTTPClient) GetState(ctx context.Context, project *docs.ProjectName) (S
 	return result, nil
 }
 
+func (c *HTTPClient) GetProjectStatus(
+	ctx context.Context,
+	project docs.ProjectName,
+	workspaceID workspace.WorkspaceID,
+	docsHash docs.CommitHash,
+) (ProjectStatusResponse, error) {
+	query := url.Values{}
+	query.Set("workspace_id", string(workspaceID))
+	query.Set("docs_hash", string(docsHash))
+	reqURL := fmt.Sprintf(
+		"%s/projects/%s/status?%s",
+		c.baseURL,
+		url.PathEscape(string(project)),
+		query.Encode(),
+	)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	if err != nil {
+		return ProjectStatusResponse{}, fmt.Errorf("failed to create request: %w", err)
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return ProjectStatusResponse{}, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if err := c.checkError(resp); err != nil {
+		return ProjectStatusResponse{}, err
+	}
+	var result ProjectStatusResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return ProjectStatusResponse{}, fmt.Errorf("failed to decode response: %w", err)
+	}
+	return result, nil
+}
+
 // CreateOrUpdateProject implements KkachiClient.CreateOrUpdateProject.
 func (c *HTTPClient) CreateOrUpdateProject(ctx context.Context, req CreateProjectRequest) error {
 	body, err := json.Marshal(req)
@@ -441,12 +517,16 @@ func (c *HTTPClient) checkError(resp *http.Response) error {
 			return ErrUnknownProject
 		case "unknown_workspace", "workspace_not_found":
 			return ErrUnknownWorkspace
+		case "workspace_project_mismatch":
+			return ErrWorkspaceProjectMismatch
 		case "unknown_docs_commit":
 			return ErrUnknownDocsCommit
 		case "docs_repo_busy":
 			return ErrDocsRepoBusy
 		case "project_has_workspaces":
 			return ErrProjectHasWorkspaces
+		case "not_found":
+			return ErrEndpointNotFound
 		default:
 			return fmt.Errorf("%w: %s (status %d)", ErrServerError, errResp.Error, resp.StatusCode)
 		}

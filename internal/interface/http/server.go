@@ -20,6 +20,7 @@ func NewHTTPServer(
 	docsSnapshotHandler *handler.DocsSnapshotHandler,
 	docsPushHandler *handler.DocsPushHandler,
 	stateHandler *handler.StateHandler,
+	projectStatusHandler *handler.ProjectStatusHandler,
 ) *http.Server {
 	mux := http.NewServeMux()
 
@@ -48,6 +49,9 @@ func NewHTTPServer(
 	}
 	if stateHandler != nil {
 		mux.Handle("GET /state", stateHandler)
+	}
+	if projectStatusHandler != nil {
+		mux.Handle("GET /projects/{project}/status", projectStatusHandler)
 	}
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {

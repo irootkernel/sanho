@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -77,13 +78,15 @@ func TestIntegration_Server(t *testing.T) {
 
 	workspaceRepo := state.NewFileWorkspaceRepository(stateRepo)
 	registerWorkspaceUC := workspace.NewRegisterWorkspaceUseCase(docsRepo, workspaceRepo, stateRepo, nil)
+	getProjectStatusUC := project.NewGetProjectStatusUseCase(workspaceRepo, docsRepo)
 
 	projectHandler := handler.NewProjectHandler(deleteProjectUC, addProjectUC)
 	workspaceHandler := handler.NewWorkspaceHandler(deleteWorkspaceUC, registerWorkspaceUC)
 	docsHeadHandler := handler.NewDocsHeadHandler(getDocsHeadUC)
 	docsSnapshotHandler := handler.NewDocsSnapshotHandler(getDocsSnapshotUC)
+	projectStatusHandler := handler.NewProjectStatusHandler(getProjectStatusUC)
 
-	srv := kkachihttp.NewHTTPServer(kkachihttp.ServerConfig{Addr: ":0"}, projectHandler, workspaceHandler, docsHeadHandler, docsSnapshotHandler, nil, nil)
+	srv := kkachihttp.NewHTTPServer(kkachihttp.ServerConfig{Addr: ":0"}, projectHandler, workspaceHandler, docsHeadHandler, docsSnapshotHandler, nil, nil, projectStatusHandler)
 	ts := httptest.NewServer(srv.Handler)
 	defer ts.Close()
 
@@ -192,7 +195,36 @@ func TestIntegration_Server(t *testing.T) {
 		t.Fatal("Expected snapshot data, got empty")
 	}
 
-	// 8. Test: Delete Project without force (should fail due to workspace)
+	// 8. Test: Compare the registered workspace's base with the new docs HEAD.
+	statusURL := ts.URL + "/projects/test-project/status?workspace_id=" +
+		url.QueryEscape(regResp["workspace_id"]) + "&docs_hash=" + url.QueryEscape(expectedHead)
+	resp, err = client.Get(statusURL)
+	if err != nil {
+		t.Fatalf("Failed to get project status: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		var body bytes.Buffer
+		body.ReadFrom(resp.Body)
+		t.Fatalf("ProjectStatus status: %d, body: %s", resp.StatusCode, body.String())
+	}
+	var statusResp dto.ProjectStatusResponse
+	if err := json.NewDecoder(resp.Body).Decode(&statusResp); err != nil {
+		t.Fatalf("failed to decode project status response: %v", err)
+	}
+	resp.Body.Close()
+	if statusResp.DocsHead != newHead {
+		t.Errorf("Expected project status head %s, got %s", newHead, statusResp.DocsHead)
+	}
+	if statusResp.ReferenceToHead.Status != "behind" || statusResp.ReferenceToHead.Behind != 1 {
+		t.Errorf("Expected reference behind HEAD by 1, got %#v", statusResp.ReferenceToHead)
+	}
+	if len(statusResp.Workspaces) != 1 ||
+		statusResp.Workspaces[0].RelativeToReference.Status != "same" ||
+		statusResp.Workspaces[0].RelativeToHead.Behind != 1 {
+		t.Errorf("Unexpected workspace comparisons: %#v", statusResp.Workspaces)
+	}
+
+	// 9. Test: Delete Project without force (should fail due to workspace)
 	req, _ := http.NewRequest(http.MethodDelete, ts.URL+"/projects/test-project", nil)
 	resp, err = client.Do(req)
 	if err != nil {
@@ -218,7 +250,7 @@ func TestIntegration_Server(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	// 9. Test: Delete Project with force (P0-4)
+	// 10. Test: Delete Project with force (P0-4)
 	req, _ = http.NewRequest(http.MethodDelete, ts.URL+"/projects/test-project?force=true", nil)
 	resp, err = client.Do(req)
 	if err != nil {
@@ -241,7 +273,7 @@ func TestIntegration_Server(t *testing.T) {
 		t.Errorf("Expected error unknown_project, got %s", errResp["error"])
 	}
 
-	// 10. Test: /healthz endpoint
+	// 11. Test: /healthz endpoint
 	resp, err = client.Get(ts.URL + "/healthz")
 	if err != nil {
 		t.Fatalf("Failed to get /healthz: %v", err)

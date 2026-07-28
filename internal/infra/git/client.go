@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"strconv"
 	"strings"
 )
 
@@ -90,6 +91,30 @@ func (c *Client) ResolveCommit(ctx context.Context, path string, commit string) 
 		return "", fmt.Errorf("failed to run git rev-parse to resolve commit: %w\n%s", err, string(out))
 	}
 	return strings.TrimSpace(string(out)), nil
+}
+
+// CompareCommits returns the number of commits reachable only from left and
+// only from right. Both arguments must already be resolved commit hashes.
+func (c *Client) CompareCommits(ctx context.Context, path, left, right string) (int, int, error) {
+	cmd := exec.CommandContext(ctx, "git", "-C", path, "rev-list", "--left-right", "--count", left+"..."+right)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return 0, 0, fmt.Errorf("git rev-list failed: %w\n%s", err, string(out))
+	}
+
+	fields := strings.Fields(string(out))
+	if len(fields) != 2 {
+		return 0, 0, fmt.Errorf("unexpected git rev-list output: %q", strings.TrimSpace(string(out)))
+	}
+	ahead, err := strconv.Atoi(fields[0])
+	if err != nil {
+		return 0, 0, fmt.Errorf("parse ahead count %q: %w", fields[0], err)
+	}
+	behind, err := strconv.Atoi(fields[1])
+	if err != nil {
+		return 0, 0, fmt.Errorf("parse behind count %q: %w", fields[1], err)
+	}
+	return ahead, behind, nil
 }
 
 func (c *Client) ArchiveDocs(ctx context.Context, path string, commit string) ([]byte, error) {
