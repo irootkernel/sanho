@@ -11,6 +11,12 @@ export default defineConfig(({ mode }) => {
   // - Docker: VITE_KKACHI_API_URL (e.g., http://server:5789)
   // - Local: localhost:5789
   const proxyTarget = env.VITE_KKACHI_API_URL || 'http://localhost:5789'
+  const webDevPortValue = process.env.WEB_DEV_PORT || env.WEB_DEV_PORT || '5790'
+  const webDevPort = Number(webDevPortValue)
+
+  if (!Number.isInteger(webDevPort) || webDevPort < 1 || webDevPort > 65535) {
+    throw new Error(`WEB_DEV_PORT must be an integer between 1 and 65535: ${webDevPortValue}`)
+  }
 
   return {
     plugins: [react()],
@@ -20,6 +26,8 @@ export default defineConfig(({ mode }) => {
       },
     },
     server: {
+      port: webDevPort,
+      strictPort: true,
       proxy: {
         // Proxy /api requests to the kkachi-server
         // Web always calls /api/state, server receives /api/state as-is

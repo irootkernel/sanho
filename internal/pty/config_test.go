@@ -74,14 +74,14 @@ func TestLoadConfigFromEnv_DefaultShell(t *testing.T) {
 }
 
 func TestLoadConfigFromEnv_WSAllowedOrigins(t *testing.T) {
-	os.Setenv("PTY_WS_ALLOWED_ORIGINS", "http://localhost:5173, http://127.0.0.1:5173/ ,invalid")
+	os.Setenv("PTY_WS_ALLOWED_ORIGINS", "http://localhost:5790, http://127.0.0.1:5790/ ,invalid")
 	defer os.Unsetenv("PTY_WS_ALLOWED_ORIGINS")
 
 	cfg := LoadConfigFromEnv()
 
 	expected := []string{
-		"http://localhost:5173",
-		"http://127.0.0.1:5173",
+		"http://localhost:5790",
+		"http://127.0.0.1:5790",
 	}
 	if len(cfg.WSAllowedOrigins) != len(expected) {
 		t.Fatalf("Expected %d WS allowed origins, got %d", len(expected), len(cfg.WSAllowedOrigins))

@@ -1,11 +1,20 @@
 import { defineConfig, devices } from '@playwright/test'
 
+const webDevPortValue = process.env.WEB_DEV_PORT || '5790'
+const webDevPort = Number(webDevPortValue)
+
+if (!Number.isInteger(webDevPort) || webDevPort < 1 || webDevPort > 65535) {
+    throw new Error(`WEB_DEV_PORT must be an integer between 1 and 65535: ${webDevPortValue}`)
+}
+
+const webServerURL = `http://localhost:${webDevPort}`
+
 /**
  * Playwright configuration for E2E tests.
  * 
  * Prerequisites:
  * - kkachi-server must be running on port 5789
- * - kkachi-web must be running on port 5173
+ * - kkachi-web must be running on port 5790
  * 
  * Quick start: `make run-server-with-web` in one terminal, then `make test-web-e2e`
  * 
@@ -29,7 +38,7 @@ export default defineConfig({
     // Shared settings for all the projects below
     use: {
         // Base URL for web frontend (distinct from KKACHI_E2E_BASE_URL used for server tests)
-        baseURL: process.env.WEB_E2E_BASE_URL || 'http://localhost:5173',
+        baseURL: process.env.WEB_E2E_BASE_URL || webServerURL,
         // Collect trace when retrying the failed test
         trace: 'on-first-retry',
         // Capture screenshot on failure
@@ -51,7 +60,10 @@ export default defineConfig({
     webServer: [
         {
             command: 'npm run dev',
-            url: 'http://localhost:5173',
+            url: webServerURL,
+            env: {
+                WEB_DEV_PORT: String(webDevPort),
+            },
             reuseExistingServer: !process.env.CI,
             timeout: 30000,
         },

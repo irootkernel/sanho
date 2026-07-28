@@ -66,16 +66,16 @@ run-server-dev-local:
 # Start web dev server only
 run-web-local:
 	@echo "=== Starting web dev server ==="
-	@echo "  Web UI: http://localhost:5173"
+	@echo "  Web UI: http://localhost:$(WEB_DEV_PORT)"
 	@echo ""
-	@cd $(WEB_DIR) && npm run dev
+	@cd $(WEB_DIR) && WEB_DEV_PORT=$(WEB_DEV_PORT) npm run dev
 
 # Run server with web dev server (local, no Docker)
 # This starts server binary and web dev server in separate processes
 run-local-dev-with-web:
 	@echo "=== Starting kkachi-server + web dev server (Docker-free) ==="
 	@echo "  Server API: http://localhost:$${PORT:-5789}"
-	@echo "  Web UI:     http://localhost:5173"
+	@echo "  Web UI:     http://localhost:$(WEB_DEV_PORT)"
 	@echo ""
 	@mkdir -p data
 	@# Build web first for production serving
@@ -137,13 +137,14 @@ test-cli: test-cli-prepare test-cli-unit test-cli-int test-cli-e2e
 
 WEB_DIR := web
 WEB_DIST_DIR := $(WEB_DIR)/dist
+WEB_DEV_PORT ?= 5790
 
 .PHONY: run-web run-server-with-web check-web build-web build-server-binary build-server-with-web
 
 # Run web dev server (local, requires Node.js)
 run-web:
 	@echo "Starting web dev server..."
-	cd $(WEB_DIR) && npm run dev
+	cd $(WEB_DIR) && WEB_DEV_PORT=$(WEB_DEV_PORT) npm run dev
 
 # Check if web dist exists
 check-web:
@@ -199,7 +200,7 @@ test-web-int: test-web-prepare
 	cd $(WEB_DIR) && npm run test:int
 
 # Run web E2E tests (requires server + web running)
-# Note: E2E tests expect kkachi-server on port 5789 and web on port 5173
+# Note: E2E tests expect kkachi-server on port 5789 and web on port 5790
 test-web-e2e: test-web-prepare
 	cd $(WEB_DIR) && npm run test:e2e
 
