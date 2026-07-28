@@ -174,8 +174,11 @@ func TestDocsPush_Integration(t *testing.T) {
 	})
 
 	// Get new HEAD after first push from server's clone
-	serverRepoPath := filepath.Join("docs_repos", "test-repo")
-	newHead := strings.TrimSpace(string(runGitCmdOutput(t, serverRepoPath, "rev-parse", "HEAD")))
+	serverRepo, ok := stateRepo.GetDocsRepo("test-repo")
+	if !ok {
+		t.Fatal("Expected test-repo to be registered")
+	}
+	newHead := strings.TrimSpace(string(runGitCmdOutput(t, serverRepo.Path, "rev-parse", "HEAD")))
 
 	// Test 2: Push identical content -> nochange
 	t.Run("Push identical content - NoChange", func(t *testing.T) {
