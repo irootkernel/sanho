@@ -23,7 +23,9 @@ import (
 
 // newStatusCmd creates the status command.
 func newStatusCmd() *cobra.Command {
-	return &cobra.Command{
+	var jsonOutput bool
+
+	cmd := &cobra.Command{
 		Use:   "status",
 		Short: "Show the current docs synchronization status",
 		Long: `Display the current workspace docs status including:
@@ -41,7 +43,7 @@ func newStatusCmd() *cobra.Command {
 			// Get current working directory
 			cwd, err := os.Getwd()
 			if err != nil {
-				return fmt.Errorf("failed to get current directory: %w", err)
+				return withErrorCode("internal_error", fmt.Errorf("failed to get current directory: %w", err))
 			}
 
 			// Step 1: Load .kkachi.json
@@ -49,9 +51,12 @@ func newStatusCmd() *cobra.Command {
 			config, err := configLoader.Load(cwd)
 			if err != nil {
 				if errors.Is(err, fs.ErrConfigNotFound) {
-					return errors.New("this directory is not a kkachi workspace. Run 'kkachi init' first")
+					return withErrorCode(
+						"not_in_workspace",
+						errors.New("this directory is not a kkachi workspace. Run 'kkachi init' first"),
+					)
 				}
-				return fmt.Errorf("failed to load config: %w", err)
+				return withErrorCode("invalid_workspace_config", fmt.Errorf("failed to load config: %w", err))
 			}
 
 			// Step 2: Load .kkachi_docs_hash
@@ -60,9 +65,12 @@ func newStatusCmd() *cobra.Command {
 			localHash, err := hashStore.Read(hashPath)
 			if err != nil {
 				if errors.Is(err, fs.ErrHashFileNotFound) {
-					return errors.New("docs hash file not found. Workspace may be corrupted. Try 'kkachi init --force'")
+					return withErrorCode(
+						"docs_hash_not_found",
+						errors.New("docs hash file not found. Workspace may be corrupted. Try 'kkachi init --force'"),
+					)
 				}
-				return fmt.Errorf("failed to read docs hash file: %w", err)
+				return withErrorCode("docs_hash_read_failed", fmt.Errorf("failed to read docs hash file: %w", err))
 			}
 
 			// Step 3: Check pending fix state
@@ -70,19 +78,24 @@ func newStatusCmd() *cobra.Command {
 			pendingFixPath := filepath.Join(cwd, config.PendingFixFile)
 			pendingFixState, hasPendingFix, err := pendingFixStore.Read(pendingFixPath)
 			if err != nil {
-				return fmt.Errorf("failed to read pending fix state: %w", err)
+				return withErrorCode("pending_fix_read_failed", fmt.Errorf("failed to read pending fix state: %w", err))
 			}
 
 			// Step 4: Check for conflict markers in docs
 			var hasConflicts bool
-			var conflictFiles []string
+			conflictFiles := make([]string, 0)
+			conflictScanStatus := "complete"
 			docsPath := filepath.Join(cwd, config.DocsDir)
 			if _, err := os.Stat(docsPath); err == nil {
 				conflictDetector := merge.NewFileConflictDetector()
 				conflictFiles, err = conflictDetector.DetectConflicts(docsPath)
 				if err != nil {
+					conflictScanStatus = "unavailable"
+					conflictFiles = make([]string, 0)
 					// Log warning but continue
-					cmd.PrintErrf("Warning: failed to scan for conflicts: %v\n", err)
+					if !jsonOutput {
+						cmd.PrintErrf("Warning: failed to scan for conflicts: %v\n", err)
+					}
 				}
 				hasConflicts = len(conflictFiles) > 0
 			}
@@ -128,20 +141,45 @@ func newStatusCmd() *cobra.Command {
 				serverHeadStr = "(unavailable)"
 				switch {
 				case errors.Is(err, httpclient.ErrUnknownProject):
-					cmd.PrintErrf("Warning: project '%s' is not registered on server\n", config.Project)
-					serverError = fmt.Errorf("project '%s' is not registered on server", config.Project)
+					if !jsonOutput {
+						cmd.PrintErrf("Warning: project '%s' is not registered on server\n", config.Project)
+					}
+					serverError = withErrorCode(
+						"unknown_project",
+						fmt.Errorf("project '%s' is not registered on server", config.Project),
+					)
 				case errors.Is(err, httpclient.ErrUnknownWorkspace):
-					cmd.PrintErrf("Warning: workspace '%s' is not registered on server\n", config.WorkspaceID)
-					serverError = fmt.Errorf("workspace '%s' is not registered on server", config.WorkspaceID)
+					if !jsonOutput {
+						cmd.PrintErrf("Warning: workspace '%s' is not registered on server\n", config.WorkspaceID)
+					}
+					serverError = withErrorCode(
+						"unknown_workspace",
+						fmt.Errorf("workspace '%s' is not registered on server", config.WorkspaceID),
+					)
 				case errors.Is(err, httpclient.ErrWorkspaceProjectMismatch):
-					cmd.PrintErrf("Warning: workspace '%s' is registered under another project\n", config.WorkspaceID)
-					serverError = fmt.Errorf("workspace '%s' belongs to another project", config.WorkspaceID)
+					if !jsonOutput {
+						cmd.PrintErrf("Warning: workspace '%s' is registered under another project\n", config.WorkspaceID)
+					}
+					serverError = withErrorCode(
+						"workspace_project_mismatch",
+						fmt.Errorf("workspace '%s' belongs to another project", config.WorkspaceID),
+					)
 				case errors.Is(err, httpclient.ErrUnknownDocsCommit):
-					cmd.PrintErrf("Warning: local docs commit '%s' is not available on server\n", localHash)
-					serverError = fmt.Errorf("local docs commit '%s' is unknown", localHash)
+					if !jsonOutput {
+						cmd.PrintErrf("Warning: local docs commit '%s' is not available on server\n", localHash)
+					}
+					serverError = withErrorCode(
+						"unknown_docs_commit",
+						fmt.Errorf("local docs commit '%s' is unknown", localHash),
+					)
 				default:
-					cmd.PrintErrf("Warning: failed to connect to server: %v\n", err)
-					serverError = fmt.Errorf("failed to fetch project status: %w", err)
+					if !jsonOutput {
+						cmd.PrintErrf("Warning: failed to connect to server: %v\n", err)
+					}
+					serverError = withErrorCode(
+						"server_request_failed",
+						fmt.Errorf("failed to fetch project status: %w", err),
+					)
 				}
 			} else {
 				serverHeadStr = projectStatus.DocsHead
@@ -153,6 +191,27 @@ func newStatusCmd() *cobra.Command {
 				} else {
 					status = client.DocsStatusOutdated
 				}
+			}
+
+			if jsonOutput {
+				if serverError != nil {
+					return serverError
+				}
+				output := buildStatusJSONOutput(
+					config,
+					string(localHash),
+					status,
+					projectStatus,
+					pendingFixState,
+					hasPendingFix,
+					conflictScanStatus,
+					conflictFiles,
+					comparisonAvailable,
+				)
+				if err := writeJSON(cmd.OutOrStdout(), output); err != nil {
+					return withErrorCode("internal_error", errors.Join(ErrInternal, err))
+				}
+				return nil
 			}
 
 			// Print status
@@ -210,6 +269,8 @@ func newStatusCmd() *cobra.Command {
 			return serverError
 		},
 	}
+	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Print machine-readable JSON")
+	return cmd
 }
 
 func formatCommitRelation(relation httpclient.CommitRelation) string {
@@ -228,31 +289,7 @@ func formatCommitRelation(relation httpclient.CommitRelation) string {
 }
 
 func printProjectWorkspaces(cmd *cobra.Command, status httpclient.ProjectStatusResponse) {
-	rows := append([]httpclient.ProjectStatusWorkspace(nil), status.Workspaces...)
-	sort.SliceStable(rows, func(i, j int) bool {
-		left := rows[i].RelativeToReference
-		right := rows[j].RelativeToReference
-		if relationRank(left.Status) != relationRank(right.Status) {
-			return relationRank(left.Status) < relationRank(right.Status)
-		}
-		switch left.Status {
-		case docs.CommitRelationAhead:
-			if left.Ahead != right.Ahead {
-				return left.Ahead > right.Ahead
-			}
-		case docs.CommitRelationBehind:
-			if left.Behind != right.Behind {
-				return left.Behind < right.Behind
-			}
-		}
-		leftRepo := repositoryLabel(rows[i].RepoURL, rows[i].LocalPath)
-		rightRepo := repositoryLabel(rows[j].RepoURL, rows[j].LocalPath)
-		if leftRepo != rightRepo {
-			return leftRepo < rightRepo
-		}
-		return rows[i].WorkspaceID < rows[j].WorkspaceID
-	})
-
+	rows := sortedProjectWorkspaces(status.Workspaces)
 	out := cmd.OutOrStdout()
 	fmt.Fprintln(out, "project workspaces:")
 	if len(rows) == 0 {
@@ -277,6 +314,34 @@ func printProjectWorkspaces(cmd *cobra.Command, status httpclient.ProjectStatusR
 		)
 	}
 	_ = table.Flush()
+}
+
+func sortedProjectWorkspaces(workspaces []httpclient.ProjectStatusWorkspace) []httpclient.ProjectStatusWorkspace {
+	rows := append([]httpclient.ProjectStatusWorkspace(nil), workspaces...)
+	sort.SliceStable(rows, func(i, j int) bool {
+		left := rows[i].RelativeToReference
+		right := rows[j].RelativeToReference
+		if relationRank(left.Status) != relationRank(right.Status) {
+			return relationRank(left.Status) < relationRank(right.Status)
+		}
+		switch left.Status {
+		case docs.CommitRelationAhead:
+			if left.Ahead != right.Ahead {
+				return left.Ahead > right.Ahead
+			}
+		case docs.CommitRelationBehind:
+			if left.Behind != right.Behind {
+				return left.Behind < right.Behind
+			}
+		}
+		leftRepo := repositoryLabel(rows[i].RepoURL, rows[i].LocalPath)
+		rightRepo := repositoryLabel(rows[j].RepoURL, rows[j].LocalPath)
+		if leftRepo != rightRepo {
+			return leftRepo < rightRepo
+		}
+		return rows[i].WorkspaceID < rows[j].WorkspaceID
+	})
+	return rows
 }
 
 func relationRank(status docs.CommitRelationStatus) int {

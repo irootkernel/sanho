@@ -72,13 +72,17 @@ Useful daily commands:
 
 ```bash
 kkachi status
+kkachi status --json
 kkachi pull
 kkachi fix
 kkachi state
+kkachi state --json
 ```
 
 `kkachi init` installs the Git hooks used to check, merge, and publish docs.
 Run `kkachi <command> --help` for the complete interface.
+Machine-readable output for query commands is documented in
+[CLI JSON output](docs/cli-json.md).
 
 ## Validation
 
@@ -96,6 +100,7 @@ The CLI end-to-end suite uses `http://127.0.0.1:5789` when no override is set.
 ## Operations and design
 
 - [Architecture](docs/architecture.md)
+- [CLI JSON output](docs/cli-json.md)
 - [Operations](docs/operations.md)
 - [한국어 안내](docs/readme/kor.md)
 

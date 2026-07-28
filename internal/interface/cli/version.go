@@ -1,22 +1,40 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/spf13/cobra"
 )
 
+type versionJSONOutput struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
+}
+
 // newVersionCmd creates the version command.
 func newVersionCmd() *cobra.Command {
-	return &cobra.Command{
+	var jsonOutput bool
+
+	cmd := &cobra.Command{
 		Use:   "version",
 		Short: "Print the version of kkachi CLI",
 		Long:  `Print the version, commit hash, and build date of the kkachi CLI.`,
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			version := buildInfo.Version
 			if version == "" {
 				version = "dev"
 			}
+			if jsonOutput {
+				if err := writeJSON(cmd.OutOrStdout(), versionJSONOutput{
+					Name:    "kkachi",
+					Version: version,
+				}); err != nil {
+					return withErrorCode("internal_error", errors.Join(ErrInternal, err))
+				}
+				return nil
+			}
+
 			commit := buildInfo.Commit
 			if commit == "" {
 				commit = "unknown"
@@ -27,8 +45,11 @@ func newVersionCmd() *cobra.Command {
 			}
 
 			cmd.Printf("kkachi version %s (commit: %s, built: %s)\n", version, commit, buildDate)
+			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Print machine-readable JSON")
+	return cmd
 }
 
 // FormatVersion returns a formatted version string for testing.

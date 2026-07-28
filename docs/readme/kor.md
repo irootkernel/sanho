@@ -41,9 +41,11 @@ kkachi init \
 
 ```bash
 kkachi status  # 로컬 기준과 HEAD, 같은 프로젝트 작업공간 비교
+kkachi status --json  # 자동화 도구용 구조화 상태
 kkachi pull    # 최신 docs snapshot 반영
 kkachi fix     # 충돌을 직접 해결한 뒤 merge 결과 게시
 kkachi state   # 등록된 프로젝트와 작업공간 상태 조회
+kkachi state --json   # 현재 프로젝트 상태를 JSON으로 조회
 ```
 
 `kkachi status`는 현재 작업공간의 전체 docs commit과 HEAD를 보여주고,
@@ -61,6 +63,9 @@ kkachi state   # 등록된 프로젝트와 작업공간 상태 조회
 commit graph를 기준으로 한다. 새 상태 endpoint가 없는 구버전 daemon과
 함께 실행하면 기존 HEAD 비교는 유지하고 작업공간 목록에는 daemon
 업그레이드가 필요하다고 표시한다.
+
+`version`, `status`, `state`의 JSON 필드와 오류 계약은
+[CLI JSON 출력](../cli-json.md)에 정리되어 있다.
 
 로컬 docs 변경이 있을 때 `kkachi pull`로 덮어쓰려면 명시적으로
 `--force`를 사용해야 한다. 설정만 제거하려면 `kkachi clean`을 사용하고,

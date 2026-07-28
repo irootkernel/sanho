@@ -53,6 +53,7 @@ make uninstall-launchagent
 ```bash
 curl --fail http://127.0.0.1:5789/healthz
 kkachi state --all --server-url http://127.0.0.1:5789
+kkachi state --all --server-url http://127.0.0.1:5789 --json
 ```
 
 정상 health 응답은 `{"ok":true}`다. `/state`는 등록된 모든 프로젝트의

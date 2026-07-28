@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sort"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -17,10 +18,26 @@ import (
 // stateTimeout is the timeout for state operations.
 const stateTimeout = 30 * time.Second
 
+type stateJSONOutput struct {
+	Scope      string               `json:"scope"`
+	Project    *string              `json:"project"`
+	DocsHeads  map[string]string    `json:"docs_heads"`
+	Workspaces []stateJSONWorkspace `json:"workspaces"`
+}
+
+type stateJSONWorkspace struct {
+	WorkspaceID    string  `json:"workspace_id"`
+	Project        string  `json:"project"`
+	DocsHash       string  `json:"docs_hash"`
+	LastReportedAt *string `json:"last_reported_at"`
+	LastActor      *string `json:"last_actor"`
+}
+
 // newStateCmd creates the state command.
 func newStateCmd() *cobra.Command {
 	var showAll bool
 	var serverURLFlag string
+	var jsonOutput bool
 
 	cmd := &cobra.Command{
 		Use:   "state",
@@ -33,26 +50,29 @@ Use --all to see all projects.
 
 When using --all outside a kkachi workspace, provide --server-url.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runStateCommand(cmd, showAll, serverURLFlag)
+			return runStateCommand(cmd, showAll, serverURLFlag, jsonOutput)
 		},
 	}
 
 	cmd.Flags().BoolVar(&showAll, "all", false, "Show all projects and workspaces")
 	cmd.Flags().StringVar(&serverURLFlag, "server-url", "", "Server URL (required with --all when outside a workspace)")
+	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Print machine-readable JSON")
 
 	return cmd
 }
 
 // runStateCommand executes the kkachi state logic.
-func runStateCommand(cmd *cobra.Command, showAll bool, serverURLFlag string) error {
+func runStateCommand(cmd *cobra.Command, showAll bool, serverURLFlag string, jsonOutput bool) error {
 	ctx, cancel := context.WithTimeout(context.Background(), stateTimeout)
 	defer cancel()
 
 	// Get current working directory
 	cwd, err := os.Getwd()
 	if err != nil {
-		cmd.PrintErrf("kkachi state: failed to get current directory: %v\n", err)
-		return err
+		if !jsonOutput {
+			cmd.PrintErrf("kkachi state: failed to get current directory: %v\n", err)
+		}
+		return withErrorCode("internal_error", err)
 	}
 
 	// Load config to get server URL and project
@@ -69,17 +89,27 @@ func runStateCommand(cmd *cobra.Command, showAll bool, serverURLFlag string) err
 			serverURL = serverURLFlag
 		} else if showAll {
 			// --all without --server-url: suggest using --server-url
-			cmd.PrintErrf("kkachi state: no .kkachi.json found.\n")
-			cmd.PrintErrf("When using --all outside a workspace, provide --server-url flag.\n")
-			cmd.PrintErrf("Example: kkachi state --all --server-url http://localhost:5789\n")
-			return err
+			if !jsonOutput {
+				cmd.PrintErrf("kkachi state: no .kkachi.json found.\n")
+				cmd.PrintErrf("When using --all outside a workspace, provide --server-url flag.\n")
+				cmd.PrintErrf("Example: kkachi state --all --server-url http://localhost:5789\n")
+			}
+			return withErrorCodeMessage(
+				"server_url_required",
+				"--server-url is required with --all outside a kkachi workspace",
+				err,
+			)
 		} else if errors.Is(err, fs.ErrConfigNotFound) {
-			cmd.PrintErrf("kkachi state: this directory is not a kkachi workspace.\n")
-			cmd.PrintErrf("Please run 'kkachi init' first or use --all with --server-url.\n")
-			return err
+			if !jsonOutput {
+				cmd.PrintErrf("kkachi state: this directory is not a kkachi workspace.\n")
+				cmd.PrintErrf("Please run 'kkachi init' first or use --all with --server-url.\n")
+			}
+			return withErrorCode("not_in_workspace", err)
 		} else {
-			cmd.PrintErrf("kkachi state: failed to load config: %v\n", err)
-			return err
+			if !jsonOutput {
+				cmd.PrintErrf("kkachi state: failed to load config: %v\n", err)
+			}
+			return withErrorCode("invalid_workspace_config", err)
 		}
 	} else {
 		// Config found
@@ -104,15 +134,26 @@ func runStateCommand(cmd *cobra.Command, showAll bool, serverURLFlag string) err
 
 	if err != nil {
 		if errors.Is(err, httpclient.ErrUnknownProject) {
-			cmd.PrintErrf("kkachi state: project '%s' is not registered on server.\n", currentProject)
-			cmd.PrintErrf("Please run 'kkachi project add' to register the project.\n")
-			return err
+			if !jsonOutput {
+				cmd.PrintErrf("kkachi state: project '%s' is not registered on server.\n", currentProject)
+				cmd.PrintErrf("Please run 'kkachi project add' to register the project.\n")
+			}
+			return withErrorCode("unknown_project", err)
 		}
-		cmd.PrintErrf("kkachi state: failed to get state from server: %v\n", err)
-		return err
+		if !jsonOutput {
+			cmd.PrintErrf("kkachi state: failed to get state from server: %v\n", err)
+		}
+		return withErrorCode("server_request_failed", err)
 	}
 
 	// Output the state
+	if jsonOutput {
+		output := buildStateJSONOutput(showAll, currentProject, resp)
+		if err := writeJSON(cmd.OutOrStdout(), output); err != nil {
+			return withErrorCode("internal_error", errors.Join(ErrInternal, err))
+		}
+		return nil
+	}
 	if showAll {
 		printAllState(cmd, resp)
 	} else {
@@ -120,6 +161,51 @@ func runStateCommand(cmd *cobra.Command, showAll bool, serverURLFlag string) err
 	}
 
 	return nil
+}
+
+func buildStateJSONOutput(showAll bool, project docs.ProjectName, resp httpclient.StateResponse) stateJSONOutput {
+	output := stateJSONOutput{
+		Scope:      "all",
+		DocsHeads:  make(map[string]string),
+		Workspaces: make([]stateJSONWorkspace, 0, len(resp.Workspaces)),
+	}
+	if showAll {
+		for name, head := range resp.DocsHeads {
+			output.DocsHeads[name] = head
+		}
+	} else {
+		output.Scope = "project"
+		projectName := string(project)
+		output.Project = &projectName
+		if head, ok := resp.DocsHeads[projectName]; ok {
+			output.DocsHeads[projectName] = head
+		}
+	}
+
+	for _, ws := range resp.Workspaces {
+		if !showAll && ws.Project != string(project) {
+			continue
+		}
+		var lastActor *string
+		if ws.LastActorEmail != "" {
+			actor := ws.LastActorEmail
+			lastActor = &actor
+		}
+		output.Workspaces = append(output.Workspaces, stateJSONWorkspace{
+			WorkspaceID:    ws.WorkspaceID,
+			Project:        ws.Project,
+			DocsHash:       ws.DocsHash,
+			LastReportedAt: ws.LastReportedAt,
+			LastActor:      lastActor,
+		})
+	}
+	sort.Slice(output.Workspaces, func(i, j int) bool {
+		if output.Workspaces[i].Project != output.Workspaces[j].Project {
+			return output.Workspaces[i].Project < output.Workspaces[j].Project
+		}
+		return output.Workspaces[i].WorkspaceID < output.Workspaces[j].WorkspaceID
+	})
+	return output
 }
 
 // printProjectState prints state for the current project only.

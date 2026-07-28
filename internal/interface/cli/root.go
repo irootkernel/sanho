@@ -72,9 +72,9 @@ in a dedicated repository, separate from the application code.`,
 // Execute runs the root command.
 func Execute(info BuildInfo) {
 	cmd := NewRootCmd(info)
-	if err := cmd.Execute(); err != nil {
-		// Print the error message
-		cmd.PrintErrln("Error:", err)
+	executedCmd, err := cmd.ExecuteC()
+	if err != nil {
+		renderCommandError(executedCmd, err)
 
 		// Determine exit code based on error type
 		if errors.Is(err, ErrInternal) {
@@ -93,7 +93,7 @@ func IsVerbose() bool {
 // This function should only be called after CLI initialization.
 func logDebug(cmd *cobra.Command, format string, args ...interface{}) {
 	if verbose && cmd != nil {
-		cmd.Printf("[DEBUG] "+format+"\n", args...)
+		cmd.PrintErrf("[DEBUG] "+format+"\n", args...)
 	}
 }
 

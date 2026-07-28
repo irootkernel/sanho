@@ -2,10 +2,14 @@ package cli
 
 import (
 	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/SeventeenthEarth/kkachi/internal/domain/client"
 	"github.com/SeventeenthEarth/kkachi/internal/domain/docs"
+	"github.com/SeventeenthEarth/kkachi/internal/infra/fs"
 	"github.com/SeventeenthEarth/kkachi/internal/infra/httpclient"
 	"github.com/spf13/cobra"
 )
@@ -98,5 +102,69 @@ func TestRepositoryLabel(t *testing.T) {
 		if got := repositoryLabel(test.repoURL, test.localPath); got != test.want {
 			t.Errorf("repositoryLabel(%q, %q) = %q, want %q", test.repoURL, test.localPath, got, test.want)
 		}
+	}
+}
+
+func TestBuildStatusJSONOutputUsesStableMachineFields(t *testing.T) {
+	createdAt := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)
+	config := &client.WorkspaceConfig{
+		Project:     "alpha",
+		WorkspaceID: "ws-current",
+	}
+	projectStatus := httpclient.ProjectStatusResponse{
+		DocsHead:        "full-head-hash",
+		ReferenceToHead: httpclient.CommitRelation{Status: docs.CommitRelationBehind, Behind: 2},
+		Workspaces: []httpclient.ProjectStatusWorkspace{
+			{
+				WorkspaceID: "ws-current",
+				RepoURL:     "git@github.com:org/current.git",
+				LocalPath:   "/private/current",
+				DocsHash:    "full-current-hash",
+				RelativeToReference: httpclient.CommitRelation{
+					Status: docs.CommitRelationSame,
+				},
+				RelativeToHead: httpclient.CommitRelation{
+					Status: docs.CommitRelationBehind,
+					Behind: 2,
+				},
+			},
+		},
+	}
+
+	output := buildStatusJSONOutput(
+		config,
+		"full-current-hash",
+		client.DocsStatusOutdated,
+		projectStatus,
+		fs.PendingFixState{CreatedAt: createdAt},
+		true,
+		"complete",
+		[]string{"z.md", "a.md"},
+		true,
+	)
+
+	data, err := json.Marshal(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded["docs_base"] != "full-current-hash" || decoded["docs_head"] != "full-head-hash" {
+		t.Fatalf("hash fields = %#v", decoded)
+	}
+	if _, ok := decoded["local_path"]; ok {
+		t.Fatalf("status JSON exposed local_path: %#v", decoded)
+	}
+	workspaces := decoded["workspaces"].([]any)
+	workspace := workspaces[0].(map[string]any)
+	if workspace["repository"] != "current" || workspace["docs_hash"] != "full-current-hash" {
+		t.Fatalf("workspace = %#v", workspace)
+	}
+	conflicts := decoded["conflicts"].(map[string]any)
+	files := conflicts["files"].([]any)
+	if files[0] != "a.md" || files[1] != "z.md" {
+		t.Fatalf("conflict files = %#v", files)
 	}
 }
