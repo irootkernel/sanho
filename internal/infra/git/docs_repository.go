@@ -21,14 +21,16 @@ import (
 var ErrRepoConfigMissing = errors.New("repo_config_missing")
 
 type GitDocsRepository struct {
-	git       *Client
-	stateRepo *state.FileStateRepository
+	git         *Client
+	stateRepo   *state.FileStateRepository
+	coordinator *RepoCoordinator
 }
 
-func NewGitDocsRepository(git *Client, stateRepo *state.FileStateRepository) *GitDocsRepository {
+func NewGitDocsRepository(git *Client, stateRepo *state.FileStateRepository, coordinator *RepoCoordinator) *GitDocsRepository {
 	return &GitDocsRepository{
-		git:       git,
-		stateRepo: stateRepo,
+		git:         git,
+		stateRepo:   stateRepo,
+		coordinator: coordinator,
 	}
 }
 
@@ -37,7 +39,15 @@ func (r *GitDocsRepository) GetHead(ctx context.Context, project docs.ProjectNam
 	if err != nil {
 		return "", err
 	}
+	repoID := docs.DocsRepoID(repoConfig.ID)
+	if err := r.coordinator.Lock(ctx, repoID); err != nil {
+		return "", err
+	}
+	defer r.coordinator.Unlock(repoID)
 
+	if err := refreshRepo(ctx, r.git, repoConfig.Path); err != nil {
+		return "", fmt.Errorf("refresh docs repo: %w", err)
+	}
 	head, err := r.git.RevParseHead(ctx, repoConfig.Path)
 	if err != nil {
 		return "", err
@@ -50,7 +60,15 @@ func (r *GitDocsRepository) GetSnapshot(ctx context.Context, project docs.Projec
 	if err != nil {
 		return nil, "", err
 	}
+	repoID := docs.DocsRepoID(repoConfig.ID)
+	if err := r.coordinator.Lock(ctx, repoID); err != nil {
+		return nil, "", err
+	}
+	defer r.coordinator.Unlock(repoID)
 
+	if err := refreshRepo(ctx, r.git, repoConfig.Path); err != nil {
+		return nil, "", fmt.Errorf("refresh docs repo: %w", err)
+	}
 	resolvedCommit, err := r.git.ResolveCommit(ctx, repoConfig.Path, string(commit))
 	if err != nil {
 		if errors.Is(err, ErrUnknownCommit) {
@@ -73,19 +91,8 @@ func (r *GitDocsRepository) PushSnapshot(ctx context.Context, project docs.Proje
 	}
 	repoPath := repoConfig.Path
 
-	// 1. Fetch origin
-	if err := r.git.Fetch(ctx, repoPath); err != nil {
-		return docs.DocsPushResult{}, fmt.Errorf("fetch failed: %w", err)
-	}
-
-	// 2. Checkout main branch
-	if err := r.git.CheckoutMain(ctx, repoPath); err != nil {
-		return docs.DocsPushResult{}, fmt.Errorf("checkout main failed: %w", err)
-	}
-
-	// 3. Reset hard to origin/main
-	if err := r.git.ResetHardToOriginMain(ctx, repoPath); err != nil {
-		return docs.DocsPushResult{}, fmt.Errorf("reset to origin/main failed: %w", err)
+	if err := refreshRepo(ctx, r.git, repoPath); err != nil {
+		return docs.DocsPushResult{}, fmt.Errorf("refresh docs repo: %w", err)
 	}
 
 	// 4. Get current HEAD
@@ -298,6 +305,27 @@ func (r *GitDocsRepository) Push(ctx context.Context, project docs.ProjectName) 
 		return err
 	}
 	return r.git.Push(ctx, repoConfig.Path)
+}
+
+func (r *GitDocsRepository) Reset(ctx context.Context, project docs.ProjectName) error {
+	repoConfig, err := r.getRepoConfig(project)
+	if err != nil {
+		return err
+	}
+	return refreshRepo(ctx, r.git, repoConfig.Path)
+}
+
+func refreshRepo(ctx context.Context, client *Client, repoPath string) error {
+	if err := client.Fetch(ctx, repoPath); err != nil {
+		return fmt.Errorf("fetch: %w", err)
+	}
+	if err := client.CheckoutMain(ctx, repoPath); err != nil {
+		return fmt.Errorf("checkout default branch: %w", err)
+	}
+	if err := client.ResetHardToOriginMain(ctx, repoPath); err != nil {
+		return fmt.Errorf("reset to origin default branch: %w", err)
+	}
+	return nil
 }
 
 // removeDSStore recursively removes .DS_Store files from the given root path.

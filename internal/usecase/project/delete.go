@@ -1,6 +1,9 @@
 package project
 
-import "errors"
+import (
+	"context"
+	"errors"
+)
 
 var (
 	ErrProjectHasWorkspaces = errors.New("project_has_workspaces")
@@ -20,6 +23,7 @@ func NewDeleteProjectUseCase(stateRepo DeleteProjectStateRepository, gitManager 
 }
 
 func (uc *DeleteProjectUseCase) Execute(project string, force bool) error {
+	ctx := context.Background()
 	repoID, ok := uc.stateRepo.GetDocsRepoID(project)
 	if !ok {
 		return ErrUnknownProject
@@ -46,7 +50,7 @@ func (uc *DeleteProjectUseCase) Execute(project string, force bool) error {
 	if usage[repoID] == 0 {
 		// Repo not used anymore
 		if repoConfig, ok := uc.stateRepo.GetDocsRepo(repoID); ok {
-			if err := uc.gitManager.DeleteRepo(repoConfig.Path); err != nil {
+			if err := uc.gitManager.DeleteRepo(ctx, repoID, repoConfig.Path); err != nil {
 				return err
 			}
 		}

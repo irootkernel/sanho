@@ -3,19 +3,14 @@ package main
 import (
 	"context"
 	"log"
-	"log/slog"
 	"os"
 
 	"github.com/SeventeenthEarth/kkachi/internal/config"
-	"github.com/SeventeenthEarth/kkachi/internal/domain/guardrail"
-	"github.com/SeventeenthEarth/kkachi/internal/infra/fs"
 	"github.com/SeventeenthEarth/kkachi/internal/infra/git"
 	"github.com/SeventeenthEarth/kkachi/internal/infra/state"
 	"github.com/SeventeenthEarth/kkachi/internal/interface/http"
 	"github.com/SeventeenthEarth/kkachi/internal/interface/http/handler"
-	"github.com/SeventeenthEarth/kkachi/internal/pty"
 	"github.com/SeventeenthEarth/kkachi/internal/usecase/docs"
-	guardrailuc "github.com/SeventeenthEarth/kkachi/internal/usecase/guardrail"
 	"github.com/SeventeenthEarth/kkachi/internal/usecase/project"
 	stateuc "github.com/SeventeenthEarth/kkachi/internal/usecase/state"
 	"github.com/SeventeenthEarth/kkachi/internal/usecase/workspace"
@@ -27,9 +22,6 @@ func main() {
 		port = "5789"
 	}
 	addr := ":" + port
-
-	// Resolve web distribution directory
-	webDistDir := config.ResolveWebDistDir(os.Getenv("WEB_DIST_DIR"))
 
 	statePath, err := config.ResolveStatePath(os.Getenv("STATE_FILE_PATH"))
 	if err != nil {
@@ -43,8 +35,9 @@ func main() {
 	}
 
 	gitClient := git.NewClient()
-	gitManager := git.NewDocsRepoManager(gitClient)
-	docsRepo := git.NewGitDocsRepository(gitClient, stateRepo)
+	repoCoordinator := git.NewRepoCoordinator()
+	gitManager := git.NewDocsRepoManager(gitClient, repoCoordinator)
+	docsRepo := git.NewGitDocsRepository(gitClient, stateRepo, repoCoordinator)
 
 	// Initial Sync (P0-3)
 	log.Println("Syncing docs repos...")
@@ -55,9 +48,6 @@ func main() {
 	// Repositories
 	workspaceRepo := state.NewFileWorkspaceRepository(stateRepo)
 
-	// Mutex Manager (Phase 4)
-	mutexManager := docs.NewInMemoryMutexManager()
-
 	// Usecases
 	deleteProjectUC := project.NewDeleteProjectUseCase(stateRepo, gitManager)
 	addProjectUC := project.NewAddProjectUseCase(stateRepo, gitManager)
@@ -65,7 +55,7 @@ func main() {
 	getDocsSnapshotUC := docs.NewGetDocsSnapshotUseCase(docsRepo)
 	deleteWorkspaceUC := workspace.NewDeleteWorkspaceUseCase(stateRepo)
 	registerWorkspaceUC := workspace.NewRegisterWorkspaceUseCase(docsRepo, workspaceRepo, stateRepo, workspace.RealClock{})
-	pushDocsUC := docs.NewPushDocsUseCase(workspaceRepo, docsRepo, mutexManager)
+	pushDocsUC := docs.NewPushDocsUseCase(workspaceRepo, docsRepo, repoCoordinator)
 	getStateUC := stateuc.NewGetStateUseCase(docsRepo, workspaceRepo, stateRepo)
 
 	// Handlers
@@ -76,48 +66,12 @@ func main() {
 	docsPushHandler := handler.NewDocsPushHandler(pushDocsUC)
 	stateHandler := handler.NewStateHandler(getStateUC)
 
-	// PTY (v3)
-	ptyConfig := pty.LoadConfigFromEnv()
-
-	// Load Security Rules for Guardrail (STASK-4)
-	securityLoader := fs.NewFileSecurityLoader("config/security_rules.yaml")
-	var guardrailInstance guardrail.Guardrail
-	securityCfg, err := securityLoader.Load()
-	if err != nil {
-		log.Printf("Warning: Failed to load security rules: %v. Guardrail will be disabled.", err)
-	} else {
-		matcher, err := guardrailuc.NewRegexMatcher(securityCfg.Blacklist)
-		if err != nil {
-			log.Printf("Warning: Failed to initialize guardrail: %v. Guardrail will be disabled.", err)
-		} else {
-			guardrailInstance = matcher
-		}
-	}
-
-	// Auth Config (STASK-5)
-	authConfig := config.LoadAuthConfigFromEnv()
-	if authConfig.AuthEnabled {
-		if authConfig.AuthToken == "" {
-			slog.Error("Critical: AUTH_TOKEN must be set when AUTH_ENABLED is true")
-			os.Exit(1)
-		}
-		slog.Info("Authentication enabled")
-	} else {
-		slog.Info("Authentication disabled")
-	}
-
-	sessionManager := pty.NewSessionManager(guardrailInstance)
-	ptyHandler := handler.NewPTYHandler(sessionManager, workspaceRepo, ptyConfig, authConfig)
-
-	// Server configuration
 	serverCfg := http.ServerConfig{
-		Addr:       addr,
-		WebDistDir: webDistDir,
-		AuthConfig: authConfig,
+		Addr: addr,
 	}
 
-	srv := http.NewHTTPServer(serverCfg, projectHandler, workspaceHandler, docsHeadHandler, docsSnapshotHandler, docsPushHandler, stateHandler, ptyHandler)
-	log.Printf("Starting server on %s (web dist: %s)", addr, webDistDir)
+	srv := http.NewHTTPServer(serverCfg, projectHandler, workspaceHandler, docsHeadHandler, docsSnapshotHandler, docsPushHandler, stateHandler)
+	log.Printf("Starting server on %s", addr)
 	if err := srv.ListenAndServe(); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}

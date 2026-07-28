@@ -19,7 +19,6 @@ import (
 	"github.com/SeventeenthEarth/kkachi/internal/interface/http/handler"
 	"github.com/SeventeenthEarth/kkachi/internal/usecase/docs"
 	"github.com/SeventeenthEarth/kkachi/internal/usecase/project"
-	stateuc "github.com/SeventeenthEarth/kkachi/internal/usecase/state"
 	"github.com/SeventeenthEarth/kkachi/internal/usecase/workspace"
 )
 
@@ -60,8 +59,9 @@ func TestIntegration_Server(t *testing.T) {
 	}
 
 	gitClient := git.NewClient()
-	gitManager := git.NewDocsRepoManager(gitClient)
-	docsRepo := git.NewGitDocsRepository(gitClient, stateRepo)
+	repoCoordinator := git.NewRepoCoordinator()
+	gitManager := git.NewDocsRepoManager(gitClient, repoCoordinator)
+	docsRepo := git.NewGitDocsRepository(gitClient, stateRepo, repoCoordinator)
 
 	// Initial Sync (Empty)
 	if err := gitManager.Sync(context.Background(), stateRepo.ListDocsRepos()); err != nil {
@@ -83,7 +83,7 @@ func TestIntegration_Server(t *testing.T) {
 	docsHeadHandler := handler.NewDocsHeadHandler(getDocsHeadUC)
 	docsSnapshotHandler := handler.NewDocsSnapshotHandler(getDocsSnapshotUC)
 
-	srv := kkachihttp.NewHTTPServer(kkachihttp.ServerConfig{Addr: ":0"}, projectHandler, workspaceHandler, docsHeadHandler, docsSnapshotHandler, nil, nil, nil)
+	srv := kkachihttp.NewHTTPServer(kkachihttp.ServerConfig{Addr: ":0"}, projectHandler, workspaceHandler, docsHeadHandler, docsSnapshotHandler, nil, nil)
 	ts := httptest.NewServer(srv.Handler)
 	defer ts.Close()
 
@@ -241,28 +241,7 @@ func TestIntegration_Server(t *testing.T) {
 		t.Errorf("Expected error unknown_project, got %s", errResp["error"])
 	}
 
-	// 9. Test: OpenAPI & Swagger UI (S1, S2)
-	// OpenAPI Spec
-	resp, err = client.Get(ts.URL + "/openapi.yaml")
-	if err != nil {
-		t.Fatalf("Failed to get openapi.yaml: %v", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("OpenAPI status: %d", resp.StatusCode)
-	}
-	resp.Body.Close()
-
-	// Swagger UI
-	resp, err = client.Get(ts.URL + "/docs")
-	if err != nil {
-		t.Fatalf("Failed to get swagger ui: %v", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("Swagger UI status: %d", resp.StatusCode)
-	}
-	resp.Body.Close()
-
-	// 10. Test: /healthz endpoint (STASK-2 - already exists)
+	// 10. Test: /healthz endpoint
 	resp, err = client.Get(ts.URL + "/healthz")
 	if err != nil {
 		t.Fatalf("Failed to get /healthz: %v", err)
@@ -276,134 +255,6 @@ func TestIntegration_Server(t *testing.T) {
 	if !healthResp["ok"] {
 		t.Errorf("Expected /healthz ok: true, got %v", healthResp)
 	}
-}
-
-// TestIntegration_APIStateEndpoint tests the /api/state endpoint (STASK-2)
-func TestIntegration_APIStateEndpoint(t *testing.T) {
-	// Setup: Create temp directory for state
-	tempDir, err := os.MkdirTemp("", "kkachi-apistate-integration-*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tempDir)
-
-	// Change to temp directory so docs_repos is created in isolation
-	originalDir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(tempDir); err != nil {
-		t.Fatal(err)
-	}
-	defer os.Chdir(originalDir)
-
-	// Create "Remote" Git Repo
-	originPath := filepath.Join(tempDir, "origin")
-	if err := os.Mkdir(originPath, 0755); err != nil {
-		t.Fatal(err)
-	}
-	runCmd(t, originPath, "git", "init")
-	runCmd(t, originPath, "git", "config", "user.email", "test@example.com")
-	runCmd(t, originPath, "git", "config", "user.name", "Test User")
-	if err := os.WriteFile(filepath.Join(originPath, "README.md"), []byte("# Test Repo"), 0644); err != nil {
-		t.Fatalf("failed to write README: %v", err)
-	}
-	runCmd(t, originPath, "git", "add", ".")
-	runCmd(t, originPath, "git", "commit", "-m", "Initial commit")
-
-	// Get HEAD
-	out := runCmd(t, originPath, "git", "rev-parse", "HEAD")
-	expectedHead := strings.TrimSpace(string(out))
-
-	// Setup server
-	statePath := filepath.Join(tempDir, "state.json")
-	stateRepo, err := state.NewFileStateRepository(statePath)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	gitClient := git.NewClient()
-	gitManager := git.NewDocsRepoManager(gitClient)
-	docsRepo := git.NewGitDocsRepository(gitClient, stateRepo)
-
-	if err := gitManager.Sync(context.Background(), stateRepo.ListDocsRepos()); err != nil {
-		t.Fatalf("initial sync failed: %v", err)
-	}
-
-	addProjectUC := project.NewAddProjectUseCase(stateRepo, gitManager)
-	getDocsHeadUC := docs.NewGetDocsHeadUseCase(docsRepo)
-	workspaceRepo := state.NewFileWorkspaceRepository(stateRepo)
-	getStateUC := stateuc.NewGetStateUseCase(docsRepo, workspaceRepo, stateRepo)
-
-	docsHeadHandler := handler.NewDocsHeadHandler(getDocsHeadUC)
-	projectHandler := handler.NewProjectHandler(nil, addProjectUC)
-	stateHandler := handler.NewStateHandler(getStateUC)
-
-	srv := kkachihttp.NewHTTPServer(kkachihttp.ServerConfig{Addr: ":0"}, projectHandler, nil, docsHeadHandler, nil, nil, stateHandler, nil)
-	ts := httptest.NewServer(srv.Handler)
-	defer ts.Close()
-
-	client := ts.Client()
-
-	// Add a project
-	addReqBody, _ := json.Marshal(map[string]string{
-		"project":       "api-test-project",
-		"docs_repo_id":  "api-test-repo",
-		"docs_repo_url": originPath,
-		"actor_email":   "admin@example.com",
-	})
-	resp, err := client.Post(ts.URL+"/projects", "application/json", bytes.NewReader(addReqBody))
-	if err != nil {
-		t.Fatalf("Failed to add project: %v", err)
-	}
-	resp.Body.Close()
-
-	// Test 1: /api/state returns 200 OK
-	t.Run("API State returns 200", func(t *testing.T) {
-		resp, err := client.Get(ts.URL + "/api/state")
-		if err != nil {
-			t.Fatalf("Failed to get /api/state: %v", err)
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusOK {
-			t.Errorf("Expected status 200 for /api/state, got %d", resp.StatusCode)
-		}
-	})
-
-	// Test 2: /api/state and /state return identical responses
-	t.Run("API State matches State", func(t *testing.T) {
-		// Get /state
-		stateResp, err := client.Get(ts.URL + "/state")
-		if err != nil {
-			t.Fatalf("Failed to get /state: %v", err)
-		}
-		var stateJSON map[string]interface{}
-		json.NewDecoder(stateResp.Body).Decode(&stateJSON)
-		stateResp.Body.Close()
-
-		// Get /api/state
-		apiResp, err := client.Get(ts.URL + "/api/state")
-		if err != nil {
-			t.Fatalf("Failed to get /api/state: %v", err)
-		}
-		var apiJSON map[string]interface{}
-		json.NewDecoder(apiResp.Body).Decode(&apiJSON)
-		apiResp.Body.Close()
-
-		// Compare docs_heads
-		stateHeads := stateJSON["docs_heads"].(map[string]interface{})
-		apiHeads := apiJSON["docs_heads"].(map[string]interface{})
-
-		if stateHeads["api-test-project"] != apiHeads["api-test-project"] {
-			t.Errorf("docs_heads mismatch: /state=%v, /api/state=%v",
-				stateHeads["api-test-project"], apiHeads["api-test-project"])
-		}
-
-		if stateHeads["api-test-project"] != expectedHead {
-			t.Errorf("Expected docs_heads to be %s, got %v", expectedHead, stateHeads["api-test-project"])
-		}
-	})
 }
 
 func runCmd(t *testing.T, dir string, name string, args ...string) []byte {

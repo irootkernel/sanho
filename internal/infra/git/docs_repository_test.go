@@ -57,14 +57,22 @@ func TestGitDocsRepository_GetHead(t *testing.T) {
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("failed to commit: %v", err)
 	}
-
-	// Get HEAD hash
-	cmd = exec.Command("git", "-C", repoPath, "rev-parse", "HEAD")
-	out, err := cmd.Output()
-	if err != nil {
-		t.Fatal(err)
+	originPath := filepath.Join(tempDir, "origin.git")
+	if err := exec.Command("git", "init", "--bare", originPath).Run(); err != nil {
+		t.Fatalf("failed to initialize origin: %v", err)
 	}
-	expectedHead := strings.TrimSpace(string(out))
+	if err := exec.Command("git", "-C", repoPath, "branch", "-M", "main").Run(); err != nil {
+		t.Fatalf("failed to rename branch: %v", err)
+	}
+	if err := exec.Command("git", "-C", repoPath, "remote", "add", "origin", originPath).Run(); err != nil {
+		t.Fatalf("failed to add origin: %v", err)
+	}
+	if err := exec.Command("git", "-C", repoPath, "push", "-u", "origin", "main").Run(); err != nil {
+		t.Fatalf("failed to push initial commit: %v", err)
+	}
+	if err := exec.Command("git", "-C", originPath, "symbolic-ref", "HEAD", "refs/heads/main").Run(); err != nil {
+		t.Fatalf("failed to set origin HEAD: %v", err)
+	}
 
 	// Setup State
 	statePath := filepath.Join(tempDir, "state.json")
@@ -78,7 +86,39 @@ func TestGitDocsRepository_GetHead(t *testing.T) {
 
 	// Setup Repository
 	gitClient := git.NewClient()
-	repo := git.NewGitDocsRepository(gitClient, stateRepo)
+	repo := git.NewGitDocsRepository(gitClient, stateRepo, git.NewRepoCoordinator())
+
+	// Push a commit from another clone. GetHead must fetch it instead of
+	// returning the stale HEAD from repoPath.
+	publisherPath := filepath.Join(tempDir, "publisher")
+	if err := exec.Command("git", "clone", originPath, publisherPath).Run(); err != nil {
+		t.Fatalf("failed to clone publisher: %v", err)
+	}
+	for _, args := range [][]string{
+		{"config", "user.email", "publisher@example.com"},
+		{"config", "user.name", "Publisher"},
+	} {
+		if err := exec.Command("git", append([]string{"-C", publisherPath}, args...)...).Run(); err != nil {
+			t.Fatalf("failed to configure publisher: %v", err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(publisherPath, "remote.txt"), []byte("remote"), 0644); err != nil {
+		t.Fatalf("failed to write publisher file: %v", err)
+	}
+	for _, args := range [][]string{
+		{"add", "."},
+		{"commit", "-m", "Remote update"},
+		{"push", "origin", "HEAD:main"},
+	} {
+		if err := exec.Command("git", append([]string{"-C", publisherPath}, args...)...).Run(); err != nil {
+			t.Fatalf("publisher git %v failed: %v", args, err)
+		}
+	}
+	out, err := exec.Command("git", "-C", publisherPath, "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectedHead := strings.TrimSpace(string(out))
 
 	// Test GetHead
 	head, err := repo.GetHead(context.Background(), "proj1")
@@ -102,7 +142,7 @@ func TestGitDocsRepository_GetHead_UnknownProject(t *testing.T) {
 	statePath := filepath.Join(tempDir, "state.json")
 	stateRepo, _ := state.NewFileStateRepository(statePath)
 	gitClient := git.NewClient()
-	repo := git.NewGitDocsRepository(gitClient, stateRepo)
+	repo := git.NewGitDocsRepository(gitClient, stateRepo, git.NewRepoCoordinator())
 
 	_, err = repo.GetHead(context.Background(), "unknown")
 	if err == nil {

@@ -41,7 +41,7 @@ func TestDocsRepoManager_Sync(t *testing.T) {
 	}
 
 	client := git.NewClient()
-	manager := git.NewDocsRepoManager(client)
+	manager := git.NewDocsRepoManager(client, git.NewRepoCoordinator())
 
 	// Test 1: Clone
 	if err := manager.Sync(context.Background(), []config.DocsRepoConfig{cfg}); err != nil {

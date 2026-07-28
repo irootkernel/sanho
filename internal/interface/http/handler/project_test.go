@@ -33,7 +33,7 @@ func TestDeleteProject(t *testing.T) {
 
 	// Init Components
 	gitClient := git.NewClient()
-	gitManager := git.NewDocsRepoManager(gitClient)
+	gitManager := git.NewDocsRepoManager(gitClient, git.NewRepoCoordinator())
 	uc := project.NewDeleteProjectUseCase(stateRepo, gitManager)
 	addUC := project.NewAddProjectUseCase(stateRepo, gitManager)
 	h := handler.NewProjectHandler(uc, addUC)
@@ -85,7 +85,7 @@ func TestDeleteProjectWithWorkspaces(t *testing.T) {
 
 	// Init Components
 	gitClient := git.NewClient()
-	gitManager := git.NewDocsRepoManager(gitClient)
+	gitManager := git.NewDocsRepoManager(gitClient, git.NewRepoCoordinator())
 	uc := project.NewDeleteProjectUseCase(stateRepo, gitManager)
 	addUC := project.NewAddProjectUseCase(stateRepo, gitManager)
 	h := handler.NewProjectHandler(uc, addUC)

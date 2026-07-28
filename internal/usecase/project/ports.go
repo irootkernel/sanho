@@ -27,5 +27,5 @@ type DeleteProjectStateRepository interface {
 
 type DocsRepoManager interface {
 	Sync(ctx context.Context, repos []config.DocsRepoConfig) error
-	DeleteRepo(path string) error
+	DeleteRepo(ctx context.Context, repoID string, path string) error
 }

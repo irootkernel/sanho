@@ -2,12 +2,17 @@ package state
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/SeventeenthEarth/kkachi/internal/config"
 )
+
+var ErrStateCorrupt = errors.New("state_corrupt")
 
 type WorkspaceState struct {
 	ID             string    `json:"id"`
@@ -34,48 +39,64 @@ type FileStateRepository struct {
 }
 
 func NewFileStateRepository(path string) (*FileStateRepository, error) {
-	s := &State{
-		DocsRepos:         make(map[string]config.DocsRepoConfig),
-		ProjectToDocsRepo: make(map[string]string),
-		Workspaces:        make(map[string]WorkspaceState),
-	}
-
+	s := newState()
 	data, err := os.ReadFile(path)
-	if err == nil {
-		if err := json.Unmarshal(data, s); err != nil {
-			return nil, err
+	switch {
+	case err == nil:
+		if decodeErr := json.Unmarshal(data, s); decodeErr != nil {
+			recovered, recoveryErr := loadStateBackup(path)
+			if recoveryErr != nil {
+				return nil, fmt.Errorf("%w: primary: %v; backup: %v", ErrStateCorrupt, decodeErr, recoveryErr)
+			}
+			s = recovered
+			if writeErr := writeAtomic(path, mustMarshalState(s)); writeErr != nil {
+				return nil, fmt.Errorf("restore state backup: %w", writeErr)
+			}
 		}
-	} else if !os.IsNotExist(err) {
+	case os.IsNotExist(err):
+		recovered, recoveryErr := loadStateBackup(path)
+		if recoveryErr == nil {
+			s = recovered
+			if writeErr := writeAtomic(path, mustMarshalState(s)); writeErr != nil {
+				return nil, fmt.Errorf("restore state backup: %w", writeErr)
+			}
+		} else if !os.IsNotExist(recoveryErr) {
+			return nil, fmt.Errorf("%w: backup: %v", ErrStateCorrupt, recoveryErr)
+		}
+	default:
 		return nil, err
 	}
 
-	// Ensure maps are not nil
-	if s.DocsRepos == nil {
-		s.DocsRepos = make(map[string]config.DocsRepoConfig)
-	}
-	if s.ProjectToDocsRepo == nil {
-		s.ProjectToDocsRepo = make(map[string]string)
-	}
-	if s.Workspaces == nil {
-		s.Workspaces = make(map[string]WorkspaceState)
-	}
+	ensureStateMaps(s)
 
 	return &FileStateRepository{path: path, state: s}, nil
 }
 
 func (r *FileStateRepository) Save() error {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.saveLocked()
+}
+
+func (r *FileStateRepository) saveLocked() error {
 	data, err := json.MarshalIndent(r.state, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(r.path, data, 0644)
+	if err := writeAtomic(r.path+".bak", data); err != nil {
+		return fmt.Errorf("write state backup: %w", err)
+	}
+	if err := writeAtomic(r.path, data); err != nil {
+		return fmt.Errorf("write state: %w", err)
+	}
+	return nil
 }
 
 func (r *FileStateRepository) DeleteProject(project string) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	delete(r.state.ProjectToDocsRepo, project)
-	return r.Save()
+	return r.update(func(next *State) (bool, error) {
+		delete(next.ProjectToDocsRepo, project)
+		return true, nil
+	})
 }
 
 func (r *FileStateRepository) GetRepoUsage() map[string]int {
@@ -97,25 +118,25 @@ func (r *FileStateRepository) GetDocsRepo(id string) (config.DocsRepoConfig, boo
 
 // AddProject for testing/setup
 func (r *FileStateRepository) AddProject(project, repoID string) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.state.ProjectToDocsRepo[project] = repoID
-	return r.Save()
+	return r.update(func(next *State) (bool, error) {
+		next.ProjectToDocsRepo[project] = repoID
+		return true, nil
+	})
 }
 
 // AddDocsRepo for testing/setup
 func (r *FileStateRepository) AddDocsRepo(repo config.DocsRepoConfig) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.state.DocsRepos[repo.ID] = repo
-	return r.Save()
+	return r.update(func(next *State) (bool, error) {
+		next.DocsRepos[repo.ID] = repo
+		return true, nil
+	})
 }
 
 func (r *FileStateRepository) DeleteDocsRepo(id string) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	delete(r.state.DocsRepos, id)
-	return r.Save()
+	return r.update(func(next *State) (bool, error) {
+		delete(next.DocsRepos, id)
+		return true, nil
+	})
 }
 
 func (r *FileStateRepository) GetDocsRepoID(project string) (string, bool) {
@@ -136,20 +157,20 @@ func (r *FileStateRepository) ListDocsRepos() []config.DocsRepoConfig {
 }
 
 func (r *FileStateRepository) DeleteWorkspace(id string) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if _, ok := r.state.Workspaces[id]; !ok {
-		return os.ErrNotExist // Or custom error
-	}
-	delete(r.state.Workspaces, id)
-	return r.Save()
+	return r.update(func(next *State) (bool, error) {
+		if _, ok := next.Workspaces[id]; !ok {
+			return false, os.ErrNotExist
+		}
+		delete(next.Workspaces, id)
+		return true, nil
+	})
 }
 
 func (r *FileStateRepository) AddWorkspace(ws WorkspaceState) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.state.Workspaces[ws.ID] = ws
-	return r.Save()
+	return r.update(func(next *State) (bool, error) {
+		next.Workspaces[ws.ID] = ws
+		return true, nil
+	})
 }
 
 func (r *FileStateRepository) GetWorkspace(id string) (WorkspaceState, bool) {
@@ -160,17 +181,17 @@ func (r *FileStateRepository) GetWorkspace(id string) (WorkspaceState, bool) {
 }
 
 func (r *FileStateRepository) UpdateWorkspaceDocsHash(id, newHash, actorEmail string) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	ws, ok := r.state.Workspaces[id]
-	if !ok {
-		return os.ErrNotExist
-	}
-	ws.DocsHash = newHash
-	ws.LastReportedAt = time.Now()
-	ws.LastActorEmail = actorEmail
-	r.state.Workspaces[id] = ws
-	return r.Save()
+	return r.update(func(next *State) (bool, error) {
+		ws, ok := next.Workspaces[id]
+		if !ok {
+			return false, os.ErrNotExist
+		}
+		ws.DocsHash = newHash
+		ws.LastReportedAt = time.Now()
+		ws.LastActorEmail = actorEmail
+		next.Workspaces[id] = ws
+		return true, nil
+	})
 }
 
 // ListWorkspaces returns all registered workspaces.
@@ -209,18 +230,128 @@ func (r *FileStateRepository) HasWorkspacesForProject(project string) bool {
 
 // DeleteWorkspacesByProject removes all workspaces registered to the given project.
 func (r *FileStateRepository) DeleteWorkspacesByProject(project string) error {
+	return r.update(func(next *State) (bool, error) {
+		changed := false
+		for id, ws := range next.Workspaces {
+			if ws.Project == project {
+				delete(next.Workspaces, id)
+				changed = true
+			}
+		}
+		return changed, nil
+	})
+}
+
+func (r *FileStateRepository) update(mutate func(*State) (bool, error)) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	changed := false
-	for id, ws := range r.state.Workspaces {
-		if ws.Project == project {
-			delete(r.state.Workspaces, id)
-			changed = true
-		}
+	previous := r.state
+	next := cloneState(previous)
+	changed, err := mutate(next)
+	if err != nil || !changed {
+		return err
 	}
-	if changed {
-		return r.Save()
+	r.state = next
+	if err := r.saveLocked(); err != nil {
+		r.state = previous
+		return err
 	}
 	return nil
+}
+
+func newState() *State {
+	return &State{
+		DocsRepos:         make(map[string]config.DocsRepoConfig),
+		ProjectToDocsRepo: make(map[string]string),
+		Workspaces:        make(map[string]WorkspaceState),
+	}
+}
+
+func ensureStateMaps(s *State) {
+	if s.DocsRepos == nil {
+		s.DocsRepos = make(map[string]config.DocsRepoConfig)
+	}
+	if s.ProjectToDocsRepo == nil {
+		s.ProjectToDocsRepo = make(map[string]string)
+	}
+	if s.Workspaces == nil {
+		s.Workspaces = make(map[string]WorkspaceState)
+	}
+}
+
+func cloneState(s *State) *State {
+	clone := newState()
+	for id, repo := range s.DocsRepos {
+		clone.DocsRepos[id] = repo
+	}
+	for project, repoID := range s.ProjectToDocsRepo {
+		clone.ProjectToDocsRepo[project] = repoID
+	}
+	for id, workspace := range s.Workspaces {
+		clone.Workspaces[id] = workspace
+	}
+	return clone
+}
+
+func loadStateBackup(path string) (*State, error) {
+	data, err := os.ReadFile(path + ".bak")
+	if err != nil {
+		return nil, err
+	}
+	recovered := newState()
+	if err := json.Unmarshal(data, recovered); err != nil {
+		return nil, err
+	}
+	ensureStateMaps(recovered)
+	return recovered, nil
+}
+
+func mustMarshalState(s *State) []byte {
+	data, err := json.MarshalIndent(s, "", "  ")
+	if err != nil {
+		panic(err)
+	}
+	return data
+}
+
+func writeAtomic(path string, data []byte) (returnErr error) {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+	temp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	tempPath := temp.Name()
+	defer func() {
+		if returnErr != nil {
+			_ = os.Remove(tempPath)
+		}
+	}()
+	if err := temp.Chmod(0644); err != nil {
+		_ = temp.Close()
+		return err
+	}
+	if _, err := temp.Write(data); err != nil {
+		_ = temp.Close()
+		return err
+	}
+	if err := temp.Sync(); err != nil {
+		_ = temp.Close()
+		return err
+	}
+	if err := temp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tempPath, path); err != nil {
+		return err
+	}
+	directory, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	defer directory.Close()
+	return directory.Sync()
 }

@@ -87,10 +87,10 @@ func TestDocsPush_Integration(t *testing.T) {
 	}
 
 	gitClient := git.NewClient()
-	gitManager := git.NewDocsRepoManager(gitClient)
-	docsRepo := git.NewGitDocsRepository(gitClient, stateRepo)
+	mutexManager := git.NewRepoCoordinator()
+	gitManager := git.NewDocsRepoManager(gitClient, mutexManager)
+	docsRepo := git.NewGitDocsRepository(gitClient, stateRepo, mutexManager)
 	workspaceRepo := state.NewFileWorkspaceRepository(stateRepo)
-	mutexManager := docs.NewInMemoryMutexManager()
 
 	// Add project
 	addProjectUC := project.NewAddProjectUseCase(stateRepo, gitManager)
@@ -128,7 +128,7 @@ func TestDocsPush_Integration(t *testing.T) {
 	docsSnapshotHandler := handler.NewDocsSnapshotHandler(getDocsSnapshotUC)
 	docsPushHandler := handler.NewDocsPushHandler(pushDocsUC)
 
-	srv := kkachihttp.NewHTTPServer(kkachihttp.ServerConfig{Addr: ":0"}, projectHandler, workspaceHandler, docsHeadHandler, docsSnapshotHandler, docsPushHandler, nil, nil)
+	srv := kkachihttp.NewHTTPServer(kkachihttp.ServerConfig{Addr: ":0"}, projectHandler, workspaceHandler, docsHeadHandler, docsSnapshotHandler, docsPushHandler, nil)
 	ts := httptest.NewServer(srv.Handler)
 	defer ts.Close()
 

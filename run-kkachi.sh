@@ -3,21 +3,18 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-export PATH="$HOME/.npm-global/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
-# Source nvm to make the configured Node.js version available to launchd.
-export NVM_DIR="$HOME/.nvm"
-if [ -s "$NVM_DIR/nvm.sh" ]; then
-  # shellcheck source=/dev/null
-  . "$NVM_DIR/nvm.sh"
+if ! command -v git >/dev/null 2>&1; then
+  echo "Required command not found: git" >&2
+  exit 1
 fi
 
-for required_command in git make node npm; do
-  if ! command -v "$required_command" >/dev/null 2>&1; then
-    echo "Required command not found: $required_command" >&2
-    exit 1
-  fi
-done
+SERVER_BINARY="$SCRIPT_DIR/bin/server"
+if [ ! -x "$SERVER_BINARY" ]; then
+  echo "Server binary not found or not executable: $SERVER_BINARY" >&2
+  exit 1
+fi
 
 cd "$SCRIPT_DIR"
-exec make run-local-dev-with-web
+exec "$SERVER_BINARY"

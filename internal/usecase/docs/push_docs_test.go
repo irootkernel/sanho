@@ -46,6 +46,8 @@ type mockDocsWriteRepo struct {
 	pushSnapshotErr error
 	pushErr         error
 	pushCalled      bool
+	resetErr        error
+	resetCalled     bool
 }
 
 func (m *mockDocsWriteRepo) PushSnapshot(ctx context.Context, project docs.ProjectName, base docs.CommitHash, snapshot docs.DocsSnapshot, actorEmail string) (docs.DocsPushResult, error) {
@@ -55,6 +57,11 @@ func (m *mockDocsWriteRepo) PushSnapshot(ctx context.Context, project docs.Proje
 func (m *mockDocsWriteRepo) Push(ctx context.Context, project docs.ProjectName) error {
 	m.pushCalled = true
 	return m.pushErr
+}
+
+func (m *mockDocsWriteRepo) Reset(ctx context.Context, project docs.ProjectName) error {
+	m.resetCalled = true
+	return m.resetErr
 }
 
 type mockMutexManager struct {
@@ -98,6 +105,7 @@ func TestPushDocsUseCase_Execute(t *testing.T) {
 					ID:         "ws1",
 					Project:    "proj1",
 					DocsRepoID: "repo1",
+					DocsHash:   "stored123",
 				},
 			},
 			docsWriteRepo: &mockDocsWriteRepo{
@@ -126,6 +134,7 @@ func TestPushDocsUseCase_Execute(t *testing.T) {
 					ID:         "ws1",
 					Project:    "proj1",
 					DocsRepoID: "repo1",
+					DocsHash:   "stored123",
 				},
 			},
 			docsWriteRepo: &mockDocsWriteRepo{
@@ -212,6 +221,7 @@ func TestPushDocsUseCase_Execute(t *testing.T) {
 					ID:         "ws1",
 					Project:    "proj1",
 					DocsRepoID: "repo1",
+					DocsHash:   "stored123",
 				},
 			},
 			docsWriteRepo: &mockDocsWriteRepo{
@@ -223,7 +233,7 @@ func TestPushDocsUseCase_Execute(t *testing.T) {
 			},
 			mutexManager:       &mockMutexManager{tryLockResult: true},
 			wantErr:            errors.New("push failed"),
-			wantUpdateHashVal:  "base123", // rolled back
+			wantUpdateHashVal:  "stored123", // rolled back
 			wantUpdateHashCall: true,
 			wantPushCall:       true,
 		},
@@ -275,6 +285,70 @@ func TestPushDocsUseCase_Execute(t *testing.T) {
 				t.Errorf("Push called = %v, want %v", tt.docsWriteRepo.pushCalled, tt.wantPushCall)
 			}
 		})
+	}
+}
+
+func TestPushDocsUseCaseResetsCloneAfterPushFailure(t *testing.T) {
+	newHead := docs.CommitHash("new-head")
+	wsRepo := &mockWorkspaceRepo{getResult: &workspace.Workspace{
+		ID: "ws1", Project: "proj1", DocsRepoID: "repo1",
+	}}
+	writeRepo := &mockDocsWriteRepo{
+		pushResult: docs.DocsPushResult{Status: docs.DocsPushStatusUpdated, NewHead: &newHead},
+		pushErr:    errors.New("push failed"),
+	}
+	usecase := uc.NewPushDocsUseCase(wsRepo, writeRepo, &mockMutexManager{tryLockResult: true})
+
+	if _, err := usecase.Execute(context.Background(), uc.PushDocsCommand{
+		WorkspaceID: "ws1", BaseDocsHash: "base",
+	}); !errors.Is(err, writeRepo.pushErr) {
+		t.Fatalf("Execute() error = %v, want push error", err)
+	}
+	if !writeRepo.resetCalled {
+		t.Fatal("docs clone was not reset after push failure")
+	}
+}
+
+func TestPushDocsUseCaseResetsCloneAfterStateUpdateFailure(t *testing.T) {
+	newHead := docs.CommitHash("new-head")
+	stateErr := errors.New("state update failed")
+	wsRepo := &mockWorkspaceRepo{
+		getResult:     &workspace.Workspace{ID: "ws1", Project: "proj1", DocsRepoID: "repo1"},
+		updateHashErr: stateErr,
+	}
+	writeRepo := &mockDocsWriteRepo{
+		pushResult: docs.DocsPushResult{Status: docs.DocsPushStatusUpdated, NewHead: &newHead},
+	}
+	usecase := uc.NewPushDocsUseCase(wsRepo, writeRepo, &mockMutexManager{tryLockResult: true})
+
+	if _, err := usecase.Execute(context.Background(), uc.PushDocsCommand{
+		WorkspaceID: "ws1", BaseDocsHash: "base",
+	}); !errors.Is(err, stateErr) {
+		t.Fatalf("Execute() error = %v, want state update error", err)
+	}
+	if !writeRepo.resetCalled {
+		t.Fatal("docs clone was not reset after state update failure")
+	}
+	if writeRepo.pushCalled {
+		t.Fatal("remote push must not run after state update failure")
+	}
+}
+
+func TestPushDocsUseCaseResetsCloneAfterSnapshotFailure(t *testing.T) {
+	snapshotErr := errors.New("snapshot failed")
+	wsRepo := &mockWorkspaceRepo{getResult: &workspace.Workspace{
+		ID: "ws1", Project: "proj1", DocsRepoID: "repo1",
+	}}
+	writeRepo := &mockDocsWriteRepo{pushSnapshotErr: snapshotErr}
+	usecase := uc.NewPushDocsUseCase(wsRepo, writeRepo, &mockMutexManager{tryLockResult: true})
+
+	if _, err := usecase.Execute(context.Background(), uc.PushDocsCommand{
+		WorkspaceID: "ws1", BaseDocsHash: "base",
+	}); !errors.Is(err, snapshotErr) {
+		t.Fatalf("Execute() error = %v, want snapshot error", err)
+	}
+	if !writeRepo.resetCalled {
+		t.Fatal("docs clone was not reset after snapshot failure")
 	}
 }
 

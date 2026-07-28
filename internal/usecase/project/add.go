@@ -50,7 +50,7 @@ func (uc *AddProjectUseCase) Execute(ctx context.Context, input AddProjectInput)
 		if rollbackErr := uc.stateRepo.DeleteDocsRepo(repoConfig.ID); rollbackErr != nil {
 			return fmt.Errorf("failed to sync repo: %w (rollback failed: %v)", err, rollbackErr)
 		}
-		_ = uc.gitManager.DeleteRepo(repoConfig.Path)
+		_ = uc.gitManager.DeleteRepo(ctx, repoConfig.ID, repoConfig.Path)
 		return fmt.Errorf("failed to sync repo: %w", err)
 	}
 

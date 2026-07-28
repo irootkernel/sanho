@@ -1,0 +1,96 @@
+# Kkachi 아키텍처
+
+## 제품 경계
+
+Kkachi의 책임은 전용 docs 저장소를 단일 진실의 원천으로 유지하고,
+애플리케이션 저장소의 `docs/` 작업 사본이 어느 commit을 기준으로 하는지
+추적하는 것이다.
+
+실행 구성요소는 `kkachi-server`와 `kkachi` CLI뿐이다. 서버는 셸 명령을
+사용자 대신 실행하거나, 터미널·PTY·에이전트 세션을 만들거나, Web UI를
+제공하지 않는다.
+
+## 구성
+
+```text
+application repo
+  docs/ + .kkachi.json + Git hooks
+             |
+             | HTTP
+             v
+       kkachi-server
+       | state file
+       | repo coordinator
+       v
+  local docs clone <----> canonical docs origin
+```
+
+- CLI는 로컬 docs snapshot 생성, 병합, 상태 표시, hook 연동을 담당한다.
+- daemon은 프로젝트·작업공간 등록, snapshot 제공, 조건부 push를 담당한다.
+- docs origin의 commit history가 문서 내용의 최종 기록이다.
+- daemon state는 프로젝트 매핑과 각 작업공간의 기준 commit을 저장한다.
+
+## 동시성 계약
+
+하나의 daemon 프로세스에서 모든 Git 작업은 `docs_repo_id`별 coordinator를
+공유한다. 같은 repo의 sync, read, push, delete는 동시에 clone을 만지지
+않는다. 서로 다른 repo는 병렬로 처리할 수 있다.
+
+push는 기다리지 않고 잠금 획득을 시도한다. 이미 같은 repo에서 작업 중이면
+`docs_repo_busy`로 실패하므로 호출자는 잠시 후 다시 시도할 수 있다. 일반
+조회와 관리 작업은 context가 취소될 때까지 잠금을 기다린다.
+
+## 원격 HEAD 계약
+
+daemon은 로컬 clone의 기존 HEAD를 그대로 신뢰하지 않는다. HEAD 또는
+snapshot을 읽기 전에 다음 순서로 clone을 갱신한다.
+
+1. origin fetch
+2. `main` 또는 `master` checkout
+3. `origin/main` 또는 `origin/master`로 hard reset
+
+갱신에 실패하면 stale HEAD를 반환하지 않는다.
+
+## 문서 push 계약
+
+문서 snapshot을 게시하는 동안 같은 repo의 잠금을 끝까지 유지한다.
+
+1. clone을 origin으로 갱신한다.
+2. 요청의 base commit이 현재 원격 HEAD와 같은지 확인한다.
+3. 다르면 `outdated`를 반환한다.
+4. 같으면 snapshot을 적용하고 commit한다.
+5. 작업공간의 기준 hash를 새 commit으로 저장한다.
+6. 새 commit을 origin에 push한다.
+
+5단계가 실패하면 로컬 commit을 버리고 origin으로 복구한다. 6단계가
+실패하면 작업공간 hash를 이전 값으로 되돌리고 clone도 origin으로
+복구한다. 따라서 push되지 않은 로컬 commit이 이후 HEAD 조회에 노출되지
+않는다.
+
+## state 내구성
+
+state 변경은 메모리의 복사본에 먼저 적용한다. 디스크 저장이 실패하면
+메모리도 이전 상태로 되돌린다.
+
+저장은 state 파일과 `.bak` 각각에 대해 같은 디렉터리의 임시 파일을
+사용한다. 파일을 쓰고 `fsync`한 다음 atomic rename하고 디렉터리도
+`fsync`한다. 시작 시 primary JSON이 없거나 손상됐고 정상 백업이 있으면
+백업을 primary로 복원한다. 둘 다 손상됐으면 daemon은 빈 상태를 만들어
+계속하지 않고 시작에 실패한다.
+
+## HTTP 인터페이스
+
+| Method | Path | 용도 |
+|---|---|---|
+| `GET` | `/healthz` | daemon 생존 확인 |
+| `POST` | `/projects` | 프로젝트와 docs repo 등록 |
+| `DELETE` | `/projects/{project}` | 프로젝트 삭제 |
+| `POST` | `/workspaces/register` | 작업공간 등록 |
+| `DELETE` | `/workspaces/{workspace_id}` | 작업공간 등록 해제 |
+| `GET` | `/docs/head` | 원격 기준 docs HEAD 조회 |
+| `GET` | `/docs/snapshot` | 특정 commit snapshot 조회 |
+| `POST` | `/docs/push` | base 조건을 검사해 snapshot 게시 |
+| `GET` | `/state` | 프로젝트 HEAD와 작업공간 상태 조회 |
+
+정의되지 않은 경로는 JSON `404 not_found`를 반환한다. 정적 파일, Swagger,
+OpenAPI 문서, WebSocket endpoint는 없다.

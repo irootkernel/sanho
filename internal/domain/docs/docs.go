@@ -38,4 +38,5 @@ type DocsPushResult struct {
 type DocsWriteRepository interface {
 	PushSnapshot(ctx context.Context, project ProjectName, base CommitHash, snapshot DocsSnapshot, actorEmail string) (DocsPushResult, error)
 	Push(ctx context.Context, project ProjectName) error
+	Reset(ctx context.Context, project ProjectName) error
 }

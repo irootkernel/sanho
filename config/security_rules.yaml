@@ -1,5 +1,0 @@
-blacklist:
-  - pattern: "rm -rf .*"
-    reason: "Recursive deletion is prohibited for security reasons."
-  - pattern: "mkfs.*"
-    reason: "Filesystem creation is prohibited."

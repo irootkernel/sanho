@@ -13,7 +13,7 @@
 ## Build, Test, and Development Commands
 - Require Go 1.25+. Local server: `go run ./cmd/server` (override `PORT`, `STATE_FILE_PATH`).
 - CLI build/install: `make cli-build` → `bin/kkachi`; `make cli-install` to `$GOPATH/bin`.
-- Server checks: `make server-test-prepare` (generate+fmt+vet), `make server-test-unit`, `make server-test-integration`, `make server-test-e2e` (`E2E_BASE_URL`, default `http://127.0.0.1:5789`), or `make server-test` for all.
+- Server checks: `make server-test-prepare` (generate+fmt+vet), `make server-test-unit`, `make server-test-integration`, `make server-test-e2e` (isolated daemon by default; set `E2E_BASE_URL` for an explicit server), or `make server-test` for all.
 - CLI checks: `make cli-test-prepare`, `make cli-test-unit`, `make cli-test-integration` (sets `KKACHI_CLI_BINARY`), `make cli-test-e2e` (`KKACHI_E2E_BASE_URL`), or `make cli-test`.
 - Docker dev loop: `make server-run` builds the dev image and runs with Git/SSH mounts.
 

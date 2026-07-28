@@ -25,43 +25,67 @@ import (
 	testutil "github.com/SeventeenthEarth/kkachi/test/util"
 )
 
-const defaultBaseURL = "http://127.0.0.1:5789"
-
-// getBaseURL returns the e2e server base URL from env or the default localhost value.
-func getBaseURL() string {
+// configuredBaseURL returns an explicitly configured E2E server. With no
+// override, tests must launch an isolated server instead of reusing a
+// developer's daemon and persistent state.
+func configuredBaseURL() (string, bool) {
 	if base := strings.TrimSpace(os.Getenv("KKACHI_E2E_BASE_URL")); base != "" {
-		return strings.TrimRight(base, "/")
+		return strings.TrimRight(base, "/"), true
 	}
-	return defaultBaseURL
+	return "", false
 }
 
-// requireServer ensures the server at getBaseURL is healthy before running tests.
+// requireServer uses an explicit server override when present. Otherwise it
+// launches a server with a fresh state file on an ephemeral loopback port.
 func requireServer(t *testing.T, ctx context.Context) string {
 	t.Helper()
 
-	base := getBaseURL()
+	base, configured := configuredBaseURL()
+	if configured {
+		healthErr := pingHealth(base, 2*time.Second)
+		if healthErr == nil {
+			return base
+		}
 
-	// Quick check: if a server is already running, use it.
-	healthErr := pingHealth(base, 2*time.Second)
-	if healthErr == nil {
-		return base
+		baseURL, err := url.Parse(base)
+		if err != nil {
+			t.Fatalf("invalid KKACHI_E2E_BASE_URL %q: %v", base, err)
+		}
+		if !isLocalHost(baseURL.Hostname()) {
+			t.Skipf("Skipping E2E: kkachi-server not reachable at %s (%v)", base, healthErr)
+		}
+	} else {
+		listener, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatalf("reserve E2E server port: %v", err)
+		}
+		port := listener.Addr().(*net.TCPAddr).Port
+		if err := listener.Close(); err != nil {
+			t.Fatalf("release E2E server port: %v", err)
+		}
+		base = fmt.Sprintf("http://127.0.0.1:%d", port)
 	}
 
 	baseURL, err := url.Parse(base)
 	if err != nil {
 		t.Fatalf("invalid KKACHI_E2E_BASE_URL %q: %v", base, err)
 	}
-	if !isLocalHost(baseURL.Hostname()) {
-		t.Skipf("Skipping E2E: kkachi-server not reachable at %s (%v)", base, healthErr)
-	}
-
-	// Bootstrap a local server on the requested port.
 	port := portOrDefault(baseURL)
-	statePath := filepath.Join(t.TempDir(), "kkachi_state.json")
+	testDir := t.TempDir()
+	statePath := filepath.Join(testDir, "kkachi_state.json")
+	serverBinary := strings.TrimSpace(os.Getenv("KKACHI_SERVER_BINARY"))
+	if serverBinary == "" {
+		serverBinary = filepath.Join(testDir, "kkachi-server")
+		build := exec.Command("go", "build", "-o", serverBinary, "./cmd/server")
+		build.Dir = repoRoot(t)
+		if output, buildErr := build.CombinedOutput(); buildErr != nil {
+			t.Fatalf("build kkachi-server for E2E: %v\noutput:\n%s", buildErr, output)
+		}
+	}
 
 	serverCtx, cancel := context.WithCancel(context.Background())
 	var logs bytes.Buffer
-	cmd := exec.CommandContext(serverCtx, "go", "run", "./cmd/server")
+	cmd := exec.CommandContext(serverCtx, serverBinary)
 	cmd.Dir = repoRoot(t)
 	cmd.Env = append(os.Environ(),
 		"PORT="+port,

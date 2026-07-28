@@ -2,7 +2,6 @@ package state
 
 import (
 	"context"
-	"log"
 
 	"github.com/SeventeenthEarth/kkachi/internal/domain/docs"
 	"github.com/SeventeenthEarth/kkachi/internal/domain/workspace"
@@ -58,9 +57,7 @@ func (u *getStateUseCase) Execute(ctx context.Context) (*StateResult, error) {
 		projectName := docs.ProjectName(project)
 		head, err := u.docsRepo.GetHead(ctx, projectName)
 		if err != nil {
-			// Log error but continue - state endpoint should be resilient
-			log.Printf("GetStateUseCase: failed to get head for project %s: %v", project, err)
-			continue
+			return nil, err
 		}
 		docsHeads[projectName] = head
 	}

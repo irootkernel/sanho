@@ -107,7 +107,7 @@ func TestGetStateUseCase_Execute(t *testing.T) {
 			wantWorkspaces: 2,
 		},
 		{
-			name: "Project without HEAD continues",
+			name: "Project without HEAD fails closed",
 			docsRepo: &mockDocsRepo{
 				heads: map[docs.ProjectName]docs.CommitHash{
 					"project1": "hash1",
@@ -122,9 +122,7 @@ func TestGetStateUseCase_Execute(t *testing.T) {
 			projectLister: &mockProjectLister{
 				projects: []string{"project1", "project2"},
 			},
-			wantErr:        false,
-			wantHeads:      1, // Only project1 has HEAD
-			wantWorkspaces: 1,
+			wantErr: true,
 		},
 		{
 			name:     "List workspace error",

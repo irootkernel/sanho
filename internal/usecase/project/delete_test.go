@@ -65,7 +65,7 @@ func (m *mockGitManager) Sync(_ context.Context, _ []config.DocsRepoConfig) erro
 	return nil
 }
 
-func (m *mockGitManager) DeleteRepo(path string) error {
+func (m *mockGitManager) DeleteRepo(_ context.Context, _, _ string) error {
 	m.deleteRepoCalled = true
 	return nil
 }
