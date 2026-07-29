@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/irootkernel/sanho/internal/config"
+	"github.com/irootkernel/sanho/internal/domain/docs"
 	"github.com/irootkernel/sanho/internal/infra/git"
 	"github.com/irootkernel/sanho/internal/infra/state"
 	"github.com/irootkernel/sanho/internal/interface/http/handler"
@@ -28,7 +28,7 @@ func TestDeleteProject(t *testing.T) {
 
 	// Init State
 	stateRepo, _ := state.NewFileStateRepository(statePath)
-	stateRepo.AddDocsRepo(config.DocsRepoConfig{ID: "repo1", Path: repoPath})
+	stateRepo.AddDocsRepo(docs.RepositoryConfig{ID: "repo1", Path: repoPath})
 	stateRepo.AddProject("proj1", "repo1")
 
 	// Init Components
@@ -74,7 +74,7 @@ func TestDeleteProjectWithWorkspaces(t *testing.T) {
 
 	// Init State
 	stateRepo, _ := state.NewFileStateRepository(statePath)
-	stateRepo.AddDocsRepo(config.DocsRepoConfig{ID: "repo1", Path: repoPath})
+	stateRepo.AddDocsRepo(docs.RepositoryConfig{ID: "repo1", Path: repoPath})
 	stateRepo.AddProject("proj1", "repo1")
 	// Add a workspace for proj1
 	stateRepo.AddWorkspace(state.WorkspaceState{

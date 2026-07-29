@@ -14,7 +14,6 @@ import (
 	"github.com/irootkernel/sanho/internal/domain/client"
 	"github.com/irootkernel/sanho/internal/domain/docs"
 	"github.com/irootkernel/sanho/internal/domain/workspace"
-	"github.com/irootkernel/sanho/internal/infra/fs"
 )
 
 // Pre-commit specific errors.
@@ -46,8 +45,8 @@ type PreCommitDocsHashStore interface {
 
 // PreCommitPendingFixStore manages pending fix state.
 type PreCommitPendingFixStore interface {
-	Read(path string) (fs.PendingFixState, bool, error)
-	Write(path string, state fs.PendingFixState) error
+	Read(path string) (client.PendingFixState, bool, error)
+	Write(path string, state client.PendingFixState) error
 	Remove(path string) error
 }
 
@@ -366,7 +365,7 @@ func (u *PreCommitUseCase) handleOutdated(
 	}
 
 	// Create pending fix state
-	pendingState := fs.PendingFixState{
+	pendingState := client.PendingFixState{
 		BaseHash:   baseHash,
 		RemoteHash: remoteHash,
 		CreatedAt:  time.Now(),

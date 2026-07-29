@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/irootkernel/sanho/internal/config"
 	"github.com/irootkernel/sanho/internal/domain/docs"
 )
 
@@ -22,7 +21,7 @@ func NewDocsRepoManager(client *Client, coordinator *RepoCoordinator) *DocsRepoM
 	}
 }
 
-func (m *DocsRepoManager) Sync(ctx context.Context, repos []config.DocsRepoConfig) error {
+func (m *DocsRepoManager) Sync(ctx context.Context, repos []docs.RepositoryConfig) error {
 	for _, repo := range repos {
 		repoID := docs.DocsRepoID(repo.ID)
 		if err := m.coordinator.Lock(ctx, repoID); err != nil {
@@ -38,7 +37,7 @@ func (m *DocsRepoManager) Sync(ctx context.Context, repos []config.DocsRepoConfi
 	return nil
 }
 
-func (m *DocsRepoManager) syncRepo(ctx context.Context, repo config.DocsRepoConfig) error {
+func (m *DocsRepoManager) syncRepo(ctx context.Context, repo docs.RepositoryConfig) error {
 	if _, err := os.Stat(repo.Path); os.IsNotExist(err) {
 		if err := os.MkdirAll(filepath.Dir(repo.Path), 0755); err != nil {
 			return fmt.Errorf("failed to create directory for %s: %w", repo.ID, err)

@@ -9,7 +9,6 @@ import (
 
 	"github.com/irootkernel/sanho/internal/domain/client"
 	"github.com/irootkernel/sanho/internal/domain/docs"
-	"github.com/irootkernel/sanho/internal/infra/fs"
 	"github.com/irootkernel/sanho/internal/infra/httpclient"
 	"github.com/spf13/cobra"
 )
@@ -136,7 +135,7 @@ func TestBuildStatusJSONOutputUsesStableMachineFields(t *testing.T) {
 		"full-current-hash",
 		client.DocsStatusOutdated,
 		projectStatus,
-		fs.PendingFixState{CreatedAt: createdAt},
+		client.PendingFixState{CreatedAt: createdAt},
 		true,
 		"complete",
 		[]string{"z.md", "a.md"},

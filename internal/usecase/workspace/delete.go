@@ -3,17 +3,19 @@ package workspace
 import (
 	"errors"
 	"os"
-
-	"github.com/irootkernel/sanho/internal/infra/state"
 )
 
 var ErrUnknownWorkspace = errors.New("unknown_workspace")
 
-type DeleteWorkspaceUseCase struct {
-	stateRepo *state.FileStateRepository
+type DeleteWorkspaceRepository interface {
+	DeleteWorkspace(id string) error
 }
 
-func NewDeleteWorkspaceUseCase(stateRepo *state.FileStateRepository) *DeleteWorkspaceUseCase {
+type DeleteWorkspaceUseCase struct {
+	stateRepo DeleteWorkspaceRepository
+}
+
+func NewDeleteWorkspaceUseCase(stateRepo DeleteWorkspaceRepository) *DeleteWorkspaceUseCase {
 	return &DeleteWorkspaceUseCase{stateRepo: stateRepo}
 }
 

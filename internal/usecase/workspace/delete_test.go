@@ -1,60 +1,48 @@
 package workspace
 
 import (
+	"errors"
 	"os"
-	"path/filepath"
 	"testing"
-
-	"github.com/irootkernel/sanho/internal/infra/state"
 )
 
-func TestDeleteWorkspaceUseCase_Success(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "sanho-delete-ws-*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tempDir)
+type deleteWorkspaceRepository struct {
+	deletedID string
+	err       error
+}
 
-	statePath := filepath.Join(tempDir, "state.json")
-	stateRepo, err := state.NewFileStateRepository(statePath)
-	if err != nil {
-		t.Fatalf("failed to create state repo: %v", err)
-	}
+func (r *deleteWorkspaceRepository) DeleteWorkspace(id string) error {
+	r.deletedID = id
+	return r.err
+}
 
-	wsID := "proj:/path/ws1"
-	if err := stateRepo.AddWorkspace(state.WorkspaceState{
-		ID:         wsID,
-		Project:    "proj",
-		DocsRepoID: "repo",
-	}); err != nil {
-		t.Fatalf("failed to seed workspace: %v", err)
-	}
+func TestDeleteWorkspaceUseCaseSuccess(t *testing.T) {
+	repository := &deleteWorkspaceRepository{}
+	uc := NewDeleteWorkspaceUseCase(repository)
 
-	uc := NewDeleteWorkspaceUseCase(stateRepo)
-	if err := uc.Execute(wsID); err != nil {
+	if err := uc.Execute("proj:/path/ws1"); err != nil {
 		t.Fatalf("Execute returned error: %v", err)
 	}
-
-	if _, ok := stateRepo.GetWorkspace(wsID); ok {
-		t.Fatalf("workspace %s should be deleted", wsID)
+	if repository.deletedID != "proj:/path/ws1" {
+		t.Fatalf("deleted workspace = %q, want %q", repository.deletedID, "proj:/path/ws1")
 	}
 }
 
-func TestDeleteWorkspaceUseCase_UnknownWorkspace(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "sanho-delete-ws-*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tempDir)
+func TestDeleteWorkspaceUseCaseUnknownWorkspace(t *testing.T) {
+	repository := &deleteWorkspaceRepository{err: os.ErrNotExist}
+	uc := NewDeleteWorkspaceUseCase(repository)
 
-	statePath := filepath.Join(tempDir, "state.json")
-	stateRepo, err := state.NewFileStateRepository(statePath)
-	if err != nil {
-		t.Fatalf("failed to create state repo: %v", err)
+	if err := uc.Execute("missing"); !errors.Is(err, ErrUnknownWorkspace) {
+		t.Fatalf("Execute error = %v, want %v", err, ErrUnknownWorkspace)
 	}
+}
 
-	uc := NewDeleteWorkspaceUseCase(stateRepo)
-	if err := uc.Execute("missing"); err != ErrUnknownWorkspace {
-		t.Fatalf("expected ErrUnknownWorkspace, got %v", err)
+func TestDeleteWorkspaceUseCasePropagatesRepositoryError(t *testing.T) {
+	repositoryErr := errors.New("delete failed")
+	repository := &deleteWorkspaceRepository{err: repositoryErr}
+	uc := NewDeleteWorkspaceUseCase(repository)
+
+	if err := uc.Execute("workspace"); !errors.Is(err, repositoryErr) {
+		t.Fatalf("Execute error = %v, want %v", err, repositoryErr)
 	}
 }

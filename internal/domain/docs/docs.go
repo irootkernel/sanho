@@ -11,6 +11,13 @@ func (h CommitHash) IsZero() bool {
 
 type DocsRepoID string
 
+// RepositoryConfig describes a locally managed canonical docs repository.
+type RepositoryConfig struct {
+	ID      string
+	Path    string
+	RepoURL string
+}
+
 type DocsSnapshot []byte
 
 type DocsReadRepository interface {

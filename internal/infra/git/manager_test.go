@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/irootkernel/sanho/internal/config"
+	"github.com/irootkernel/sanho/internal/domain/docs"
 	"github.com/irootkernel/sanho/internal/infra/git"
 )
 
@@ -34,7 +34,7 @@ func TestDocsRepoManager_Sync(t *testing.T) {
 	targetPath := filepath.Join(tempDir, "target")
 
 	// Config
-	cfg := config.DocsRepoConfig{
+	cfg := docs.RepositoryConfig{
 		ID:      "test-repo",
 		Path:    targetPath,
 		RepoURL: originPath,
@@ -44,7 +44,7 @@ func TestDocsRepoManager_Sync(t *testing.T) {
 	manager := git.NewDocsRepoManager(client, git.NewRepoCoordinator())
 
 	// Test 1: Clone
-	if err := manager.Sync(context.Background(), []config.DocsRepoConfig{cfg}); err != nil {
+	if err := manager.Sync(context.Background(), []docs.RepositoryConfig{cfg}); err != nil {
 		t.Fatalf("First Sync (Clone) failed: %v", err)
 	}
 
@@ -54,7 +54,7 @@ func TestDocsRepoManager_Sync(t *testing.T) {
 
 	// Test 2: Fetch
 	// We can't easily verify fetch without new commits, but we can verify it doesn't error
-	if err := manager.Sync(context.Background(), []config.DocsRepoConfig{cfg}); err != nil {
+	if err := manager.Sync(context.Background(), []docs.RepositoryConfig{cfg}); err != nil {
 		t.Fatalf("Second Sync (Fetch) failed: %v", err)
 	}
 }

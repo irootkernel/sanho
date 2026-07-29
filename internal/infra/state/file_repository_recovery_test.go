@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/irootkernel/sanho/internal/config"
+	"github.com/irootkernel/sanho/internal/domain/docs"
 	"github.com/irootkernel/sanho/internal/infra/state"
 )
 
@@ -17,7 +17,7 @@ func TestFileStateRepositoryRecoversCorruptPrimaryFromBackup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	repoConfig := config.DocsRepoConfig{ID: "docs", Path: "/tmp/docs", RepoURL: "example"}
+	repoConfig := docs.RepositoryConfig{ID: "docs", Path: "/tmp/docs", RepoURL: "example"}
 	if err := repository.AddDocsRepo(repoConfig); err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +68,7 @@ func TestFileStateRepositoryRollsBackMemoryWhenSaveFails(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = repository.AddDocsRepo(config.DocsRepoConfig{ID: "docs"})
+	err = repository.AddDocsRepo(docs.RepositoryConfig{ID: "docs"})
 	if err == nil {
 		t.Fatal("AddDocsRepo() error = nil, want persistence failure")
 	}

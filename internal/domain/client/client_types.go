@@ -2,6 +2,8 @@
 package client
 
 import (
+	"time"
+
 	"github.com/irootkernel/sanho/internal/domain/docs"
 	"github.com/irootkernel/sanho/internal/domain/workspace"
 )
@@ -56,6 +58,13 @@ type WorkspaceConfig struct {
 	PendingFixFile string `json:"pending_fix_file,omitempty"`
 	// DocsSyncCommitMessage is the subject used for system-generated docs base commits.
 	DocsSyncCommitMessage string `json:"docs_sync_commit_message,omitempty"`
+}
+
+// PendingFixState describes an interrupted docs reconciliation.
+type PendingFixState struct {
+	BaseHash   docs.CommitHash `json:"base_hash"`
+	RemoteHash docs.CommitHash `json:"remote_hash"`
+	CreatedAt  time.Time       `json:"created_at"`
 }
 
 // DefaultDocsDir is the default docs directory name.

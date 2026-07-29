@@ -3,12 +3,12 @@ package project
 import (
 	"context"
 
-	"github.com/irootkernel/sanho/internal/config"
+	"github.com/irootkernel/sanho/internal/domain/docs"
 )
 
 // State access needed by AddProject use case.
 type AddProjectStateRepository interface {
-	AddDocsRepo(config.DocsRepoConfig) error
+	AddDocsRepo(docs.RepositoryConfig) error
 	DeleteDocsRepo(id string) error
 	AddProject(project, repoID string) error
 }
@@ -18,7 +18,7 @@ type DeleteProjectStateRepository interface {
 	GetDocsRepoID(project string) (string, bool)
 	DeleteProject(project string) error
 	GetRepoUsage() map[string]int
-	GetDocsRepo(id string) (config.DocsRepoConfig, bool)
+	GetDocsRepo(id string) (docs.RepositoryConfig, bool)
 	DeleteDocsRepo(id string) error
 	HasWorkspacesForProject(project string) bool
 	// DeleteWorkspacesByProject removes all workspaces registered to the project.
@@ -26,6 +26,6 @@ type DeleteProjectStateRepository interface {
 }
 
 type DocsRepoManager interface {
-	Sync(ctx context.Context, repos []config.DocsRepoConfig) error
+	Sync(ctx context.Context, repos []docs.RepositoryConfig) error
 	DeleteRepo(ctx context.Context, repoID string, path string) error
 }

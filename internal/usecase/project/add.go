@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/irootkernel/sanho/internal/config"
+	"github.com/irootkernel/sanho/internal/domain/docs"
 )
 
 type AddProjectUseCase struct {
@@ -42,7 +42,7 @@ func (uc *AddProjectUseCase) Execute(ctx context.Context, input AddProjectInput)
 	}
 	repoPath := filepath.Join(uc.docsReposDir, input.DocsRepoID)
 
-	repoConfig := config.DocsRepoConfig{
+	repoConfig := docs.RepositoryConfig{
 		ID:      input.DocsRepoID,
 		Path:    repoPath,
 		RepoURL: input.DocsRepoURL,
@@ -54,7 +54,7 @@ func (uc *AddProjectUseCase) Execute(ctx context.Context, input AddProjectInput)
 	}
 
 	// Trigger Sync for this repo
-	if err := uc.gitManager.Sync(ctx, []config.DocsRepoConfig{repoConfig}); err != nil {
+	if err := uc.gitManager.Sync(ctx, []docs.RepositoryConfig{repoConfig}); err != nil {
 		// Rollback docs repo entry to keep state consistent if sync fails
 		if rollbackErr := uc.stateRepo.DeleteDocsRepo(repoConfig.ID); rollbackErr != nil {
 			return fmt.Errorf("failed to sync repo: %w (rollback failed: %v)", err, rollbackErr)

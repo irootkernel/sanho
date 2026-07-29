@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/irootkernel/sanho/internal/domain/client"
-	"github.com/irootkernel/sanho/internal/infra/fs"
 	"github.com/irootkernel/sanho/internal/infra/httpclient"
 )
 
@@ -45,7 +44,7 @@ func buildStatusJSONOutput(
 	docsBase string,
 	status client.DocsStatus,
 	projectStatus httpclient.ProjectStatusResponse,
-	pendingFixState fs.PendingFixState,
+	pendingFixState client.PendingFixState,
 	hasPendingFix bool,
 	conflictScanStatus string,
 	conflictFiles []string,

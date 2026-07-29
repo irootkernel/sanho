@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/irootkernel/sanho/internal/config"
 	"github.com/irootkernel/sanho/internal/domain/docs"
 	"github.com/irootkernel/sanho/internal/infra/git"
 	"github.com/irootkernel/sanho/internal/infra/state"
@@ -48,7 +47,7 @@ func TestGitDocsRepositoryCompareProjectCommits(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := stateRepo.AddDocsRepo(config.DocsRepoConfig{ID: "docs", Path: clonePath}); err != nil {
+	if err := stateRepo.AddDocsRepo(docs.RepositoryConfig{ID: "docs", Path: clonePath}); err != nil {
 		t.Fatal(err)
 	}
 	if err := stateRepo.AddProject("project", "docs"); err != nil {
@@ -111,7 +110,7 @@ func TestGitDocsRepositoryCompareProjectCommitsUnknownReference(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := stateRepo.AddDocsRepo(config.DocsRepoConfig{ID: "docs", Path: clonePath}); err != nil {
+	if err := stateRepo.AddDocsRepo(docs.RepositoryConfig{ID: "docs", Path: clonePath}); err != nil {
 		t.Fatal(err)
 	}
 	if err := stateRepo.AddProject("project", "docs"); err != nil {

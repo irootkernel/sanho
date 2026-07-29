@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/irootkernel/sanho/internal/config"
+	"github.com/irootkernel/sanho/internal/domain/docs"
 )
 
 var ErrStateCorrupt = errors.New("state_corrupt")
@@ -27,7 +27,7 @@ type WorkspaceState struct {
 }
 
 type State struct {
-	DocsRepos         map[string]config.DocsRepoConfig `json:"docs_repos"`
+	DocsRepos         map[string]docs.RepositoryConfig `json:"docs_repos"`
 	ProjectToDocsRepo map[string]string                `json:"project_to_docs_repo"`
 	Workspaces        map[string]WorkspaceState        `json:"workspaces"`
 }
@@ -109,7 +109,7 @@ func (r *FileStateRepository) GetRepoUsage() map[string]int {
 	return usage
 }
 
-func (r *FileStateRepository) GetDocsRepo(id string) (config.DocsRepoConfig, bool) {
+func (r *FileStateRepository) GetDocsRepo(id string) (docs.RepositoryConfig, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	repo, ok := r.state.DocsRepos[id]
@@ -125,7 +125,7 @@ func (r *FileStateRepository) AddProject(project, repoID string) error {
 }
 
 // AddDocsRepo for testing/setup
-func (r *FileStateRepository) AddDocsRepo(repo config.DocsRepoConfig) error {
+func (r *FileStateRepository) AddDocsRepo(repo docs.RepositoryConfig) error {
 	return r.update(func(next *State) (bool, error) {
 		next.DocsRepos[repo.ID] = repo
 		return true, nil
@@ -146,10 +146,10 @@ func (r *FileStateRepository) GetDocsRepoID(project string) (string, bool) {
 	return id, ok
 }
 
-func (r *FileStateRepository) ListDocsRepos() []config.DocsRepoConfig {
+func (r *FileStateRepository) ListDocsRepos() []docs.RepositoryConfig {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	repos := make([]config.DocsRepoConfig, 0, len(r.state.DocsRepos))
+	repos := make([]docs.RepositoryConfig, 0, len(r.state.DocsRepos))
 	for _, repo := range r.state.DocsRepos {
 		repos = append(repos, repo)
 	}
@@ -262,7 +262,7 @@ func (r *FileStateRepository) update(mutate func(*State) (bool, error)) error {
 
 func newState() *State {
 	return &State{
-		DocsRepos:         make(map[string]config.DocsRepoConfig),
+		DocsRepos:         make(map[string]docs.RepositoryConfig),
 		ProjectToDocsRepo: make(map[string]string),
 		Workspaces:        make(map[string]WorkspaceState),
 	}
@@ -270,7 +270,7 @@ func newState() *State {
 
 func ensureStateMaps(s *State) {
 	if s.DocsRepos == nil {
-		s.DocsRepos = make(map[string]config.DocsRepoConfig)
+		s.DocsRepos = make(map[string]docs.RepositoryConfig)
 	}
 	if s.ProjectToDocsRepo == nil {
 		s.ProjectToDocsRepo = make(map[string]string)

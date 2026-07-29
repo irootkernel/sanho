@@ -13,7 +13,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/irootkernel/sanho/internal/config"
 	"github.com/irootkernel/sanho/internal/domain/docs"
 	"github.com/irootkernel/sanho/internal/infra/state"
 )
@@ -264,14 +263,14 @@ func (r *GitDocsRepository) PushSnapshot(ctx context.Context, project docs.Proje
 	}, nil
 }
 
-func (r *GitDocsRepository) getRepoConfig(project docs.ProjectName) (config.DocsRepoConfig, error) {
+func (r *GitDocsRepository) getRepoConfig(project docs.ProjectName) (docs.RepositoryConfig, error) {
 	repoID, ok := r.stateRepo.GetDocsRepoID(string(project))
 	if !ok {
-		return config.DocsRepoConfig{}, docs.ErrUnknownProject
+		return docs.RepositoryConfig{}, docs.ErrUnknownProject
 	}
 	repoConfig, ok := r.stateRepo.GetDocsRepo(repoID)
 	if !ok {
-		return config.DocsRepoConfig{}, ErrRepoConfigMissing
+		return docs.RepositoryConfig{}, ErrRepoConfigMissing
 	}
 	return repoConfig, nil
 }

@@ -23,7 +23,7 @@ type WorkspaceConfig struct {
 	PendingFixFile string `json:"pending_fix_file,omitempty"`
 }
 
-// PendingFixState mirrors the fs.PendingFixState for test setup.
+// PendingFixState mirrors the client.PendingFixState for test setup.
 type PendingFixState struct {
 	BaseHash   string `json:"base_hash"`
 	RemoteHash string `json:"remote_hash"`

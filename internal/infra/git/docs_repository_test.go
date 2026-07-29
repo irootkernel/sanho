@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/irootkernel/sanho/internal/config"
 	"github.com/irootkernel/sanho/internal/domain/docs"
 	"github.com/irootkernel/sanho/internal/infra/git"
 	"github.com/irootkernel/sanho/internal/infra/state"
@@ -77,7 +76,7 @@ func TestGitDocsRepository_GetHead(t *testing.T) {
 	// Setup State
 	statePath := filepath.Join(tempDir, "state.json")
 	stateRepo, _ := state.NewFileStateRepository(statePath)
-	if err := stateRepo.AddDocsRepo(config.DocsRepoConfig{ID: "repo1", Path: repoPath}); err != nil {
+	if err := stateRepo.AddDocsRepo(docs.RepositoryConfig{ID: "repo1", Path: repoPath}); err != nil {
 		t.Fatalf("failed to add docs repo: %v", err)
 	}
 	if err := stateRepo.AddProject("proj1", "repo1"); err != nil {

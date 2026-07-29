@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/irootkernel/sanho/internal/domain/client"
 	"github.com/irootkernel/sanho/internal/domain/docs"
 )
 
@@ -16,7 +17,7 @@ func TestFilePendingFixStore_ReadWriteRemove(t *testing.T) {
 	store := NewFilePendingFixStore()
 
 	// Test write
-	expectedState := PendingFixState{
+	expectedState := client.PendingFixState{
 		BaseHash:   docs.CommitHash("base123"),
 		RemoteHash: docs.CommitHash("remote456"),
 		CreatedAt:  time.Now().Truncate(time.Second), // Truncate for comparison

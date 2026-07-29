@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/irootkernel/sanho/internal/config"
+	"github.com/irootkernel/sanho/internal/domain/docs"
 	"github.com/irootkernel/sanho/internal/usecase/project"
 )
 
@@ -18,7 +18,7 @@ type mockStateRepository struct {
 	deleteDocsRepoCalled   bool
 	deleteWorkspacesCalled bool
 	repoUsage              map[string]int
-	docsRepoConfig         config.DocsRepoConfig
+	docsRepoConfig         docs.RepositoryConfig
 	hasDocsRepoConfig      bool
 }
 
@@ -38,7 +38,7 @@ func (m *mockStateRepository) GetRepoUsage() map[string]int {
 	return m.repoUsage
 }
 
-func (m *mockStateRepository) GetDocsRepo(id string) (config.DocsRepoConfig, bool) {
+func (m *mockStateRepository) GetDocsRepo(id string) (docs.RepositoryConfig, bool) {
 	return m.docsRepoConfig, m.hasDocsRepoConfig
 }
 
@@ -61,7 +61,7 @@ type mockGitManager struct {
 	deleteRepoCalled bool
 }
 
-func (m *mockGitManager) Sync(_ context.Context, _ []config.DocsRepoConfig) error {
+func (m *mockGitManager) Sync(_ context.Context, _ []docs.RepositoryConfig) error {
 	return nil
 }
 
@@ -112,7 +112,7 @@ func TestDeleteProjectUseCase_HasWorkspacesWithForce(t *testing.T) {
 		hasDocsRepoID:     true,
 		hasWorkspaces:     true,
 		repoUsage:         map[string]int{"test-repo": 1}, // Still used by another project
-		docsRepoConfig:    config.DocsRepoConfig{ID: "test-repo", Path: "/tmp/repo"},
+		docsRepoConfig:    docs.RepositoryConfig{ID: "test-repo", Path: "/tmp/repo"},
 		hasDocsRepoConfig: true,
 	}
 	gitManager := &mockGitManager{}
@@ -137,7 +137,7 @@ func TestDeleteProjectUseCase_NoWorkspaces(t *testing.T) {
 		hasDocsRepoID:     true,
 		hasWorkspaces:     false,
 		repoUsage:         map[string]int{}, // Not used anymore
-		docsRepoConfig:    config.DocsRepoConfig{ID: "test-repo", Path: "/tmp/repo"},
+		docsRepoConfig:    docs.RepositoryConfig{ID: "test-repo", Path: "/tmp/repo"},
 		hasDocsRepoConfig: true,
 	}
 	gitManager := &mockGitManager{}
@@ -166,7 +166,7 @@ func TestDeleteProjectUseCase_RepoStillUsed(t *testing.T) {
 		hasDocsRepoID:     true,
 		hasWorkspaces:     false,
 		repoUsage:         map[string]int{"shared-repo": 2}, // Still used by other projects
-		docsRepoConfig:    config.DocsRepoConfig{ID: "shared-repo", Path: "/tmp/repo"},
+		docsRepoConfig:    docs.RepositoryConfig{ID: "shared-repo", Path: "/tmp/repo"},
 		hasDocsRepoConfig: true,
 	}
 	gitManager := &mockGitManager{}

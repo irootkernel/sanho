@@ -11,7 +11,6 @@ import (
 	"github.com/irootkernel/sanho/internal/domain/client"
 	"github.com/irootkernel/sanho/internal/domain/docs"
 	"github.com/irootkernel/sanho/internal/domain/workspace"
-	"github.com/irootkernel/sanho/internal/infra/fs"
 )
 
 // --- Fake implementations for testing ---
@@ -51,7 +50,7 @@ func (f *fakeDocsHashStore) Write(path string, hash docs.CommitHash) error {
 }
 
 type fakePendingFixStore struct {
-	state     fs.PendingFixState
+	state     client.PendingFixState
 	exists    bool
 	readErr   error
 	writeErr  error
@@ -60,14 +59,14 @@ type fakePendingFixStore struct {
 	removed   bool
 }
 
-func (f *fakePendingFixStore) Read(path string) (fs.PendingFixState, bool, error) {
+func (f *fakePendingFixStore) Read(path string) (client.PendingFixState, bool, error) {
 	if f.readErr != nil {
-		return fs.PendingFixState{}, false, f.readErr
+		return client.PendingFixState{}, false, f.readErr
 	}
 	return f.state, f.exists, nil
 }
 
-func (f *fakePendingFixStore) Write(path string, state fs.PendingFixState) error {
+func (f *fakePendingFixStore) Write(path string, state client.PendingFixState) error {
 	if f.writeErr != nil {
 		return f.writeErr
 	}
@@ -249,7 +248,7 @@ func TestPreCommitUseCase_PendingFixExists(t *testing.T) {
 			Project:     "test",
 		}},
 		&fakeDocsHashStore{hash: "abc123"},
-		&fakePendingFixStore{exists: true, state: fs.PendingFixState{
+		&fakePendingFixStore{exists: true, state: client.PendingFixState{
 			BaseHash:   "abc123",
 			RemoteHash: "def456",
 			CreatedAt:  time.Now(),
