@@ -152,6 +152,100 @@ func TestE2ECLI_PullOutdated(t *testing.T) {
 	deleteProjectViaCLI(t, cliBinary, serverURL, project, true)
 }
 
+func TestE2ECLI_PullThenPullCommitPreservesRemoteAddedFile(t *testing.T) {
+	cliBinary := getCliBinary(t)
+	serverURL := getServerURL(t)
+	ensureServerAvailable(t, serverURL)
+
+	docsOrigin, initialDocsHead := createOriginRepo(t, map[string]string{
+		"docs/index.md": "# initial docs\n",
+	})
+	appOrigin, _ := createOriginRepo(t, map[string]string{
+		"docs/docs/index.md": "# initial docs\n",
+		"app.txt":            "application\n",
+	})
+	appPublisher := filepath.Join(t.TempDir(), "publisher")
+	runCmd(t, "", "git", "clone", appOrigin, appPublisher)
+	setGitUser(t, appPublisher, "app-publisher@example.com")
+	runCmd(
+		t,
+		appPublisher,
+		"git",
+		"commit",
+		"--amend",
+		"-m",
+		"Initial application",
+		"-m",
+		"docs-version: "+initialDocsHead,
+	)
+	runCmd(t, appPublisher, "git", "push", "--force", "origin", "HEAD:main")
+
+	workspaceDir := filepath.Join(t.TempDir(), "workspace")
+	runCmd(t, "", "git", "clone", appOrigin, workspaceDir)
+	setGitUser(t, workspaceDir, "cli-pull-baseline@example.com")
+
+	project := "cli-pull-baseline-" + strings.ReplaceAll(filepath.Base(docsOrigin), string(filepath.Separator), "_")
+	registerProjectViaCLI(t, cliBinary, serverURL, project, docsOrigin, workspaceDir)
+	wsID, currentHead := registerWorkspaceViaCLI(t, cliBinary, serverURL, project, workspaceDir)
+	if currentHead == "" {
+		currentHead = initialDocsHead
+	}
+	writeConfig(t, workspaceDir, serverURL, project, wsID, "cli-pull-baseline@example.com")
+	writeDocsHash(t, workspaceDir, currentHead)
+
+	firstRemoteHead := pushDocsViaHTTP(t, serverURL, wsID, currentHead, map[string]string{
+		"docs/index.md":     "# first remote update\n",
+		"docs/preserved.md": "must survive\n",
+	}, "first-remote@example.com")
+
+	pull := exec.Command(cliBinary, "pull")
+	pull.Dir = workspaceDir
+	if output, err := pull.CombinedOutput(); err != nil {
+		t.Fatalf("pull failed: %v\nOutput:\n%s", err, output)
+	}
+
+	secondRemoteHead := pushDocsViaHTTP(t, serverURL, wsID, firstRemoteHead, map[string]string{
+		"docs/index.md":     "# second remote update\n",
+		"docs/preserved.md": "must survive\n",
+	}, "second-remote@example.com")
+
+	pullCommit := exec.Command(cliBinary, "pull-commit")
+	pullCommit.Dir = workspaceDir
+	if output, err := pullCommit.CombinedOutput(); err != nil {
+		t.Fatalf("pull-commit failed: %v\nOutput:\n%s", err, output)
+	}
+
+	if got := strings.TrimSpace(string(runCmd(
+		t,
+		workspaceDir,
+		"git",
+		"show",
+		":docs/docs/preserved.md",
+	))); got != "must survive" {
+		t.Fatalf("preserved file in index = %q", got)
+	}
+	if staged := strings.TrimSpace(string(runCmd(
+		t,
+		workspaceDir,
+		"git",
+		"diff",
+		"--cached",
+		"--name-status",
+	))); staged != "" {
+		t.Fatalf("pull-commit left unexpected staged changes:\n%s", staged)
+	}
+	if got := strings.TrimSpace(string(runCmd(
+		t,
+		workspaceDir,
+		"git",
+		"log",
+		"-1",
+		"--format=%B",
+	))); !strings.Contains(got, "docs-version: "+secondRemoteHead) {
+		t.Fatalf("system commit does not record remote docs head:\n%s", got)
+	}
+}
+
 // TestE2ECLI_PullBlockedByPendingFix tests pull is blocked when pending fix exists.
 func TestE2ECLI_PullBlockedByPendingFix(t *testing.T) {
 	cliBinary := getCliBinary(t)

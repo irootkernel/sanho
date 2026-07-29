@@ -20,7 +20,7 @@ func TestCLIVersionJSON(t *testing.T) {
 	if err := json.Unmarshal(output, &got); err != nil {
 		t.Fatalf("invalid JSON output %q: %v", output, err)
 	}
-	if len(got) != 2 || got["name"] != "kkachi" || got["version"] == "" {
+	if len(got) != 2 || got["name"] != "kkachi-cli" || got["version"] == "" {
 		t.Fatalf("version JSON = %#v", got)
 	}
 }

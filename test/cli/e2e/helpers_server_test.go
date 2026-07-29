@@ -26,7 +26,7 @@ func createOriginRepo(t *testing.T, files map[string]string) (originPath string,
 	tmp := sharedRepoTempDir(t)
 	originPath = filepath.Join(tmp, fmt.Sprintf("origin-%d", time.Now().UnixNano()))
 	mustMkDir(t, originPath)
-	runCmd(t, "", "git", "init", "--bare", originPath)
+	runCmd(t, "", "git", "init", "--bare", "--initial-branch=main", originPath)
 
 	localPath := filepath.Join(tmp, "local")
 	runCmd(t, "", "git", "clone", originPath, localPath)
@@ -280,7 +280,7 @@ func setGitUser(t *testing.T, dir, email string) {
 
 func initGitRepo(t *testing.T, dir string) {
 	t.Helper()
-	runCmd(t, dir, "git", "init")
+	runCmd(t, dir, "git", "init", "--initial-branch=main")
 }
 
 // createSnapshotTar builds a tar.gz from file map.

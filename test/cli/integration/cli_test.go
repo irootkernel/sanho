@@ -52,8 +52,8 @@ func TestCLIVersion(t *testing.T) {
 	}
 
 	outputStr := string(output)
-	if !strings.HasPrefix(outputStr, "kkachi version") {
-		t.Errorf("Expected version output to start with 'kkachi version', got: %s", outputStr)
+	if !strings.HasPrefix(outputStr, "kkachi-cli version") {
+		t.Errorf("Expected version output to start with 'kkachi-cli version', got: %s", outputStr)
 	}
 	if !strings.Contains(outputStr, "commit:") {
 		t.Errorf("Expected version output to contain 'commit:', got: %s", outputStr)
@@ -74,7 +74,7 @@ func TestCLIVerboseFlag(t *testing.T) {
 	}
 
 	// Just verify the command runs successfully with verbose flag
-	if !strings.Contains(string(output), "kkachi version") {
+	if !strings.Contains(string(output), "kkachi-cli version") {
 		t.Errorf("Expected version output with verbose flag, got: %s", output)
 	}
 }

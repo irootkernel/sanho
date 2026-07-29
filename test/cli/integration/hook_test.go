@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -191,8 +192,8 @@ func TestHookPostMergeWithWorkspace(t *testing.T) {
 	}
 }
 
-// TestHookPostRewriteRebaseOnly verifies post-rewrite only runs status for rebase.
-func TestHookPostRewriteRebaseOnly(t *testing.T) {
+// TestHookPostRewriteReconcilesAllRewrites verifies every rewrite checks HEAD state.
+func TestHookPostRewriteReconcilesAllRewrites(t *testing.T) {
 	cliBinary := getCliBinary(t)
 
 	// Setup fake server
@@ -214,19 +215,19 @@ func TestHookPostRewriteRebaseOnly(t *testing.T) {
 			expectOutput: true,
 		},
 		{
-			name:         "amend is silent",
+			name:         "amend triggers status",
 			args:         []string{"hook", "post-rewrite", "amend"},
-			expectOutput: false,
+			expectOutput: true,
 		},
 		{
-			name:         "amend with mapping file is silent",
+			name:         "amend with mapping file triggers status",
 			args:         []string{"hook", "post-rewrite", "amend", "/tmp/mapping"},
-			expectOutput: false,
+			expectOutput: true,
 		},
 		{
-			name:         "no args is silent",
+			name:         "no args triggers status",
 			args:         []string{"hook", "post-rewrite"},
-			expectOutput: false,
+			expectOutput: true,
 		},
 	}
 
@@ -255,6 +256,137 @@ func TestHookPostRewriteRebaseOnly(t *testing.T) {
 				t.Errorf("Expected silent output for %v, got:\n%s", tc.args, outputStr)
 			}
 		})
+	}
+}
+
+func TestHookPostMergeReconcilesHashAndReportsDaemon(t *testing.T) {
+	cliBinary := getCliBinary(t)
+	var reportMu sync.Mutex
+	var reportedHash string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/docs/head":
+			_ = json.NewEncoder(w).Encode(map[string]string{"head": "docs-new"})
+		case r.Method == http.MethodPut && r.URL.Path == "/workspaces/test-workspace-123/docs-hash":
+			var body struct {
+				DocsHash string `json:"docs_hash"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Errorf("decode workspace report: %v", err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			reportMu.Lock()
+			reportedHash = body.DocsHash
+			reportMu.Unlock()
+			_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	tempDir := setupTempWorkspace(t, server.URL, "docs-old")
+	runGitCommand(t, tempDir, "init")
+	runGitCommand(t, tempDir, "config", "user.email", "test@example.com")
+	runGitCommand(t, tempDir, "config", "user.name", "Test User")
+	if err := os.WriteFile(filepath.Join(tempDir, "docs", "readme.md"), []byte("# New docs\n"), 0644); err != nil {
+		t.Fatalf("write docs: %v", err)
+	}
+	runGitCommand(t, tempDir, "add", "docs/readme.md")
+	runGitCommand(t, tempDir, "commit", "-m", "Sync docs", "-m", "docs-version: docs-new")
+
+	cmd := exec.Command(cliBinary, "hook", "post-merge", "0")
+	cmd.Dir = tempDir
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("post-merge hook failed: %v\nOutput: %s", err, output)
+	}
+	hash, err := os.ReadFile(filepath.Join(tempDir, ".kkachi_docs_hash"))
+	if err != nil {
+		t.Fatalf("read reconciled hash: %v", err)
+	}
+	if got := strings.TrimSpace(string(hash)); got != "docs-new" {
+		t.Fatalf("reconciled hash = %q, want docs-new", got)
+	}
+	reportMu.Lock()
+	defer reportMu.Unlock()
+	if reportedHash != "docs-new" {
+		t.Fatalf("reported daemon hash = %q, want docs-new", reportedHash)
+	}
+}
+
+func TestGitPullPostMergeHookReconcilesHashAndReportsDaemon(t *testing.T) {
+	cliBinary := getCliBinary(t)
+	var reportMu sync.Mutex
+	var reportedHash string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/docs/head":
+			_ = json.NewEncoder(w).Encode(map[string]string{"head": "docs-new"})
+		case r.Method == http.MethodPut && r.URL.Path == "/workspaces/test-workspace-123/docs-hash":
+			var body struct {
+				DocsHash string `json:"docs_hash"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			reportMu.Lock()
+			reportedHash = body.DocsHash
+			reportMu.Unlock()
+			_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	workspaceDir := setupTempWorkspace(t, server.URL, "docs-old")
+	runGitCommand(t, workspaceDir, "init", "--initial-branch=main")
+	runGitCommand(t, workspaceDir, "config", "user.email", "test@example.com")
+	runGitCommand(t, workspaceDir, "config", "user.name", "Test User")
+	if err := os.WriteFile(filepath.Join(workspaceDir, "docs", "readme.md"), []byte("# Old docs\n"), 0644); err != nil {
+		t.Fatalf("write initial docs: %v", err)
+	}
+	runGitCommand(t, workspaceDir, "add", "docs/readme.md")
+	runGitCommand(t, workspaceDir, "commit", "-m", "Initial docs", "-m", "docs-version: docs-old")
+
+	originDir := filepath.Join(t.TempDir(), "origin.git")
+	runGitCommand(t, workspaceDir, "init", "--bare", "--initial-branch=main", originDir)
+	runGitCommand(t, workspaceDir, "remote", "add", "origin", originDir)
+	runGitCommand(t, workspaceDir, "push", "-u", "origin", "main")
+
+	publisherDir := t.TempDir()
+	runGitCommand(t, publisherDir, "clone", originDir, ".")
+	runGitCommand(t, publisherDir, "config", "user.email", "publisher@example.com")
+	runGitCommand(t, publisherDir, "config", "user.name", "Publisher")
+	if err := os.WriteFile(filepath.Join(publisherDir, "docs", "readme.md"), []byte("# New docs\n"), 0644); err != nil {
+		t.Fatalf("write remote docs: %v", err)
+	}
+	runGitCommand(t, publisherDir, "add", "docs/readme.md")
+	runGitCommand(t, publisherDir, "commit", "-m", "Update docs", "-m", "docs-version: docs-new")
+	runGitCommand(t, publisherDir, "push", "origin", "main")
+
+	hookPath := filepath.Join(workspaceDir, ".git", "hooks", "post-merge")
+	hook := fmt.Sprintf("#!/bin/sh\nexec %q hook post-merge \"$@\"\n", cliBinary)
+	if err := os.WriteFile(hookPath, []byte(hook), 0755); err != nil {
+		t.Fatalf("install post-merge hook: %v", err)
+	}
+
+	runGitCommand(t, workspaceDir, "pull", "--ff-only")
+
+	hash, err := os.ReadFile(filepath.Join(workspaceDir, ".kkachi_docs_hash"))
+	if err != nil {
+		t.Fatalf("read reconciled hash: %v", err)
+	}
+	if got := strings.TrimSpace(string(hash)); got != "docs-new" {
+		t.Fatalf("reconciled hash after git pull = %q, want docs-new", got)
+	}
+	reportMu.Lock()
+	defer reportMu.Unlock()
+	if reportedHash != "docs-new" {
+		t.Fatalf("reported daemon hash after git pull = %q, want docs-new", reportedHash)
 	}
 }
 

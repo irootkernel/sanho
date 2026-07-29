@@ -17,8 +17,8 @@ func TestRootCommand(t *testing.T) {
 	cmd := NewRootCmd(info)
 
 	// Test that root command exists and has expected properties
-	if cmd.Use != "kkachi" {
-		t.Errorf("Expected root command Use to be 'kkachi', got '%s'", cmd.Use)
+	if cmd.Use != "kkachi-cli" {
+		t.Errorf("Expected root command Use to be 'kkachi-cli', got '%s'", cmd.Use)
 	}
 
 	// Test that --verbose flag is registered
@@ -31,7 +31,7 @@ func TestRootCommand(t *testing.T) {
 	}
 
 	// Test that subcommands are registered
-	subcommands := []string{"version", "init", "status", "fix", "hook", "project", "workspace", "state", "pull"}
+	subcommands := []string{"version", "init", "status", "fix", "hook", "project", "workspace", "state", "pull", "pull-commit"}
 	for _, name := range subcommands {
 		found := false
 		for _, sub := range cmd.Commands() {
@@ -129,7 +129,7 @@ func TestHookSubcommands(t *testing.T) {
 	}
 
 	// Check hook subcommands
-	hookSubcommands := []string{"pre-commit", "post-checkout", "post-merge", "post-rewrite", "pre-push", "commit-msg"}
+	hookSubcommands := []string{"pre-commit", "post-checkout", "post-merge", "post-rewrite", "pre-push", "commit-msg", "post-commit"}
 	for _, name := range hookSubcommands {
 		found := false
 		for _, sub := range hookCmd.Commands() {

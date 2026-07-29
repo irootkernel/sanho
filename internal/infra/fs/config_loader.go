@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/SeventeenthEarth/kkachi/internal/domain/client"
 )
@@ -70,6 +71,10 @@ func (l *FileConfigLoader) Load(dir string) (*client.WorkspaceConfig, error) {
 
 	// Apply defaults for optional fields
 	config.ApplyDefaults()
+	if strings.TrimSpace(config.DocsSyncCommitMessage) == "" ||
+		strings.ContainsAny(config.DocsSyncCommitMessage, "\r\n") {
+		return nil, fmt.Errorf("%w: docs_sync_commit_message", ErrConfigMissingField)
+	}
 
 	return &config, nil
 }

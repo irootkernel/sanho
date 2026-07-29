@@ -80,8 +80,12 @@ cli-test-unit:
 cli-test-integration: cli-build
 	KKACHI_CLI_BINARY=$(CURDIR)/$(CLI_BINARY) $(GO) test ./test/cli/integration -count=1 -v
 
-cli-test-e2e: cli-build
-	KKACHI_CLI_BINARY=$(CURDIR)/$(CLI_BINARY) KKACHI_E2E_BASE_URL=$(if $(strip $(E2E_BASE_URL)),$(E2E_BASE_URL),http://127.0.0.1:5789) $(GO) test ./test/cli/e2e -count=1 -v
+cli-test-e2e: cli-build server-build
+	@if [ -n "$(strip $(E2E_BASE_URL))" ]; then \
+		KKACHI_CLI_BINARY="$(CURDIR)/$(CLI_BINARY)" KKACHI_SERVER_BINARY="$(CURDIR)/$(SERVER_BINARY)" KKACHI_E2E_BASE_URL="$(E2E_BASE_URL)" $(GO) test ./test/cli/e2e -count=1 -v; \
+	else \
+		KKACHI_CLI_BINARY="$(CURDIR)/$(CLI_BINARY)" KKACHI_SERVER_BINARY="$(CURDIR)/$(SERVER_BINARY)" $(GO) test ./test/cli/e2e -count=1 -v; \
+	fi
 
 cli-test: cli-test-prepare cli-test-unit cli-test-integration cli-test-e2e
 

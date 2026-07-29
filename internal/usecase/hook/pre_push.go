@@ -101,7 +101,7 @@ func (u *PrePushUseCase) Execute(ctx context.Context, workDir string) error {
 		u.output.Error("Pending fix state detected (.kkachi_pending_fix exists).")
 		u.output.Error("")
 		u.output.Error("This workspace has an incomplete docs merge from a previous commit.")
-		u.output.Error("Please run 'kkachi fix' to complete the merge and sync docs.")
+		u.output.Error("Please run 'kkachi-cli fix' to complete the merge and sync docs.")
 		u.output.Error("")
 		u.output.Error("Push is blocked until the pending fix is resolved.")
 		return ErrPrePushPendingFixExists

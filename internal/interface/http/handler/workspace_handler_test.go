@@ -38,7 +38,7 @@ func TestWorkspaceHandler_Delete(t *testing.T) {
 	}
 
 	deleteUC := workspace.NewDeleteWorkspaceUseCase(stateRepo)
-	wsHandler := handler.NewWorkspaceHandler(deleteUC, nil)
+	wsHandler := handler.NewWorkspaceHandler(deleteUC, nil, nil)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("DELETE /workspaces/{workspace_id}", wsHandler.Delete)

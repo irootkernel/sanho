@@ -20,10 +20,10 @@ func TestE2ESetup(t *testing.T) {
 		t.Skip("CLI binary not found")
 	}
 
-	// Verify server URL is configured (for future tests)
+	// Verify TestMain configured either an isolated server or an explicit override.
 	serverURL := os.Getenv("KKACHI_E2E_BASE_URL")
 	if serverURL == "" {
-		serverURL = "http://127.0.0.1:5789" // default
+		t.Fatal("KKACHI_E2E_BASE_URL was not configured by the E2E test harness")
 	}
 	t.Logf("E2E test environment: CLI=%s, Server=%s", cliBinary, serverURL)
 }
@@ -38,8 +38,8 @@ func TestE2EVersionCommand(t *testing.T) {
 		t.Fatalf("CLI version command failed: %v\nOutput: %s", err, output)
 	}
 
-	if !strings.Contains(string(output), "kkachi version") {
-		t.Errorf("Expected 'kkachi version' in output, got: %s", output)
+	if !strings.Contains(string(output), "kkachi-cli version") {
+		t.Errorf("Expected 'kkachi-cli version' in output, got: %s", output)
 	}
 }
 
@@ -89,7 +89,7 @@ func getServerURL(t *testing.T) string {
 
 	url := os.Getenv("KKACHI_E2E_BASE_URL")
 	if url == "" {
-		url = "http://127.0.0.1:5789"
+		t.Fatal("KKACHI_E2E_BASE_URL was not configured by the E2E test harness")
 	}
 	return url
 }

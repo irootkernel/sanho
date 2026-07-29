@@ -123,7 +123,7 @@ func TestDocsPush_Integration(t *testing.T) {
 	pushDocsUC := docs.NewPushDocsUseCase(workspaceRepo, docsRepo, mutexManager)
 
 	projectHandler := handler.NewProjectHandler(deleteProjectUC, addProjectUC)
-	workspaceHandler := handler.NewWorkspaceHandler(deleteWorkspaceUC, registerWorkspaceUC)
+	workspaceHandler := handler.NewWorkspaceHandler(deleteWorkspaceUC, registerWorkspaceUC, nil)
 	docsHeadHandler := handler.NewDocsHeadHandler(getDocsHeadUC)
 	docsSnapshotHandler := handler.NewDocsSnapshotHandler(getDocsSnapshotUC)
 	docsPushHandler := handler.NewDocsPushHandler(pushDocsUC)

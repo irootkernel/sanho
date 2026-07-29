@@ -92,7 +92,7 @@ func runStateCommand(cmd *cobra.Command, showAll bool, serverURLFlag string, jso
 			if !jsonOutput {
 				cmd.PrintErrf("kkachi state: no .kkachi.json found.\n")
 				cmd.PrintErrf("When using --all outside a workspace, provide --server-url flag.\n")
-				cmd.PrintErrf("Example: kkachi state --all --server-url http://localhost:5789\n")
+				cmd.PrintErrf("Example: kkachi-cli state --all --server-url http://localhost:5789\n")
 			}
 			return withErrorCodeMessage(
 				"server_url_required",
@@ -102,7 +102,7 @@ func runStateCommand(cmd *cobra.Command, showAll bool, serverURLFlag string, jso
 		} else if errors.Is(err, fs.ErrConfigNotFound) {
 			if !jsonOutput {
 				cmd.PrintErrf("kkachi state: this directory is not a kkachi workspace.\n")
-				cmd.PrintErrf("Please run 'kkachi init' first or use --all with --server-url.\n")
+				cmd.PrintErrf("Please run 'kkachi-cli init' first or use --all with --server-url.\n")
 			}
 			return withErrorCode("not_in_workspace", err)
 		} else {
@@ -136,7 +136,7 @@ func runStateCommand(cmd *cobra.Command, showAll bool, serverURLFlag string, jso
 		if errors.Is(err, httpclient.ErrUnknownProject) {
 			if !jsonOutput {
 				cmd.PrintErrf("kkachi state: project '%s' is not registered on server.\n", currentProject)
-				cmd.PrintErrf("Please run 'kkachi project add' to register the project.\n")
+				cmd.PrintErrf("Please run 'kkachi-cli project add' to register the project.\n")
 			}
 			return withErrorCode("unknown_project", err)
 		}
@@ -210,7 +210,7 @@ func buildStateJSONOutput(showAll bool, project docs.ProjectName, resp httpclien
 
 // printProjectState prints state for the current project only.
 func printProjectState(cmd *cobra.Command, project docs.ProjectName, resp httpclient.StateResponse) {
-	fmt.Fprintf(cmd.OutOrStdout(), "kkachi state:\n")
+	fmt.Fprintf(cmd.OutOrStdout(), "kkachi-cli state:\n")
 	fmt.Fprintf(cmd.OutOrStdout(), "  project: %s\n", project)
 
 	// Get docs head for this project
@@ -236,7 +236,7 @@ func printProjectState(cmd *cobra.Command, project docs.ProjectName, resp httpcl
 
 // printAllState prints state for all projects.
 func printAllState(cmd *cobra.Command, resp httpclient.StateResponse) {
-	fmt.Fprintf(cmd.OutOrStdout(), "kkachi state --all:\n")
+	fmt.Fprintf(cmd.OutOrStdout(), "kkachi-cli state --all:\n")
 
 	// Print docs heads
 	fmt.Fprintf(cmd.OutOrStdout(), "  docs_heads:\n")

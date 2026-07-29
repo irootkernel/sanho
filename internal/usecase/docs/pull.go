@@ -129,7 +129,7 @@ func (u *PullUseCase) Execute(ctx context.Context, input PullInput) error {
 	}
 	if hasPendingFix {
 		u.output.Error("Cannot pull while in pending fix state.")
-		u.output.Error("Please complete 'kkachi fix' first to resolve the pending merge.")
+		u.output.Error("Please complete 'kkachi-cli fix' first to resolve the pending merge.")
 		return ErrPullPendingFix
 	}
 
@@ -155,7 +155,7 @@ func (u *PullUseCase) Execute(ctx context.Context, input PullInput) error {
 		}
 		if hasChanges {
 			u.output.Error("Local docs have uncommitted changes.")
-			u.output.Error("Use 'kkachi pull --force' to overwrite local changes,")
+			u.output.Error("Use 'kkachi-cli pull --force' to overwrite local changes,")
 			u.output.Error("or commit/stash your changes first.")
 			return ErrPullLocalChanges
 		}

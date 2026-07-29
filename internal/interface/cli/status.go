@@ -53,7 +53,7 @@ func newStatusCmd() *cobra.Command {
 				if errors.Is(err, fs.ErrConfigNotFound) {
 					return withErrorCode(
 						"not_in_workspace",
-						errors.New("this directory is not a kkachi workspace. Run 'kkachi init' first"),
+						errors.New("this directory is not a kkachi workspace. Run 'kkachi-cli init' first"),
 					)
 				}
 				return withErrorCode("invalid_workspace_config", fmt.Errorf("failed to load config: %w", err))
@@ -67,7 +67,7 @@ func newStatusCmd() *cobra.Command {
 				if errors.Is(err, fs.ErrHashFileNotFound) {
 					return withErrorCode(
 						"docs_hash_not_found",
-						errors.New("docs hash file not found. Workspace may be corrupted. Try 'kkachi init --force'"),
+						errors.New("docs hash file not found. Workspace may be corrupted. Try 'kkachi-cli init --force'"),
 					)
 				}
 				return withErrorCode("docs_hash_read_failed", fmt.Errorf("failed to read docs hash file: %w", err))
@@ -216,7 +216,7 @@ func newStatusCmd() *cobra.Command {
 
 			// Print status
 			out := cmd.OutOrStdout()
-			fmt.Fprintln(out, "kkachi status")
+			fmt.Fprintln(out, "kkachi-cli status")
 			fmt.Fprintf(out, "  project       : %s\n", config.Project)
 			fmt.Fprintf(out, "  workspace     : %s\n", config.WorkspaceID)
 			fmt.Fprintf(out, "  docs base     : %s\n", localHash)
@@ -255,12 +255,12 @@ func newStatusCmd() *cobra.Command {
 				if hasConflicts {
 					fmt.Fprintln(out)
 					fmt.Fprintln(out, "kkachi: pending fix detected with conflict markers in docs.")
-					fmt.Fprintln(out, "kkachi: please resolve conflicts and run 'kkachi fix'.")
+					fmt.Fprintln(out, "kkachi: please resolve conflicts and run 'kkachi-cli fix'.")
 					fmt.Fprintf(out, "kkachi: files with conflicts: %v\n", conflictFiles)
 				} else {
 					fmt.Fprintln(out)
 					fmt.Fprintln(out, "kkachi: pending fix detected but no conflict markers found.")
-					fmt.Fprintln(out, "kkachi: if you have resolved all conflicts, run 'kkachi fix' to finalize.")
+					fmt.Fprintln(out, "kkachi: if you have resolved all conflicts, run 'kkachi-cli fix' to finalize.")
 					fmt.Fprintf(out, "kkachi: pending fix was created at: %s\n", pendingFixState.CreatedAt.Format(time.RFC3339))
 				}
 			}

@@ -8,6 +8,23 @@ import (
 	"testing"
 )
 
+func TestHookInstaller_InstallAllHooksIncludesPostCommit(t *testing.T) {
+	tempDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(tempDir, ".git", "hooks"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := NewHookInstaller().InstallAllHooks(context.Background(), tempDir); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(tempDir, ".git", "hooks", "post-commit"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "kkachi-cli hook post-commit") {
+		t.Fatalf("post-commit hook content = %q", data)
+	}
+}
+
 func TestHookInstaller_RemoveHookLine(t *testing.T) {
 	tempDir := t.TempDir()
 	gitDir := filepath.Join(tempDir, ".git")

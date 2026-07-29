@@ -150,7 +150,7 @@ Prerequisites:
 						return fmt.Errorf("failed to check docs directory cleanliness: %w", err)
 					}
 					if !clean {
-						return errors.New("현재 docs 디렉토리에 commit 되지 않은 변경이 있습니다.\nkkachi 를 연결하기 전에 먼저 변경을 커밋하거나, 백업 후 되돌린 뒤 다시 `kkachi init` 을 실행해 주세요.")
+						return errors.New("현재 docs 디렉토리에 commit 되지 않은 변경이 있습니다.\nkkachi 를 연결하기 전에 먼저 변경을 커밋하거나, 백업 후 되돌린 뒤 다시 `kkachi-cli init` 을 실행해 주세요.")
 					}
 
 					hash, err := gitClient.GetLastDocsVersionHash(context.Background(), cwd)
@@ -212,7 +212,7 @@ Prerequisites:
 			workspaceResp, err := httpClient.RegisterWorkspace(ctx, workspaceReq)
 			if err != nil {
 				if errors.Is(err, httpclient.ErrUnknownProject) {
-					return fmt.Errorf("project '%s' is not registered on server. Run 'kkachi project add' first", projectName)
+					return fmt.Errorf("project '%s' is not registered on server. Run 'kkachi-cli project add' first", projectName)
 				}
 				return fmt.Errorf("failed to register workspace: %w", err)
 			}
@@ -262,13 +262,14 @@ Prerequisites:
 
 			// Step 5: Write .kkachi.json
 			config := &client.WorkspaceConfig{
-				ServerURL:      serverURL,
-				WorkspaceID:    workspaceResp.WorkspaceID,
-				Project:        docs.ProjectName(projectName),
-				ActorEmail:     actorEmail,
-				DocsDir:        docsDir,
-				DocsHashFile:   client.DefaultDocsHashFile,
-				PendingFixFile: client.DefaultPendingFixFile,
+				ServerURL:             serverURL,
+				WorkspaceID:           workspaceResp.WorkspaceID,
+				Project:               docs.ProjectName(projectName),
+				ActorEmail:            actorEmail,
+				DocsDir:               docsDir,
+				DocsHashFile:          client.DefaultDocsHashFile,
+				PendingFixFile:        client.DefaultPendingFixFile,
+				DocsSyncCommitMessage: client.DefaultDocsSyncCommitMessage,
 			}
 			if err := configWriter.Write(cwd, config); err != nil {
 				return fmt.Errorf("failed to write .kkachi.json: %w", err)
@@ -287,7 +288,11 @@ Prerequisites:
 
 			// Step 8: Ensure .gitignore excludes kkachi workspace metadata
 			gitignoreManager := fs.NewGitignoreManager()
-			if err := gitignoreManager.EnsureEntries(cwd, "# Kkachi", []string{client.DefaultDocsHashFile, fs.ConfigFileName}); err != nil {
+			if err := gitignoreManager.EnsureEntries(
+				cwd,
+				"# Kkachi",
+				[]string{client.DefaultDocsHashFile, fs.ConfigFileName, fs.WorkspaceReportFallbackFile},
+			); err != nil {
 				return fmt.Errorf("failed to update .gitignore: %w", err)
 			}
 

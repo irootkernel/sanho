@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -112,6 +113,29 @@ func TestGetLastDocsVersionHash(t *testing.T) {
 	}
 }
 
+func TestResolveHeadDocsVersionRequiresMatchingDocsTree(t *testing.T) {
+	ctx := context.Background()
+	client := NewClient()
+	repo := initTestRepo(t)
+
+	commitFile(t, repo, "docs/a.md", "v1", "docs v1\n\ndocs-version: docs-1")
+	versionCommit := strings.TrimSpace(runGitForDocsVersionTest(t, repo, "rev-parse", "HEAD"))
+	commitFile(t, repo, "app.txt", "app", "non-doc update")
+
+	version, found, err := client.ResolveHeadDocsVersion(ctx, repo, "docs")
+	if err != nil || !found {
+		t.Fatalf("resolve version=%+v found=%v err=%v", version, found, err)
+	}
+	if version.AppCommit != versionCommit || version.DocsHash != "docs-1" {
+		t.Fatalf("version=%+v", version)
+	}
+
+	commitFile(t, repo, "docs/a.md", "unmanaged", "unmanaged docs update")
+	if version, found, err := client.ResolveHeadDocsVersion(ctx, repo, "docs"); err != nil || found {
+		t.Fatalf("unmanaged version=%+v found=%v err=%v", version, found, err)
+	}
+}
+
 func TestIsPathClean(t *testing.T) {
 	ctx := context.Background()
 	client := NewClient()
@@ -184,4 +208,14 @@ func appendToFile(t *testing.T, path, content string) {
 	if _, err := f.WriteString(content); err != nil {
 		t.Fatalf("append: %v", err)
 	}
+}
+
+func runGitForDocsVersionTest(t *testing.T, repo string, args ...string) string {
+	t.Helper()
+	commandArgs := append([]string{"-C", repo}, args...)
+	out, err := exec.Command("git", commandArgs...).CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+	return string(out)
 }

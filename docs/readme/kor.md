@@ -28,7 +28,7 @@ make server-run
 애플리케이션 Git 저장소에서 다음 명령으로 작업공간을 초기화한다.
 
 ```bash
-kkachi init \
+kkachi-cli init \
   --server-url http://127.0.0.1:5789 \
   --project example \
   --docs-repo-url git@github.com:example/example-docs.git
@@ -40,15 +40,16 @@ kkachi init \
 ## 일상 작업
 
 ```bash
-kkachi status  # 로컬 기준과 HEAD, 같은 프로젝트 작업공간 비교
-kkachi status --json  # 자동화 도구용 구조화 상태
-kkachi pull    # 최신 docs snapshot 반영
-kkachi fix     # 충돌을 직접 해결한 뒤 merge 결과 게시
-kkachi state   # 등록된 프로젝트와 작업공간 상태 조회
-kkachi state --json   # 현재 프로젝트 상태를 JSON으로 조회
+kkachi-cli status  # 로컬 기준과 HEAD, 같은 프로젝트 작업공간 비교
+kkachi-cli status --json  # 자동화 도구용 구조화 상태
+kkachi-cli pull    # 변경이 없을 때 최신 docs snapshot 반영
+kkachi-cli pull-commit  # staged/unstaged를 보존하며 최신 docs base commit 생성
+kkachi-cli fix     # 기존 pending-fix 상태의 merge 결과 게시
+kkachi-cli state   # 등록된 프로젝트와 작업공간 상태 조회
+kkachi-cli state --json   # 현재 프로젝트 상태를 JSON으로 조회
 ```
 
-`kkachi status`는 현재 작업공간의 전체 docs commit과 HEAD를 보여주고,
+`kkachi-cli status`는 현재 작업공간의 전체 docs commit과 HEAD를 보여주고,
 같은 프로젝트에 등록된 모든 작업공간을 현재 로컬
 `.kkachi_docs_hash` 기준으로 비교한다. 관계는 다음과 같다.
 
@@ -67,9 +68,45 @@ commit graph를 기준으로 한다. 새 상태 endpoint가 없는 구버전 dae
 `version`, `status`, `state`의 JSON 필드와 오류 계약은
 [CLI JSON 출력](../cli-json.md)에 정리되어 있다.
 
-로컬 docs 변경이 있을 때 `kkachi pull`로 덮어쓰려면 명시적으로
-`--force`를 사용해야 한다. 설정만 제거하려면 `kkachi clean`을 사용하고,
+로컬 docs 변경이 있을 때 `kkachi-cli pull`로 덮어쓰려면 명시적으로
+`--force`를 사용해야 한다. 설정만 제거하려면 `kkachi-cli clean`을 사용하고,
 docs 디렉터리까지 지우려면 `--remove-docs`를 별도로 지정한다.
+
+Git commit 시 중앙 docs가 갱신된 상태라면 pre-commit hook이
+`pull-commit` 흐름을 자동으로 실행한다. 첫 시도에서는 `origin/main`을
+fetch하고, 원격 docs만 담은 `[KKACHI] Update docs` 커밋을 최신 `main` 위에
+만든다. 현재 branch가 `main`이면 branch를 유지하고, unpublished linear
+feature branch라면 system commit 위로 local commit을 rebase한다. published
+branch, merge commit이 있는 branch, 갈라진 local/remote `main`은 자동으로
+history를 바꾸지 않고 실패한다. 성공 시 현재 staged/unstaged 변경을
+보존한 뒤 원래 commit을 중단한다. 같은 `git commit` 명령을 다시 실행하면
+보존한 staged 변경을 Git의 commit index에 복원해 원래 커밋을 계속한다.
+
+같은 위치를 함께 수정했다면 원격을 덮어쓰지 않고 충돌 상태로 멈춘다.
+파일을 해결하고 stage한 뒤 `kkachi-cli pull-commit --continue`를 실행한다.
+시스템 커밋이 만들어지기 전이라면 `kkachi-cli pull-commit --abort`로
+원래 staged/unstaged docs 상태를 복원할 수 있다. 시스템 커밋 제목은
+`.kkachi.json`의 `docs_sync_commit_message`로 바꿀 수 있으며 기본값은
+`[KKACHI] Update docs`다.
+
+`pull`과 pull-commit system commit은 CLI가 daemon에 docs hash를 직접
+보고하고, 일반 commit은 post-commit hook이 보고한다. 보고 실패는 pending
+상태로 저장되며 다음 pull/commit/push에서 먼저 재시도된다. 반영 전에는
+새 commit, push, `clean`이 차단되므로 `/state`가 뒤처진 상태로 작업이
+계속 진행되지 않는다.
+
+`pull` 자체는 commit을 만들지 않는다. 대신 pull 직전 index와 반영한 docs
+snapshot을 Git private metadata에 보관한다. 다음 일반 commit의 pre-commit
+또는 명시적 `pull-commit`이 이 기준선을 사용해 system commit을 만든다.
+이때 pull로 추가된 원격 파일은 사용자가 실제로 stage해 삭제하지 않은 한
+staged 삭제로 바뀌지 않는다. `pull --force`는 staged docs까지 버리는
+명령이므로 기준선의 원래 index도 HEAD 기준으로 초기화한다.
+
+`git pull`, rebase/amend, branch checkout으로 HEAD가 이동하면
+`post-merge`, `post-rewrite`, `post-checkout` hook이 현재 docs tree와
+일치하는 reachable `docs-version` commit을 찾는다. 일치할 때만 로컬 hash와
+daemon workspace hash를 함께 갱신한다. 일치하는 commit이 없거나 pending
+pull 위에 dirty docs가 남아 있으면 임의의 hash를 선택하지 않는다.
 
 ## 충돌 방지 원칙
 

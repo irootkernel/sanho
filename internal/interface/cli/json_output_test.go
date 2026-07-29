@@ -26,7 +26,7 @@ func TestVersionJSONOutput(t *testing.T) {
 	if err := json.Unmarshal(output.Bytes(), &got); err != nil {
 		t.Fatalf("invalid JSON output %q: %v", output.String(), err)
 	}
-	want := map[string]string{"name": "kkachi", "version": "1.2.3"}
+	want := map[string]string{"name": "kkachi-cli", "version": "1.2.3"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("version JSON = %#v, want %#v", got, want)
 	}

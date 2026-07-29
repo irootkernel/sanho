@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/SeventeenthEarth/kkachi/internal/domain/docs"
+	workspaceDomain "github.com/SeventeenthEarth/kkachi/internal/domain/workspace"
 	"github.com/SeventeenthEarth/kkachi/internal/interface/http/dto"
 	"github.com/SeventeenthEarth/kkachi/internal/usecase/workspace"
 )
@@ -14,12 +15,18 @@ import (
 type WorkspaceHandler struct {
 	deleteUC   *workspace.DeleteWorkspaceUseCase
 	registerUC workspace.RegisterWorkspaceUseCase
+	reportUC   workspace.ReportDocsHashUseCase
 }
 
-func NewWorkspaceHandler(deleteUC *workspace.DeleteWorkspaceUseCase, registerUC workspace.RegisterWorkspaceUseCase) *WorkspaceHandler {
+func NewWorkspaceHandler(
+	deleteUC *workspace.DeleteWorkspaceUseCase,
+	registerUC workspace.RegisterWorkspaceUseCase,
+	reportUC workspace.ReportDocsHashUseCase,
+) *WorkspaceHandler {
 	return &WorkspaceHandler{
 		deleteUC:   deleteUC,
 		registerUC: registerUC,
+		reportUC:   reportUC,
 	}
 }
 
@@ -85,4 +92,40 @@ func (h *WorkspaceHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+}
+
+func (h *WorkspaceHandler) ReportDocsHash(w http.ResponseWriter, r *http.Request) {
+	if h.reportUC == nil {
+		jsonError(w, "not_found", http.StatusNotFound)
+		return
+	}
+
+	var req dto.ReportWorkspaceDocsHashRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.DocsHash == "" || req.ActorEmail == "" {
+		jsonError(w, "invalid_request_body", http.StatusBadRequest)
+		return
+	}
+
+	err := h.reportUC.Execute(r.Context(), workspace.ReportDocsHashCommand{
+		WorkspaceID: workspaceDomain.WorkspaceID(r.PathValue("workspace_id")),
+		DocsHash:    docs.CommitHash(req.DocsHash),
+		ActorEmail:  req.ActorEmail,
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, workspace.ErrUnknownWorkspace):
+			jsonError(w, "unknown_workspace", http.StatusNotFound)
+		case errors.Is(err, docs.ErrUnknownDocsCommit):
+			jsonError(w, "unknown_docs_commit", http.StatusBadRequest)
+		case errors.Is(err, workspace.ErrDocsHashNotInCurrentHistory):
+			jsonError(w, "docs_hash_not_in_current_history", http.StatusConflict)
+		default:
+			log.Printf("report workspace docs hash failed: %v", err)
+			jsonError(w, "internal_server_error", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 }

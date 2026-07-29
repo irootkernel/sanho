@@ -27,7 +27,7 @@ func newVersionCmd() *cobra.Command {
 			}
 			if jsonOutput {
 				if err := writeJSON(cmd.OutOrStdout(), versionJSONOutput{
-					Name:    "kkachi",
+					Name:    "kkachi-cli",
 					Version: version,
 				}); err != nil {
 					return withErrorCode("internal_error", errors.Join(ErrInternal, err))
@@ -44,7 +44,7 @@ func newVersionCmd() *cobra.Command {
 				buildDate = "unknown"
 			}
 
-			cmd.Printf("kkachi version %s (commit: %s, built: %s)\n", version, commit, buildDate)
+			cmd.Printf("kkachi-cli version %s (commit: %s, built: %s)\n", version, commit, buildDate)
 			return nil
 		},
 	}
@@ -63,5 +63,5 @@ func FormatVersion(version, commit, buildDate string) string {
 	if buildDate == "" {
 		buildDate = "unknown"
 	}
-	return fmt.Sprintf("kkachi version %s (commit: %s, built: %s)", version, commit, buildDate)
+	return fmt.Sprintf("kkachi-cli version %s (commit: %s, built: %s)", version, commit, buildDate)
 }

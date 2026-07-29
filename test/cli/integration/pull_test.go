@@ -40,6 +40,9 @@ func TestCLIPullAlreadyUpToDate(t *testing.T) {
 		case strings.HasPrefix(r.URL.Path, "/docs/head"):
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]string{"head": "abc123def456"})
+		case r.Method == http.MethodPut && r.URL.Path == "/workspaces/test-workspace/docs-hash":
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 		default:
 			http.NotFound(w, r)
 		}

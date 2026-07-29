@@ -23,7 +23,7 @@ const hookStatusTimeout = 10 * time.Second
 // runHookStatus executes status check for read-only hooks.
 // It always returns nil to not block Git operations.
 // Errors and status are printed to output, but never cause exit code != 0.
-func runHookStatus(cmd *cobra.Command, hookName string) error {
+func runHookStatus(cmd *cobra.Command, hookName string, reconcile bool) error {
 	ctx, cancel := context.WithTimeout(context.Background(), hookStatusTimeout)
 	defer cancel()
 
@@ -44,6 +44,11 @@ func runHookStatus(cmd *cobra.Command, hookName string) error {
 		}
 		cmd.PrintErrf("kkachi %s: warning: failed to load config: %v\n", hookName, err)
 		return nil // Always exit 0
+	}
+	if reconcile {
+		if _, err := reconcileWorkspaceDocsFromHEAD(ctx, cwd, config); err != nil {
+			cmd.PrintErrf("kkachi %s: warning: failed to reconcile docs hash from HEAD: %v\n", hookName, err)
+		}
 	}
 
 	// Step 2: Load .kkachi_docs_hash
@@ -113,7 +118,7 @@ func runHookStatus(cmd *cobra.Command, hookName string) error {
 
 	// Additional warnings
 	if hasPendingFix {
-		fmt.Printf("kkachi %s: pending fix detected. Run 'kkachi fix' to finalize.\n", hookName)
+		fmt.Printf("kkachi-cli %s: pending fix detected. Run 'kkachi-cli fix' to finalize.\n", hookName)
 	}
 	if hasConflicts {
 		fmt.Printf("kkachi %s: conflict markers detected in docs.\n", hookName)

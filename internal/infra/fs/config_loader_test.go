@@ -25,17 +25,19 @@ func TestFileConfigLoader_Load(t *testing.T) {
 				"actor_email": "user@example.com",
 				"docs_dir": "my_docs",
 				"docs_hash_file": ".my_hash",
-				"pending_fix_file": ".my_fix"
+				"pending_fix_file": ".my_fix",
+				"docs_sync_commit_message": "[DOCS] Sync base"
 			}`,
 			wantErr: nil,
 			wantConfig: &client.WorkspaceConfig{
-				ServerURL:      "http://localhost:5789",
-				WorkspaceID:    "ws-123",
-				Project:        "sudal",
-				ActorEmail:     "user@example.com",
-				DocsDir:        "my_docs",
-				DocsHashFile:   ".my_hash",
-				PendingFixFile: ".my_fix",
+				ServerURL:             "http://localhost:5789",
+				WorkspaceID:           "ws-123",
+				Project:               "sudal",
+				ActorEmail:            "user@example.com",
+				DocsDir:               "my_docs",
+				DocsHashFile:          ".my_hash",
+				PendingFixFile:        ".my_fix",
+				DocsSyncCommitMessage: "[DOCS] Sync base",
 			},
 		},
 		{
@@ -47,13 +49,14 @@ func TestFileConfigLoader_Load(t *testing.T) {
 			}`,
 			wantErr: nil,
 			wantConfig: &client.WorkspaceConfig{
-				ServerURL:      "http://localhost:5789",
-				WorkspaceID:    "ws-456",
-				Project:        "dolgorae",
-				ActorEmail:     "",
-				DocsDir:        client.DefaultDocsDir,
-				DocsHashFile:   client.DefaultDocsHashFile,
-				PendingFixFile: client.DefaultPendingFixFile,
+				ServerURL:             "http://localhost:5789",
+				WorkspaceID:           "ws-456",
+				Project:               "dolgorae",
+				ActorEmail:            "",
+				DocsDir:               client.DefaultDocsDir,
+				DocsHashFile:          client.DefaultDocsHashFile,
+				PendingFixFile:        client.DefaultPendingFixFile,
+				DocsSyncCommitMessage: client.DefaultDocsSyncCommitMessage,
 			},
 		},
 		{
@@ -78,6 +81,17 @@ func TestFileConfigLoader_Load(t *testing.T) {
 			name:       "invalid JSON",
 			configJSON: `{invalid json`,
 			wantErr:    ErrConfigParse,
+			wantConfig: nil,
+		},
+		{
+			name: "invalid multiline docs sync commit message",
+			configJSON: `{
+				"server_url": "http://localhost:5789",
+				"workspace_id": "ws-123",
+				"project": "sudal",
+				"docs_sync_commit_message": "line one\nline two"
+			}`,
+			wantErr:    ErrConfigMissingField,
 			wantConfig: nil,
 		},
 	}
@@ -135,6 +149,9 @@ func TestFileConfigLoader_Load(t *testing.T) {
 			}
 			if config.PendingFixFile != tt.wantConfig.PendingFixFile {
 				t.Errorf("PendingFixFile = %v, want %v", config.PendingFixFile, tt.wantConfig.PendingFixFile)
+			}
+			if config.DocsSyncCommitMessage != tt.wantConfig.DocsSyncCommitMessage {
+				t.Errorf("DocsSyncCommitMessage = %v, want %v", config.DocsSyncCommitMessage, tt.wantConfig.DocsSyncCommitMessage)
 			}
 		})
 	}

@@ -83,7 +83,7 @@ func TestE2ECLI_InitFailsOnLegacyDocsWithoutDocsVersion(t *testing.T) {
 	runCmd(t, wsDir, "git", "commit", "-m", "legacy docs without tag")
 
 	cmd := exec.Command(cliBinary, "init",
-		"--server-url", "http://127.0.0.1:5789",
+		"--server-url", getServerURL(t),
 		"--project", "legacy-no-tag",
 		"--docs-repo-url", "git@example.com/some_docs.git",
 	)
@@ -120,7 +120,7 @@ func TestE2ECLI_InitFailsWhenDocsDirty(t *testing.T) {
 	}
 
 	cmd := exec.Command(cliBinary, "init",
-		"--server-url", "http://127.0.0.1:5789",
+		"--server-url", getServerURL(t),
 		"--project", "dirty-docs",
 		"--docs-repo-url", "git@example.com/some_docs.git",
 	)

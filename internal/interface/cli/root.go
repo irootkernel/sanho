@@ -40,7 +40,7 @@ func NewRootCmd(info BuildInfo) *cobra.Command {
 	buildInfo = info
 
 	rootCmd := &cobra.Command{
-		Use:   "kkachi",
+		Use:   "kkachi-cli",
 		Short: "A document coordination system for Git repositories",
 		Long: `Kkachi is a central document coordination system designed to synchronize
 a specific documentation directory (e.g., docs/) across multiple Git repositories.
@@ -64,6 +64,7 @@ in a dedicated repository, separate from the application code.`,
 	rootCmd.AddCommand(newWorkspaceCmd())
 	rootCmd.AddCommand(newStateCmd())
 	rootCmd.AddCommand(newPullCmd())
+	rootCmd.AddCommand(newPullCommitCmd())
 	rootCmd.AddCommand(newCleanCmd())
 
 	return rootCmd

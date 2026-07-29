@@ -28,6 +28,32 @@ func runPrePushHook(cmd *cobra.Command) error {
 		cmd.PrintErrf("kkachi-cli hook pre-push: failed to get current directory: %v\n", err)
 		return err
 	}
+	config, err := fs.NewFileConfigLoader().Load(cwd)
+	if err != nil {
+		return fmt.Errorf("kkachi-cli hook pre-push: load configuration: %w", err)
+	}
+	if err := retryPendingWorkspaceReport(ctx, cwd, config); err != nil {
+		return fmt.Errorf("kkachi-cli hook pre-push: %w", err)
+	}
+	hasPullCommit, err := newPullCommitEngine(nil).hasTransaction(ctx, cwd)
+	if err != nil {
+		return fmt.Errorf("kkachi-cli hook pre-push: check pull-commit state: %w", err)
+	}
+	if hasPullCommit {
+		cmd.PrintErrln("kkachi-cli: an incomplete pull-commit transaction exists.")
+		cmd.PrintErrln("Complete the pending commit or resolve it with 'kkachi-cli pull-commit --continue'.")
+		cmd.PrintErrln("Push is blocked so the docs base commit cannot be published alone.")
+		return errors.New("pull-commit transaction exists - push blocked")
+	}
+	hasPulledDocs, err := hasPulledDocsBaseline(ctx, cwd)
+	if err != nil {
+		return fmt.Errorf("kkachi-cli hook pre-push: check pulled docs baseline: %w", err)
+	}
+	if hasPulledDocs {
+		cmd.PrintErrln("kkachi-cli: pulled docs have not been materialized in application history.")
+		cmd.PrintErrln("Run 'kkachi-cli pull-commit' before pushing.")
+		return errors.New("pulled docs baseline exists - push blocked")
+	}
 
 	// Create dependencies
 	configLoader := fs.NewFileConfigLoader()

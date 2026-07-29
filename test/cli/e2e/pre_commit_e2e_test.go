@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -8,8 +9,9 @@ import (
 	"testing"
 )
 
-// TestE2ECLI_PreCommitOutdatedCreatesPendingFix triggers outdated flow and pending fix creation.
-func TestE2ECLI_PreCommitOutdatedCreatesPendingFix(t *testing.T) {
+// TestE2ECLI_PreCommitOutdatedCreatesDocsBaseCommit verifies the automatic
+// two-attempt commit flow while preserving the user's staged docs.
+func TestE2ECLI_PreCommitOutdatedCreatesDocsBaseCommit(t *testing.T) {
 	cliBinary := getCliBinary(t)
 	serverURL := getServerURL(t)
 	ensureServerAvailable(t, serverURL)
@@ -21,7 +23,15 @@ func TestE2ECLI_PreCommitOutdatedCreatesPendingFix(t *testing.T) {
 	workspaceDir := t.TempDir()
 	initGitRepo(t, workspaceDir)
 	setGitUser(t, workspaceDir, "cli-precommit@example.com")
-	runCmd(t, workspaceDir, "git", "remote", "add", "origin", originPath)
+	if err := os.WriteFile(filepath.Join(workspaceDir, "app.txt"), []byte("base\n"), 0644); err != nil {
+		t.Fatalf("write app base: %v", err)
+	}
+	runCmd(t, workspaceDir, "git", "add", "app.txt")
+	runCmd(t, workspaceDir, "git", "commit", "-m", "app base")
+	appOrigin := filepath.Join(t.TempDir(), "app-origin.git")
+	runCmd(t, "", "git", "init", "--bare", "--initial-branch=main", appOrigin)
+	runCmd(t, workspaceDir, "git", "remote", "add", "origin", appOrigin)
+	runCmd(t, workspaceDir, "git", "push", "-u", "origin", "main")
 
 	project := "cli-precommit-" + strings.ReplaceAll(filepath.Base(workspaceDir), string(filepath.Separator), "_")
 
@@ -35,6 +45,19 @@ func TestE2ECLI_PreCommitOutdatedCreatesPendingFix(t *testing.T) {
 	// Prepare local workspace state files
 	writeConfig(t, workspaceDir, serverURL, project, wsID, "cli-precommit@example.com")
 	writeDocsHash(t, workspaceDir, currentHead)
+	hooksDir := filepath.Join(workspaceDir, ".git", "hooks")
+	if err := os.MkdirAll(hooksDir, 0755); err != nil {
+		t.Fatalf("mkdir hooks: %v", err)
+	}
+	for name, command := range map[string]string{
+		"pre-commit":  "hook pre-commit",
+		"post-commit": "hook post-commit",
+	} {
+		script := fmt.Sprintf("#!/bin/sh\nexec %q %s\n", cliBinary, command)
+		if err := os.WriteFile(filepath.Join(hooksDir, name), []byte(script), 0755); err != nil {
+			t.Fatalf("write %s hook: %v", name, err)
+		}
+	}
 
 	// Local change: modify docs/index.md and stage it
 	docsDir := filepath.Join(workspaceDir, "docs", "docs")
@@ -48,23 +71,25 @@ func TestE2ECLI_PreCommitOutdatedCreatesPendingFix(t *testing.T) {
 
 	// Advance server HEAD by pushing new snapshot via HTTP (simulating another workspace)
 	remoteHead := pushDocsViaHTTP(t, serverURL, wsID, currentHead, map[string]string{
+		"docs/index.md":  "# base\n",
 		"docs/server.md": "# server update\n",
 	}, "remote@example.com")
 
-	// Run pre-commit (should detect outdated and create pending fix)
-	cmd := exec.Command(cliBinary, "hook", "pre-commit")
+	// First pre-commit attempt creates only the remote docs base commit and stops.
+	cmd := exec.Command("git", "commit", "-m", "local docs change")
 	cmd.Dir = workspaceDir
 	out, err := cmd.CombinedOutput()
 	if err == nil {
 		t.Fatalf("expected pre-commit to return error due to outdated")
 	}
-	if !strings.Contains(strings.ToLower(string(out)), "pending fix") && !strings.Contains(strings.ToLower(string(out)), "outdated") {
-		t.Fatalf("expected pre-commit output to mention pending/outdated, got:\n%s", string(out))
+	if !strings.Contains(string(out), "created docs base commit") ||
+		!strings.Contains(string(out), "Run the same git commit command again") {
+		t.Fatalf("expected pre-commit output to explain the retry, got:\n%s", string(out))
 	}
 
-	// Pending fix file should exist
-	if _, err := os.Stat(filepath.Join(workspaceDir, ".kkachi_pending_fix")); err != nil {
-		t.Fatalf("pending fix file not created: %v", err)
+	// The compatibility pending-fix path is not used by pull-commit.
+	if _, err := os.Stat(filepath.Join(workspaceDir, ".kkachi_pending_fix")); !os.IsNotExist(err) {
+		t.Fatalf("legacy pending fix file should not exist: %v", err)
 	}
 
 	// Docs hash should be updated to remote head
@@ -74,6 +99,33 @@ func TestE2ECLI_PreCommitOutdatedCreatesPendingFix(t *testing.T) {
 	}
 	if strings.TrimSpace(string(hashBytes)) != remoteHead {
 		t.Fatalf("docs hash not updated to remote head; got %s want %s", strings.TrimSpace(string(hashBytes)), remoteHead)
+	}
+	subject := strings.TrimSpace(string(runCmd(t, workspaceDir, "git", "show", "-s", "--format=%s", "HEAD")))
+	if subject != "[KKACHI] Update docs" {
+		t.Fatalf("system commit subject = %q", subject)
+	}
+	remoteContent := strings.TrimSpace(string(runCmd(t, workspaceDir, "git", "show", "HEAD:docs/docs/server.md")))
+	if remoteContent != "# server update" {
+		t.Fatalf("system commit remote content = %q", remoteContent)
+	}
+
+	// The second attempt restores the merged staged docs into Git's prepared
+	// commit index, performs the normal docs push, and finishes the user commit.
+	cmd = exec.Command("git", "commit", "-m", "local docs change")
+	cmd.Dir = workspaceDir
+	if secondOut, secondErr := cmd.CombinedOutput(); secondErr != nil {
+		t.Fatalf("second git commit failed: %v\n%s", secondErr, secondOut)
+	}
+	committedContent := strings.TrimSpace(string(runCmd(t, workspaceDir, "git", "show", "HEAD:docs/docs/index.md")))
+	if committedContent != "# local change" {
+		t.Fatalf("local docs were not committed after retry: %q", committedContent)
+	}
+	transactionDir := strings.TrimSpace(string(runCmd(t, workspaceDir, "git", "rev-parse", "--git-path", "kkachi/pull-commit")))
+	if !filepath.IsAbs(transactionDir) {
+		transactionDir = filepath.Join(workspaceDir, transactionDir)
+	}
+	if _, err := os.Stat(filepath.Join(transactionDir, "state.json")); !os.IsNotExist(err) {
+		t.Fatalf("pull-commit transaction was not cleared: %v", err)
 	}
 
 	// Clean up project

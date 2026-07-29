@@ -55,13 +55,14 @@ func main() {
 	getDocsSnapshotUC := docs.NewGetDocsSnapshotUseCase(docsRepo)
 	deleteWorkspaceUC := workspace.NewDeleteWorkspaceUseCase(stateRepo)
 	registerWorkspaceUC := workspace.NewRegisterWorkspaceUseCase(docsRepo, workspaceRepo, stateRepo, workspace.RealClock{})
+	reportDocsHashUC := workspace.NewReportDocsHashUseCase(workspaceRepo, docsRepo)
 	pushDocsUC := docs.NewPushDocsUseCase(workspaceRepo, docsRepo, repoCoordinator)
 	getStateUC := stateuc.NewGetStateUseCase(docsRepo, workspaceRepo, stateRepo)
 	getProjectStatusUC := project.NewGetProjectStatusUseCase(workspaceRepo, docsRepo)
 
 	// Handlers
 	projectHandler := handler.NewProjectHandler(deleteProjectUC, addProjectUC)
-	workspaceHandler := handler.NewWorkspaceHandler(deleteWorkspaceUC, registerWorkspaceUC)
+	workspaceHandler := handler.NewWorkspaceHandler(deleteWorkspaceUC, registerWorkspaceUC, reportDocsHashUC)
 	docsHeadHandler := handler.NewDocsHeadHandler(getDocsHeadUC)
 	docsSnapshotHandler := handler.NewDocsSnapshotHandler(getDocsSnapshotUC)
 	docsPushHandler := handler.NewDocsPushHandler(pushDocsUC)

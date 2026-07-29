@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/SeventeenthEarth/kkachi/internal/domain/docs"
+	"github.com/SeventeenthEarth/kkachi/internal/domain/workspace"
 )
 
 func TestHTTPClient_DocsHead_Success(t *testing.T) {
@@ -333,5 +334,54 @@ func TestHTTPClientGetProjectStatusEndpointNotFound(t *testing.T) {
 	_, err := client.GetProjectStatus(context.Background(), "test-project", "ws-1", "base")
 	if !errors.Is(err, ErrEndpointNotFound) {
 		t.Fatalf("GetProjectStatus() error = %v, want endpoint not found", err)
+	}
+}
+
+func TestHTTPClientReportWorkspaceDocsHash(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut {
+			t.Fatalf("method=%s want PUT", r.Method)
+		}
+		if r.URL.EscapedPath() != "/workspaces/workspace%2Fone/docs-hash" {
+			t.Fatalf("path=%q", r.URL.EscapedPath())
+		}
+		var req ReportWorkspaceDocsHashRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatal(err)
+		}
+		if req.DocsHash != "docs-2" || req.ActorEmail != "actor@example.com" {
+			t.Fatalf("request=%+v", req)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+	}))
+	defer server.Close()
+
+	err := NewHTTPClient(server.URL).ReportWorkspaceDocsHash(
+		context.Background(),
+		workspace.WorkspaceID("workspace/one"),
+		ReportWorkspaceDocsHashRequest{
+			DocsHash:   "docs-2",
+			ActorEmail: "actor@example.com",
+		},
+	)
+	if err != nil {
+		t.Fatalf("ReportWorkspaceDocsHash() error=%v", err)
+	}
+}
+
+func TestHTTPClientReportWorkspaceDocsHashRejectsDivergedCommit(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "docs_hash_not_in_current_history"})
+	}))
+	defer server.Close()
+
+	err := NewHTTPClient(server.URL).ReportWorkspaceDocsHash(
+		context.Background(),
+		"workspace-1",
+		ReportWorkspaceDocsHashRequest{DocsHash: "diverged", ActorEmail: "actor@example.com"},
+	)
+	if !errors.Is(err, ErrDocsHashNotInCurrentHistory) {
+		t.Fatalf("error=%v want %v", err, ErrDocsHashNotInCurrentHistory)
 	}
 }

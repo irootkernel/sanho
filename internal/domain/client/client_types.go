@@ -54,6 +54,8 @@ type WorkspaceConfig struct {
 	DocsHashFile string `json:"docs_hash_file,omitempty"`
 	// PendingFixFile is the path to the pending fix state file (default: ".kkachi_pending_fix").
 	PendingFixFile string `json:"pending_fix_file,omitempty"`
+	// DocsSyncCommitMessage is the subject used for system-generated docs base commits.
+	DocsSyncCommitMessage string `json:"docs_sync_commit_message,omitempty"`
 }
 
 // DefaultDocsDir is the default docs directory name.
@@ -65,6 +67,9 @@ const DefaultDocsHashFile = ".kkachi_docs_hash"
 // DefaultPendingFixFile is the default pending fix file name.
 const DefaultPendingFixFile = ".kkachi_pending_fix"
 
+// DefaultDocsSyncCommitMessage is used for system-generated docs base commits.
+const DefaultDocsSyncCommitMessage = "[KKACHI] Update docs"
+
 // ApplyDefaults sets default values for optional fields.
 func (c *WorkspaceConfig) ApplyDefaults() {
 	if c.DocsDir == "" {
@@ -75,5 +80,8 @@ func (c *WorkspaceConfig) ApplyDefaults() {
 	}
 	if c.PendingFixFile == "" {
 		c.PendingFixFile = DefaultPendingFixFile
+	}
+	if c.DocsSyncCommitMessage == "" {
+		c.DocsSyncCommitMessage = DefaultDocsSyncCommitMessage
 	}
 }

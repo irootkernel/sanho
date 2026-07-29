@@ -37,6 +37,27 @@ func newCleanCmd() *cobra.Command {
 				return fmt.Errorf("failed to load .kkachi.json: %w", err)
 			}
 			config.ApplyDefaults()
+			hasPullCommit, err := newPullCommitEngine(nil).hasTransaction(cmd.Context(), cwd)
+			if err != nil {
+				return fmt.Errorf("failed to check pull-commit state: %w", err)
+			}
+			if hasPullCommit {
+				return errors.New("cannot clean an incomplete pull-commit transaction; use 'kkachi-cli pull-commit --continue' or '--abort' first")
+			}
+			hasPulledDocs, err := hasPulledDocsBaseline(cmd.Context(), cwd)
+			if err != nil {
+				return fmt.Errorf("failed to check pulled docs baseline: %w", err)
+			}
+			if hasPulledDocs {
+				return errors.New("cannot clean while pulled docs await a base commit; run 'kkachi-cli pull-commit' first")
+			}
+			hasPendingReport, err := hasPendingWorkspaceReport(cmd.Context(), cwd)
+			if err != nil {
+				return fmt.Errorf("failed to check pending workspace report: %w", err)
+			}
+			if hasPendingReport {
+				return errors.New("cannot clean while a workspace docs-hash report is pending; restore daemon access and retry a guarded command first")
+			}
 
 			configPath := filepath.Join(cwd, fs.ConfigFileName)
 			docsHashPath := filepath.Join(cwd, config.DocsHashFile)
@@ -51,7 +72,7 @@ func newCleanCmd() *cobra.Command {
 			if removeDocs {
 				cmd.Printf("  remove docs dir: %s\n", docsPath)
 			}
-			cmd.Printf("  hooks to clean: pre-commit, post-checkout, post-merge, post-rewrite, pre-push, commit-msg\n")
+			cmd.Printf("  hooks to clean: pre-commit, post-checkout, post-merge, post-rewrite, pre-push, commit-msg, post-commit\n")
 			if dryRun {
 				cmd.Println("  dry-run: no changes will be made")
 			}
@@ -127,6 +148,7 @@ func newCleanCmd() *cobra.Command {
 					"post-rewrite":  "kkachi-cli hook post-rewrite \"$@\"",
 					"pre-push":      "kkachi-cli hook pre-push",
 					"commit-msg":    "kkachi-cli hook commit-msg \"$1\"",
+					"post-commit":   "kkachi-cli hook post-commit",
 				}
 				for hookName, line := range hookLines {
 					if err := cleaner.RemoveHookLine(cmd.Context(), cwd, hookName, line); err != nil {

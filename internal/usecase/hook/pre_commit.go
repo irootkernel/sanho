@@ -62,6 +62,11 @@ type PreCommitGitClient interface {
 	MergeFile(ctx context.Context, baseContent, localContent, remoteContent []byte) (MergeResult, error)
 }
 
+// FileMerger performs a three-way merge for one file.
+type FileMerger interface {
+	MergeFile(ctx context.Context, baseContent, localContent, remoteContent []byte) (MergeResult, error)
+}
+
 // MergeResult represents the result of a file merge.
 type MergeResult struct {
 	Content      []byte
@@ -108,6 +113,24 @@ type PreCommitOutput interface {
 	Error(msg string)
 }
 
+// PreCommitOutdatedHandler replaces the legacy pending-fix flow when provided.
+type PreCommitOutdatedHandler func(
+	ctx context.Context,
+	workDir string,
+	config *client.WorkspaceConfig,
+	baseHash, remoteHash docs.CommitHash,
+) error
+
+// PreCommitOption customizes pre-commit behavior.
+type PreCommitOption func(*PreCommitUseCase)
+
+// WithPreCommitOutdatedHandler installs the transactional pull-commit flow.
+func WithPreCommitOutdatedHandler(handler PreCommitOutdatedHandler) PreCommitOption {
+	return func(usecase *PreCommitUseCase) {
+		usecase.outdatedHandler = handler
+	}
+}
+
 // PreCommitUseCase handles the pre-commit hook logic.
 type PreCommitUseCase struct {
 	configLoader     PreCommitConfigLoader
@@ -119,6 +142,7 @@ type PreCommitUseCase struct {
 	snapshotApplier  PreCommitSnapshotApplier
 	httpClient       PreCommitHTTPClient
 	output           PreCommitOutput
+	outdatedHandler  PreCommitOutdatedHandler
 }
 
 // NewPreCommitUseCase creates a new PreCommitUseCase.
@@ -132,8 +156,9 @@ func NewPreCommitUseCase(
 	snapshotApplier PreCommitSnapshotApplier,
 	httpClient PreCommitHTTPClient,
 	output PreCommitOutput,
+	options ...PreCommitOption,
 ) *PreCommitUseCase {
-	return &PreCommitUseCase{
+	usecase := &PreCommitUseCase{
 		configLoader:     configLoader,
 		docsHashStore:    docsHashStore,
 		pendingFixStore:  pendingFixStore,
@@ -144,6 +169,10 @@ func NewPreCommitUseCase(
 		httpClient:       httpClient,
 		output:           output,
 	}
+	for _, option := range options {
+		option(usecase)
+	}
+	return usecase
 }
 
 // Execute runs the pre-commit hook logic.
@@ -185,7 +214,7 @@ func (u *PreCommitUseCase) Execute(ctx context.Context, workDir string) error {
 	}
 	if hasPendingFix {
 		u.output.Error("This workspace is in pending fix state from a previous merge.")
-		u.output.Error("Please run 'kkachi fix' to complete the merge and sync docs.")
+		u.output.Error("Please run 'kkachi-cli fix' to complete the merge and sync docs.")
 		u.output.Error("Commit is blocked until pending fix is resolved.")
 		return ErrPendingFixExists
 	}
@@ -220,7 +249,7 @@ func (u *PreCommitUseCase) Execute(ctx context.Context, workDir string) error {
 		// Handle specific errors with appropriate messages
 		if errors.Is(err, ErrUnknownDocsCommit) {
 			u.output.Error("The docs repo history has been rewritten.")
-			u.output.Error("Cannot automatically recover. Please manually sync docs and run 'kkachi init' again.")
+			u.output.Error("Cannot automatically recover. Please manually sync docs and run 'kkachi-cli init' again.")
 			return ErrUnknownDocsCommit
 		}
 		if errors.Is(err, ErrDocsRepoBusy) {
@@ -234,7 +263,7 @@ func (u *PreCommitUseCase) Execute(ctx context.Context, workDir string) error {
 	if !resp.Ok {
 		if resp.Error == "unknown_docs_commit" {
 			u.output.Error("The docs repo history has been rewritten.")
-			u.output.Error("Cannot automatically recover. Please manually sync docs and run 'kkachi init' again.")
+			u.output.Error("Cannot automatically recover. Please manually sync docs and run 'kkachi-cli init' again.")
 			return ErrUnknownDocsCommit
 		}
 		if resp.Error == "docs_repo_busy" {
@@ -268,6 +297,9 @@ func (u *PreCommitUseCase) Execute(ctx context.Context, workDir string) error {
 	case docs.DocsPushStatusOutdated:
 		// Outdated - perform 3-way merge
 		u.output.Warning("Docs are outdated. Performing 3-way merge...")
+		if u.outdatedHandler != nil {
+			return u.outdatedHandler(ctx, workDir, config, baseHash, resp.CurrentDocsHash)
+		}
 		return u.handleOutdated(ctx, workDir, config, baseHash, resp.CurrentDocsHash, docsPath, hashFilePath, pendingFixPath)
 
 	default:
@@ -356,8 +388,8 @@ func (u *PreCommitUseCase) handleOutdated(
 	}
 
 	u.output.Warning("")
-	u.output.Warning("After reviewing/resolving, run 'kkachi fix' to complete the sync.")
-	u.output.Warning("Commit is blocked until 'kkachi fix' is completed.")
+	u.output.Warning("After reviewing/resolving, run 'kkachi-cli fix' to complete the sync.")
+	u.output.Warning("Commit is blocked until 'kkachi-cli fix' is completed.")
 
 	return ErrOutdated
 }
@@ -367,6 +399,16 @@ func (u *PreCommitUseCase) handleOutdated(
 // Returns whether any conflicts occurred and the list of conflict files.
 func (u *PreCommitUseCase) mergeDirectories(
 	ctx context.Context,
+	baseDir, localDir, remoteDir string,
+) (hasConflicts bool, conflictFiles []string, err error) {
+	return MergeDirectories(ctx, u.gitClient, baseDir, localDir, remoteDir)
+}
+
+// MergeDirectories performs a three-way merge on all files in the directories.
+// It modifies localDir in place with merged contents.
+func MergeDirectories(
+	ctx context.Context,
+	merger FileMerger,
 	baseDir, localDir, remoteDir string,
 ) (hasConflicts bool, conflictFiles []string, err error) {
 	// Collect all files from all three directories
@@ -443,7 +485,7 @@ func (u *PreCommitUseCase) mergeDirectories(
 		}
 
 		// Perform merge
-		result, err := u.gitClient.MergeFile(ctx, baseContent, localContent, remoteContent)
+		result, err := merger.MergeFile(ctx, baseContent, localContent, remoteContent)
 		if err != nil {
 			return false, nil, fmt.Errorf("failed to merge %s: %w", relPath, err)
 		}

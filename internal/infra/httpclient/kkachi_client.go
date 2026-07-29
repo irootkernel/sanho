@@ -40,6 +40,8 @@ var (
 	ErrProjectHasWorkspaces = errors.New("project has registered workspaces")
 	// ErrEndpointNotFound is returned when the server does not expose an endpoint.
 	ErrEndpointNotFound = errors.New("server endpoint not found")
+	// ErrDocsHashNotInCurrentHistory is returned when a workspace reports a non-mainline docs hash.
+	ErrDocsHashNotInCurrentHistory = errors.New("docs hash is not in current history")
 	// ErrServerError is returned for non-specific server errors.
 	ErrServerError = errors.New("server error")
 )
@@ -58,6 +60,11 @@ type RegisterWorkspaceRequest struct {
 type RegisterWorkspaceResponse struct {
 	WorkspaceID     workspace.WorkspaceID `json:"workspace_id"`
 	CurrentDocsHead docs.CommitHash       `json:"current_docs_head"`
+}
+
+type ReportWorkspaceDocsHashRequest struct {
+	DocsHash   docs.CommitHash `json:"docs_hash"`
+	ActorEmail string          `json:"actor_email"`
 }
 
 // DocsPushRequest is the request body for POST /docs/push.
@@ -142,6 +149,9 @@ type KkachiClient interface {
 
 	// RegisterWorkspace registers a new workspace with the server.
 	RegisterWorkspace(ctx context.Context, req RegisterWorkspaceRequest) (RegisterWorkspaceResponse, error)
+
+	// ReportWorkspaceDocsHash records the docs commit currently adopted by a workspace.
+	ReportWorkspaceDocsHash(ctx context.Context, workspaceID workspace.WorkspaceID, req ReportWorkspaceDocsHashRequest) error
 
 	// DocsSnapshot retrieves a snapshot of docs at the specified commit (empty for HEAD).
 	DocsSnapshot(ctx context.Context, project docs.ProjectName, commit docs.CommitHash) (docs.DocsSnapshot, docs.CommitHash, error)
@@ -280,6 +290,30 @@ func (c *HTTPClient) RegisterWorkspace(ctx context.Context, req RegisterWorkspac
 	}
 
 	return result, nil
+}
+
+func (c *HTTPClient) ReportWorkspaceDocsHash(
+	ctx context.Context,
+	workspaceID workspace.WorkspaceID,
+	req ReportWorkspaceDocsHashRequest,
+) error {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request: %w", err)
+	}
+	reqURL := fmt.Sprintf("%s/workspaces/%s/docs-hash", c.baseURL, url.PathEscape(string(workspaceID)))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPut, reqURL, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	return c.checkError(resp)
 }
 
 // DocsSnapshot implements KkachiClient.DocsSnapshot.
@@ -527,6 +561,8 @@ func (c *HTTPClient) checkError(resp *http.Response) error {
 			return ErrProjectHasWorkspaces
 		case "not_found":
 			return ErrEndpointNotFound
+		case "docs_hash_not_in_current_history":
+			return ErrDocsHashNotInCurrentHistory
 		default:
 			return fmt.Errorf("%w: %s (status %d)", ErrServerError, errResp.Error, resp.StatusCode)
 		}

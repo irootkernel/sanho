@@ -20,6 +20,7 @@ import (
 	"github.com/SeventeenthEarth/kkachi/internal/interface/http/handler"
 	"github.com/SeventeenthEarth/kkachi/internal/usecase/docs"
 	"github.com/SeventeenthEarth/kkachi/internal/usecase/project"
+	stateUsecase "github.com/SeventeenthEarth/kkachi/internal/usecase/state"
 	"github.com/SeventeenthEarth/kkachi/internal/usecase/workspace"
 )
 
@@ -78,15 +79,18 @@ func TestIntegration_Server(t *testing.T) {
 
 	workspaceRepo := state.NewFileWorkspaceRepository(stateRepo)
 	registerWorkspaceUC := workspace.NewRegisterWorkspaceUseCase(docsRepo, workspaceRepo, stateRepo, nil)
+	reportDocsHashUC := workspace.NewReportDocsHashUseCase(workspaceRepo, docsRepo)
 	getProjectStatusUC := project.NewGetProjectStatusUseCase(workspaceRepo, docsRepo)
+	getStateUC := stateUsecase.NewGetStateUseCase(docsRepo, workspaceRepo, stateRepo)
 
 	projectHandler := handler.NewProjectHandler(deleteProjectUC, addProjectUC)
-	workspaceHandler := handler.NewWorkspaceHandler(deleteWorkspaceUC, registerWorkspaceUC)
+	workspaceHandler := handler.NewWorkspaceHandler(deleteWorkspaceUC, registerWorkspaceUC, reportDocsHashUC)
 	docsHeadHandler := handler.NewDocsHeadHandler(getDocsHeadUC)
 	docsSnapshotHandler := handler.NewDocsSnapshotHandler(getDocsSnapshotUC)
 	projectStatusHandler := handler.NewProjectStatusHandler(getProjectStatusUC)
+	stateHandler := handler.NewStateHandler(getStateUC)
 
-	srv := kkachihttp.NewHTTPServer(kkachihttp.ServerConfig{Addr: ":0"}, projectHandler, workspaceHandler, docsHeadHandler, docsSnapshotHandler, nil, nil, projectStatusHandler)
+	srv := kkachihttp.NewHTTPServer(kkachihttp.ServerConfig{Addr: ":0"}, projectHandler, workspaceHandler, docsHeadHandler, docsSnapshotHandler, nil, stateHandler, projectStatusHandler)
 	ts := httptest.NewServer(srv.Handler)
 	defer ts.Close()
 
@@ -173,6 +177,43 @@ func TestIntegration_Server(t *testing.T) {
 	out = runCmd(t, originPath, "git", "rev-parse", "HEAD")
 	newHead := strings.TrimSpace(string(out))
 
+	// Report the newly adopted docs commit and verify /state uses daemon state.
+	reportReqBody, _ := json.Marshal(map[string]string{
+		"docs_hash":   newHead,
+		"actor_email": "sync@example.com",
+	})
+	reportURL := ts.URL + "/workspaces/" + url.PathEscape(regResp["workspace_id"]) + "/docs-hash"
+	reportReq, err := http.NewRequest(http.MethodPut, reportURL, bytes.NewReader(reportReqBody))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reportReq.Header.Set("Content-Type", "application/json")
+	resp, err = client.Do(reportReq)
+	if err != nil {
+		t.Fatalf("Failed to report workspace docs hash: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		var body bytes.Buffer
+		_, _ = body.ReadFrom(resp.Body)
+		t.Fatalf("ReportDocsHash status: %d body: %s", resp.StatusCode, body.String())
+	}
+	resp.Body.Close()
+
+	resp, err = client.Get(ts.URL + "/state")
+	if err != nil {
+		t.Fatalf("Failed to get state after docs hash report: %v", err)
+	}
+	var stateResp dto.ServerStateResponse
+	if err := json.NewDecoder(resp.Body).Decode(&stateResp); err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if len(stateResp.Workspaces) != 1 ||
+		stateResp.Workspaces[0].DocsHash != newHead ||
+		stateResp.Workspaces[0].LastActorEmail != "sync@example.com" {
+		t.Fatalf("workspace state was not updated: %+v", stateResp.Workspaces)
+	}
+
 	// Request Snapshot (using HEAD implicit)
 	resp, err = client.Get(ts.URL + "/docs/snapshot?project=test-project")
 	if err != nil {
@@ -219,8 +260,9 @@ func TestIntegration_Server(t *testing.T) {
 		t.Errorf("Expected reference behind HEAD by 1, got %#v", statusResp.ReferenceToHead)
 	}
 	if len(statusResp.Workspaces) != 1 ||
-		statusResp.Workspaces[0].RelativeToReference.Status != "same" ||
-		statusResp.Workspaces[0].RelativeToHead.Behind != 1 {
+		statusResp.Workspaces[0].RelativeToReference.Status != "ahead" ||
+		statusResp.Workspaces[0].RelativeToReference.Ahead != 1 ||
+		statusResp.Workspaces[0].RelativeToHead.Status != "same" {
 		t.Errorf("Unexpected workspace comparisons: %#v", statusResp.Workspaces)
 	}
 

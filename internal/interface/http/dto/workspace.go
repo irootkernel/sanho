@@ -11,3 +11,8 @@ type RegisterWorkspaceResponse struct {
 	WorkspaceID     string `json:"workspace_id"`
 	CurrentDocsHead string `json:"current_docs_head"`
 }
+
+type ReportWorkspaceDocsHashRequest struct {
+	DocsHash   string `json:"docs_hash"`
+	ActorEmail string `json:"actor_email"`
+}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -69,12 +70,26 @@ func runPullCommand(cmd *cobra.Command, force bool) error {
 	if err != nil {
 		cmd.PrintErrf("kkachi pull: %v\n", err)
 		cmd.PrintErrf("This directory is not a kkachi workspace.\n")
-		cmd.PrintErrf("Run 'kkachi init' first to initialize.\n")
+		cmd.PrintErrf("Run 'kkachi-cli init' first to initialize.\n")
 		return err
 	}
 
-	httpClient := newPullHTTPClientAdapter(httpclient.NewHTTPClient(config.ServerURL))
-	gitClient := newPullGitClientAdapter(infraGit.NewClient())
+	rawHTTPClient := httpclient.NewHTTPClient(config.ServerURL)
+	if err := retryPendingWorkspaceReport(ctx, cwd, config); err != nil {
+		return fmt.Errorf("kkachi pull: %w", err)
+	}
+	httpClient := newPullHTTPClientAdapter(rawHTTPClient)
+	engine := newPullCommitEngine(rawHTTPClient)
+	gitClient := newPullGitClientAdapter(infraGit.NewClient(), engine)
+	workspaceSync := infraGit.NewWorkspaceSync(fs.NewSnapshotBuilder(), snapshotApplier)
+	previousHash, err := docsHashStore.Read(filepath.Join(cwd, config.DocsHashFile))
+	if err != nil {
+		return fmt.Errorf("kkachi pull: read current docs hash: %w", err)
+	}
+	originalIndex, err := workspaceSync.BuildIndexDocsSnapshot(ctx, cwd, config.DocsDir)
+	if err != nil {
+		return fmt.Errorf("kkachi pull: capture docs index: %w", err)
+	}
 
 	// Create usecase
 	usecase := docsUsecase.NewPullUseCase(
@@ -93,30 +108,69 @@ func runPullCommand(cmd *cobra.Command, force bool) error {
 		Force:   force,
 	}
 
-	if err := usecase.Execute(ctx, input); err != nil {
+	pullErr := usecase.Execute(ctx, input)
+	if pullErr != nil {
 		// Handle specific errors with appropriate messages
 		switch {
-		case errors.Is(err, docsUsecase.ErrPullConfigBroken):
-			cmd.PrintErrf("kkachi: configuration is broken. Please run 'kkachi init' to reinitialize.\n")
-		case errors.Is(err, docsUsecase.ErrPullPendingFix):
+		case errors.Is(pullErr, docsUsecase.ErrPullConfigBroken):
+			cmd.PrintErrf("kkachi: configuration is broken. Please run 'kkachi-cli init' to reinitialize.\n")
+		case errors.Is(pullErr, docsUsecase.ErrPullPendingFix):
 			// Message already printed by output
-		case errors.Is(err, docsUsecase.ErrPullLocalChanges):
+		case errors.Is(pullErr, docsUsecase.ErrPullLocalChanges):
 			// Message already printed by output
-		case errors.Is(err, docsUsecase.ErrPullAlreadyUpToDate):
-			// This is not really an error, but we return nil for success
-			return nil
-		case errors.Is(err, docsUsecase.ErrPullUnknownProject):
+		case errors.Is(pullErr, docsUsecase.ErrPullAlreadyUpToDate):
+			pullErr = nil
+		case errors.Is(pullErr, docsUsecase.ErrPullUnknownProject):
 			cmd.PrintErrf("kkachi: project '%s' is not registered on server.\n", config.Project)
-			cmd.PrintErrf("kkachi: run 'kkachi init' or 'kkachi project add' to register it.\n")
-		case errors.Is(err, docsUsecase.ErrPullUnknownWorkspace):
+			cmd.PrintErrf("kkachi: run 'kkachi-cli init' or 'kkachi-cli project add' to register it.\n")
+		case errors.Is(pullErr, docsUsecase.ErrPullUnknownWorkspace):
 			cmd.PrintErrf("kkachi: workspace '%s' is not registered on server.\n", config.WorkspaceID)
-			cmd.PrintErrf("kkachi: run 'kkachi init' or 'kkachi workspace register' to register it.\n")
+			cmd.PrintErrf("kkachi: run 'kkachi-cli init' or 'kkachi-cli workspace register' to register it.\n")
 		default:
-			cmd.PrintErrf("kkachi pull: %v\n", err)
+			cmd.PrintErrf("kkachi pull: %v\n", pullErr)
 		}
-		return err
+		if pullErr != nil {
+			return pullErr
+		}
 	}
 
+	hash, err := docsHashStore.Read(filepath.Join(cwd, config.DocsHashFile))
+	if err != nil {
+		return fmt.Errorf("kkachi pull: read synchronized docs hash: %w", err)
+	}
+	if hash != previousHash {
+		if force {
+			if err := workspaceSync.ResetIndexDocsToHead(ctx, cwd, config.DocsDir); err != nil {
+				return fmt.Errorf("kkachi pull: discard staged docs for force pull: %w", err)
+			}
+			originalIndex, err = workspaceSync.BuildIndexDocsSnapshot(ctx, cwd, config.DocsDir)
+			if err != nil {
+				return fmt.Errorf("kkachi pull: capture reset docs index: %w", err)
+			}
+		}
+		adoptedSnapshot, actualHash, err := rawHTTPClient.DocsSnapshot(ctx, config.Project, hash)
+		if err != nil {
+			return fmt.Errorf("kkachi pull: reload adopted docs snapshot: %w", err)
+		}
+		if !actualHash.IsZero() {
+			hash = actualHash
+		}
+		if err := recordPulledDocsBaseline(
+			ctx,
+			cwd,
+			previousHash,
+			hash,
+			originalIndex,
+			adoptedSnapshot,
+			force,
+		); err != nil {
+			return fmt.Errorf("kkachi pull: record pulled docs baseline: %w", err)
+		}
+		cmd.Println("kkachi: Pulled docs will be materialized in a [KKACHI] Update docs commit before the next commit.")
+	}
+	if err := reportWorkspaceDocsHash(ctx, cwd, config, hash); err != nil {
+		return fmt.Errorf("kkachi pull: %w", err)
+	}
 	return nil
 }
 
@@ -197,12 +251,20 @@ func (a *pullHTTPClientAdapter) DocsSnapshot(ctx context.Context, project docs.P
 // pullGitClientAdapter adapts infraGit.Client to docsUsecase.PullGitClient.
 type pullGitClientAdapter struct {
 	client *infraGit.Client
+	engine *pullCommitEngine
 }
 
-func newPullGitClientAdapter(client *infraGit.Client) *pullGitClientAdapter {
-	return &pullGitClientAdapter{client: client}
+func newPullGitClientAdapter(client *infraGit.Client, engine *pullCommitEngine) *pullGitClientAdapter {
+	return &pullGitClientAdapter{client: client, engine: engine}
 }
 
 func (a *pullGitClientAdapter) HasLocalDocsChanges(ctx context.Context, repoPath, docsDir string) (bool, error) {
+	hasBaseline, err := a.engine.hasPulledDocs(ctx, repoPath)
+	if err != nil {
+		return false, err
+	}
+	if hasBaseline {
+		return a.engine.pulledDocsHaveLocalChanges(ctx, repoPath, docsDir)
+	}
 	return a.client.HasLocalDocsChanges(ctx, repoPath, docsDir)
 }

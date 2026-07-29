@@ -62,7 +62,7 @@ make cli-install
 Then run this in an application Git repository:
 
 ```bash
-kkachi init \
+kkachi-cli init \
   --server-url http://127.0.0.1:5789 \
   --project example \
   --docs-repo-url git@github.com:example/example-docs.git
@@ -71,16 +71,30 @@ kkachi init \
 Useful daily commands:
 
 ```bash
-kkachi status
-kkachi status --json
-kkachi pull
-kkachi fix
-kkachi state
-kkachi state --json
+kkachi-cli status
+kkachi-cli status --json
+kkachi-cli pull
+kkachi-cli pull-commit
+kkachi-cli fix
+kkachi-cli state
+kkachi-cli state --json
 ```
 
-`kkachi init` installs the Git hooks used to check, merge, and publish docs.
-Run `kkachi <command> --help` for the complete interface.
+`kkachi-cli init` installs the Git hooks used to check, merge, and publish docs.
+When a commit detects a newer central docs version, the pre-commit hook creates a
+`[KKACHI] Update docs` commit on the latest acceptable `main`, preserves staged
+and unstaged changes, and asks you to rerun the same `git commit` command.
+Unpublished linear feature branches are rebased onto that commit; published,
+non-linear, or diverged branches fail without changing local refs. Workspace
+docs-hash reports are retried before later commit and push operations.
+`pull` keeps its no-commit behavior, records the adopted docs snapshot in
+private Git metadata, and the next commit materializes it through the same
+`[KKACHI] Update docs` flow without turning untouched remote files into staged
+deletions. `pull-commit` exposes that operation proactively. HEAD-moving hooks
+reconcile `.kkachi_docs_hash` and daemon workspace state after merge, rewrite,
+or branch checkout when the resulting docs tree matches a reachable
+`docs-version` commit.
+Run `kkachi-cli <command> --help` for the complete interface.
 Machine-readable output for query commands is documented in
 [CLI JSON output](docs/cli-json.md).
 
@@ -93,9 +107,9 @@ make cli-test
 make test-all
 ```
 
-The server end-to-end suite launches isolated daemons with temporary state by
-default. Set `E2E_BASE_URL` only to test an explicitly selected running server.
-The CLI end-to-end suite uses `http://127.0.0.1:5789` when no override is set.
+The server and CLI end-to-end suites launch isolated daemons on ephemeral
+loopback ports with temporary state by default. Set `E2E_BASE_URL` only to test
+an explicitly selected running server.
 
 ## Operations and design
 

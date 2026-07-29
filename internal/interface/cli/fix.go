@@ -87,7 +87,7 @@ func runFixCommand(cmd *cobra.Command) error {
 		// Handle specific errors with appropriate messages
 		switch {
 		case errors.Is(err, hook.ErrConfigBroken):
-			cmd.PrintErrf("kkachi: configuration is broken. Please run 'kkachi init' to reinitialize.\n")
+			cmd.PrintErrf("kkachi: configuration is broken. Please run 'kkachi-cli init' to reinitialize.\n")
 		case errors.Is(err, hook.ErrNoPendingFix):
 			// Message already printed by output
 		case errors.Is(err, hook.ErrConflictMarkerFound):

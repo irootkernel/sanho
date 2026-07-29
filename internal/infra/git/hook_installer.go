@@ -162,6 +162,7 @@ func (h *HookInstaller) InstallAllHooks(ctx context.Context, repoPath string) er
 		"post-rewrite":  "kkachi-cli hook post-rewrite \"$@\"",
 		"pre-push":      "kkachi-cli hook pre-push",
 		"commit-msg":    "kkachi-cli hook commit-msg \"$1\"",
+		"post-commit":   "kkachi-cli hook post-commit",
 	}
 
 	for hookName, line := range hooks {

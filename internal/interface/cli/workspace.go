@@ -40,7 +40,7 @@ func newWorkspaceRegisterCmd() *cobra.Command {
 		Short: "Register a workspace with the kkachi-server",
 		Long: `Register a workspace directory with the kkachi-server.
 
-This is an alternative to 'kkachi init' for registering workspaces
+This is an alternative to 'kkachi-cli init' for registering workspaces
 without creating local configuration files.
 
 If path is not specified, the current directory is used.`,
@@ -117,7 +117,7 @@ If path is not specified, the current directory is used.`,
 			resp, err := httpClient.RegisterWorkspace(ctx, req)
 			if err != nil {
 				if errors.Is(err, httpclient.ErrUnknownProject) {
-					return fmt.Errorf("project '%s' is not registered on the server. Run 'kkachi project add' first", projectName)
+					return fmt.Errorf("project '%s' is not registered on the server. Run 'kkachi-cli project add' first", projectName)
 				}
 				return fmt.Errorf("failed to register workspace: %w", err)
 			}
