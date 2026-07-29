@@ -129,6 +129,7 @@ socket path only when testing an explicitly selected running daemon.
 
 ## Operations and design
 
+- [Deployment rules](docs/deployment.md)
 - [Architecture](docs/architecture.md)
 - [CLI JSON output](docs/cli-json.md)
 - [Operations](docs/operations.md)

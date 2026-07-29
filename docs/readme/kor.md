@@ -81,6 +81,8 @@ commit graph를 기준으로 한다. 새 상태 endpoint가 없는 구버전 dae
 
 `version`, `status`, `state`의 JSON 필드와 오류 계약은
 [CLI JSON 출력](../cli-json.md)에 정리되어 있다.
+설치, launchd/systemd 등록, 업그레이드와 제거 규칙은
+[배포 규칙](../deployment.md)에 정리되어 있다.
 
 로컬 docs 변경이 있을 때 `sanho pull`로 덮어쓰려면 명시적으로
 `--force`를 사용해야 한다. 설정만 제거하려면 `sanho clean`을 사용하고,
