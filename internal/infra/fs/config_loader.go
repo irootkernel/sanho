@@ -12,7 +12,7 @@ import (
 )
 
 // Config file name constant.
-const ConfigFileName = ".kkachi.json"
+const ConfigFileName = ".sanho.json"
 
 // Error types for config loading.
 var (
@@ -38,7 +38,7 @@ func NewFileConfigLoader() *FileConfigLoader {
 	return &FileConfigLoader{}
 }
 
-// Load reads and parses .kkachi.json from the specified directory.
+// Load reads and parses .sanho.json from the specified directory.
 // Returns ErrConfigNotFound if the file doesn't exist,
 // ErrConfigParse if the file cannot be parsed,
 // and ErrConfigMissingField if required fields are missing.

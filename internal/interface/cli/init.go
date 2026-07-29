@@ -42,15 +42,15 @@ This command will:
 - Register the project if not already registered
 - Register this workspace with the sanhod
 - Download the current docs snapshot from the server
-- Create .kkachi.json configuration file
-- Create .kkachi_docs_hash file
+- Create .sanho.json configuration file
+- Create .sanho_docs_hash file
 - Add workspace metadata files to .gitignore
 - Install Git hooks for document synchronization
 
 Prerequisites:
 - Current directory must be a Git repository
-- .kkachi.json must not exist (unless --force is used)
-- docs directory must not exist unless this repo already has kkachi-managed docs (docs-version commits)`,
+- .sanho.json must not exist (unless --force is used)
+- docs directory must not exist unless this repo already has sanho-managed docs (docs-version commits)`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Get current working directory
 			cwd, err := getWorkingDirectory()
@@ -115,10 +115,10 @@ Prerequisites:
 				docsDir = client.DefaultDocsDir
 			}
 
-			// Check if .kkachi.json already exists
+			// Check if .sanho.json already exists
 			configWriter := fs.NewFileConfigWriter()
 			if configWriter.Exists(cwd) && !force {
-				return errors.New("this directory is already a sanho workspace (.kkachi.json exists). Use --force to reinitialize")
+				return errors.New("this directory is already a sanho workspace (.sanho.json exists). Use --force to reinitialize")
 			}
 
 			// Resolve docs path safely within the workspace to avoid deleting
@@ -260,7 +260,7 @@ Prerequisites:
 				}
 			}
 
-			// Step 5: Write .kkachi.json
+			// Step 5: Write .sanho.json
 			config := &client.WorkspaceConfig{
 				ServerURL:             serverURL,
 				WorkspaceID:           workspaceResp.WorkspaceID,
@@ -272,7 +272,7 @@ Prerequisites:
 				DocsSyncCommitMessage: client.DefaultDocsSyncCommitMessage,
 			}
 			if err := configWriter.Write(cwd, config); err != nil {
-				return fmt.Errorf("failed to write .kkachi.json: %w", err)
+				return fmt.Errorf("failed to write .sanho.json: %w", err)
 			}
 
 			// Step 6: Write docs hash file

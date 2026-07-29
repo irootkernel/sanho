@@ -150,7 +150,7 @@ func newWorkspaceUnregisterCmd() *cobra.Command {
 		Short: "Remove a workspace registration from the sanhod",
 		Long: `Remove a workspace registration from the sanhod.
 
-Note: This does not delete any local files. The local .kkachi.json
+Note: This does not delete any local files. The local .sanho.json
 and other configuration files will remain.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, cancel := createContext(DefaultTimeout)

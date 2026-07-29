@@ -17,7 +17,7 @@ func TestPrePushConflictMarkersBlock(t *testing.T) {
 
 	// Setup temp workspace with config
 	tempDir := t.TempDir()
-	setupKkachiConfig(t, tempDir, "http://localhost:5789")
+	setupSanhoConfig(t, tempDir, "http://localhost:5789")
 
 	// Create docs with conflict markers
 	docsDir := filepath.Join(tempDir, "docs")
@@ -58,7 +58,7 @@ func TestPrePushPendingFixBlock(t *testing.T) {
 
 	// Setup temp workspace with config
 	tempDir := t.TempDir()
-	setupKkachiConfig(t, tempDir, "http://localhost:5789")
+	setupSanhoConfig(t, tempDir, "http://localhost:5789")
 
 	// Create docs directory (no conflicts)
 	docsDir := filepath.Join(tempDir, "docs")
@@ -69,15 +69,15 @@ func TestPrePushPendingFixBlock(t *testing.T) {
 		t.Fatalf("Failed to write docs file: %v", err)
 	}
 
-	// Create .kkachi_pending_fix
+	// Create .sanho_pending_fix
 	pendingFix := PendingFixState{
 		BaseHash:   "old-hash",
 		RemoteHash: "new-hash",
 		CreatedAt:  "2025-01-01T00:00:00Z",
 	}
 	pendingFixData, _ := json.MarshalIndent(pendingFix, "", "  ")
-	if err := os.WriteFile(filepath.Join(tempDir, ".kkachi_pending_fix"), pendingFixData, 0644); err != nil {
-		t.Fatalf("Failed to write .kkachi_pending_fix: %v", err)
+	if err := os.WriteFile(filepath.Join(tempDir, ".sanho_pending_fix"), pendingFixData, 0644); err != nil {
+		t.Fatalf("Failed to write .sanho_pending_fix: %v", err)
 	}
 
 	// Run pre-push hook
@@ -102,7 +102,7 @@ func TestPrePushSuccess(t *testing.T) {
 
 	// Setup temp workspace with config
 	tempDir := t.TempDir()
-	setupKkachiConfig(t, tempDir, "http://localhost:5789")
+	setupSanhoConfig(t, tempDir, "http://localhost:5789")
 
 	// Create clean docs directory
 	docsDir := filepath.Join(tempDir, "docs")
@@ -135,7 +135,7 @@ func TestFixNoPendingFix(t *testing.T) {
 
 	// Setup temp workspace with config (no pending fix)
 	tempDir := t.TempDir()
-	setupKkachiConfig(t, tempDir, "http://localhost:5789")
+	setupSanhoConfig(t, tempDir, "http://localhost:5789")
 
 	// Create clean docs directory
 	docsDir := filepath.Join(tempDir, "docs")
@@ -172,7 +172,7 @@ func TestFixWithConflictMarkers(t *testing.T) {
 
 	// Setup temp workspace with config and pending fix
 	tempDir := t.TempDir()
-	setupKkachiConfig(t, tempDir, server.URL)
+	setupSanhoConfig(t, tempDir, server.URL)
 
 	// Create docs with conflict markers
 	docsDir := filepath.Join(tempDir, "docs")
@@ -196,8 +196,8 @@ Remote
 		CreatedAt:  "2025-01-01T00:00:00Z",
 	}
 	pendingFixData, _ := json.MarshalIndent(pendingFix, "", "  ")
-	if err := os.WriteFile(filepath.Join(tempDir, ".kkachi_pending_fix"), pendingFixData, 0644); err != nil {
-		t.Fatalf("Failed to write .kkachi_pending_fix: %v", err)
+	if err := os.WriteFile(filepath.Join(tempDir, ".sanho_pending_fix"), pendingFixData, 0644); err != nil {
+		t.Fatalf("Failed to write .sanho_pending_fix: %v", err)
 	}
 
 	// Run fix
@@ -269,7 +269,7 @@ func TestStateWithFakeServer(t *testing.T) {
 
 	// Setup temp workspace with config pointing to fake server
 	tempDir := t.TempDir()
-	setupKkachiConfig(t, tempDir, server.URL)
+	setupSanhoConfig(t, tempDir, server.URL)
 
 	// Create docs directory
 	docsDir := filepath.Join(tempDir, "docs")
@@ -337,7 +337,7 @@ func TestStateAllWithFakeServer(t *testing.T) {
 
 	// Setup temp workspace with config pointing to fake server
 	tempDir := t.TempDir()
-	setupKkachiConfig(t, tempDir, server.URL)
+	setupSanhoConfig(t, tempDir, server.URL)
 
 	// Create docs directory
 	docsDir := filepath.Join(tempDir, "docs")
@@ -365,8 +365,8 @@ func TestStateAllWithFakeServer(t *testing.T) {
 	}
 }
 
-// setupKkachiConfig creates .kkachi.json and .kkachi_docs_hash in the temp directory.
-func setupKkachiConfig(t *testing.T, tempDir, serverURL string) {
+// setupSanhoConfig creates .sanho.json and .sanho_docs_hash in the temp directory.
+func setupSanhoConfig(t *testing.T, tempDir, serverURL string) {
 	t.Helper()
 
 	config := WorkspaceConfig{
@@ -380,13 +380,13 @@ func setupKkachiConfig(t *testing.T, tempDir, serverURL string) {
 	if err != nil {
 		t.Fatalf("Failed to marshal config: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(tempDir, ".kkachi.json"), configData, 0644); err != nil {
-		t.Fatalf("Failed to write .kkachi.json: %v", err)
+	if err := os.WriteFile(filepath.Join(tempDir, ".sanho.json"), configData, 0644); err != nil {
+		t.Fatalf("Failed to write .sanho.json: %v", err)
 	}
 
-	// Create .kkachi_docs_hash
-	if err := os.WriteFile(filepath.Join(tempDir, ".kkachi_docs_hash"), []byte("initial-hash-123"), 0644); err != nil {
-		t.Fatalf("Failed to write .kkachi_docs_hash: %v", err)
+	// Create .sanho_docs_hash
+	if err := os.WriteFile(filepath.Join(tempDir, ".sanho_docs_hash"), []byte("initial-hash-123"), 0644); err != nil {
+		t.Fatalf("Failed to write .sanho_docs_hash: %v", err)
 	}
 }
 
@@ -451,7 +451,7 @@ func TestStatusShowsProjectWorkspaceComparisons(t *testing.T) {
 	defer server.Close()
 
 	tempDir := t.TempDir()
-	setupKkachiConfig(t, tempDir, server.URL)
+	setupSanhoConfig(t, tempDir, server.URL)
 	cmd := exec.Command(cliBinary, "status")
 	cmd.Dir = tempDir
 	output, err := cmd.CombinedOutput()
@@ -492,7 +492,7 @@ func TestStatusFallsBackToDocsHeadForOlderServer(t *testing.T) {
 	defer server.Close()
 
 	tempDir := t.TempDir()
-	setupKkachiConfig(t, tempDir, server.URL)
+	setupSanhoConfig(t, tempDir, server.URL)
 	cmd := exec.Command(cliBinary, "status")
 	cmd.Dir = tempDir
 	output, err := cmd.CombinedOutput()
@@ -542,7 +542,7 @@ func TestStateAllWithServerURLOutsideWorkspace(t *testing.T) {
 
 	// Use temp dir WITHOUT any sanho config (not a workspace)
 	tempDir := t.TempDir()
-	// Don't call setupKkachiConfig - intentionally no .kkachi.json
+	// Don't call setupSanhoConfig - intentionally no .sanho.json
 
 	// Run state --all --server-url
 	cmd := exec.Command(cliBinary, "state", "--all", "--server-url", server.URL)
@@ -550,7 +550,7 @@ func TestStateAllWithServerURLOutsideWorkspace(t *testing.T) {
 	output, err := cmd.CombinedOutput()
 	outputStr := string(output)
 
-	// Should succeed (exit 0) even without .kkachi.json
+	// Should succeed (exit 0) even without .sanho.json
 	if err != nil {
 		t.Errorf("Expected state --all --server-url to succeed without workspace, got error: %v\nOutput: %s", err, outputStr)
 	}

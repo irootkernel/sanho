@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 )
 
-const DefaultStatePath = "data/kkachi_state.json"
+const DefaultStatePath = "data/sanho_state.json"
 
 // ResolveStatePath returns a usable path for the state file, creating parent directories if needed.
 func ResolveStatePath(envPath string) (string, error) {

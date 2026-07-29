@@ -166,7 +166,7 @@ func runPullCommand(cmd *cobra.Command, force bool) error {
 		); err != nil {
 			return fmt.Errorf("sanho pull: record pulled docs baseline: %w", err)
 		}
-		cmd.Println("sanho: Pulled docs will be materialized in a [KKACHI] Update docs commit before the next commit.")
+		cmd.Println("sanho: Pulled docs will be materialized in a [SANHO] Update docs commit before the next commit.")
 	}
 	if err := reportWorkspaceDocsHash(ctx, cwd, config, hash); err != nil {
 		return fmt.Errorf("sanho pull: %w", err)

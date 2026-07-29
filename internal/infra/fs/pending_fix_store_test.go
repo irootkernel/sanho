@@ -12,7 +12,7 @@ import (
 
 func TestFilePendingFixStore_ReadWriteRemove(t *testing.T) {
 	tmpDir := t.TempDir()
-	fixFile := filepath.Join(tmpDir, ".kkachi_pending_fix")
+	fixFile := filepath.Join(tmpDir, ".sanho_pending_fix")
 	store := NewFilePendingFixStore()
 
 	// Test write
@@ -76,7 +76,7 @@ func TestFilePendingFixStore_Read_FileNotFound(t *testing.T) {
 
 func TestFilePendingFixStore_Read_InvalidJSON(t *testing.T) {
 	tmpDir := t.TempDir()
-	fixFile := filepath.Join(tmpDir, ".kkachi_pending_fix")
+	fixFile := filepath.Join(tmpDir, ".sanho_pending_fix")
 	store := NewFilePendingFixStore()
 
 	// Create file with invalid JSON

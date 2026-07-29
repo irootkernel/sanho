@@ -23,7 +23,7 @@ type MergeResult struct {
 // Returns the merged content and whether conflicts occurred.
 func (c *Client) MergeFile(ctx context.Context, baseContent, localContent, remoteContent []byte) (MergeResult, error) {
 	// Create temp directory for merge files
-	tempDir, err := os.MkdirTemp("", "kkachi-merge-*")
+	tempDir, err := os.MkdirTemp("", "sanho-merge-*")
 	if err != nil {
 		return MergeResult{}, fmt.Errorf("failed to create temp directory: %w", err)
 	}

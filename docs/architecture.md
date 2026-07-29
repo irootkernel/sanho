@@ -14,7 +14,7 @@ Sanho의 책임은 전용 docs 저장소를 단일 진실의 원천으로 유지
 
 ```text
 application repo
-  docs/ + .kkachi.json + Git hooks
+  docs/ + .sanho.json + Git hooks
              |
              | HTTP
              v

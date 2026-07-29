@@ -9,7 +9,7 @@ import (
 )
 
 func TestDeleteWorkspaceUseCase_Success(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "kkachi-delete-ws-*")
+	tempDir, err := os.MkdirTemp("", "sanho-delete-ws-*")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +41,7 @@ func TestDeleteWorkspaceUseCase_Success(t *testing.T) {
 }
 
 func TestDeleteWorkspaceUseCase_UnknownWorkspace(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "kkachi-delete-ws-*")
+	tempDir, err := os.MkdirTemp("", "sanho-delete-ws-*")
 	if err != nil {
 		t.Fatal(err)
 	}

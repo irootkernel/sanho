@@ -117,12 +117,12 @@ func TestE2ECLI_FixWorkflow(t *testing.T) {
 	}
 
 	// Pending fix file should be gone
-	if _, err := os.Stat(filepath.Join(workspaceDir, ".kkachi_pending_fix")); err == nil {
+	if _, err := os.Stat(filepath.Join(workspaceDir, ".sanho_pending_fix")); err == nil {
 		t.Fatalf("pending fix file still exists")
 	}
 
 	// Docs hash should be updated
-	newHashBytes, err := os.ReadFile(filepath.Join(workspaceDir, ".kkachi_docs_hash"))
+	newHashBytes, err := os.ReadFile(filepath.Join(workspaceDir, ".sanho_docs_hash"))
 	if err != nil {
 		t.Fatalf("read docs hash: %v", err)
 	}

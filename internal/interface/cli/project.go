@@ -163,7 +163,7 @@ Use --force to delete a project even if it has registered workspaces.`,
 			}
 
 			fmt.Printf("sanho: project '%s' deleted successfully.\n", projectName)
-			fmt.Println("Workspaces connected to this project will no longer communicate with kkachi.")
+			fmt.Println("Workspaces connected to this project will no longer communicate with sanho.")
 
 			return nil
 		},

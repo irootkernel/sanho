@@ -175,9 +175,9 @@ func TestHookInstaller_InstallHook_WithExitAtEnd(t *testing.T) {
 	}
 
 	// Verify sanho line comes BEFORE exit 0
-	kkachiIdx := strings.Index(text, "sanho hook pre-commit")
+	sanhoIdx := strings.Index(text, "sanho hook pre-commit")
 	exitIdx := strings.Index(text, "exit 0")
-	if kkachiIdx > exitIdx {
+	if sanhoIdx > exitIdx {
 		t.Fatalf("expected sanho line before exit 0, content:\n%s", text)
 	}
 }
@@ -212,12 +212,12 @@ func TestHookInstaller_InstallHook_WithExitSemicolonAtEnd(t *testing.T) {
 	}
 	text := string(data)
 
-	kkachiIdx := strings.Index(text, "sanho hook pre-commit")
+	sanhoIdx := strings.Index(text, "sanho hook pre-commit")
 	exitIdx := strings.Index(text, "exit;")
-	if kkachiIdx < 0 || exitIdx < 0 {
+	if sanhoIdx < 0 || exitIdx < 0 {
 		t.Fatalf("expected both sanho and exit; lines, content:\n%s", text)
 	}
-	if kkachiIdx > exitIdx {
+	if sanhoIdx > exitIdx {
 		t.Fatalf("expected sanho line before exit;, content:\n%s", text)
 	}
 }

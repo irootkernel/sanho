@@ -31,13 +31,13 @@ type PendingFixState struct {
 	CreatedAt  string `json:"created_at"`
 }
 
-// setupTempWorkspace creates a temporary workspace with .kkachi.json and .kkachi_docs_hash.
+// setupTempWorkspace creates a temporary workspace with .sanho.json and .sanho_docs_hash.
 func setupTempWorkspace(t *testing.T, serverURL, localHash string) string {
 	t.Helper()
 
 	tempDir := t.TempDir()
 
-	// Create .kkachi.json
+	// Create .sanho.json
 	config := WorkspaceConfig{
 		ServerURL:   serverURL,
 		WorkspaceID: "test-workspace-123",
@@ -49,13 +49,13 @@ func setupTempWorkspace(t *testing.T, serverURL, localHash string) string {
 	if err != nil {
 		t.Fatalf("Failed to marshal config: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(tempDir, ".kkachi.json"), configData, 0644); err != nil {
-		t.Fatalf("Failed to write .kkachi.json: %v", err)
+	if err := os.WriteFile(filepath.Join(tempDir, ".sanho.json"), configData, 0644); err != nil {
+		t.Fatalf("Failed to write .sanho.json: %v", err)
 	}
 
-	// Create .kkachi_docs_hash
-	if err := os.WriteFile(filepath.Join(tempDir, ".kkachi_docs_hash"), []byte(localHash), 0644); err != nil {
-		t.Fatalf("Failed to write .kkachi_docs_hash: %v", err)
+	// Create .sanho_docs_hash
+	if err := os.WriteFile(filepath.Join(tempDir, ".sanho_docs_hash"), []byte(localHash), 0644); err != nil {
+		t.Fatalf("Failed to write .sanho_docs_hash: %v", err)
 	}
 
 	// Create docs directory
@@ -302,7 +302,7 @@ func TestHookPostMergeReconcilesHashAndReportsDaemon(t *testing.T) {
 	if err != nil {
 		t.Fatalf("post-merge hook failed: %v\nOutput: %s", err, output)
 	}
-	hash, err := os.ReadFile(filepath.Join(tempDir, ".kkachi_docs_hash"))
+	hash, err := os.ReadFile(filepath.Join(tempDir, ".sanho_docs_hash"))
 	if err != nil {
 		t.Fatalf("read reconciled hash: %v", err)
 	}
@@ -376,7 +376,7 @@ func TestGitPullPostMergeHookReconcilesHashAndReportsDaemon(t *testing.T) {
 
 	runGitCommand(t, workspaceDir, "pull", "--ff-only")
 
-	hash, err := os.ReadFile(filepath.Join(workspaceDir, ".kkachi_docs_hash"))
+	hash, err := os.ReadFile(filepath.Join(workspaceDir, ".sanho_docs_hash"))
 	if err != nil {
 		t.Fatalf("read reconciled hash: %v", err)
 	}
@@ -400,15 +400,15 @@ func TestHookWithPendingFix(t *testing.T) {
 	// Setup temp workspace
 	tempDir := setupTempWorkspace(t, server.URL, "abc123")
 
-	// Create .kkachi_pending_fix
+	// Create .sanho_pending_fix
 	pendingFix := PendingFixState{
 		BaseHash:   "old-hash",
 		RemoteHash: "new-hash",
 		CreatedAt:  "2025-01-01T00:00:00Z",
 	}
 	pendingFixData, _ := json.MarshalIndent(pendingFix, "", "  ")
-	if err := os.WriteFile(filepath.Join(tempDir, ".kkachi_pending_fix"), pendingFixData, 0644); err != nil {
-		t.Fatalf("Failed to write .kkachi_pending_fix: %v", err)
+	if err := os.WriteFile(filepath.Join(tempDir, ".sanho_pending_fix"), pendingFixData, 0644); err != nil {
+		t.Fatalf("Failed to write .sanho_pending_fix: %v", err)
 	}
 
 	// Run hook

@@ -13,7 +13,7 @@ import (
 
 func TestDocsRepoManager_Sync(t *testing.T) {
 	// Setup origin repo
-	tempDir, err := os.MkdirTemp("", "kkachi-test-*")
+	tempDir, err := os.MkdirTemp("", "sanho-test-*")
 	if err != nil {
 		t.Fatal(err)
 	}

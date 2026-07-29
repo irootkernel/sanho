@@ -13,7 +13,7 @@ import (
 // TestFileWorkspaceRepository_List tests that List returns all workspaces from state file.
 func TestFileWorkspaceRepository_List(t *testing.T) {
 	// Create temp directory for state file
-	tempDir, err := os.MkdirTemp("", "kkachi-state-test-*")
+	tempDir, err := os.MkdirTemp("", "sanho-state-test-*")
 	if err != nil {
 		t.Fatal(err)
 	}

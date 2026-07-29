@@ -44,7 +44,7 @@ func TestCLIFixRetriesOnDocsRepoBusy(t *testing.T) {
 
 	// Prepare workspace with pending fix and config
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, ".kkachi.json"), []byte(`{
+	if err := os.WriteFile(filepath.Join(dir, ".sanho.json"), []byte(`{
   "server_url": "`+server.URL+`",
   "project": "p1",
   "workspace_id": "ws1",
@@ -53,7 +53,7 @@ func TestCLIFixRetriesOnDocsRepoBusy(t *testing.T) {
 }`), 0644); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, ".kkachi_docs_hash"), []byte("abcd"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, ".sanho_docs_hash"), []byte("abcd"), 0644); err != nil {
 		t.Fatalf("write hash: %v", err)
 	}
 	if err := os.MkdirAll(filepath.Join(dir, "docs"), 0755); err != nil {
@@ -63,7 +63,7 @@ func TestCLIFixRetriesOnDocsRepoBusy(t *testing.T) {
 		t.Fatalf("write docs: %v", err)
 	}
 	// pending fix required for fix
-	if err := os.WriteFile(filepath.Join(dir, ".kkachi_pending_fix"), []byte(`{"base_hash":"abcd","remote_hash":"abcd","created_at":"2025-01-01T00:00:00Z"}`), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, ".sanho_pending_fix"), []byte(`{"base_hash":"abcd","remote_hash":"abcd","created_at":"2025-01-01T00:00:00Z"}`), 0644); err != nil {
 		t.Fatalf("write pending fix: %v", err)
 	}
 
@@ -78,7 +78,7 @@ func TestCLIFixRetriesOnDocsRepoBusy(t *testing.T) {
 		t.Fatalf("expected retries on docs_repo_busy, pushCount=%d", pushCount)
 	}
 
-	hashBytes, err := os.ReadFile(filepath.Join(dir, ".kkachi_docs_hash"))
+	hashBytes, err := os.ReadFile(filepath.Join(dir, ".sanho_docs_hash"))
 	if err != nil {
 		t.Fatalf("read hash: %v", err)
 	}

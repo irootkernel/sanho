@@ -11,7 +11,7 @@ import (
 
 func TestFileDocsHashStore_ReadWrite(t *testing.T) {
 	tmpDir := t.TempDir()
-	hashFile := filepath.Join(tmpDir, ".kkachi_docs_hash")
+	hashFile := filepath.Join(tmpDir, ".sanho_docs_hash")
 	store := NewFileDocsHashStore()
 
 	// Test write
@@ -49,7 +49,7 @@ func TestFileDocsHashStore_Read_FileNotFound(t *testing.T) {
 
 func TestFileDocsHashStore_Read_EmptyFile(t *testing.T) {
 	tmpDir := t.TempDir()
-	hashFile := filepath.Join(tmpDir, ".kkachi_docs_hash")
+	hashFile := filepath.Join(tmpDir, ".sanho_docs_hash")
 	store := NewFileDocsHashStore()
 
 	// Create empty file
@@ -70,7 +70,7 @@ func TestFileDocsHashStore_Read_EmptyFile(t *testing.T) {
 
 func TestFileDocsHashStore_Read_WhitespaceOnly(t *testing.T) {
 	tmpDir := t.TempDir()
-	hashFile := filepath.Join(tmpDir, ".kkachi_docs_hash")
+	hashFile := filepath.Join(tmpDir, ".sanho_docs_hash")
 	store := NewFileDocsHashStore()
 
 	// Create file with only whitespace
@@ -91,7 +91,7 @@ func TestFileDocsHashStore_Read_WhitespaceOnly(t *testing.T) {
 
 func TestFileDocsHashStore_Read_TrimsWhitespace(t *testing.T) {
 	tmpDir := t.TempDir()
-	hashFile := filepath.Join(tmpDir, ".kkachi_docs_hash")
+	hashFile := filepath.Join(tmpDir, ".sanho_docs_hash")
 	store := NewFileDocsHashStore()
 
 	// Create file with whitespace around hash

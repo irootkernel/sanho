@@ -15,7 +15,7 @@ import (
 
 	"github.com/irootkernel/sanho/internal/infra/git"
 	"github.com/irootkernel/sanho/internal/infra/state"
-	kkachihttp "github.com/irootkernel/sanho/internal/interface/http"
+	sanhohttp "github.com/irootkernel/sanho/internal/interface/http"
 	"github.com/irootkernel/sanho/internal/interface/http/dto"
 	"github.com/irootkernel/sanho/internal/interface/http/handler"
 	"github.com/irootkernel/sanho/internal/usecase/docs"
@@ -27,7 +27,7 @@ import (
 // This test spins up the HTTP server in-process to validate handler wiring.
 func TestIntegration_Server(t *testing.T) {
 	// 1. Setup Environment
-	tempDir, err := os.MkdirTemp("", "kkachi-integration-*")
+	tempDir, err := os.MkdirTemp("", "sanho-integration-*")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +90,7 @@ func TestIntegration_Server(t *testing.T) {
 	projectStatusHandler := handler.NewProjectStatusHandler(getProjectStatusUC)
 	stateHandler := handler.NewStateHandler(getStateUC)
 
-	srv := kkachihttp.NewHTTPServer(kkachihttp.ServerConfig{Addr: ":0"}, projectHandler, workspaceHandler, docsHeadHandler, docsSnapshotHandler, nil, stateHandler, projectStatusHandler)
+	srv := sanhohttp.NewHTTPServer(sanhohttp.ServerConfig{Addr: ":0"}, projectHandler, workspaceHandler, docsHeadHandler, docsSnapshotHandler, nil, stateHandler, projectStatusHandler)
 	ts := httptest.NewServer(srv.Handler)
 	defer ts.Close()
 

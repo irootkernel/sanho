@@ -1,4 +1,4 @@
-// Package cli provides the command-line interface for kkachi.
+// Package cli provides the command-line interface for sanho.
 package cli
 
 import (

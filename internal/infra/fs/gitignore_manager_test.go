@@ -11,7 +11,7 @@ func TestGitignoreManager_CreatesFileWithEntries(t *testing.T) {
 	dir := t.TempDir()
 	manager := NewGitignoreManager()
 
-	if err := manager.EnsureEntries(dir, "# Sanho", []string{".kkachi_docs_hash", ".kkachi.json"}); err != nil {
+	if err := manager.EnsureEntries(dir, "# Sanho", []string{".sanho_docs_hash", ".sanho.json"}); err != nil {
 		t.Fatalf("EnsureEntries returned error: %v", err)
 	}
 
@@ -20,7 +20,7 @@ func TestGitignoreManager_CreatesFileWithEntries(t *testing.T) {
 		t.Fatalf("failed to read .gitignore: %v", err)
 	}
 	got := string(data)
-	want := "# Sanho\n.kkachi_docs_hash\n.kkachi.json\n"
+	want := "# Sanho\n.sanho_docs_hash\n.sanho.json\n"
 	if got != want {
 		t.Fatalf("unexpected .gitignore content\nwant:\n%s\ngot:\n%s", want, got)
 	}
@@ -29,13 +29,13 @@ func TestGitignoreManager_CreatesFileWithEntries(t *testing.T) {
 func TestGitignoreManager_AppendsWithoutDuplicates(t *testing.T) {
 	dir := t.TempDir()
 	gitignorePath := filepath.Join(dir, ".gitignore")
-	initial := "node_modules\n.kkachi_docs_hash\n"
+	initial := "node_modules\n.sanho_docs_hash\n"
 	if err := os.WriteFile(gitignorePath, []byte(initial), 0644); err != nil {
 		t.Fatalf("failed to seed .gitignore: %v", err)
 	}
 
 	manager := NewGitignoreManager()
-	if err := manager.EnsureEntries(dir, "# Sanho", []string{".kkachi_docs_hash", ".kkachi.json"}); err != nil {
+	if err := manager.EnsureEntries(dir, "# Sanho", []string{".sanho_docs_hash", ".sanho.json"}); err != nil {
 		t.Fatalf("EnsureEntries returned error: %v", err)
 	}
 
@@ -44,13 +44,13 @@ func TestGitignoreManager_AppendsWithoutDuplicates(t *testing.T) {
 		t.Fatalf("failed to read .gitignore: %v", err)
 	}
 	got := strings.ReplaceAll(string(data), "\r\n", "\n")
-	want := "node_modules\n.kkachi_docs_hash\n# Sanho\n.kkachi.json\n"
+	want := "node_modules\n.sanho_docs_hash\n# Sanho\n.sanho.json\n"
 	if got != want {
 		t.Fatalf("unexpected .gitignore content after append\nwant:\n%s\ngot:\n%s", want, got)
 	}
 
 	// Second call should be a no-op.
-	if err := manager.EnsureEntries(dir, "# Sanho", []string{".kkachi_docs_hash", ".kkachi.json"}); err != nil {
+	if err := manager.EnsureEntries(dir, "# Sanho", []string{".sanho_docs_hash", ".sanho.json"}); err != nil {
 		t.Fatalf("EnsureEntries returned error on second call: %v", err)
 	}
 	data, _ = os.ReadFile(gitignorePath)

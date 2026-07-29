@@ -10,13 +10,13 @@ import (
 
 	"github.com/irootkernel/sanho/internal/domain/docs"
 	"github.com/irootkernel/sanho/internal/domain/workspace"
-	kkachihttp "github.com/irootkernel/sanho/internal/interface/http"
+	sanhohttp "github.com/irootkernel/sanho/internal/interface/http"
 	"github.com/irootkernel/sanho/internal/interface/http/handler"
 	"github.com/irootkernel/sanho/internal/usecase/state"
 )
 
 func TestHealthz(t *testing.T) {
-	srv := kkachihttp.NewHTTPServer(kkachihttp.ServerConfig{Addr: ":5789"}, nil, nil, nil, nil, nil, nil, nil)
+	srv := sanhohttp.NewHTTPServer(sanhohttp.ServerConfig{Addr: ":5789"}, nil, nil, nil, nil, nil, nil, nil)
 	ts := httptest.NewServer(srv.Handler)
 	defer ts.Close()
 
@@ -39,7 +39,7 @@ func TestHealthz(t *testing.T) {
 }
 
 func TestRemovedAndUnknownEndpointsReturnJSON404(t *testing.T) {
-	srv := kkachihttp.NewHTTPServer(kkachihttp.ServerConfig{Addr: ":5789"}, nil, nil, nil, nil, nil, nil, nil)
+	srv := sanhohttp.NewHTTPServer(sanhohttp.ServerConfig{Addr: ":5789"}, nil, nil, nil, nil, nil, nil, nil)
 	ts := httptest.NewServer(srv.Handler)
 	defer ts.Close()
 
@@ -102,7 +102,7 @@ func TestStateEndpointRemainsAvailable(t *testing.T) {
 		},
 	}
 	stateHandler := handler.NewStateHandler(mockUC)
-	srv := kkachihttp.NewHTTPServer(kkachihttp.ServerConfig{Addr: ":0"}, nil, nil, nil, nil, nil, stateHandler, nil)
+	srv := sanhohttp.NewHTTPServer(sanhohttp.ServerConfig{Addr: ":0"}, nil, nil, nil, nil, nil, stateHandler, nil)
 	ts := httptest.NewServer(srv.Handler)
 	defer ts.Close()
 

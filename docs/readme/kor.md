@@ -23,7 +23,7 @@ make daemon-run
 ```
 
 기본 서버 주소는 `http://127.0.0.1:5789`이고 state 파일은
-`data/kkachi_state.json`에 저장된다.
+`data/sanho_state.json`에 저장된다.
 
 애플리케이션 Git 저장소에서 다음 명령으로 작업공간을 초기화한다.
 
@@ -34,8 +34,8 @@ sanho init \
   --docs-repo-url git@github.com:example/example-docs.git
 ```
 
-`init`은 현재 docs snapshot을 내려받고 `.kkachi.json`,
-`.kkachi_docs_hash`를 만든 뒤 문서 동기화용 Git hook을 설치한다.
+`init`은 현재 docs snapshot을 내려받고 `.sanho.json`,
+`.sanho_docs_hash`를 만든 뒤 문서 동기화용 Git hook을 설치한다.
 
 ## 일상 작업
 
@@ -51,7 +51,7 @@ sanho state --json   # 현재 프로젝트 상태를 JSON으로 조회
 
 `sanho status`는 현재 작업공간의 전체 docs commit과 HEAD를 보여주고,
 같은 프로젝트에 등록된 모든 작업공간을 현재 로컬
-`.kkachi_docs_hash` 기준으로 비교한다. 관계는 다음과 같다.
+`.sanho_docs_hash` 기준으로 비교한다. 관계는 다음과 같다.
 
 - `same`: 같은 docs commit
 - `ahead N`: 대상 작업공간에만 `N`개 commit이 있음
@@ -74,7 +74,7 @@ docs 디렉터리까지 지우려면 `--remove-docs`를 별도로 지정한다.
 
 Git commit 시 중앙 docs가 갱신된 상태라면 pre-commit hook이
 `pull-commit` 흐름을 자동으로 실행한다. 첫 시도에서는 `origin/main`을
-fetch하고, 원격 docs만 담은 `[KKACHI] Update docs` 커밋을 최신 `main` 위에
+fetch하고, 원격 docs만 담은 `[SANHO] Update docs` 커밋을 최신 `main` 위에
 만든다. 현재 branch가 `main`이면 branch를 유지하고, unpublished linear
 feature branch라면 system commit 위로 local commit을 rebase한다. published
 branch, merge commit이 있는 branch, 갈라진 local/remote `main`은 자동으로
@@ -86,8 +86,8 @@ history를 바꾸지 않고 실패한다. 성공 시 현재 staged/unstaged 변�
 파일을 해결하고 stage한 뒤 `sanho pull-commit --continue`를 실행한다.
 시스템 커밋이 만들어지기 전이라면 `sanho pull-commit --abort`로
 원래 staged/unstaged docs 상태를 복원할 수 있다. 시스템 커밋 제목은
-`.kkachi.json`의 `docs_sync_commit_message`로 바꿀 수 있으며 기본값은
-`[KKACHI] Update docs`다.
+`.sanho.json`의 `docs_sync_commit_message`로 바꿀 수 있으며 기본값은
+`[SANHO] Update docs`다.
 
 `pull`과 pull-commit system commit은 CLI가 daemon에 docs hash를 직접
 보고하고, 일반 commit은 post-commit hook이 보고한다. 보고 실패는 pending

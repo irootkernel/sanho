@@ -16,37 +16,17 @@ make daemon-run
 | 변수 | 기본값 | 설명 |
 |---|---|---|
 | `PORT` | `5789` | HTTP listen port |
-| `STATE_FILE_PATH` | `data/kkachi_state.json` | daemon state JSON 경로 |
+| `STATE_FILE_PATH` | `data/sanho_state.json` | daemon state JSON 경로 |
 
 docs clone은 프로젝트 등록 시 `data/docs_repos/<docs_repo_id>` 아래에
-생성된다. `data/`, `tmp/`, `.kkachi*`와 인증 정보는 commit하지 않는다.
+생성된다. `data/`, `tmp/`, `.sanho*`와 인증 정보는 commit하지 않는다.
 
-## macOS LaunchAgent
+## 서비스 관리
 
-설치 전에 현재 checkout의 GitHub SSH 접근이 가능한지 확인한다.
-
-```bash
-make check-github-ssh
-make install-launchagent
-make status-launchagent
-```
-
-설치 target은 현재 소스에서 `bin/server`를 다시 빌드하고
-`run-kkachi.sh`를 직접 실행하도록 plist를 설치한다. `run-kkachi.sh`는
-Node나 shell session manager를 시작하지 않는다.
-
-로그:
-
-```text
-~/Library/Logs/kkachi/kkachi.out.log
-~/Library/Logs/kkachi/kkachi.err.log
-```
-
-제거:
-
-```bash
-make uninstall-launchagent
-```
+daemon은 foreground 프로세스로만 제공한다. 로그인 또는 부팅 시 자동 실행,
+재시작, 로그 보존은 사용자가 launchd나 systemd 같은 운영체제 service
+manager에 직접 등록해 관리한다. 저장소의 Make target은 service를 설치하거나
+시작하지 않는다.
 
 ## 상태 확인
 
@@ -71,7 +51,7 @@ sanho state --all --server-url http://127.0.0.1:5789 --json
 
 다른 작업공간이 먼저 docs origin을 갱신했다. Git commit 중이라면
 pre-commit hook이 `pull-commit` 흐름을 자동 실행한다. 충돌이 없으면 원격
-docs만 담은 `[KKACHI] Update docs` 커밋을 최신 `main` 위에 만들고 현재
+docs만 담은 `[SANHO] Update docs` 커밋을 최신 `main` 위에 만들고 현재
 staged/unstaged 변경을 보존한 뒤 commit을 한 번 중단한다. 같은
 `git commit` 명령을 다시 실행하면 원래 변경을 이어서 커밋한다.
 
@@ -101,7 +81,7 @@ commit과 push 및 `clean`을 허용하지 않는다. system commit 보고 실�
 `pull`은 worktree와 docs hash를 즉시 갱신하지만 애플리케이션 commit은
 만들지 않는다. 대신 pull 직전 index와 반영한 snapshot을 Git private
 metadata에 기록한다. 다음 일반 commit의 pre-commit 또는 명시적
-`pull-commit`이 이 기준선을 소비해 `[KKACHI] Update docs` commit을 만든다.
+`pull-commit`이 이 기준선을 소비해 `[SANHO] Update docs` commit을 만든다.
 pull로 새로 생긴 원격 파일은 사용자가 실제로 stage해 삭제하지 않는 한
 로컬 staged 삭제로 해석하지 않는다. `--force` pull은 기존 staged docs도
 버리므로 기준선의 원래 index 역시 현재 HEAD 기준으로 다시 잡는다.
@@ -109,7 +89,7 @@ pull로 새로 생긴 원격 파일은 사용자가 실제로 stage해 삭제하
 실제 `git pull`, rebase/amend, branch checkout처럼 HEAD가 바뀌는 작업은
 각각 `post-merge`, `post-rewrite`, `post-checkout` hook에서 HEAD의 docs
 tree를 다시 확인한다. 현재 tree와 일치하는 reachable `docs-version`
-commit을 찾았을 때만 `.kkachi_docs_hash`와 daemon workspace hash를 함께
+commit을 찾았을 때만 `.sanho_docs_hash`와 daemon workspace hash를 함께
 갱신한다. 일치하는 commit이 없거나 pending pull 위에서 dirty docs가
 발견되면 추측해서 보고하지 않고 경고 또는 보호 실패로 남긴다.
 

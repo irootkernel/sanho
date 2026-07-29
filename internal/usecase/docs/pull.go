@@ -169,7 +169,7 @@ func (u *PullUseCase) Execute(ctx context.Context, input PullInput) error {
 	}
 
 	// Step 8: Apply snapshot to a temporary location to avoid data loss on failure.
-	tempDir, err := os.MkdirTemp(input.WorkDir, ".kkachi_pull_tmp_")
+	tempDir, err := os.MkdirTemp(input.WorkDir, ".sanho_pull_tmp_")
 	if err != nil {
 		return fmt.Errorf("failed to create temp dir for snapshot: %w", err)
 	}
@@ -192,7 +192,7 @@ func (u *PullUseCase) Execute(ctx context.Context, input PullInput) error {
 
 	// Swap in the new docs atomically with a backup to allow rollback if rename fails.
 	targetDocsPath := filepath.Join(input.WorkDir, config.DocsDir)
-	backupPath := targetDocsPath + ".kkachi_pull_backup"
+	backupPath := targetDocsPath + ".sanho_pull_backup"
 	_ = os.RemoveAll(backupPath) // clean stale backup
 
 	if _, err := os.Stat(targetDocsPath); err == nil {

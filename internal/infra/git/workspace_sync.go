@@ -35,7 +35,7 @@ func (s *WorkspaceSync) IsRepository(ctx context.Context, repoPath string) (bool
 }
 
 func (s *WorkspaceSync) ResolveTransactionDir(ctx context.Context, repoPath string) (string, error) {
-	out, err := runWorkspaceGit(ctx, repoPath, nil, "rev-parse", "--git-path", "kkachi/pull-commit")
+	out, err := runWorkspaceGit(ctx, repoPath, nil, "rev-parse", "--git-path", "sanho/pull-commit")
 	if err != nil {
 		return "", err
 	}
@@ -47,7 +47,7 @@ func (s *WorkspaceSync) ResolveTransactionDir(ctx context.Context, repoPath stri
 }
 
 func (s *WorkspaceSync) ResolvePulledDocsDir(ctx context.Context, repoPath string) (string, error) {
-	out, err := runWorkspaceGit(ctx, repoPath, nil, "rev-parse", "--git-path", "kkachi/pulled-docs")
+	out, err := runWorkspaceGit(ctx, repoPath, nil, "rev-parse", "--git-path", "sanho/pulled-docs")
 	if err != nil {
 		return "", err
 	}
@@ -59,7 +59,7 @@ func (s *WorkspaceSync) ResolvePulledDocsDir(ctx context.Context, repoPath strin
 }
 
 func (s *WorkspaceSync) ResolveWorkspaceReportPath(ctx context.Context, repoPath string) (string, error) {
-	out, err := runWorkspaceGit(ctx, repoPath, nil, "rev-parse", "--git-path", "kkachi/workspace-report.json")
+	out, err := runWorkspaceGit(ctx, repoPath, nil, "rev-parse", "--git-path", "sanho/workspace-report.json")
 	if err != nil {
 		return "", err
 	}
@@ -148,7 +148,7 @@ func (s *WorkspaceSync) IsDocsSyncCommit(
 // BuildIndexDocsSnapshot builds a docs snapshot from the index selected by
 // GIT_INDEX_FILE. During pre-commit this is Git's prepared commit index.
 func (s *WorkspaceSync) BuildIndexDocsSnapshot(ctx context.Context, repoPath, docsDir string) ([]byte, error) {
-	tempDir, err := os.MkdirTemp("", "kkachi-index-snapshot-*")
+	tempDir, err := os.MkdirTemp("", "sanho-index-snapshot-*")
 	if err != nil {
 		return nil, fmt.Errorf("create index snapshot directory: %w", err)
 	}
@@ -168,7 +168,7 @@ func (s *WorkspaceSync) BuildIndexDocsSnapshot(ctx context.Context, repoPath, do
 // StageDocsSnapshot replaces only docsDir in the index selected by
 // GIT_INDEX_FILE while leaving the real working tree untouched.
 func (s *WorkspaceSync) StageDocsSnapshot(ctx context.Context, repoPath, docsDir string, snapshot []byte) error {
-	tempDir, err := os.MkdirTemp("", "kkachi-stage-docs-*")
+	tempDir, err := os.MkdirTemp("", "sanho-stage-docs-*")
 	if err != nil {
 		return fmt.Errorf("create staging worktree: %w", err)
 	}
@@ -248,7 +248,7 @@ func (s *WorkspaceSync) buildDocsSyncCommit(
 	snapshot []byte,
 	subject, docsHash string,
 ) (string, error) {
-	tempDir, err := os.MkdirTemp("", "kkachi-sync-commit-*")
+	tempDir, err := os.MkdirTemp("", "sanho-sync-commit-*")
 	if err != nil {
 		return "", fmt.Errorf("create sync commit directory: %w", err)
 	}
@@ -319,7 +319,7 @@ func zeroObjectID(ctx context.Context, repoPath string) (string, error) {
 func (s *WorkspaceSync) ApplyWorktreeDocsSnapshot(repoPath, docsDir string, snapshot []byte) error {
 	docsPath := filepath.Join(repoPath, docsDir)
 	parent := filepath.Dir(docsPath)
-	tempDir, err := os.MkdirTemp(parent, ".kkachi-worktree-*")
+	tempDir, err := os.MkdirTemp(parent, ".sanho-worktree-*")
 	if err != nil {
 		return fmt.Errorf("create worktree snapshot directory: %w", err)
 	}
@@ -329,7 +329,7 @@ func (s *WorkspaceSync) ApplyWorktreeDocsSnapshot(repoPath, docsDir string, snap
 		return fmt.Errorf("apply worktree docs snapshot: %w", err)
 	}
 	replacement := filepath.Join(tempDir, "docs")
-	backup := docsPath + ".kkachi-backup"
+	backup := docsPath + ".sanho-backup"
 	if err := os.RemoveAll(backup); err != nil {
 		return fmt.Errorf("clear worktree backup: %w", err)
 	}

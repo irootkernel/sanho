@@ -42,10 +42,10 @@ func TestE2ECLI_InitWorkflow(t *testing.T) {
 	}
 
 	// Config and hash files should exist
-	if _, err := os.Stat(filepath.Join(workspaceDir, ".kkachi.json")); err != nil {
-		t.Fatalf(".kkachi.json missing: %v", err)
+	if _, err := os.Stat(filepath.Join(workspaceDir, ".sanho.json")); err != nil {
+		t.Fatalf(".sanho.json missing: %v", err)
 	}
-	hashBytes, err := os.ReadFile(filepath.Join(workspaceDir, ".kkachi_docs_hash"))
+	hashBytes, err := os.ReadFile(filepath.Join(workspaceDir, ".sanho_docs_hash"))
 	if err != nil {
 		t.Fatalf("read docs hash: %v", err)
 	}
@@ -62,7 +62,7 @@ func TestE2ECLI_InitWorkflow(t *testing.T) {
 		t.Fatalf("docs snapshot not applied: %s", string(body))
 	}
 
-	assertGitignoreHasEntries(t, workspaceDir, "# Sanho", ".kkachi_docs_hash", ".kkachi.json")
+	assertGitignoreHasEntries(t, workspaceDir, "# Sanho", ".sanho_docs_hash", ".sanho.json")
 
 	// Cleanup: delete project
 	deleteProjectViaCLI(t, cliBinary, serverURL, project, true)
@@ -114,7 +114,7 @@ func TestE2ECLI_InitForce(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(workspaceDir, "docs", "junk.txt")); err == nil {
 		t.Fatalf("junk file should have been removed by --force")
 	}
-	hashBytes, err := os.ReadFile(filepath.Join(workspaceDir, ".kkachi_docs_hash"))
+	hashBytes, err := os.ReadFile(filepath.Join(workspaceDir, ".sanho_docs_hash"))
 	if err != nil {
 		t.Fatalf("read docs hash: %v", err)
 	}
@@ -122,7 +122,7 @@ func TestE2ECLI_InitForce(t *testing.T) {
 		t.Fatalf("docs hash mismatch: got %s want %s", strings.TrimSpace(string(hashBytes)), head)
 	}
 
-	assertGitignoreHasEntries(t, workspaceDir, "# Sanho", ".kkachi_docs_hash", ".kkachi.json")
+	assertGitignoreHasEntries(t, workspaceDir, "# Sanho", ".sanho_docs_hash", ".sanho.json")
 
 	// Cleanup
 	deleteProjectViaCLI(t, cliBinary, serverURL, project, true)

@@ -17,7 +17,7 @@ import (
 
 func TestGitDocsRepository_GetHead(t *testing.T) {
 	// Setup temp dir
-	tempDir, err := os.MkdirTemp("", "kkachi-test-repo-*")
+	tempDir, err := os.MkdirTemp("", "sanho-test-repo-*")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +133,7 @@ func TestGitDocsRepository_GetHead(t *testing.T) {
 
 func TestGitDocsRepository_GetHead_UnknownProject(t *testing.T) {
 	// Setup temp dir
-	tempDir, err := os.MkdirTemp("", "kkachi-test-repo-*")
+	tempDir, err := os.MkdirTemp("", "sanho-test-repo-*")
 	if err != nil {
 		t.Fatal(err)
 	}

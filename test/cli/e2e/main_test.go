@@ -17,7 +17,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	if strings.TrimSpace(os.Getenv("KKACHI_E2E_BASE_URL")) != "" {
+	if strings.TrimSpace(os.Getenv("SANHO_E2E_BASE_URL")) != "" {
 		os.Exit(m.Run())
 	}
 
@@ -50,7 +50,7 @@ func startIsolatedServer() (func(), error) {
 	cleanupTempDir := func() {
 		_ = os.RemoveAll(tempDir)
 	}
-	serverBinary := strings.TrimSpace(os.Getenv("KKACHI_SERVER_BINARY"))
+	serverBinary := strings.TrimSpace(os.Getenv("SANHO_DAEMON_BINARY"))
 	if serverBinary == "" {
 		serverBinary = filepath.Join(tempDir, "sanhod")
 		build := exec.Command("go", "build", "-o", serverBinary, "./cmd/sanhod")
@@ -67,7 +67,7 @@ func startIsolatedServer() (func(), error) {
 	cmd.Dir = cliE2ERepoRoot()
 	cmd.Env = append(os.Environ(),
 		fmt.Sprintf("PORT=%d", port),
-		"STATE_FILE_PATH="+filepath.Join(tempDir, "kkachi_state.json"),
+		"STATE_FILE_PATH="+filepath.Join(tempDir, "sanho_state.json"),
 	)
 	cmd.Stdout = &logs
 	cmd.Stderr = &logs
@@ -87,7 +87,7 @@ func startIsolatedServer() (func(), error) {
 		cleanupTempDir()
 		return nil, fmt.Errorf("wait for health at %s: %w\nserver logs:\n%s", baseURL, err, logs.String())
 	}
-	if err := os.Setenv("KKACHI_E2E_BASE_URL", baseURL); err != nil {
+	if err := os.Setenv("SANHO_E2E_BASE_URL", baseURL); err != nil {
 		cancel()
 		_ = cmd.Wait()
 		cleanupTempDir()
@@ -97,7 +97,7 @@ func startIsolatedServer() (func(), error) {
 	return func() {
 		cancel()
 		_ = cmd.Wait()
-		_ = os.Unsetenv("KKACHI_E2E_BASE_URL")
+		_ = os.Unsetenv("SANHO_E2E_BASE_URL")
 		cleanupTempDir()
 	}, nil
 }

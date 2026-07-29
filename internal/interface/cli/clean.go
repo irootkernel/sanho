@@ -34,7 +34,7 @@ func newCleanCmd() *cobra.Command {
 			loader := fs.NewFileConfigLoader()
 			config, err := loader.Load(cwd)
 			if err != nil {
-				return fmt.Errorf("failed to load .kkachi.json: %w", err)
+				return fmt.Errorf("failed to load .sanho.json: %w", err)
 			}
 			config.ApplyDefaults()
 			hasPullCommit, err := newPullCommitEngine(nil).hasTransaction(cmd.Context(), cwd)

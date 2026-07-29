@@ -66,24 +66,24 @@ func TestCLIPullAlreadyUpToDate(t *testing.T) {
 		t.Fatalf("Failed to create docs file: %v", err)
 	}
 
-	// Create .kkachi.json
+	// Create .sanho.json
 	config := map[string]interface{}{
 		"server_url":       server.URL,
 		"workspace_id":     "test-workspace",
 		"project":          "test-project",
 		"actor_email":      "test@example.com",
 		"docs_dir":         "docs",
-		"docs_hash_file":   ".kkachi_docs_hash",
-		"pending_fix_file": ".kkachi_pending_fix",
+		"docs_hash_file":   ".sanho_docs_hash",
+		"pending_fix_file": ".sanho_pending_fix",
 	}
 	configBytes, _ := json.Marshal(config)
-	if err := os.WriteFile(filepath.Join(tempDir, ".kkachi.json"), configBytes, 0644); err != nil {
-		t.Fatalf("Failed to create .kkachi.json: %v", err)
+	if err := os.WriteFile(filepath.Join(tempDir, ".sanho.json"), configBytes, 0644); err != nil {
+		t.Fatalf("Failed to create .sanho.json: %v", err)
 	}
 
-	// Create .kkachi_docs_hash with same hash as server
-	if err := os.WriteFile(filepath.Join(tempDir, ".kkachi_docs_hash"), []byte("abc123def456\n"), 0644); err != nil {
-		t.Fatalf("Failed to create .kkachi_docs_hash: %v", err)
+	// Create .sanho_docs_hash with same hash as server
+	if err := os.WriteFile(filepath.Join(tempDir, ".sanho_docs_hash"), []byte("abc123def456\n"), 0644); err != nil {
+		t.Fatalf("Failed to create .sanho_docs_hash: %v", err)
 	}
 
 	// Run pull
@@ -130,35 +130,35 @@ func TestCLIPullPendingFixBlocks(t *testing.T) {
 		t.Fatalf("Failed to create docs directory: %v", err)
 	}
 
-	// Create .kkachi.json
+	// Create .sanho.json
 	config := map[string]interface{}{
 		"server_url":       server.URL,
 		"workspace_id":     "test-workspace",
 		"project":          "test-project",
 		"actor_email":      "test@example.com",
 		"docs_dir":         "docs",
-		"docs_hash_file":   ".kkachi_docs_hash",
-		"pending_fix_file": ".kkachi_pending_fix",
+		"docs_hash_file":   ".sanho_docs_hash",
+		"pending_fix_file": ".sanho_pending_fix",
 	}
 	configBytes, _ := json.Marshal(config)
-	if err := os.WriteFile(filepath.Join(tempDir, ".kkachi.json"), configBytes, 0644); err != nil {
-		t.Fatalf("Failed to create .kkachi.json: %v", err)
+	if err := os.WriteFile(filepath.Join(tempDir, ".sanho.json"), configBytes, 0644); err != nil {
+		t.Fatalf("Failed to create .sanho.json: %v", err)
 	}
 
-	// Create .kkachi_docs_hash
-	if err := os.WriteFile(filepath.Join(tempDir, ".kkachi_docs_hash"), []byte("abc123\n"), 0644); err != nil {
-		t.Fatalf("Failed to create .kkachi_docs_hash: %v", err)
+	// Create .sanho_docs_hash
+	if err := os.WriteFile(filepath.Join(tempDir, ".sanho_docs_hash"), []byte("abc123\n"), 0644); err != nil {
+		t.Fatalf("Failed to create .sanho_docs_hash: %v", err)
 	}
 
-	// Create .kkachi_pending_fix
+	// Create .sanho_pending_fix
 	pendingFix := map[string]interface{}{
 		"base_hash":   "abc123",
 		"remote_hash": "def456",
 		"created_at":  "2025-01-01T00:00:00Z",
 	}
 	pendingFixBytes, _ := json.Marshal(pendingFix)
-	if err := os.WriteFile(filepath.Join(tempDir, ".kkachi_pending_fix"), pendingFixBytes, 0644); err != nil {
-		t.Fatalf("Failed to create .kkachi_pending_fix: %v", err)
+	if err := os.WriteFile(filepath.Join(tempDir, ".sanho_pending_fix"), pendingFixBytes, 0644); err != nil {
+		t.Fatalf("Failed to create .sanho_pending_fix: %v", err)
 	}
 
 	// Run pull
@@ -206,24 +206,24 @@ func TestCLIPullUnknownProject(t *testing.T) {
 		t.Fatalf("Failed to create docs file: %v", err)
 	}
 
-	// Create .kkachi.json
+	// Create .sanho.json
 	config := map[string]interface{}{
 		"server_url":       server.URL,
 		"workspace_id":     "test-workspace",
 		"project":          "unknown-project",
 		"actor_email":      "test@example.com",
 		"docs_dir":         "docs",
-		"docs_hash_file":   ".kkachi_docs_hash",
-		"pending_fix_file": ".kkachi_pending_fix",
+		"docs_hash_file":   ".sanho_docs_hash",
+		"pending_fix_file": ".sanho_pending_fix",
 	}
 	configBytes, _ := json.Marshal(config)
-	if err := os.WriteFile(filepath.Join(tempDir, ".kkachi.json"), configBytes, 0644); err != nil {
-		t.Fatalf("Failed to create .kkachi.json: %v", err)
+	if err := os.WriteFile(filepath.Join(tempDir, ".sanho.json"), configBytes, 0644); err != nil {
+		t.Fatalf("Failed to create .sanho.json: %v", err)
 	}
 
-	// Create .kkachi_docs_hash
-	if err := os.WriteFile(filepath.Join(tempDir, ".kkachi_docs_hash"), []byte("abc123\n"), 0644); err != nil {
-		t.Fatalf("Failed to create .kkachi_docs_hash: %v", err)
+	// Create .sanho_docs_hash
+	if err := os.WriteFile(filepath.Join(tempDir, ".sanho_docs_hash"), []byte("abc123\n"), 0644); err != nil {
+		t.Fatalf("Failed to create .sanho_docs_hash: %v", err)
 	}
 
 	// Run pull
@@ -271,24 +271,24 @@ func TestCLIPullUnknownWorkspace(t *testing.T) {
 		t.Fatalf("Failed to create docs file: %v", err)
 	}
 
-	// Create .kkachi.json
+	// Create .sanho.json
 	config := map[string]interface{}{
 		"server_url":       server.URL,
 		"workspace_id":     "test-workspace",
 		"project":          "test-project",
 		"actor_email":      "test@example.com",
 		"docs_dir":         "docs",
-		"docs_hash_file":   ".kkachi_docs_hash",
-		"pending_fix_file": ".kkachi_pending_fix",
+		"docs_hash_file":   ".sanho_docs_hash",
+		"pending_fix_file": ".sanho_pending_fix",
 	}
 	configBytes, _ := json.Marshal(config)
-	if err := os.WriteFile(filepath.Join(tempDir, ".kkachi.json"), configBytes, 0644); err != nil {
-		t.Fatalf("Failed to create .kkachi.json: %v", err)
+	if err := os.WriteFile(filepath.Join(tempDir, ".sanho.json"), configBytes, 0644); err != nil {
+		t.Fatalf("Failed to create .sanho.json: %v", err)
 	}
 
-	// Create .kkachi_docs_hash
-	if err := os.WriteFile(filepath.Join(tempDir, ".kkachi_docs_hash"), []byte("abc123\n"), 0644); err != nil {
-		t.Fatalf("Failed to create .kkachi_docs_hash: %v", err)
+	// Create .sanho_docs_hash
+	if err := os.WriteFile(filepath.Join(tempDir, ".sanho_docs_hash"), []byte("abc123\n"), 0644); err != nil {
+		t.Fatalf("Failed to create .sanho_docs_hash: %v", err)
 	}
 
 	// Run pull

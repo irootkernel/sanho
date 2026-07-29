@@ -15,7 +15,7 @@ import (
 )
 
 func TestWorkspaceHandler_Delete(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "kkachi-ws-handler-*")
+	tempDir, err := os.MkdirTemp("", "sanho-ws-handler-*")
 	if err != nil {
 		t.Fatal(err)
 	}

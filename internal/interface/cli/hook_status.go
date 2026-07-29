@@ -34,7 +34,7 @@ func runHookStatus(cmd *cobra.Command, hookName string, reconcile bool) error {
 		return nil // Always exit 0
 	}
 
-	// Step 1: Load .kkachi.json
+	// Step 1: Load .sanho.json
 	configLoader := fs.NewFileConfigLoader()
 	config, err := configLoader.Load(cwd)
 	if err != nil {
@@ -51,7 +51,7 @@ func runHookStatus(cmd *cobra.Command, hookName string, reconcile bool) error {
 		}
 	}
 
-	// Step 2: Load .kkachi_docs_hash
+	// Step 2: Load .sanho_docs_hash
 	hashStore := fs.NewFileDocsHashStore()
 	hashPath := filepath.Join(cwd, config.DocsHashFile)
 	localHash, err := hashStore.Read(hashPath)

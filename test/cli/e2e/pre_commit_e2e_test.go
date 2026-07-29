@@ -88,12 +88,12 @@ func TestE2ECLI_PreCommitOutdatedCreatesDocsBaseCommit(t *testing.T) {
 	}
 
 	// The compatibility pending-fix path is not used by pull-commit.
-	if _, err := os.Stat(filepath.Join(workspaceDir, ".kkachi_pending_fix")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(workspaceDir, ".sanho_pending_fix")); !os.IsNotExist(err) {
 		t.Fatalf("legacy pending fix file should not exist: %v", err)
 	}
 
 	// Docs hash should be updated to remote head
-	hashBytes, err := os.ReadFile(filepath.Join(workspaceDir, ".kkachi_docs_hash"))
+	hashBytes, err := os.ReadFile(filepath.Join(workspaceDir, ".sanho_docs_hash"))
 	if err != nil {
 		t.Fatalf("read docs hash: %v", err)
 	}
@@ -101,7 +101,7 @@ func TestE2ECLI_PreCommitOutdatedCreatesDocsBaseCommit(t *testing.T) {
 		t.Fatalf("docs hash not updated to remote head; got %s want %s", strings.TrimSpace(string(hashBytes)), remoteHead)
 	}
 	subject := strings.TrimSpace(string(runCmd(t, workspaceDir, "git", "show", "-s", "--format=%s", "HEAD")))
-	if subject != "[KKACHI] Update docs" {
+	if subject != "[SANHO] Update docs" {
 		t.Fatalf("system commit subject = %q", subject)
 	}
 	remoteContent := strings.TrimSpace(string(runCmd(t, workspaceDir, "git", "show", "HEAD:docs/docs/server.md")))
@@ -120,7 +120,7 @@ func TestE2ECLI_PreCommitOutdatedCreatesDocsBaseCommit(t *testing.T) {
 	if committedContent != "# local change" {
 		t.Fatalf("local docs were not committed after retry: %q", committedContent)
 	}
-	transactionDir := strings.TrimSpace(string(runCmd(t, workspaceDir, "git", "rev-parse", "--git-path", "kkachi/pull-commit")))
+	transactionDir := strings.TrimSpace(string(runCmd(t, workspaceDir, "git", "rev-parse", "--git-path", "sanho/pull-commit")))
 	if !filepath.IsAbs(transactionDir) {
 		transactionDir = filepath.Join(workspaceDir, transactionDir)
 	}

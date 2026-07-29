@@ -56,16 +56,16 @@ func TestE2E_CliClean_RemovesWorkspaceAndLocalFiles(t *testing.T) {
   "project": "` + projectName + `",
   "actor_email": "dev@example.com",
   "docs_dir": "docs",
-  "docs_hash_file": ".kkachi_docs_hash",
-  "pending_fix_file": ".kkachi_pending_fix"
+  "docs_hash_file": ".sanho_docs_hash",
+  "pending_fix_file": ".sanho_pending_fix"
 }`
-	if err := os.WriteFile(filepath.Join(wsDir, ".kkachi.json"), []byte(configJSON), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(wsDir, ".sanho.json"), []byte(configJSON), 0644); err != nil {
 		t.Fatalf("failed to write config: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(wsDir, ".kkachi_docs_hash"), []byte(head+"\n"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(wsDir, ".sanho_docs_hash"), []byte(head+"\n"), 0644); err != nil {
 		t.Fatalf("failed to write docs hash: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(wsDir, ".kkachi_pending_fix"), []byte("{}"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(wsDir, ".sanho_pending_fix"), []byte("{}"), 0644); err != nil {
 		t.Fatalf("failed to write pending fix: %v", err)
 	}
 	if err := os.MkdirAll(filepath.Join(wsDir, "docs"), 0755); err != nil {
@@ -98,7 +98,7 @@ func TestE2E_CliClean_RemovesWorkspaceAndLocalFiles(t *testing.T) {
 	resp.Body.Close()
 
 	// Local files removed
-	for _, p := range []string{".kkachi.json", ".kkachi_docs_hash", ".kkachi_pending_fix"} {
+	for _, p := range []string{".sanho.json", ".sanho_docs_hash", ".sanho_pending_fix"} {
 		if _, err := os.Stat(filepath.Join(wsDir, p)); !os.IsNotExist(err) {
 			t.Fatalf("expected %s removed, err=%v", p, err)
 		}

@@ -234,7 +234,7 @@ func fetchStateViaHTTP(t *testing.T, serverURL string) map[string]interface{} {
 	return body
 }
 
-// writeConfig writes .kkachi.json with provided values.
+// writeConfig writes .sanho.json with provided values.
 func writeConfig(t *testing.T, dir, serverURL, project, workspaceID, actorEmail string) {
 	t.Helper()
 	cfg := map[string]any{
@@ -245,15 +245,15 @@ func writeConfig(t *testing.T, dir, serverURL, project, workspaceID, actorEmail 
 		"docs_dir":     "docs",
 	}
 	data, _ := json.MarshalIndent(cfg, "", "  ")
-	if err := os.WriteFile(filepath.Join(dir, ".kkachi.json"), data, 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, ".sanho.json"), data, 0644); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 }
 
-// writeDocsHash writes .kkachi_docs_hash.
+// writeDocsHash writes .sanho_docs_hash.
 func writeDocsHash(t *testing.T, dir, hash string) {
 	t.Helper()
-	if err := os.WriteFile(filepath.Join(dir, ".kkachi_docs_hash"), []byte(hash), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, ".sanho_docs_hash"), []byte(hash), 0644); err != nil {
 		t.Fatalf("write docs hash: %v", err)
 	}
 }
@@ -267,7 +267,7 @@ func writePendingFix(t *testing.T, dir, baseHash, remoteHash string) {
 		"created_at":  time.Now().UTC().Format(time.RFC3339),
 	}
 	data, _ := json.MarshalIndent(state, "", "  ")
-	if err := os.WriteFile(filepath.Join(dir, ".kkachi_pending_fix"), data, 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, ".sanho_pending_fix"), data, 0644); err != nil {
 		t.Fatalf("write pending fix: %v", err)
 	}
 }

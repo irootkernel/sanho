@@ -14,8 +14,8 @@
 - Require Go 1.25+. Local server: `go run ./cmd/sanhod` (override `PORT`, `STATE_FILE_PATH`).
 - CLI build/install: `make cli-build` → `bin/sanho`; `make cli-install` to `$GOPATH/bin`.
 - Server checks: `make daemon-test-prepare` (generate+fmt+vet), `make daemon-test-unit`, `make daemon-test-integration`, `make daemon-test-e2e` (isolated daemon by default; set `E2E_BASE_URL` for an explicit server), or `make daemon-test` for all.
-- CLI checks: `make cli-test-prepare`, `make cli-test-unit`, `make cli-test-integration` (sets `KKACHI_CLI_BINARY`), `make cli-test-e2e` (`KKACHI_E2E_BASE_URL`), or `make cli-test`.
-- Docker dev loop: `make daemon-run` builds the dev image and runs with Git/SSH mounts.
+- CLI checks: `make cli-test-prepare`, `make cli-test-unit`, `make cli-test-integration` (sets `SANHO_CLI_BINARY`), `make cli-test-e2e` (`SANHO_E2E_BASE_URL`), or `make cli-test`.
+- Local daemon loop: `make daemon-run` builds and runs `bin/sanhod`.
 
 ## Coding Style & Naming Conventions
 - Use standard Go formatting (`go fmt ./...` is in prep targets); exported names follow Go casing, packages stay lowercase.
@@ -24,7 +24,7 @@
 
 ## Testing Guidelines
 - Add unit tests near new code; move cross-adapter cases to `test/integration` and end-to-end flows to `test/e2e` or `test/cli/e2e`.
-- Set `KKACHI_E2E_BASE_URL` for non-default servers; point `KKACHI_CLI_BINARY` at a fresh build for CLI suites.
+- Set `SANHO_E2E_BASE_URL` for non-default servers; point `SANHO_CLI_BINARY` at a fresh build for CLI suites.
 - Keep failing tests that capture expected behavior when fixing regressions; aim for coverage on new branches.
 
 ## Commit & Pull Request Guidelines
@@ -33,5 +33,5 @@
 - Call out deferred follow-ups explicitly so they can be tracked.
 
 ## Security & Configuration Tips
-- Do not commit secrets; `.kkachi*`, `data/`, and temp repos should stay untracked (init updates `.gitignore`).
+- Do not commit secrets; `.sanho*`, `data/`, and temp repos should stay untracked (init updates `.gitignore`).
 - Prefer disposable repos under `/tmp` for e2e runs to avoid polluting real workspaces.

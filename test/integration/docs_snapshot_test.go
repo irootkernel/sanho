@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/irootkernel/sanho/internal/domain/docs"
-	kkachihttp "github.com/irootkernel/sanho/internal/interface/http"
+	sanhohttp "github.com/irootkernel/sanho/internal/interface/http"
 	"github.com/irootkernel/sanho/internal/interface/http/handler"
 )
 
@@ -83,7 +83,7 @@ func TestDocsSnapshot(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			handler := handler.NewDocsSnapshotHandler(tt.mockUC)
-			srv := kkachihttp.NewHTTPServer(kkachihttp.ServerConfig{Addr: ":0"}, nil, nil, nil, handler, nil, nil, nil)
+			srv := sanhohttp.NewHTTPServer(sanhohttp.ServerConfig{Addr: ":0"}, nil, nil, nil, handler, nil, nil, nil)
 
 			req := httptest.NewRequest("GET", "/docs/snapshot?project="+tt.queryProject+"&commit="+tt.queryCommit, nil)
 			w := httptest.NewRecorder()

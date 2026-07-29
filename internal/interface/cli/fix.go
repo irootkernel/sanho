@@ -63,7 +63,7 @@ func runFixCommand(cmd *cobra.Command) error {
 	config, err := configLoader.Load(cwd)
 	if err != nil {
 		cmd.PrintErrf("sanho fix: %v\n", err)
-		cmd.PrintErrf("sanho configuration is broken or missing (.kkachi.json / .kkachi_docs_hash).\n")
+		cmd.PrintErrf("sanho configuration is broken or missing (.sanho.json / .sanho_docs_hash).\n")
 		return err
 	}
 

@@ -43,7 +43,7 @@ func TestCLIPostCommitReportsWorkspaceDocsHash(t *testing.T) {
 	if calls.Load() != 1 {
 		t.Fatalf("calls=%d want 1", calls.Load())
 	}
-	pathCmd := exec.Command("git", "-C", repo, "rev-parse", "--git-path", "kkachi/workspace-report.json")
+	pathCmd := exec.Command("git", "-C", repo, "rev-parse", "--git-path", "sanho/workspace-report.json")
 	pathOutput, err := pathCmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("resolve report path: %v\n%s", err, pathOutput)
@@ -65,16 +65,16 @@ func writePostCommitReportConfig(t *testing.T, repo, serverURL string) {
 		"project":        "project-1",
 		"actor_email":    "actor@example.com",
 		"docs_dir":       "docs",
-		"docs_hash_file": ".kkachi_docs_hash",
+		"docs_hash_file": ".sanho_docs_hash",
 	}
 	data, err := json.Marshal(config)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(repo, ".kkachi.json"), data, 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(repo, ".sanho.json"), data, 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(repo, ".kkachi_docs_hash"), []byte("docs-2\n"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(repo, ".sanho_docs_hash"), []byte("docs-2\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 }

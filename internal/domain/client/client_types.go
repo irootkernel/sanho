@@ -38,7 +38,7 @@ func (s DocsStatus) IsValid() bool {
 	}
 }
 
-// WorkspaceConfig represents the local workspace configuration stored in .kkachi.json.
+// WorkspaceConfig represents the local workspace configuration stored in .sanho.json.
 type WorkspaceConfig struct {
 	// ServerURL is the base URL of the sanhod.
 	ServerURL string `json:"server_url"`
@@ -50,9 +50,9 @@ type WorkspaceConfig struct {
 	ActorEmail string `json:"actor_email"`
 	// DocsDir is the local docs directory path (default: "docs").
 	DocsDir string `json:"docs_dir"`
-	// DocsHashFile is the path to the file storing the current docs hash (default: ".kkachi_docs_hash").
+	// DocsHashFile is the path to the file storing the current docs hash (default: ".sanho_docs_hash").
 	DocsHashFile string `json:"docs_hash_file,omitempty"`
-	// PendingFixFile is the path to the pending fix state file (default: ".kkachi_pending_fix").
+	// PendingFixFile is the path to the pending fix state file (default: ".sanho_pending_fix").
 	PendingFixFile string `json:"pending_fix_file,omitempty"`
 	// DocsSyncCommitMessage is the subject used for system-generated docs base commits.
 	DocsSyncCommitMessage string `json:"docs_sync_commit_message,omitempty"`
@@ -62,13 +62,13 @@ type WorkspaceConfig struct {
 const DefaultDocsDir = "docs"
 
 // DefaultDocsHashFile is the default docs hash file name.
-const DefaultDocsHashFile = ".kkachi_docs_hash"
+const DefaultDocsHashFile = ".sanho_docs_hash"
 
 // DefaultPendingFixFile is the default pending fix file name.
-const DefaultPendingFixFile = ".kkachi_pending_fix"
+const DefaultPendingFixFile = ".sanho_pending_fix"
 
 // DefaultDocsSyncCommitMessage is used for system-generated docs base commits.
-const DefaultDocsSyncCommitMessage = "[KKACHI] Update docs"
+const DefaultDocsSyncCommitMessage = "[SANHO] Update docs"
 
 // ApplyDefaults sets default values for optional fields.
 func (c *WorkspaceConfig) ApplyDefaults() {

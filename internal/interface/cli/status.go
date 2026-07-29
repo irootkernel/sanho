@@ -46,7 +46,7 @@ func newStatusCmd() *cobra.Command {
 				return withErrorCode("internal_error", fmt.Errorf("failed to get current directory: %w", err))
 			}
 
-			// Step 1: Load .kkachi.json
+			// Step 1: Load .sanho.json
 			configLoader := fs.NewFileConfigLoader()
 			config, err := configLoader.Load(cwd)
 			if err != nil {
@@ -59,7 +59,7 @@ func newStatusCmd() *cobra.Command {
 				return withErrorCode("invalid_workspace_config", fmt.Errorf("failed to load config: %w", err))
 			}
 
-			// Step 2: Load .kkachi_docs_hash
+			// Step 2: Load .sanho_docs_hash
 			hashStore := fs.NewFileDocsHashStore()
 			hashPath := filepath.Join(cwd, config.DocsHashFile)
 			localHash, err := hashStore.Read(hashPath)

@@ -327,7 +327,7 @@ func (u *PreCommitUseCase) handleOutdated(
 	}
 
 	// Create temp directories for base and remote
-	tempDir, err := os.MkdirTemp("", "kkachi-merge-*")
+	tempDir, err := os.MkdirTemp("", "sanho-merge-*")
 	if err != nil {
 		return fmt.Errorf("failed to create temp directory: %w", err)
 	}

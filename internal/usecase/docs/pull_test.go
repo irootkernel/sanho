@@ -103,8 +103,8 @@ func TestPullUseCase_AlreadyUpToDate(t *testing.T) {
 			WorkspaceID:    "test-ws",
 			Project:        "test-project",
 			DocsDir:        "docs",
-			DocsHashFile:   ".kkachi_docs_hash",
-			PendingFixFile: ".kkachi_pending_fix",
+			DocsHashFile:   ".sanho_docs_hash",
+			PendingFixFile: ".sanho_pending_fix",
 		},
 	}
 	docsHashStore := &mockPullDocsHashStore{readHash: "abc123"}
@@ -154,8 +154,8 @@ func TestPullUseCase_SuccessfulPull(t *testing.T) {
 			WorkspaceID:    "test-ws",
 			Project:        "test-project",
 			DocsDir:        "docs",
-			DocsHashFile:   ".kkachi_docs_hash",
-			PendingFixFile: ".kkachi_pending_fix",
+			DocsHashFile:   ".sanho_docs_hash",
+			PendingFixFile: ".sanho_pending_fix",
 		},
 	}
 	docsHashStore := &mockPullDocsHashStore{readHash: "abc123"}
@@ -195,8 +195,8 @@ func TestPullUseCase_PendingFixBlocks(t *testing.T) {
 			WorkspaceID:    "test-ws",
 			Project:        "test-project",
 			DocsDir:        "docs",
-			DocsHashFile:   ".kkachi_docs_hash",
-			PendingFixFile: ".kkachi_pending_fix",
+			DocsHashFile:   ".sanho_docs_hash",
+			PendingFixFile: ".sanho_pending_fix",
 		},
 	}
 	docsHashStore := &mockPullDocsHashStore{readHash: "abc123"}
@@ -230,8 +230,8 @@ func TestPullUseCase_LocalChangesBlock(t *testing.T) {
 			WorkspaceID:    "test-ws",
 			Project:        "test-project",
 			DocsDir:        "docs",
-			DocsHashFile:   ".kkachi_docs_hash",
-			PendingFixFile: ".kkachi_pending_fix",
+			DocsHashFile:   ".sanho_docs_hash",
+			PendingFixFile: ".sanho_pending_fix",
 		},
 	}
 	docsHashStore := &mockPullDocsHashStore{readHash: "abc123"}
@@ -265,8 +265,8 @@ func TestPullUseCase_LocalChangesWithForce(t *testing.T) {
 			WorkspaceID:    "test-ws",
 			Project:        "test-project",
 			DocsDir:        "docs",
-			DocsHashFile:   ".kkachi_docs_hash",
-			PendingFixFile: ".kkachi_pending_fix",
+			DocsHashFile:   ".sanho_docs_hash",
+			PendingFixFile: ".sanho_pending_fix",
 		},
 	}
 	docsHashStore := &mockPullDocsHashStore{readHash: "abc123"}
@@ -343,8 +343,8 @@ func TestPullUseCase_ApplyFailureKeepsExistingDocs(t *testing.T) {
 			WorkspaceID:    "test-ws",
 			Project:        "test-project",
 			DocsDir:        "docs",
-			DocsHashFile:   ".kkachi_docs_hash",
-			PendingFixFile: ".kkachi_pending_fix",
+			DocsHashFile:   ".sanho_docs_hash",
+			PendingFixFile: ".sanho_pending_fix",
 		},
 	}
 	docsHashStore := &mockPullDocsHashStore{readHash: "abc123"}

@@ -52,7 +52,7 @@ func TestCLIStateJSONFiltersCurrentProject(t *testing.T) {
 	defer server.Close()
 
 	workspaceDir := t.TempDir()
-	setupKkachiConfig(t, workspaceDir, server.URL)
+	setupSanhoConfig(t, workspaceDir, server.URL)
 	cmd := exec.Command(getCliBinary(t), "state", "--json")
 	cmd.Dir = workspaceDir
 	output, err := cmd.Output()
@@ -123,7 +123,7 @@ func TestCLIStatusJSON(t *testing.T) {
 	defer server.Close()
 
 	workspaceDir := t.TempDir()
-	setupKkachiConfig(t, workspaceDir, server.URL)
+	setupSanhoConfig(t, workspaceDir, server.URL)
 	cmd := exec.Command(getCliBinary(t), "status", "--json")
 	cmd.Dir = workspaceDir
 	output, err := cmd.Output()
@@ -165,7 +165,7 @@ func TestCLIStatusJSONMarksLegacyComparisonUnavailable(t *testing.T) {
 	defer server.Close()
 
 	workspaceDir := t.TempDir()
-	setupKkachiConfig(t, workspaceDir, server.URL)
+	setupSanhoConfig(t, workspaceDir, server.URL)
 	cmd := exec.Command(getCliBinary(t), "status", "--json")
 	cmd.Dir = workspaceDir
 	output, err := cmd.Output()
@@ -266,7 +266,7 @@ func TestCLIStatusJSONUsesStableServerErrorCodes(t *testing.T) {
 			defer server.Close()
 
 			workspaceDir := t.TempDir()
-			setupKkachiConfig(t, workspaceDir, server.URL)
+			setupSanhoConfig(t, workspaceDir, server.URL)
 			cmd := exec.Command(getCliBinary(t), "status", "--json")
 			cmd.Dir = workspaceDir
 			var stdout bytes.Buffer
@@ -312,7 +312,7 @@ func TestCLIJSONOperationalErrors(t *testing.T) {
 			name: "status reports unavailable server",
 			args: []string{"status", "--json"},
 			setupDir: func(t *testing.T, dir string) {
-				setupKkachiConfig(t, dir, "http://127.0.0.1:1")
+				setupSanhoConfig(t, dir, "http://127.0.0.1:1")
 			},
 			wantCode: "server_request_failed",
 		},

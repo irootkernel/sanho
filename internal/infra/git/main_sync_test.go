@@ -27,7 +27,7 @@ func TestCreateMainBasedDocsSyncCommitUpdatesMainAndPreservesDirtyLayers(t *test
 		repo,
 		"docs",
 		mainSyncSnapshot(t, "remote docs\n"),
-		"[KKACHI] Update docs",
+		"[SANHO] Update docs",
 		"docs-hash-2",
 	)
 	if err != nil {
@@ -86,7 +86,7 @@ func TestCreateMainBasedDocsSyncCommitRebasesUnpublishedFeature(t *testing.T) {
 		repo,
 		"docs",
 		mainSyncSnapshot(t, "remote docs\n"),
-		"[KKACHI] Update docs",
+		"[SANHO] Update docs",
 		"docs-hash-2",
 	)
 	if err != nil {
@@ -126,7 +126,7 @@ func TestCreateMainBasedDocsSyncCommitRejectsPublishedFeatureUnchanged(t *testin
 		repo,
 		"docs",
 		mainSyncSnapshot(t, "remote docs\n"),
-		"[KKACHI] Update docs",
+		"[SANHO] Update docs",
 		"docs-hash-2",
 	)
 	if err == nil || !strings.Contains(err.Error(), ErrPublishedFeature.Error()) {
@@ -156,7 +156,7 @@ func TestCreateMainBasedDocsSyncCommitRebaseConflictLeavesRefsAndDirtyStateUncha
 		repo,
 		"docs",
 		mainSyncSnapshot(t, "remote docs\n"),
-		"[KKACHI] Update docs",
+		"[SANHO] Update docs",
 		"docs-hash-2",
 	)
 	if err == nil || !strings.Contains(err.Error(), ErrMainSyncRebaseConflict.Error()) {
@@ -189,7 +189,7 @@ func TestCreateMainBasedDocsSyncCommitRejectsDivergedMainUnchanged(t *testing.T)
 		repo,
 		"docs",
 		mainSyncSnapshot(t, "remote docs\n"),
-		"[KKACHI] Update docs",
+		"[SANHO] Update docs",
 		"docs-hash-2",
 	)
 	if err == nil || !strings.Contains(err.Error(), ErrMainDiverged.Error()) {

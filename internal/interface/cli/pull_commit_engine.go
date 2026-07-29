@@ -755,7 +755,7 @@ func (e *pullCommitEngine) mergeSnapshots(
 	docsDir string,
 	base, index, work, remote []byte,
 ) ([]byte, []byte, []string, error) {
-	tempDir, err := os.MkdirTemp("", "kkachi-layered-merge-*")
+	tempDir, err := os.MkdirTemp("", "sanho-layered-merge-*")
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("create merge directory: %w", err)
 	}
@@ -820,7 +820,7 @@ func (e *pullCommitEngine) overlayChangedSnapshotPaths(
 	docsDir string,
 	target, original, current []byte,
 ) ([]byte, error) {
-	tempDir, err := os.MkdirTemp("", "kkachi-index-overlay-*")
+	tempDir, err := os.MkdirTemp("", "sanho-index-overlay-*")
 	if err != nil {
 		return nil, err
 	}
@@ -865,7 +865,7 @@ func (e *pullCommitEngine) overlaySelectedSnapshotPaths(
 	target, current []byte,
 	paths []string,
 ) ([]byte, error) {
-	tempDir, err := os.MkdirTemp("", "kkachi-selected-overlay-*")
+	tempDir, err := os.MkdirTemp("", "sanho-selected-overlay-*")
 	if err != nil {
 		return nil, err
 	}
@@ -896,7 +896,7 @@ func (e *pullCommitEngine) overlaySelectedSnapshotPaths(
 }
 
 func (e *pullCommitEngine) snapshotsEqual(docsDir string, left, right []byte) (bool, error) {
-	tempDir, err := os.MkdirTemp("", "kkachi-snapshot-compare-*")
+	tempDir, err := os.MkdirTemp("", "sanho-snapshot-compare-*")
 	if err != nil {
 		return false, err
 	}

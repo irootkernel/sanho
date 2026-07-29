@@ -90,7 +90,7 @@ func runStateCommand(cmd *cobra.Command, showAll bool, serverURLFlag string, jso
 		} else if showAll {
 			// --all without --server-url: suggest using --server-url
 			if !jsonOutput {
-				cmd.PrintErrf("sanho state: no .kkachi.json found.\n")
+				cmd.PrintErrf("sanho state: no .sanho.json found.\n")
 				cmd.PrintErrf("When using --all outside a workspace, provide --server-url flag.\n")
 				cmd.PrintErrf("Example: sanho state --all --server-url http://localhost:5789\n")
 			}

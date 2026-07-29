@@ -68,7 +68,7 @@ The project follows a Clean Architecture approach, co-locating server and client
 *   **E2E Tests:** Located in `test/e2e`, verify the full system flow (Server + Git operations).
 
 ### 3. Git & Documentation Management
-*   **Server State:** The server maintains a single JSON file (default: `data/kkachi_state.json`) to track projects and workspaces.
+*   **Server State:** The server maintains a single JSON file (default: `data/sanho_state.json`) to track projects and workspaces.
 *   **Docs Repos:** The server manages local clones of the documentation repositories. It performs `git fetch` on startup and ensures synchronization.
 *   **Conflict Resolution:** The system detects conflicts ("outdated" state) but relies on the user to resolve them manually using standard Git conflict markers.
 
@@ -85,7 +85,7 @@ To run the server locally:
 ```bash
 # Set environment variables (optional, defaults shown)
 export PORT=5789
-export STATE_FILE_PATH=data/kkachi_state.json
+export STATE_FILE_PATH=data/sanho_state.json
 
 # Run the server
 go run cmd/sanhod/main.go

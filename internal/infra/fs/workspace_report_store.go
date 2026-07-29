@@ -11,7 +11,7 @@ import (
 	"github.com/irootkernel/sanho/internal/domain/workspace"
 )
 
-const WorkspaceReportFallbackFile = ".kkachi_workspace_report"
+const WorkspaceReportFallbackFile = ".sanho_workspace_report"
 
 // WorkspaceReportState records a daemon update that must succeed before
 // another guarded Git operation may continue.

@@ -29,7 +29,7 @@ import (
 // override, tests must launch an isolated server instead of reusing a
 // developer's daemon and persistent state.
 func configuredBaseURL() (string, bool) {
-	if base := strings.TrimSpace(os.Getenv("KKACHI_E2E_BASE_URL")); base != "" {
+	if base := strings.TrimSpace(os.Getenv("SANHO_E2E_BASE_URL")); base != "" {
 		return strings.TrimRight(base, "/"), true
 	}
 	return "", false
@@ -49,7 +49,7 @@ func requireServer(t *testing.T, ctx context.Context) string {
 
 		baseURL, err := url.Parse(base)
 		if err != nil {
-			t.Fatalf("invalid KKACHI_E2E_BASE_URL %q: %v", base, err)
+			t.Fatalf("invalid SANHO_E2E_BASE_URL %q: %v", base, err)
 		}
 		if !isLocalHost(baseURL.Hostname()) {
 			t.Skipf("Skipping E2E: sanhod not reachable at %s (%v)", base, healthErr)
@@ -68,12 +68,12 @@ func requireServer(t *testing.T, ctx context.Context) string {
 
 	baseURL, err := url.Parse(base)
 	if err != nil {
-		t.Fatalf("invalid KKACHI_E2E_BASE_URL %q: %v", base, err)
+		t.Fatalf("invalid SANHO_E2E_BASE_URL %q: %v", base, err)
 	}
 	port := portOrDefault(baseURL)
 	testDir := t.TempDir()
-	statePath := filepath.Join(testDir, "kkachi_state.json")
-	serverBinary := strings.TrimSpace(os.Getenv("KKACHI_SERVER_BINARY"))
+	statePath := filepath.Join(testDir, "sanho_state.json")
+	serverBinary := strings.TrimSpace(os.Getenv("SANHO_DAEMON_BINARY"))
 	if serverBinary == "" {
 		serverBinary = filepath.Join(testDir, "sanhod")
 		build := exec.Command("go", "build", "-o", serverBinary, "./cmd/sanhod")
@@ -173,16 +173,16 @@ func repoRoot(t *testing.T) string {
 }
 
 // getCliBinaryE2E returns a sanho binary path for e2e CLI runs.
-// It prefers KKACHI_CLI_BINARY, then repo-root bin/sanho, otherwise builds a temp binary.
+// It prefers SANHO_CLI_BINARY, then repo-root bin/sanho, otherwise builds a temp binary.
 func getCliBinaryE2E(t *testing.T) string {
 	t.Helper()
 
 	// Env override
-	if bin := strings.TrimSpace(os.Getenv("KKACHI_CLI_BINARY")); bin != "" {
+	if bin := strings.TrimSpace(os.Getenv("SANHO_CLI_BINARY")); bin != "" {
 		if _, err := os.Stat(bin); err == nil {
 			return bin
 		}
-		t.Logf("KKACHI_CLI_BINARY set but not found: %s", bin)
+		t.Logf("SANHO_CLI_BINARY set but not found: %s", bin)
 	}
 
 	// Existing bin under repo root
@@ -336,7 +336,7 @@ func sharedRepoTempDir(t *testing.T) string {
 	if runtime.GOOS == "darwin" {
 		base = "/tmp"
 	}
-	dir, err := os.MkdirTemp(base, "kkachi-e2e-*")
+	dir, err := os.MkdirTemp(base, "sanho-e2e-*")
 	if err != nil {
 		t.Fatalf("failed to create shared temp dir: %v", err)
 	}

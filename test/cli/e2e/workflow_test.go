@@ -21,9 +21,9 @@ func TestE2ESetup(t *testing.T) {
 	}
 
 	// Verify TestMain configured either an isolated server or an explicit override.
-	serverURL := os.Getenv("KKACHI_E2E_BASE_URL")
+	serverURL := os.Getenv("SANHO_E2E_BASE_URL")
 	if serverURL == "" {
-		t.Fatal("KKACHI_E2E_BASE_URL was not configured by the E2E test harness")
+		t.Fatal("SANHO_E2E_BASE_URL was not configured by the E2E test harness")
 	}
 	t.Logf("E2E test environment: CLI=%s, Server=%s", cliBinary, serverURL)
 }
@@ -55,11 +55,11 @@ func getCliBinary(t *testing.T) string {
 	t.Helper()
 
 	// Check environment variable first
-	if binary := os.Getenv("KKACHI_CLI_BINARY"); binary != "" {
+	if binary := os.Getenv("SANHO_CLI_BINARY"); binary != "" {
 		if _, err := os.Stat(binary); err == nil {
 			return binary
 		}
-		t.Logf("KKACHI_CLI_BINARY set but file not found: %s", binary)
+		t.Logf("SANHO_CLI_BINARY set but file not found: %s", binary)
 	}
 
 	// Try to find binary relative to project root
@@ -87,9 +87,9 @@ func getCliBinary(t *testing.T) string {
 func getServerURL(t *testing.T) string {
 	t.Helper()
 
-	url := os.Getenv("KKACHI_E2E_BASE_URL")
+	url := os.Getenv("SANHO_E2E_BASE_URL")
 	if url == "" {
-		t.Fatal("KKACHI_E2E_BASE_URL was not configured by the E2E test harness")
+		t.Fatal("SANHO_E2E_BASE_URL was not configured by the E2E test harness")
 	}
 	return url
 }

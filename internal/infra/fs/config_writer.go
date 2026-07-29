@@ -22,7 +22,7 @@ func NewFileConfigWriter() *FileConfigWriter {
 	return &FileConfigWriter{}
 }
 
-// Write saves .kkachi.json to the specified directory.
+// Write saves .sanho.json to the specified directory.
 func (w *FileConfigWriter) Write(dir string, config *client.WorkspaceConfig) error {
 	configPath := filepath.Join(dir, ConfigFileName)
 
@@ -34,7 +34,7 @@ func (w *FileConfigWriter) Write(dir string, config *client.WorkspaceConfig) err
 	return os.WriteFile(configPath, data, 0644)
 }
 
-// Exists checks if .kkachi.json already exists in the directory.
+// Exists checks if .sanho.json already exists in the directory.
 func (w *FileConfigWriter) Exists(dir string) bool {
 	configPath := filepath.Join(dir, ConfigFileName)
 	_, err := os.Stat(configPath)

@@ -211,23 +211,23 @@ func TestCLICommitMsgHookAddsDocsVersion(t *testing.T) {
 		t.Fatalf("Failed to create docs file: %v", err)
 	}
 
-	// Create .kkachi.json
+	// Create .sanho.json
 	config := `{
 		"server_url": "http://localhost:5789",
 		"workspace_id": "test-workspace",
 		"project": "test-project",
 		"actor_email": "test@example.com",
 		"docs_dir": "docs",
-		"docs_hash_file": ".kkachi_docs_hash"
+		"docs_hash_file": ".sanho_docs_hash"
 	}`
-	if err := os.WriteFile(filepath.Join(tempDir, ".kkachi.json"), []byte(config), 0644); err != nil {
-		t.Fatalf("Failed to create .kkachi.json: %v", err)
+	if err := os.WriteFile(filepath.Join(tempDir, ".sanho.json"), []byte(config), 0644); err != nil {
+		t.Fatalf("Failed to create .sanho.json: %v", err)
 	}
 
-	// Create .kkachi_docs_hash
+	// Create .sanho_docs_hash
 	docsHash := "abc123def456789\n"
-	if err := os.WriteFile(filepath.Join(tempDir, ".kkachi_docs_hash"), []byte(docsHash), 0644); err != nil {
-		t.Fatalf("Failed to create .kkachi_docs_hash: %v", err)
+	if err := os.WriteFile(filepath.Join(tempDir, ".sanho_docs_hash"), []byte(docsHash), 0644); err != nil {
+		t.Fatalf("Failed to create .sanho_docs_hash: %v", err)
 	}
 
 	// Stage docs
@@ -318,17 +318,17 @@ func runGitCommand(t *testing.T, dir string, args ...string) {
 }
 
 // getCliBinary returns the path to the sanho CLI binary.
-// It first checks for KKACHI_CLI_BINARY environment variable,
+// It first checks for SANHO_CLI_BINARY environment variable,
 // then falls back to the default bin/sanho location.
 func getCliBinary(t *testing.T) string {
 	t.Helper()
 
 	// Check environment variable first
-	if binary := os.Getenv("KKACHI_CLI_BINARY"); binary != "" {
+	if binary := os.Getenv("SANHO_CLI_BINARY"); binary != "" {
 		if _, err := os.Stat(binary); err == nil {
 			return binary
 		}
-		t.Logf("KKACHI_CLI_BINARY set but file not found: %s", binary)
+		t.Logf("SANHO_CLI_BINARY set but file not found: %s", binary)
 	}
 
 	// Try to find binary relative to project root

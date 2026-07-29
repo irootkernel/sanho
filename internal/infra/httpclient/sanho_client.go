@@ -1,6 +1,6 @@
 // Package httpclient provides an HTTP client for communicating with sanhod.
 //
-// This package implements the KkachiClient interface for CLI operations such as
+// This package implements the Sanho client interface for CLI operations such as
 // workspace registration, docs head queries, and docs push operations.
 package httpclient
 
@@ -142,8 +142,8 @@ type ProjectStatusResponse struct {
 
 // ---- Client Interface ----
 
-// KkachiClient defines the interface for communicating with sanhod.
-type KkachiClient interface {
+// SanhoClient defines the interface for communicating with sanhod.
+type SanhoClient interface {
 	// DocsHead retrieves the current HEAD commit hash for the given project.
 	DocsHead(ctx context.Context, project docs.ProjectName) (docs.CommitHash, error)
 
@@ -182,7 +182,7 @@ type KkachiClient interface {
 
 // ---- HTTP Client Implementation ----
 
-// HTTPClient implements KkachiClient using HTTP.
+// HTTPClient implements SanhoClient using HTTP.
 type HTTPClient struct {
 	baseURL    string
 	httpClient *http.Client
@@ -232,7 +232,7 @@ func NewHTTPClient(baseURL string, opts ...HTTPClientOption) *HTTPClient {
 	return c
 }
 
-// DocsHead implements KkachiClient.DocsHead.
+// DocsHead implements SanhoClient.DocsHead.
 func (c *HTTPClient) DocsHead(ctx context.Context, project docs.ProjectName) (docs.CommitHash, error) {
 	reqURL := fmt.Sprintf("%s/docs/head?project=%s", c.baseURL, url.QueryEscape(string(project)))
 
@@ -261,7 +261,7 @@ func (c *HTTPClient) DocsHead(ctx context.Context, project docs.ProjectName) (do
 	return result.Head, nil
 }
 
-// RegisterWorkspace implements KkachiClient.RegisterWorkspace.
+// RegisterWorkspace implements SanhoClient.RegisterWorkspace.
 func (c *HTTPClient) RegisterWorkspace(ctx context.Context, req RegisterWorkspaceRequest) (RegisterWorkspaceResponse, error) {
 	body, err := json.Marshal(req)
 	if err != nil {
@@ -316,7 +316,7 @@ func (c *HTTPClient) ReportWorkspaceDocsHash(
 	return c.checkError(resp)
 }
 
-// DocsSnapshot implements KkachiClient.DocsSnapshot.
+// DocsSnapshot implements SanhoClient.DocsSnapshot.
 func (c *HTTPClient) DocsSnapshot(ctx context.Context, project docs.ProjectName, commit docs.CommitHash) (docs.DocsSnapshot, docs.CommitHash, error) {
 	reqURL := fmt.Sprintf("%s/docs/snapshot?project=%s", c.baseURL, url.QueryEscape(string(project)))
 	if commit != "" {
@@ -349,7 +349,7 @@ func (c *HTTPClient) DocsSnapshot(ctx context.Context, project docs.ProjectName,
 	return result.Snapshot, result.Commit, nil
 }
 
-// DocsPush implements KkachiClient.DocsPush with retry logic for busy errors.
+// DocsPush implements SanhoClient.DocsPush with retry logic for busy errors.
 func (c *HTTPClient) DocsPush(ctx context.Context, req DocsPushRequest) (DocsPushResponse, error) {
 	var lastErr error
 
@@ -407,7 +407,7 @@ func (c *HTTPClient) docsPushOnce(ctx context.Context, req DocsPushRequest) (Doc
 	return result, nil
 }
 
-// GetState implements KkachiClient.GetState.
+// GetState implements SanhoClient.GetState.
 func (c *HTTPClient) GetState(ctx context.Context, project *docs.ProjectName) (StateResponse, error) {
 	reqURL := c.baseURL + "/state"
 	if project != nil {
@@ -473,7 +473,7 @@ func (c *HTTPClient) GetProjectStatus(
 	return result, nil
 }
 
-// CreateOrUpdateProject implements KkachiClient.CreateOrUpdateProject.
+// CreateOrUpdateProject implements SanhoClient.CreateOrUpdateProject.
 func (c *HTTPClient) CreateOrUpdateProject(ctx context.Context, req CreateProjectRequest) error {
 	body, err := json.Marshal(req)
 	if err != nil {
@@ -495,7 +495,7 @@ func (c *HTTPClient) CreateOrUpdateProject(ctx context.Context, req CreateProjec
 	return c.checkError(resp)
 }
 
-// DeleteProject implements KkachiClient.DeleteProject.
+// DeleteProject implements SanhoClient.DeleteProject.
 func (c *HTTPClient) DeleteProject(ctx context.Context, project docs.ProjectName, force bool) error {
 	reqURL := fmt.Sprintf("%s/projects/%s", c.baseURL, url.PathEscape(string(project)))
 	if force {
@@ -516,7 +516,7 @@ func (c *HTTPClient) DeleteProject(ctx context.Context, project docs.ProjectName
 	return c.checkError(resp)
 }
 
-// DeleteWorkspace implements KkachiClient.DeleteWorkspace.
+// DeleteWorkspace implements SanhoClient.DeleteWorkspace.
 func (c *HTTPClient) DeleteWorkspace(ctx context.Context, workspaceID workspace.WorkspaceID) error {
 	reqURL := fmt.Sprintf("%s/workspaces/%s", c.baseURL, url.PathEscape(string(workspaceID)))
 

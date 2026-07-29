@@ -130,7 +130,7 @@ func TestE2ECLI_PullOutdated(t *testing.T) {
 	}
 
 	// Verify local docs hash updated
-	newHashBytes, err := os.ReadFile(filepath.Join(workspaceDir, ".kkachi_docs_hash"))
+	newHashBytes, err := os.ReadFile(filepath.Join(workspaceDir, ".sanho_docs_hash"))
 	if err != nil {
 		t.Fatalf("read docs hash: %v", err)
 	}
@@ -388,7 +388,7 @@ func TestE2ECLI_PullForce(t *testing.T) {
 	}
 
 	// Verify hash updated
-	hashBytes, _ := os.ReadFile(filepath.Join(workspaceDir, ".kkachi_docs_hash"))
+	hashBytes, _ := os.ReadFile(filepath.Join(workspaceDir, ".sanho_docs_hash"))
 	if strings.TrimSpace(string(hashBytes)) != newHead {
 		t.Errorf("hash not updated to %s", newHead)
 	}

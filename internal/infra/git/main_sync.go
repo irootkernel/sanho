@@ -237,7 +237,7 @@ func captureDirtyLayers(
 	}
 	originalStagedTree = strings.TrimSpace(string(out))
 
-	tempDir, err := os.MkdirTemp("", "kkachi-dirty-layers-*")
+	tempDir, err := os.MkdirTemp("", "sanho-dirty-layers-*")
 	if err != nil {
 		return "", "", "", err
 	}
@@ -344,7 +344,7 @@ func rebasePreparedLayers(
 	ctx context.Context,
 	repoPath, workCommit, rebaseBase, syncCommit string,
 ) (finalBranch, finalStaged, finalWork string, returnErr error) {
-	tempDir, err := os.MkdirTemp("", "kkachi-main-sync-*")
+	tempDir, err := os.MkdirTemp("", "sanho-main-sync-*")
 	if err != nil {
 		return "", "", "", err
 	}

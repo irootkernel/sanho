@@ -174,7 +174,7 @@ func TestE2EPrePushBlocksOnPendingFix(t *testing.T) {
 		"created_at":  "2025-01-01T00:00:00Z",
 	}
 	data, _ := json.MarshalIndent(pendingFix, "", "  ")
-	if err := os.WriteFile(filepath.Join(tempDir, ".kkachi_pending_fix"), data, 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(tempDir, ".sanho_pending_fix"), data, 0644); err != nil {
 		t.Fatalf("Failed to write pending fix file: %v", err)
 	}
 
@@ -241,12 +241,12 @@ func setupE2EWorkspace(t *testing.T, tempDir, serverURL, project string) {
 	if err != nil {
 		t.Fatalf("Failed to marshal config: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(tempDir, ".kkachi.json"), data, 0644); err != nil {
-		t.Fatalf("Failed to write .kkachi.json: %v", err)
+	if err := os.WriteFile(filepath.Join(tempDir, ".sanho.json"), data, 0644); err != nil {
+		t.Fatalf("Failed to write .sanho.json: %v", err)
 	}
 
-	// Create .kkachi_docs_hash
-	if err := os.WriteFile(filepath.Join(tempDir, ".kkachi_docs_hash"), []byte("e2e-test-hash-123"), 0644); err != nil {
-		t.Fatalf("Failed to write .kkachi_docs_hash: %v", err)
+	// Create .sanho_docs_hash
+	if err := os.WriteFile(filepath.Join(tempDir, ".sanho_docs_hash"), []byte("e2e-test-hash-123"), 0644); err != nil {
+		t.Fatalf("Failed to write .sanho_docs_hash: %v", err)
 	}
 }

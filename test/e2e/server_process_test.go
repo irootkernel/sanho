@@ -11,7 +11,7 @@ import (
 	"github.com/irootkernel/sanho/internal/interface/http/dto"
 )
 
-// E2E: Prefer hitting a running server via KKACHI_E2E_BASE_URL; otherwise build & launch locally.
+// E2E: Prefer hitting a running server via SANHO_E2E_BASE_URL; otherwise build & launch locally.
 func TestE2E_ServerProcess(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()

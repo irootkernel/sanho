@@ -17,7 +17,7 @@ import (
 
 	"github.com/irootkernel/sanho/internal/infra/git"
 	"github.com/irootkernel/sanho/internal/infra/state"
-	kkachihttp "github.com/irootkernel/sanho/internal/interface/http"
+	sanhohttp "github.com/irootkernel/sanho/internal/interface/http"
 	"github.com/irootkernel/sanho/internal/interface/http/dto"
 	"github.com/irootkernel/sanho/internal/interface/http/handler"
 	"github.com/irootkernel/sanho/internal/usecase/docs"
@@ -35,7 +35,7 @@ func TestDocsPush_Integration(t *testing.T) {
 	ctx := context.Background()
 
 	// 1. Setup: Create temp directory structure
-	tempDir, err := os.MkdirTemp("", "kkachi-push-integration-*")
+	tempDir, err := os.MkdirTemp("", "sanho-push-integration-*")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +128,7 @@ func TestDocsPush_Integration(t *testing.T) {
 	docsSnapshotHandler := handler.NewDocsSnapshotHandler(getDocsSnapshotUC)
 	docsPushHandler := handler.NewDocsPushHandler(pushDocsUC)
 
-	srv := kkachihttp.NewHTTPServer(kkachihttp.ServerConfig{Addr: ":0"}, projectHandler, workspaceHandler, docsHeadHandler, docsSnapshotHandler, docsPushHandler, nil, nil)
+	srv := sanhohttp.NewHTTPServer(sanhohttp.ServerConfig{Addr: ":0"}, projectHandler, workspaceHandler, docsHeadHandler, docsSnapshotHandler, docsPushHandler, nil, nil)
 	ts := httptest.NewServer(srv.Handler)
 	defer ts.Close()
 

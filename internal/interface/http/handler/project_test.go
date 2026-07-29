@@ -16,7 +16,7 @@ import (
 
 func TestDeleteProject(t *testing.T) {
 	// Setup temp dir
-	tempDir, err := os.MkdirTemp("", "kkachi-test-project-*")
+	tempDir, err := os.MkdirTemp("", "sanho-test-project-*")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +62,7 @@ func TestDeleteProject(t *testing.T) {
 
 func TestDeleteProjectWithWorkspaces(t *testing.T) {
 	// Setup temp dir
-	tempDir, err := os.MkdirTemp("", "kkachi-test-project-ws-*")
+	tempDir, err := os.MkdirTemp("", "sanho-test-project-ws-*")
 	if err != nil {
 		t.Fatal(err)
 	}

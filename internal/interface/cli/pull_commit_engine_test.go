@@ -90,7 +90,7 @@ func TestPullCommitPreservesStagedAndUnstagedDocsLayers(t *testing.T) {
 	config := &client.WorkspaceConfig{
 		Project:               "test-project",
 		DocsDir:               "docs",
-		DocsHashFile:          ".kkachi_docs_hash",
+		DocsHashFile:          ".sanho_docs_hash",
 		DocsSyncCommitMessage: client.DefaultDocsSyncCommitMessage,
 	}
 
@@ -215,7 +215,7 @@ func TestPullCommitConflictBlocksUntilResolvedAndStaged(t *testing.T) {
 	config := &client.WorkspaceConfig{
 		Project:               "test-project",
 		DocsDir:               "docs",
-		DocsHashFile:          ".kkachi_docs_hash",
+		DocsHashFile:          ".sanho_docs_hash",
 		DocsSyncCommitMessage: client.DefaultDocsSyncCommitMessage,
 	}
 
@@ -367,8 +367,8 @@ func TestPullCommitReportFailurePreservesDirtyStateAndRetries(t *testing.T) {
 		Project:               "project",
 		ActorEmail:            "actor@example.com",
 		DocsDir:               "docs",
-		DocsHashFile:          ".kkachi_docs_hash",
-		DocsSyncCommitMessage: "[KKACHI] Update docs",
+		DocsHashFile:          ".sanho_docs_hash",
+		DocsSyncCommitMessage: "[SANHO] Update docs",
 	}
 	engine := newPullCommitEngine(httpClient)
 	state, err := engine.start(ctx, repo, config, "base", "remote")

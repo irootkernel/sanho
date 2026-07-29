@@ -126,7 +126,7 @@ func (u *FixUseCase) Execute(ctx context.Context, workDir string) error {
 		return fmt.Errorf("failed to check pending fix state: %w", err)
 	}
 	if !hasPendingFix {
-		u.output.Error("No pending fix state found (.kkachi_pending_fix does not exist).")
+		u.output.Error("No pending fix state found (.sanho_pending_fix does not exist).")
 		u.output.Error("sanho fix should only be run after a pre-commit merge creates pending state.")
 		return ErrNoPendingFix
 	}
@@ -197,7 +197,7 @@ func (u *FixUseCase) Execute(ctx context.Context, workDir string) error {
 	// Validate actor email is not empty
 	if actorEmail == "" {
 		u.output.Error("Actor email is required but not configured.")
-		u.output.Error("Please set 'actor_email' in .kkachi.json or configure git user.email:")
+		u.output.Error("Please set 'actor_email' in .sanho.json or configure git user.email:")
 		u.output.Error("  git config user.email 'your-email@example.com'")
 		return ErrActorEmailRequired
 	}
