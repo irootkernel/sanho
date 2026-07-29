@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.1.2 - 2026-07-29
+
+### Fixed
+
+- `pull-commit` now resolves trivial three-way file outcomes before invoking the
+  text merge driver, so unchanged and one-sided binary files no longer block
+  documentation materialization.
+- Divergent binary changes fail closed without changing HEAD, the index, the
+  worktree, the local docs hash, or pull-commit transaction state.
+
+### Compatibility
+
+- Existing configuration, daemon state, Git hooks, and CLI/HTTP contracts remain
+  compatible and do not require workspace reinitialization.
+
 ## v0.1.1 - 2026-07-29
 
 ### Fixed
