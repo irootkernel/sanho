@@ -92,6 +92,7 @@ cli-test: cli-test-prepare cli-test-unit cli-test-integration cli-test-e2e
 
 docs-check:
 	@test -f README.md
+	@test -f CHANGELOG.md
 	@test -f docs/architecture.md
 	@test -f docs/deployment.md
 	@test -f docs/operations.md
