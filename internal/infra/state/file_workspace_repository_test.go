@@ -2,7 +2,6 @@ package state_test
 
 import (
 	"context"
-	"os"
 	"path/filepath"
 	"testing"
 
@@ -13,11 +12,7 @@ import (
 // TestFileWorkspaceRepository_List tests that List returns all workspaces from state file.
 func TestFileWorkspaceRepository_List(t *testing.T) {
 	// Create temp directory for state file
-	tempDir, err := os.MkdirTemp("", "sanho-state-test-*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tempDir)
+	tempDir := t.TempDir()
 
 	statePath := filepath.Join(tempDir, "state.json")
 

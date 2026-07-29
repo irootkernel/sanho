@@ -245,7 +245,7 @@ func TestStateWithFakeDaemon(t *testing.T) {
 	daemon := newUnixTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/state" {
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]interface{}{
+			if err := json.NewEncoder(w).Encode(map[string]interface{}{
 				"docs_heads": map[string]string{
 					"test-project": "abc123def456",
 				},
@@ -259,7 +259,9 @@ func TestStateWithFakeDaemon(t *testing.T) {
 						"last_actor_email": "test@example.com",
 					},
 				},
-			})
+			}); err != nil {
+				t.Errorf("encode response: %v", err)
+			}
 			return
 		}
 		w.WriteHeader(http.StatusNotFound)
@@ -304,7 +306,7 @@ func TestStateAllWithFakeDaemon(t *testing.T) {
 	daemon := newUnixTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/state" {
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]interface{}{
+			if err := json.NewEncoder(w).Encode(map[string]interface{}{
 				"docs_heads": map[string]string{
 					"project-a": "hash-a",
 					"project-b": "hash-b",
@@ -327,7 +329,9 @@ func TestStateAllWithFakeDaemon(t *testing.T) {
 						"last_actor_email": "b@example.com",
 					},
 				},
-			})
+			}); err != nil {
+				t.Errorf("encode response: %v", err)
+			}
 			return
 		}
 		w.WriteHeader(http.StatusNotFound)
@@ -518,7 +522,7 @@ func TestStateAllWithSocketPathOutsideWorkspace(t *testing.T) {
 	daemon := newUnixTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/state" {
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]interface{}{
+			if err := json.NewEncoder(w).Encode(map[string]interface{}{
 				"docs_heads": map[string]string{
 					"project-x": "hash-x",
 				},
@@ -532,7 +536,9 @@ func TestStateAllWithSocketPathOutsideWorkspace(t *testing.T) {
 						"last_actor_email": "x@example.com",
 					},
 				},
-			})
+			}); err != nil {
+				t.Errorf("encode response: %v", err)
+			}
 			return
 		}
 		w.WriteHeader(http.StatusNotFound)

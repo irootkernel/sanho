@@ -65,16 +65,12 @@ func TestApplySnapshot_PathTraversal(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tempDir, err := os.MkdirTemp("", "apply-snapshot-test-*")
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer os.RemoveAll(tempDir)
+			tempDir := t.TempDir()
 
 			docsDir := filepath.Join(tempDir, "docs")
 			snapshot := createTestSnapshot(t, tt.files)
 
-			err = repo.applySnapshot(docsDir, snapshot)
+			err := repo.applySnapshot(docsDir, snapshot)
 
 			if tt.wantErr {
 				if err == nil {
@@ -114,8 +110,12 @@ func createTestSnapshot(t *testing.T, files map[string]string) docs.DocsSnapshot
 		}
 	}
 
-	tw.Close()
-	gw.Close()
+	if err := tw.Close(); err != nil {
+		t.Fatalf("close tar writer: %v", err)
+	}
+	if err := gw.Close(); err != nil {
+		t.Fatalf("close gzip writer: %v", err)
+	}
 
 	return docs.DocsSnapshot(buf.Bytes())
 }
@@ -123,11 +123,7 @@ func createTestSnapshot(t *testing.T, files map[string]string) docs.DocsSnapshot
 func TestApplySnapshot_SkipsGitDirEntries(t *testing.T) {
 	repo := &GitDocsRepository{}
 
-	tempDir, err := os.MkdirTemp("", "apply-snapshot-git-*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tempDir)
+	tempDir := t.TempDir()
 
 	docsRoot := tempDir
 

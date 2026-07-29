@@ -27,11 +27,7 @@ import (
 // This test spins up the HTTP daemon in-process to validate handler wiring.
 func TestIntegration_Daemon(t *testing.T) {
 	// 1. Setup Environment
-	tempDir, err := os.MkdirTemp("", "sanho-integration-*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tempDir)
+	tempDir := t.TempDir()
 
 	// Create "Remote" Git Repo
 	originPath := filepath.Join(tempDir, "origin")
@@ -109,10 +105,12 @@ func TestIntegration_Daemon(t *testing.T) {
 	}
 	if resp.StatusCode != http.StatusOK {
 		var body bytes.Buffer
-		body.ReadFrom(resp.Body)
+		if _, err := body.ReadFrom(resp.Body); err != nil {
+			t.Fatalf("read add project response: %v", err)
+		}
 		t.Errorf("AddProject status: %d, body: %s", resp.StatusCode, body.String())
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	// 4. Test: Get Head (P1)
 	resp, err = client.Get(ts.URL + "/docs/head?project=test-project")
@@ -124,8 +122,10 @@ func TestIntegration_Daemon(t *testing.T) {
 	}
 
 	var headResp map[string]string
-	json.NewDecoder(resp.Body).Decode(&headResp)
-	resp.Body.Close()
+	if err := json.NewDecoder(resp.Body).Decode(&headResp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	_ = resp.Body.Close()
 
 	if headResp["head"] != expectedHead {
 		t.Errorf("Expected head %s, got %s", expectedHead, headResp["head"])
@@ -147,8 +147,10 @@ func TestIntegration_Daemon(t *testing.T) {
 		t.Errorf("RegisterWorkspace status: %d", resp.StatusCode)
 	}
 	var regResp map[string]string
-	json.NewDecoder(resp.Body).Decode(&regResp)
-	resp.Body.Close()
+	if err := json.NewDecoder(resp.Body).Decode(&regResp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	_ = resp.Body.Close()
 
 	if regResp["current_docs_head"] != expectedHead {
 		t.Errorf("Expected current_docs_head %s, got %s", expectedHead, regResp["current_docs_head"])
@@ -197,7 +199,7 @@ func TestIntegration_Daemon(t *testing.T) {
 		_, _ = body.ReadFrom(resp.Body)
 		t.Fatalf("ReportDocsHash status: %d body: %s", resp.StatusCode, body.String())
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	resp, err = client.Get(ts.URL + "/state")
 	if err != nil {
@@ -207,7 +209,7 @@ func TestIntegration_Daemon(t *testing.T) {
 	if err := json.NewDecoder(resp.Body).Decode(&stateResp); err != nil {
 		t.Fatal(err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if len(stateResp.Workspaces) != 1 ||
 		stateResp.Workspaces[0].DocsHash != newHead ||
 		stateResp.Workspaces[0].LastActorEmail != "sync@example.com" {
@@ -227,7 +229,7 @@ func TestIntegration_Daemon(t *testing.T) {
 	if err := json.NewDecoder(resp.Body).Decode(&snapResp); err != nil {
 		t.Fatalf("failed to decode snapshot response: %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	if snapResp["commit"] != newHead {
 		t.Errorf("Expected snapshot commit %s, got %s", newHead, snapResp["commit"])
@@ -245,14 +247,16 @@ func TestIntegration_Daemon(t *testing.T) {
 	}
 	if resp.StatusCode != http.StatusOK {
 		var body bytes.Buffer
-		body.ReadFrom(resp.Body)
+		if _, err := body.ReadFrom(resp.Body); err != nil {
+			t.Fatalf("read project status response: %v", err)
+		}
 		t.Fatalf("ProjectStatus status: %d, body: %s", resp.StatusCode, body.String())
 	}
 	var statusResp dto.ProjectStatusResponse
 	if err := json.NewDecoder(resp.Body).Decode(&statusResp); err != nil {
 		t.Fatalf("failed to decode project status response: %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if statusResp.DocsHead != newHead {
 		t.Errorf("Expected project status head %s, got %s", newHead, statusResp.DocsHead)
 	}
@@ -276,8 +280,10 @@ func TestIntegration_Daemon(t *testing.T) {
 		t.Errorf("DeleteProject without force should return 409, got %d", resp.StatusCode)
 	}
 	var conflictResp map[string]string
-	json.NewDecoder(resp.Body).Decode(&conflictResp)
-	resp.Body.Close()
+	if err := json.NewDecoder(resp.Body).Decode(&conflictResp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	_ = resp.Body.Close()
 	if conflictResp["error"] != "project_has_workspaces" {
 		t.Errorf("Expected error project_has_workspaces, got %s", conflictResp["error"])
 	}
@@ -285,12 +291,15 @@ func TestIntegration_Daemon(t *testing.T) {
 	// Verify project still exists
 	resp, err = client.Get(ts.URL + "/docs/head?project=test-project")
 	if err != nil {
+		t.Fatalf("Failed to verify project deletion: %v", err)
+	}
+	if err != nil {
 		t.Fatalf("Failed to get head after blocked delete: %v", err)
 	}
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("Project should still exist, got status %d", resp.StatusCode)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	// 10. Test: Delete Project with force (P0-4)
 	req, _ = http.NewRequest(http.MethodDelete, ts.URL+"/projects/test-project?force=true", nil)
@@ -301,16 +310,21 @@ func TestIntegration_Daemon(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("DeleteProject status: %d", resp.StatusCode)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	// Verify Deletion
 	resp, err = client.Get(ts.URL + "/docs/head?project=test-project")
+	if err != nil {
+		t.Fatalf("Failed to verify project deletion: %v", err)
+	}
 	if resp.StatusCode != http.StatusBadRequest { // Should be 400 unknown_project
 		t.Errorf("Expected 400 after delete, got %d", resp.StatusCode)
 	}
 	var errResp map[string]string
-	json.NewDecoder(resp.Body).Decode(&errResp)
-	resp.Body.Close()
+	if err := json.NewDecoder(resp.Body).Decode(&errResp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	_ = resp.Body.Close()
 	if errResp["error"] != "unknown_project" {
 		t.Errorf("Expected error unknown_project, got %s", errResp["error"])
 	}
@@ -324,8 +338,10 @@ func TestIntegration_Daemon(t *testing.T) {
 		t.Errorf("/healthz status: %d", resp.StatusCode)
 	}
 	var healthResp map[string]bool
-	json.NewDecoder(resp.Body).Decode(&healthResp)
-	resp.Body.Close()
+	if err := json.NewDecoder(resp.Body).Decode(&healthResp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	_ = resp.Body.Close()
 	if !healthResp["ok"] {
 		t.Errorf("Expected /healthz ok: true, got %v", healthResp)
 	}

@@ -127,7 +127,7 @@ func pingHealth(socketPath string, timeout time.Duration) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("health check status %d", resp.StatusCode)
@@ -251,7 +251,9 @@ func decodeSnapshotE2E(t *testing.T, encoded string) map[string]string {
 	if err != nil {
 		t.Fatalf("failed to create gzip reader: %v", err)
 	}
-	defer gz.Close()
+	defer func() {
+		_ = gz.Close()
+	}()
 
 	tr := tar.NewReader(gz)
 	files := make(map[string]string)
@@ -354,10 +356,10 @@ func addProject(t *testing.T, client *http.Client, baseURL, projectName, repoID,
 		t.Fatalf("add project failed: %v", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		t.Fatalf("add project status = %d", resp.StatusCode)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 }
 
 func deleteProject(t *testing.T, client *http.Client, baseURL, projectName string, force bool) {
@@ -369,10 +371,10 @@ func deleteProject(t *testing.T, client *http.Client, baseURL, projectName strin
 		t.Fatalf("delete project failed: %v", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		t.Fatalf("delete project status = %d", resp.StatusCode)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 }
 
 func registerWorkspace(t *testing.T, client *http.Client, baseURL string, req dto.RegisterWorkspaceRequest) (string, string) {
@@ -383,15 +385,15 @@ func registerWorkspace(t *testing.T, client *http.Client, baseURL string, req dt
 		t.Fatalf("register workspace failed: %v", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		t.Fatalf("register workspace status = %d", resp.StatusCode)
 	}
 	var wsResp map[string]string
 	if err := json.NewDecoder(resp.Body).Decode(&wsResp); err != nil {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		t.Fatalf("failed to decode register response: %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	return wsResp["workspace_id"], wsResp["current_docs_head"]
 }
 
@@ -403,10 +405,10 @@ func deleteWorkspace(t *testing.T, client *http.Client, baseURL, workspaceID str
 		t.Fatalf("delete workspace failed: %v", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		t.Fatalf("delete workspace status = %d", resp.StatusCode)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 }
 
 func getHead(t *testing.T, client *http.Client, baseURL, project string) string {
@@ -416,15 +418,15 @@ func getHead(t *testing.T, client *http.Client, baseURL, project string) string 
 		t.Fatalf("get head failed: %v", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		t.Fatalf("get head status = %d", resp.StatusCode)
 	}
 	var headResp map[string]string
 	if err := json.NewDecoder(resp.Body).Decode(&headResp); err != nil {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		t.Fatalf("failed to decode head response: %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	return headResp["head"]
 }
 
@@ -439,14 +441,14 @@ func getSnapshot(t *testing.T, client *http.Client, baseURL, project, commit str
 		t.Fatalf("get snapshot failed: %v", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		t.Fatalf("get snapshot status = %d", resp.StatusCode)
 	}
 	var snapResp dto.GetSnapshotResponse
 	if err := json.NewDecoder(resp.Body).Decode(&snapResp); err != nil {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		t.Fatalf("failed to decode snapshot response: %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	return snapResp.Commit, decodeSnapshotE2E(t, snapResp.Snapshot)
 }

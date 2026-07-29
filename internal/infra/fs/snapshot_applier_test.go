@@ -52,11 +52,7 @@ func TestSnapshotApplier_Apply_IncludesDotfilesAndDirs(t *testing.T) {
 		"docs/inner.md":         "inner",
 	})
 
-	tmpDir, err := os.MkdirTemp("", "snapshot-applier-*")
-	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
+	tmpDir := t.TempDir()
 
 	applier := NewSnapshotApplier()
 	if err := applier.Apply(snapshot, tmpDir, "docs"); err != nil {
@@ -92,11 +88,7 @@ func TestSnapshotApplier_Apply_SkipsGitDirEntries(t *testing.T) {
 		"file.md":     "content",
 	})
 
-	tmpDir, err := os.MkdirTemp("", "snapshot-applier-git-*")
-	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
+	tmpDir := t.TempDir()
 
 	applier := NewSnapshotApplier()
 	if err := applier.Apply(snapshot, tmpDir, "docs"); err != nil {

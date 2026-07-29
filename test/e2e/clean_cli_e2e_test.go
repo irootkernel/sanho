@@ -31,7 +31,7 @@ func TestE2E_CliClean_RemovesWorkspaceAndLocalFiles(t *testing.T) {
 	t.Cleanup(func() {
 		req, _ := http.NewRequest(http.MethodDelete, baseURL+"/projects/"+projectName+"?force=true", nil)
 		if resp, err := client.Do(req); err == nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}
 	})
 
@@ -91,10 +91,10 @@ func TestE2E_CliClean_RemovesWorkspaceAndLocalFiles(t *testing.T) {
 		t.Fatalf("daemon delete check failed: %v", err)
 	}
 	if resp.StatusCode != http.StatusNotFound {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		t.Fatalf("expected 404 unknown_workspace after clean, got %d", resp.StatusCode)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	// Local files removed
 	for _, p := range []string{".sanho.json", ".sanho_docs_hash", ".sanho_pending_fix"} {

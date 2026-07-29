@@ -29,7 +29,7 @@ func TestE2E_DocsSnapshot(t *testing.T) {
 	t.Cleanup(func() {
 		req, _ := http.NewRequest(http.MethodDelete, baseURL+"/projects/"+projectName+"?force=true", nil)
 		if resp, err := client.Do(req); err == nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}
 	})
 
@@ -70,8 +70,10 @@ func TestE2E_DocsSnapshot(t *testing.T) {
 		t.Fatalf("snapshot unknown commit status = %d", resp.StatusCode)
 	}
 	var errResp map[string]string
-	json.NewDecoder(resp.Body).Decode(&errResp)
-	resp.Body.Close()
+	if err := json.NewDecoder(resp.Body).Decode(&errResp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	_ = resp.Body.Close()
 	if errResp["error"] != "unknown_docs_commit" {
 		t.Fatalf("snapshot unknown commit error = %s", errResp["error"])
 	}

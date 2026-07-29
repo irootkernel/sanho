@@ -22,7 +22,9 @@ func TestHTTPClient_DocsHead_Success(t *testing.T) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"head": "abc123"})
+		if err := json.NewEncoder(w).Encode(map[string]string{"head": "abc123"}); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 	}))
 	defer daemon.Close()
 
@@ -40,7 +42,9 @@ func TestHTTPClient_DocsHead_Success(t *testing.T) {
 func TestHTTPClient_DocsHead_UnknownProject(t *testing.T) {
 	daemon := newUnixTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(map[string]string{"error": "unknown_project"})
+		if err := json.NewEncoder(w).Encode(map[string]string{"error": "unknown_project"}); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 	}))
 	defer daemon.Close()
 
@@ -65,16 +69,21 @@ func TestHTTPClient_RegisterWorkspace_Success(t *testing.T) {
 		}
 
 		var req RegisterWorkspaceRequest
-		json.NewDecoder(r.Body).Decode(&req)
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 		if req.Project != "sudal" {
 			t.Errorf("expected project 'sudal', got %s", req.Project)
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(RegisterWorkspaceResponse{
+		if err := json.NewEncoder(w).Encode(RegisterWorkspaceResponse{
 			WorkspaceID:     "ws-123",
 			CurrentDocsHead: "def456",
-		})
+		}); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 	}))
 	defer daemon.Close()
 
@@ -103,15 +112,19 @@ func TestHTTPClient_DocsPush_RetryOnBusy(t *testing.T) {
 		attempts++
 		if attempts < 3 {
 			w.WriteHeader(http.StatusConflict)
-			json.NewEncoder(w).Encode(map[string]string{"error": "docs_repo_busy"})
+			if err := json.NewEncoder(w).Encode(map[string]string{"error": "docs_repo_busy"}); err != nil {
+				t.Errorf("encode response: %v", err)
+			}
 			return
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(DocsPushResponse{
+		if err := json.NewEncoder(w).Encode(DocsPushResponse{
 			Status:      docs.DocsPushStatusUpdated,
 			NewDocsHash: "new123",
-		})
+		}); err != nil {
+			t.Errorf("encode response: %v", err)
+		}
 	}))
 	defer daemon.Close()
 
@@ -137,7 +150,9 @@ func TestHTTPClient_DocsPush_RetryOnBusy(t *testing.T) {
 func TestHTTPClient_DocsPush_MaxRetriesExceeded(t *testing.T) {
 	daemon := newUnixTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusConflict)
-		json.NewEncoder(w).Encode(map[string]string{"error": "docs_repo_busy"})
+		if err := json.NewEncoder(w).Encode(map[string]string{"error": "docs_repo_busy"}); err != nil {
+			t.Errorf("encode response: %v", err)
+		}
 	}))
 	defer daemon.Close()
 
@@ -178,7 +193,9 @@ func TestHTTPClient_DeleteProject_Success(t *testing.T) {
 func TestHTTPClient_DeleteProject_HasWorkspaces(t *testing.T) {
 	daemon := newUnixTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusConflict)
-		json.NewEncoder(w).Encode(map[string]string{"error": "project_has_workspaces"})
+		if err := json.NewEncoder(w).Encode(map[string]string{"error": "project_has_workspaces"}); err != nil {
+			t.Errorf("encode response: %v", err)
+		}
 	}))
 	defer daemon.Close()
 
@@ -196,7 +213,9 @@ func TestHTTPClient_DeleteProject_HasWorkspaces(t *testing.T) {
 func TestHTTPClient_DeleteWorkspace_UnknownWorkspace(t *testing.T) {
 	daemon := newUnixTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(map[string]string{"error": "unknown_workspace"})
+		if err := json.NewEncoder(w).Encode(map[string]string{"error": "unknown_workspace"}); err != nil {
+			t.Errorf("encode response: %v", err)
+		}
 	}))
 	defer daemon.Close()
 
@@ -214,7 +233,9 @@ func TestHTTPClient_DeleteWorkspace_UnknownWorkspace(t *testing.T) {
 func TestHTTPClient_DeleteWorkspace_WorkspaceNotFound(t *testing.T) {
 	daemon := newUnixTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(map[string]string{"error": "workspace_not_found"})
+		if err := json.NewEncoder(w).Encode(map[string]string{"error": "workspace_not_found"}); err != nil {
+			t.Errorf("encode response: %v", err)
+		}
 	}))
 	defer daemon.Close()
 
@@ -236,7 +257,7 @@ func TestHTTPClient_GetState_Success(t *testing.T) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(StateResponse{
+		if err := json.NewEncoder(w).Encode(StateResponse{
 			DocsHeads: map[string]string{
 				"sudal": "abc123",
 			},
@@ -248,7 +269,9 @@ func TestHTTPClient_GetState_Success(t *testing.T) {
 					DocsHash:    "abc123",
 				},
 			},
-		})
+		}); err != nil {
+			t.Errorf("encode response: %v", err)
+		}
 	}))
 	defer daemon.Close()
 

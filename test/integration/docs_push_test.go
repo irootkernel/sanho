@@ -35,11 +35,7 @@ func TestDocsPush_Integration(t *testing.T) {
 	ctx := context.Background()
 
 	// 1. Setup: Create temp directory structure
-	tempDir, err := os.MkdirTemp("", "sanho-push-integration-*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tempDir)
+	tempDir := t.TempDir()
 
 	// Change to temp directory so docs_repos is created in isolation
 	originalDir, err := os.Getwd()
@@ -49,7 +45,11 @@ func TestDocsPush_Integration(t *testing.T) {
 	if err := os.Chdir(tempDir); err != nil {
 		t.Fatal(err)
 	}
-	defer os.Chdir(originalDir)
+	t.Cleanup(func() {
+		if err := os.Chdir(originalDir); err != nil {
+			t.Errorf("restore working directory: %v", err)
+		}
+	})
 
 	// 2. Create "remote" Git repo (origin)
 	originPath := filepath.Join(tempDir, "origin")
@@ -153,14 +153,16 @@ func TestDocsPush_Integration(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Push request failed: %v", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("Expected 200, got %d", resp.StatusCode)
 		}
 
 		var pushResp dto.DocsPushResponse
-		json.NewDecoder(resp.Body).Decode(&pushResp)
+		if err := json.NewDecoder(resp.Body).Decode(&pushResp); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
 
 		if !pushResp.Ok {
 			t.Errorf("Expected Ok=true, got false. Error: %s", pushResp.Error)
@@ -207,14 +209,16 @@ func TestDocsPush_Integration(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Push request failed: %v", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("Expected 200, got %d", resp.StatusCode)
 		}
 
 		var pushResp dto.DocsPushResponse
-		json.NewDecoder(resp.Body).Decode(&pushResp)
+		if err := json.NewDecoder(resp.Body).Decode(&pushResp); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
 
 		if !pushResp.Ok {
 			t.Errorf("Expected Ok=true, got false. Error: %s", pushResp.Error)
@@ -242,14 +246,16 @@ func TestDocsPush_Integration(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Push request failed: %v", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("Expected 200, got %d", resp.StatusCode)
 		}
 
 		var pushResp dto.DocsPushResponse
-		json.NewDecoder(resp.Body).Decode(&pushResp)
+		if err := json.NewDecoder(resp.Body).Decode(&pushResp); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
 
 		if !pushResp.Ok {
 			t.Errorf("Expected Ok=true, got false. Error: %s", pushResp.Error)
@@ -284,8 +290,12 @@ func createSnapshot(t *testing.T, files map[string]string) []byte {
 		}
 	}
 
-	tw.Close()
-	gw.Close()
+	if err := tw.Close(); err != nil {
+		t.Fatalf("close tar writer: %v", err)
+	}
+	if err := gw.Close(); err != nil {
+		t.Fatalf("close gzip writer: %v", err)
+	}
 
 	return buf.Bytes()
 }

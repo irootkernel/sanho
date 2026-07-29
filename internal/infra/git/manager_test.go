@@ -13,11 +13,7 @@ import (
 
 func TestDocsRepoManager_Sync(t *testing.T) {
 	// Setup origin repo
-	tempDir, err := os.MkdirTemp("", "sanho-test-*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tempDir)
+	tempDir := t.TempDir()
 
 	originPath := filepath.Join(tempDir, "origin")
 	if err := os.Mkdir(originPath, 0755); err != nil {

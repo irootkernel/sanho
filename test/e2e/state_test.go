@@ -40,11 +40,11 @@ func TestE2E_State(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("add project status = %d", resp.StatusCode)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	t.Cleanup(func() {
 		req, _ := http.NewRequest(http.MethodDelete, baseURL+"/projects/"+projectName+"?force=true", nil)
 		if r, err := client.Do(req); err == nil {
-			r.Body.Close()
+			_ = r.Body.Close()
 		}
 	})
 
@@ -59,8 +59,10 @@ func TestE2E_State(t *testing.T) {
 		}
 
 		var stateResp map[string]interface{}
-		json.NewDecoder(resp.Body).Decode(&stateResp)
-		resp.Body.Close()
+		if err := json.NewDecoder(resp.Body).Decode(&stateResp); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+		_ = resp.Body.Close()
 
 		// Verify docs_heads contains our project
 		docsHeads, ok := stateResp["docs_heads"].(map[string]interface{})
@@ -104,8 +106,10 @@ func TestE2E_State(t *testing.T) {
 		t.Fatalf("register workspace 1 status = %d", resp.StatusCode)
 	}
 	var wsResp1 map[string]string
-	json.NewDecoder(resp.Body).Decode(&wsResp1)
-	resp.Body.Close()
+	if err := json.NewDecoder(resp.Body).Decode(&wsResp1); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	_ = resp.Body.Close()
 	wsID1 := wsResp1["workspace_id"]
 
 	// Register second workspace
@@ -124,8 +128,10 @@ func TestE2E_State(t *testing.T) {
 		t.Fatalf("register workspace 2 status = %d", resp.StatusCode)
 	}
 	var wsResp2 map[string]string
-	json.NewDecoder(resp.Body).Decode(&wsResp2)
-	resp.Body.Close()
+	if err := json.NewDecoder(resp.Body).Decode(&wsResp2); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	_ = resp.Body.Close()
 	wsID2 := wsResp2["workspace_id"]
 
 	// Test 2: /state after registering workspaces
@@ -139,8 +145,10 @@ func TestE2E_State(t *testing.T) {
 		}
 
 		var stateResp map[string]interface{}
-		json.NewDecoder(resp.Body).Decode(&stateResp)
-		resp.Body.Close()
+		if err := json.NewDecoder(resp.Body).Decode(&stateResp); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+		_ = resp.Body.Close()
 
 		// Verify docs_heads
 		docsHeads, _ := stateResp["docs_heads"].(map[string]interface{})
@@ -198,8 +206,10 @@ func TestE2E_State(t *testing.T) {
 		}
 
 		var stateResp map[string]interface{}
-		json.NewDecoder(resp.Body).Decode(&stateResp)
-		resp.Body.Close()
+		if err := json.NewDecoder(resp.Body).Decode(&stateResp); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+		_ = resp.Body.Close()
 
 		workspaces, _ := stateResp["workspaces"].([]interface{})
 		requiredFields := []string{"workspace_id", "project", "docs_repo_id", "local_path", "repo_url", "docs_hash", "last_reported_at", "last_actor_email"}
@@ -226,8 +236,10 @@ func TestE2E_State(t *testing.T) {
 			t.Fatalf("get docs/head status = %d", docsHeadResp.StatusCode)
 		}
 		var docsHeadJSON map[string]string
-		json.NewDecoder(docsHeadResp.Body).Decode(&docsHeadJSON)
-		docsHeadResp.Body.Close()
+		if err := json.NewDecoder(docsHeadResp.Body).Decode(&docsHeadJSON); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+		_ = docsHeadResp.Body.Close()
 		docsHeadValue := docsHeadJSON["head"]
 
 		// Get /state response
@@ -239,8 +251,10 @@ func TestE2E_State(t *testing.T) {
 			t.Fatalf("get state status = %d", stateResp.StatusCode)
 		}
 		var stateJSON map[string]interface{}
-		json.NewDecoder(stateResp.Body).Decode(&stateJSON)
-		stateResp.Body.Close()
+		if err := json.NewDecoder(stateResp.Body).Decode(&stateJSON); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+		_ = stateResp.Body.Close()
 
 		docsHeads, ok := stateJSON["docs_heads"].(map[string]interface{})
 		if !ok {
@@ -269,8 +283,10 @@ func TestE2E_State(t *testing.T) {
 		}
 
 		var stateResp map[string]interface{}
-		json.NewDecoder(resp.Body).Decode(&stateResp)
-		resp.Body.Close()
+		if err := json.NewDecoder(resp.Body).Decode(&stateResp); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+		_ = resp.Body.Close()
 
 		workspaces, _ := stateResp["workspaces"].([]interface{})
 		for _, ws := range workspaces {

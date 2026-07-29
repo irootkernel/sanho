@@ -18,7 +18,9 @@ func TestCLIClean_RemovesFilesAndHooks(t *testing.T) {
 		if r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/workspaces/") {
 			deleteCalls++
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+			if err := json.NewEncoder(w).Encode(map[string]bool{"ok": true}); err != nil {
+				t.Errorf("encode response: %v", err)
+			}
 			return
 		}
 		w.WriteHeader(http.StatusNotFound)

@@ -24,7 +24,7 @@ func TestRootCommand(t *testing.T) {
 	// Test that --verbose flag is registered
 	f := cmd.PersistentFlags().Lookup("verbose")
 	if f == nil {
-		t.Error("Expected --verbose flag to be registered")
+		t.Fatal("Expected --verbose flag to be registered")
 	}
 	if f.Shorthand != "v" {
 		t.Errorf("Expected --verbose shorthand to be 'v', got '%s'", f.Shorthand)

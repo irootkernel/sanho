@@ -38,10 +38,14 @@ func TestCLIPullAlreadyUpToDate(t *testing.T) {
 		switch {
 		case strings.HasPrefix(r.URL.Path, "/docs/head"):
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]string{"head": "abc123def456"})
+			if err := json.NewEncoder(w).Encode(map[string]string{"head": "abc123def456"}); err != nil {
+				t.Errorf("encode response: %v", err)
+			}
 		case r.Method == http.MethodPut && r.URL.Path == "/workspaces/test-workspace/docs-hash":
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+			if err := json.NewEncoder(w).Encode(map[string]bool{"ok": true}); err != nil {
+				t.Errorf("encode response: %v", err)
+			}
 		default:
 			http.NotFound(w, r)
 		}
@@ -108,7 +112,9 @@ func TestCLIPullPendingFixBlocks(t *testing.T) {
 		switch {
 		case strings.HasPrefix(r.URL.Path, "/docs/head"):
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]string{"head": "def456"})
+			if err := json.NewEncoder(w).Encode(map[string]string{"head": "def456"}); err != nil {
+				t.Errorf("encode response: %v", err)
+			}
 		default:
 			http.NotFound(w, r)
 		}
@@ -182,7 +188,9 @@ func TestCLIPullUnknownProject(t *testing.T) {
 	daemon := newUnixTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/docs/head") {
 			w.WriteHeader(http.StatusBadRequest)
-			json.NewEncoder(w).Encode(map[string]string{"error": "unknown_project"})
+			if err := json.NewEncoder(w).Encode(map[string]string{"error": "unknown_project"}); err != nil {
+				t.Errorf("encode response: %v", err)
+			}
 			return
 		}
 		http.NotFound(w, r)
@@ -247,7 +255,9 @@ func TestCLIPullUnknownWorkspace(t *testing.T) {
 	daemon := newUnixTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/docs/head") {
 			w.WriteHeader(http.StatusBadRequest)
-			json.NewEncoder(w).Encode(map[string]string{"error": "unknown_workspace"})
+			if err := json.NewEncoder(w).Encode(map[string]string{"error": "unknown_workspace"}); err != nil {
+				t.Errorf("encode response: %v", err)
+			}
 			return
 		}
 		http.NotFound(w, r)

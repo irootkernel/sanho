@@ -81,7 +81,7 @@ func TestE2ECLI_TwoWorkspacesSequentialPush(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ws2 push failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("ws2 push status=%d", resp.StatusCode)
 	}

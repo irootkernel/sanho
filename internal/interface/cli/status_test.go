@@ -81,7 +81,7 @@ func TestPrintProjectWorkspacesSortsAndMarksCurrent(t *testing.T) {
 	if aheadIndex < 0 || currentIndex < 0 || behindIndex < 0 {
 		t.Fatalf("missing rows in output:\n%s", text)
 	}
-	if !(aheadIndex < currentIndex && currentIndex < behindIndex) {
+	if aheadIndex >= currentIndex || currentIndex >= behindIndex {
 		t.Fatalf("rows not sorted ahead, same, behind:\n%s", text)
 	}
 	if !strings.Contains(text, "aaaaaaaaaaaa") || strings.Contains(text, "aaaaaaaaaaaaaaaa") {

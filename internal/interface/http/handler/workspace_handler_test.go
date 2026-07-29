@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"path/filepath"
 	"testing"
 
@@ -15,11 +14,7 @@ import (
 )
 
 func TestWorkspaceHandler_Delete(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "sanho-ws-handler-*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tempDir)
+	tempDir := t.TempDir()
 
 	statePath := filepath.Join(tempDir, "state.json")
 	stateRepo, err := state.NewFileStateRepository(statePath)
@@ -54,7 +49,7 @@ func TestWorkspaceHandler_Delete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("delete request failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
@@ -85,7 +80,7 @@ func TestWorkspaceHandler_Delete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second delete request failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected 404, got %d", resp.StatusCode)

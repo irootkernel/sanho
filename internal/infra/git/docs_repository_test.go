@@ -16,11 +16,7 @@ import (
 
 func TestGitDocsRepository_GetHead(t *testing.T) {
 	// Setup temp dir
-	tempDir, err := os.MkdirTemp("", "sanho-test-repo-*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tempDir)
+	tempDir := t.TempDir()
 
 	repoPath := filepath.Join(tempDir, "repo")
 	if err := os.Mkdir(repoPath, 0755); err != nil {
@@ -132,18 +128,14 @@ func TestGitDocsRepository_GetHead(t *testing.T) {
 
 func TestGitDocsRepository_GetHead_UnknownProject(t *testing.T) {
 	// Setup temp dir
-	tempDir, err := os.MkdirTemp("", "sanho-test-repo-*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tempDir)
+	tempDir := t.TempDir()
 
 	statePath := filepath.Join(tempDir, "state.json")
 	stateRepo, _ := state.NewFileStateRepository(statePath)
 	gitClient := git.NewClient()
 	repo := git.NewGitDocsRepository(gitClient, stateRepo, git.NewRepoCoordinator())
 
-	_, err = repo.GetHead(context.Background(), "unknown")
+	_, err := repo.GetHead(context.Background(), "unknown")
 	if err == nil {
 		t.Error("Expected error for unknown project, got nil")
 	}

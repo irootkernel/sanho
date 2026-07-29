@@ -202,7 +202,9 @@ func fetchHeadViaHTTP(t *testing.T, socketPath, project string) string {
 	if err != nil {
 		t.Fatalf("get head failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("get head status = %d", resp.StatusCode)
 	}
@@ -223,7 +225,9 @@ func fetchStateViaHTTP(t *testing.T, socketPath string) map[string]interface{} {
 	if err != nil {
 		t.Fatalf("get state failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("state status = %d", resp.StatusCode)
 	}
@@ -331,7 +335,7 @@ func pushDocsViaHTTP(t *testing.T, socketPath, workspaceID, baseHash string, fil
 	if err != nil {
 		t.Fatalf("push docs failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		t.Fatalf("push docs status=%d body=%s", resp.StatusCode, string(body))

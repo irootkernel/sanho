@@ -204,7 +204,11 @@ func appendToFile(t *testing.T, path, content string) {
 	if err != nil {
 		t.Fatalf("open file: %v", err)
 	}
-	defer f.Close()
+	defer func() {
+		if err := f.Close(); err != nil {
+			t.Errorf("close file: %v", err)
+		}
+	}()
 	if _, err := f.WriteString(content); err != nil {
 		t.Fatalf("append: %v", err)
 	}

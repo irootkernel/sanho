@@ -40,12 +40,12 @@ func TestE2E_DocsPush(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("add project status = %d", resp.StatusCode)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	t.Cleanup(func() {
 		req, _ := http.NewRequest(http.MethodDelete, baseURL+"/projects/"+projectName+"?force=true", nil)
 		if r, err := client.Do(req); err == nil {
-			r.Body.Close()
+			_ = r.Body.Close()
 		}
 	})
 
@@ -65,8 +65,10 @@ func TestE2E_DocsPush(t *testing.T) {
 		t.Fatalf("register ws1 status = %d", resp.StatusCode)
 	}
 	var wsResp1 map[string]string
-	json.NewDecoder(resp.Body).Decode(&wsResp1)
-	resp.Body.Close()
+	if err := json.NewDecoder(resp.Body).Decode(&wsResp1); err != nil {
+		t.Fatalf("decode first workspace: %v", err)
+	}
+	_ = resp.Body.Close()
 	ws1ID := wsResp1["workspace_id"]
 
 	// Register second workspace
@@ -85,8 +87,10 @@ func TestE2E_DocsPush(t *testing.T) {
 		t.Fatalf("register ws2 status = %d", resp.StatusCode)
 	}
 	var wsResp2 map[string]string
-	json.NewDecoder(resp.Body).Decode(&wsResp2)
-	resp.Body.Close()
+	if err := json.NewDecoder(resp.Body).Decode(&wsResp2); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	_ = resp.Body.Close()
 	ws2ID := wsResp2["workspace_id"]
 
 	// WS1 pushes changes (should succeed with "updated")
@@ -105,14 +109,18 @@ func TestE2E_DocsPush(t *testing.T) {
 		if err != nil {
 			t.Fatalf("push failed: %v", err)
 		}
-		defer resp.Body.Close()
+		defer func() {
+			_ = resp.Body.Close()
+		}()
 
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("expected 200, got %d", resp.StatusCode)
 		}
 
 		var pushResp dto.DocsPushResponse
-		json.NewDecoder(resp.Body).Decode(&pushResp)
+		if err := json.NewDecoder(resp.Body).Decode(&pushResp); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
 
 		if !pushResp.Ok {
 			t.Errorf("expected Ok=true, got false. Error: %s", pushResp.Error)
@@ -141,14 +149,18 @@ func TestE2E_DocsPush(t *testing.T) {
 		if err != nil {
 			t.Fatalf("push failed: %v", err)
 		}
-		defer resp.Body.Close()
+		defer func() {
+			_ = resp.Body.Close()
+		}()
 
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("expected 200, got %d", resp.StatusCode)
 		}
 
 		var pushResp dto.DocsPushResponse
-		json.NewDecoder(resp.Body).Decode(&pushResp)
+		if err := json.NewDecoder(resp.Body).Decode(&pushResp); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
 
 		if !pushResp.Ok {
 			t.Errorf("expected Ok=true, got false. Error: %s", pushResp.Error)

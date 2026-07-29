@@ -24,7 +24,7 @@ func TestHealthz(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request healthz: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
@@ -60,7 +60,7 @@ func TestRemovedAndUnknownEndpointsReturnJSON404(t *testing.T) {
 			if err != nil {
 				t.Fatalf("request %s: %v", path, err)
 			}
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			if resp.StatusCode != http.StatusNotFound {
 				t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusNotFound)
@@ -110,7 +110,7 @@ func TestStateEndpointRemainsAvailable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request state: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
 	}

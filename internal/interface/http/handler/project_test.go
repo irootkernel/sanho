@@ -16,20 +16,25 @@ import (
 
 func TestDeleteProject(t *testing.T) {
 	// Setup temp dir
-	tempDir, err := os.MkdirTemp("", "sanho-test-project-*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tempDir)
+	tempDir := t.TempDir()
 
 	statePath := filepath.Join(tempDir, "state.json")
 	repoPath := filepath.Join(tempDir, "repo")
-	os.Mkdir(repoPath, 0755)
+	if err := os.Mkdir(repoPath, 0755); err != nil {
+		t.Fatal(err)
+	}
 
 	// Init State
-	stateRepo, _ := state.NewFileStateRepository(statePath)
-	stateRepo.AddDocsRepo(docs.RepositoryConfig{ID: "repo1", Path: repoPath})
-	stateRepo.AddProject("proj1", "repo1")
+	stateRepo, err := state.NewFileStateRepository(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := stateRepo.AddDocsRepo(docs.RepositoryConfig{ID: "repo1", Path: repoPath}); err != nil {
+		t.Fatal(err)
+	}
+	if err := stateRepo.AddProject("proj1", "repo1"); err != nil {
+		t.Fatal(err)
+	}
 
 	// Init Components
 	gitClient := git.NewClient()
@@ -62,26 +67,33 @@ func TestDeleteProject(t *testing.T) {
 
 func TestDeleteProjectWithWorkspaces(t *testing.T) {
 	// Setup temp dir
-	tempDir, err := os.MkdirTemp("", "sanho-test-project-ws-*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tempDir)
+	tempDir := t.TempDir()
 
 	statePath := filepath.Join(tempDir, "state.json")
 	repoPath := filepath.Join(tempDir, "repo")
-	os.Mkdir(repoPath, 0755)
+	if err := os.Mkdir(repoPath, 0755); err != nil {
+		t.Fatal(err)
+	}
 
 	// Init State
-	stateRepo, _ := state.NewFileStateRepository(statePath)
-	stateRepo.AddDocsRepo(docs.RepositoryConfig{ID: "repo1", Path: repoPath})
-	stateRepo.AddProject("proj1", "repo1")
+	stateRepo, err := state.NewFileStateRepository(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := stateRepo.AddDocsRepo(docs.RepositoryConfig{ID: "repo1", Path: repoPath}); err != nil {
+		t.Fatal(err)
+	}
+	if err := stateRepo.AddProject("proj1", "repo1"); err != nil {
+		t.Fatal(err)
+	}
 	// Add a workspace for proj1
-	stateRepo.AddWorkspace(state.WorkspaceState{
+	if err := stateRepo.AddWorkspace(state.WorkspaceState{
 		ID:        "proj1:/some/path",
 		Project:   "proj1",
 		LocalPath: "/some/path",
-	})
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	// Init Components
 	gitClient := git.NewClient()

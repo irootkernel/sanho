@@ -27,7 +27,7 @@ func TestE2E_WorkspaceDeletionEnablesProjectDeletion(t *testing.T) {
 	t.Cleanup(func() {
 		req, _ := http.NewRequest(http.MethodDelete, baseURL+"/projects/"+projectName+"?force=true", nil)
 		if resp, err := client.Do(req); err == nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}
 	})
 
@@ -48,8 +48,10 @@ func TestE2E_WorkspaceDeletionEnablesProjectDeletion(t *testing.T) {
 		t.Fatalf("expected conflict, got %d", resp.StatusCode)
 	}
 	var conflictResp map[string]string
-	json.NewDecoder(resp.Body).Decode(&conflictResp)
-	resp.Body.Close()
+	if err := json.NewDecoder(resp.Body).Decode(&conflictResp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	_ = resp.Body.Close()
 	if conflictResp["error"] != "project_has_workspaces" {
 		t.Fatalf("expected project_has_workspaces, got %s", conflictResp["error"])
 	}
@@ -67,8 +69,10 @@ func TestE2E_WorkspaceDeletionEnablesProjectDeletion(t *testing.T) {
 		t.Fatalf("expected unknown_project 400, got %d", resp.StatusCode)
 	}
 	var errResp map[string]string
-	json.NewDecoder(resp.Body).Decode(&errResp)
-	resp.Body.Close()
+	if err := json.NewDecoder(resp.Body).Decode(&errResp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	_ = resp.Body.Close()
 	if errResp["error"] != "unknown_project" {
 		t.Fatalf("expected unknown_project, got %s", errResp["error"])
 	}

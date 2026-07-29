@@ -49,7 +49,9 @@ func TestListenUnixRejectsActiveSocket(t *testing.T) {
 	if err != nil {
 		t.Fatalf("listen active socket: %v", err)
 	}
-	defer active.Close()
+	defer func() {
+		_ = active.Close()
+	}()
 
 	if _, err := ListenUnix(path); !errors.Is(err, ErrSocketInUse) {
 		t.Fatalf("ListenUnix() error = %v, want ErrSocketInUse", err)
@@ -70,7 +72,9 @@ func TestListenUnixRecoversStaleSocket(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListenUnix() error = %v", err)
 	}
-	defer listener.Close()
+	defer func() {
+		_ = listener.Close()
+	}()
 }
 
 func TestListenUnixPreservesRegularFile(t *testing.T) {
@@ -104,7 +108,9 @@ func TestUnixListenerDoesNotRemoveReplacementSocket(t *testing.T) {
 	if err != nil {
 		t.Fatalf("listen on replacement socket: %v", err)
 	}
-	defer replacement.Close()
+	defer func() {
+		_ = replacement.Close()
+	}()
 
 	if err := listener.Close(); err != nil {
 		t.Fatalf("Close() error = %v", err)

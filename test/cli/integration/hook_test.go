@@ -74,13 +74,17 @@ func setupFakeDaemon(t *testing.T, headHash string, statusCode int, errorCode st
 			if statusCode != http.StatusOK {
 				w.WriteHeader(statusCode)
 				if errorCode != "" {
-					json.NewEncoder(w).Encode(map[string]string{"error": errorCode})
+					if err := json.NewEncoder(w).Encode(map[string]string{"error": errorCode}); err != nil {
+						t.Errorf("encode response: %v", err)
+					}
 				}
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
 			// Note: API uses "head" not "docs_head"
-			json.NewEncoder(w).Encode(map[string]string{"head": headHash})
+			if err := json.NewEncoder(w).Encode(map[string]string{"head": headHash}); err != nil {
+				t.Errorf("encode response: %v", err)
+			}
 			return
 		}
 		w.WriteHeader(http.StatusNotFound)

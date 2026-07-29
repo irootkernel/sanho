@@ -39,11 +39,11 @@ func TestE2E_DaemonProcess(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("add project status = %d", resp.StatusCode)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	t.Cleanup(func() {
 		req, _ := http.NewRequest(http.MethodDelete, baseURL+"/projects/"+projectName+"?force=true", nil)
 		if r, err := client.Do(req); err == nil {
-			r.Body.Close()
+			_ = r.Body.Close()
 		}
 	})
 
@@ -56,8 +56,10 @@ func TestE2E_DaemonProcess(t *testing.T) {
 		t.Fatalf("get head status = %d", resp.StatusCode)
 	}
 	var headResp map[string]string
-	json.NewDecoder(resp.Body).Decode(&headResp)
-	resp.Body.Close()
+	if err := json.NewDecoder(resp.Body).Decode(&headResp); err != nil {
+		t.Fatalf("decode docs head: %v", err)
+	}
+	_ = resp.Body.Close()
 	if headResp["head"] != expectedHead {
 		t.Fatalf("expected head %s, got %s", expectedHead, headResp["head"])
 	}
@@ -78,8 +80,10 @@ func TestE2E_DaemonProcess(t *testing.T) {
 		t.Fatalf("register workspace status = %d", resp.StatusCode)
 	}
 	var wsResp map[string]string
-	json.NewDecoder(resp.Body).Decode(&wsResp)
-	resp.Body.Close()
+	if err := json.NewDecoder(resp.Body).Decode(&wsResp); err != nil {
+		t.Fatalf("decode workspace response: %v", err)
+	}
+	_ = resp.Body.Close()
 
 	if wsResp["current_docs_head"] != expectedHead {
 		t.Fatalf("expected current_docs_head %s, got %s", expectedHead, wsResp["current_docs_head"])
@@ -99,8 +103,10 @@ func TestE2E_DaemonProcess(t *testing.T) {
 		t.Fatalf("delete without force should return 409, got %d", respNoForce.StatusCode)
 	}
 	var conflictResp map[string]string
-	json.NewDecoder(respNoForce.Body).Decode(&conflictResp)
-	respNoForce.Body.Close()
+	if err := json.NewDecoder(respNoForce.Body).Decode(&conflictResp); err != nil {
+		t.Fatalf("decode project conflict: %v", err)
+	}
+	_ = respNoForce.Body.Close()
 	if conflictResp["error"] != "project_has_workspaces" {
 		t.Fatalf("expected error project_has_workspaces, got %s", conflictResp["error"])
 	}
@@ -113,7 +119,7 @@ func TestE2E_DaemonProcess(t *testing.T) {
 	if respCheck.StatusCode != http.StatusOK {
 		t.Fatalf("project should still exist, got status %d", respCheck.StatusCode)
 	}
-	respCheck.Body.Close()
+	_ = respCheck.Body.Close()
 
 	// Delete project with force.
 	req, _ := http.NewRequest(http.MethodDelete, baseURL+"/projects/"+projectName+"?force=true", nil)
@@ -124,7 +130,7 @@ func TestE2E_DaemonProcess(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("delete project status = %d", resp.StatusCode)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	// Confirm project gone.
 	resp, err = client.Get(baseURL + "/docs/head?project=" + projectName)
@@ -135,8 +141,10 @@ func TestE2E_DaemonProcess(t *testing.T) {
 		t.Fatalf("expected 400 unknown_project, got %d", resp.StatusCode)
 	}
 	var errResp map[string]string
-	json.NewDecoder(resp.Body).Decode(&errResp)
-	resp.Body.Close()
+	if err := json.NewDecoder(resp.Body).Decode(&errResp); err != nil {
+		t.Fatalf("decode project deletion response: %v", err)
+	}
+	_ = resp.Body.Close()
 	if errResp["error"] != "unknown_project" {
 		t.Fatalf("expected error unknown_project, got %s", errResp["error"])
 	}

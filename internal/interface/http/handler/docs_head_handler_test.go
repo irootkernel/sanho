@@ -34,7 +34,9 @@ func TestDocsHead(t *testing.T) {
 	}
 
 	var resp map[string]string
-	json.NewDecoder(w.Body).Decode(&resp)
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
 	if resp["head"] != "abcdef123456" {
 		t.Errorf("Expected head abcdef123456, got %s", resp["head"])
 	}
@@ -54,7 +56,9 @@ func TestDocsHead_UnknownProject(t *testing.T) {
 	}
 
 	var resp map[string]string
-	json.NewDecoder(w.Body).Decode(&resp)
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
 	if resp["error"] != "unknown_project" {
 		t.Errorf("Expected error unknown_project, got %s", resp["error"])
 	}

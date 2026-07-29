@@ -21,20 +21,26 @@ func TestCLIFixRetriesOnDocsRepoBusy(t *testing.T) {
 		switch {
 		case strings.HasPrefix(r.URL.Path, "/docs/head"):
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]string{"head": "abcd"})
+			if err := json.NewEncoder(w).Encode(map[string]string{"head": "abcd"}); err != nil {
+				t.Errorf("encode response: %v", err)
+			}
 		case strings.HasPrefix(r.URL.Path, "/docs/push"):
 			count := atomic.AddInt32(&pushCount, 1)
 			w.Header().Set("Content-Type", "application/json")
 			if count <= 2 {
 				w.WriteHeader(http.StatusConflict)
-				json.NewEncoder(w).Encode(map[string]string{"error": "docs_repo_busy"})
+				if err := json.NewEncoder(w).Encode(map[string]string{"error": "docs_repo_busy"}); err != nil {
+					t.Errorf("encode response: %v", err)
+				}
 				return
 			}
-			json.NewEncoder(w).Encode(map[string]any{
+			if err := json.NewEncoder(w).Encode(map[string]any{
 				"ok":            true,
 				"status":        "updated",
 				"new_docs_hash": "efgh",
-			})
+			}); err != nil {
+				t.Errorf("encode response: %v", err)
+			}
 		default:
 			http.NotFound(w, r)
 		}

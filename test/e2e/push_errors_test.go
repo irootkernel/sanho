@@ -30,7 +30,7 @@ func TestE2E_DocsPushNoChangeAndErrors(t *testing.T) {
 	t.Cleanup(func() {
 		req, _ := http.NewRequest(http.MethodDelete, baseURL+"/projects/"+projectName+"?force=true", nil)
 		if resp, err := client.Do(req); err == nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}
 	})
 
@@ -66,8 +66,10 @@ func TestE2E_DocsPushNoChangeAndErrors(t *testing.T) {
 		t.Fatalf("nochange push status = %d", resp.StatusCode)
 	}
 	var pushResp dto.DocsPushResponse
-	json.NewDecoder(resp.Body).Decode(&pushResp)
-	resp.Body.Close()
+	if err := json.NewDecoder(resp.Body).Decode(&pushResp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	_ = resp.Body.Close()
 
 	if pushResp.Status != "nochange" {
 		t.Fatalf("expected status nochange, got %s", pushResp.Status)
@@ -86,8 +88,10 @@ func TestE2E_DocsPushNoChangeAndErrors(t *testing.T) {
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("unknown workspace status = %d", resp.StatusCode)
 	}
-	json.NewDecoder(resp.Body).Decode(&pushResp)
-	resp.Body.Close()
+	if err := json.NewDecoder(resp.Body).Decode(&pushResp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	_ = resp.Body.Close()
 	if pushResp.Error != "unknown_workspace" {
 		t.Fatalf("expected unknown_workspace, got %s", pushResp.Error)
 	}
@@ -103,8 +107,10 @@ func TestE2E_DocsPushNoChangeAndErrors(t *testing.T) {
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("unknown commit status = %d", resp.StatusCode)
 	}
-	json.NewDecoder(resp.Body).Decode(&pushResp)
-	resp.Body.Close()
+	if err := json.NewDecoder(resp.Body).Decode(&pushResp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	_ = resp.Body.Close()
 	if pushResp.Error != "unknown_docs_commit" {
 		t.Fatalf("expected unknown_docs_commit, got %s", pushResp.Error)
 	}

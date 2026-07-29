@@ -63,7 +63,9 @@ func TestE2ECLI_ProjectWorkspaceLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("head after delete failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected 400 after project delete, got %d", resp.StatusCode)
 	}
