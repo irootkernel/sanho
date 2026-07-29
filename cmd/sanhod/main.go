@@ -101,7 +101,9 @@ func run(args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	defer listener.Close()
+	defer func() {
+		_ = listener.Close()
+	}()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

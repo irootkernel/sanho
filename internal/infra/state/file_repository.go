@@ -352,6 +352,5 @@ func writeAtomic(path string, data []byte) (returnErr error) {
 	if err != nil {
 		return err
 	}
-	defer directory.Close()
-	return directory.Sync()
+	return errors.Join(directory.Sync(), directory.Close())
 }

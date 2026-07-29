@@ -80,7 +80,9 @@ func (d *FileConflictDetector) fileHasConflict(filePath string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	defer file.Close()
+	defer func() {
+		_ = file.Close()
+	}()
 
 	var hasStart, hasMiddle, hasEnd bool
 

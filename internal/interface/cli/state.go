@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"sort"
 	"time"
@@ -194,18 +193,18 @@ func buildStateJSONOutput(showAll bool, project docs.ProjectName, resp httpclien
 
 // printProjectState prints state for the current project only.
 func printProjectState(cmd *cobra.Command, project docs.ProjectName, resp httpclient.StateResponse) {
-	fmt.Fprintf(cmd.OutOrStdout(), "sanho state:\n")
-	fmt.Fprintf(cmd.OutOrStdout(), "  project: %s\n", project)
+	cmd.Print("sanho state:\n")
+	cmd.Printf("  project: %s\n", project)
 
 	// Get docs head for this project
 	if head, ok := resp.DocsHeads[string(project)]; ok {
-		fmt.Fprintf(cmd.OutOrStdout(), "  docs_head: %s\n", head)
+		cmd.Printf("  docs_head: %s\n", head)
 	} else {
-		fmt.Fprintf(cmd.OutOrStdout(), "  docs_head: (not found)\n")
+		cmd.Print("  docs_head: (not found)\n")
 	}
 
 	// Filter workspaces for this project
-	fmt.Fprintf(cmd.OutOrStdout(), "  workspaces:\n")
+	cmd.Print("  workspaces:\n")
 	count := 0
 	for _, ws := range resp.Workspaces {
 		if ws.Project == string(project) {
@@ -214,28 +213,28 @@ func printProjectState(cmd *cobra.Command, project docs.ProjectName, resp httpcl
 		}
 	}
 	if count == 0 {
-		fmt.Fprintf(cmd.OutOrStdout(), "    (none)\n")
+		cmd.Print("    (none)\n")
 	}
 }
 
 // printAllState prints state for all projects.
 func printAllState(cmd *cobra.Command, resp httpclient.StateResponse) {
-	fmt.Fprintf(cmd.OutOrStdout(), "sanho state --all:\n")
+	cmd.Print("sanho state --all:\n")
 
 	// Print docs heads
-	fmt.Fprintf(cmd.OutOrStdout(), "  docs_heads:\n")
+	cmd.Print("  docs_heads:\n")
 	if len(resp.DocsHeads) == 0 {
-		fmt.Fprintf(cmd.OutOrStdout(), "    (none)\n")
+		cmd.Print("    (none)\n")
 	} else {
 		for project, head := range resp.DocsHeads {
-			fmt.Fprintf(cmd.OutOrStdout(), "    %s: %s\n", project, head)
+			cmd.Printf("    %s: %s\n", project, head)
 		}
 	}
 
 	// Print all workspaces
-	fmt.Fprintf(cmd.OutOrStdout(), "  workspaces:\n")
+	cmd.Print("  workspaces:\n")
 	if len(resp.Workspaces) == 0 {
-		fmt.Fprintf(cmd.OutOrStdout(), "    (none)\n")
+		cmd.Print("    (none)\n")
 	} else {
 		for _, ws := range resp.Workspaces {
 			printWorkspace(cmd, ws, "    ")
@@ -245,13 +244,13 @@ func printAllState(cmd *cobra.Command, resp httpclient.StateResponse) {
 
 // printWorkspace prints a single workspace summary.
 func printWorkspace(cmd *cobra.Command, ws httpclient.WorkspaceSummary, indent string) {
-	fmt.Fprintf(cmd.OutOrStdout(), "%s- workspace_id: %s\n", indent, ws.WorkspaceID)
-	fmt.Fprintf(cmd.OutOrStdout(), "%s  project: %s\n", indent, ws.Project)
-	fmt.Fprintf(cmd.OutOrStdout(), "%s  docs_hash: %s\n", indent, ws.DocsHash)
+	cmd.Printf("%s- workspace_id: %s\n", indent, ws.WorkspaceID)
+	cmd.Printf("%s  project: %s\n", indent, ws.Project)
+	cmd.Printf("%s  docs_hash: %s\n", indent, ws.DocsHash)
 	if ws.LastReportedAt != nil {
-		fmt.Fprintf(cmd.OutOrStdout(), "%s  last_reported_at: %s\n", indent, *ws.LastReportedAt)
+		cmd.Printf("%s  last_reported_at: %s\n", indent, *ws.LastReportedAt)
 	}
 	if ws.LastActorEmail != "" {
-		fmt.Fprintf(cmd.OutOrStdout(), "%s  last_actor: %s\n", indent, ws.LastActorEmail)
+		cmd.Printf("%s  last_actor: %s\n", indent, ws.LastActorEmail)
 	}
 }

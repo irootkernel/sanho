@@ -136,7 +136,7 @@ Prerequisites:
 						return fmt.Errorf("failed to inspect git history for docs-version commits: %w", err)
 					}
 					if !hasDocsVersion {
-						return errors.New("existing docs directory detected, but this repo has no docs-version commits.\nsanho does not overwrite legacy/manual docs automatically.\nPlease backup/remove the docs directory first or use --force to replace it.")
+						return errors.New("existing docs directory detected, but this repository has no docs-version commits; back up or remove the docs directory before retrying, or use --force to replace it")
 					}
 
 					clean, err := gitClient.IsPathClean(context.Background(), cwd, docsDir)
@@ -144,13 +144,13 @@ Prerequisites:
 						return fmt.Errorf("failed to check docs directory cleanliness: %w", err)
 					}
 					if !clean {
-						return errors.New("현재 docs 디렉토리에 commit 되지 않은 변경이 있습니다.\nsanho 를 연결하기 전에 먼저 변경을 커밋하거나, 백업 후 되돌린 뒤 다시 `sanho init` 을 실행해 주세요.")
+						return errors.New("uncommitted changes exist in the docs directory; commit them, or back up and restore the directory before running sanho init again")
 					}
 
 					hash, err := gitClient.GetLastDocsVersionHash(context.Background(), cwd)
 					if err != nil {
 						if errors.Is(err, git.ErrNoDocsVersionCommits) {
-							return errors.New("repo 에 docs-version 커밋이 있지만 기준 hash 를 찾지 못했습니다. sanho commit-msg hook 이 올바르게 동작했는지 확인해 주세요.")
+							return errors.New("docs-version commits exist, but their base hash could not be resolved; verify that the sanho commit-msg hook is working")
 						}
 						return fmt.Errorf("failed to read last docs-version hash: %w", err)
 					}

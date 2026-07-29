@@ -254,7 +254,9 @@ func (c *HTTPClient) DocsHead(ctx context.Context, project docs.ProjectName) (do
 	if err != nil {
 		return "", fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if err := c.checkError(resp); err != nil {
 		return "", err
@@ -287,7 +289,9 @@ func (c *HTTPClient) RegisterWorkspace(ctx context.Context, req RegisterWorkspac
 	if err != nil {
 		return RegisterWorkspaceResponse{}, fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if err := c.checkError(resp); err != nil {
 		return RegisterWorkspaceResponse{}, err
@@ -321,7 +325,9 @@ func (c *HTTPClient) ReportWorkspaceDocsHash(
 	if err != nil {
 		return fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 	return c.checkError(resp)
 }
 
@@ -341,7 +347,9 @@ func (c *HTTPClient) DocsSnapshot(ctx context.Context, project docs.ProjectName,
 	if err != nil {
 		return nil, "", fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if err := c.checkError(resp); err != nil {
 		return nil, "", err
@@ -402,7 +410,9 @@ func (c *HTTPClient) docsPushOnce(ctx context.Context, req DocsPushRequest) (Doc
 	if err != nil {
 		return DocsPushResponse{}, fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if err := c.checkError(resp); err != nil {
 		return DocsPushResponse{}, err
@@ -432,7 +442,9 @@ func (c *HTTPClient) GetState(ctx context.Context, project *docs.ProjectName) (S
 	if err != nil {
 		return StateResponse{}, fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if err := c.checkError(resp); err != nil {
 		return StateResponse{}, err
@@ -470,7 +482,9 @@ func (c *HTTPClient) GetProjectStatus(
 	if err != nil {
 		return ProjectStatusResponse{}, fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if err := c.checkError(resp); err != nil {
 		return ProjectStatusResponse{}, err
@@ -499,7 +513,9 @@ func (c *HTTPClient) CreateOrUpdateProject(ctx context.Context, req CreateProjec
 	if err != nil {
 		return fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	return c.checkError(resp)
 }
@@ -520,7 +536,9 @@ func (c *HTTPClient) DeleteProject(ctx context.Context, project docs.ProjectName
 	if err != nil {
 		return fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	return c.checkError(resp)
 }
@@ -538,7 +556,9 @@ func (c *HTTPClient) DeleteWorkspace(ctx context.Context, workspaceID workspace.
 	if err != nil {
 		return fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	return c.checkError(resp)
 }

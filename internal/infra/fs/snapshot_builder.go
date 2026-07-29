@@ -89,10 +89,14 @@ func (b *SnapshotBuilder) Build(sourceDir string) ([]byte, error) {
 				if err != nil {
 					return fmt.Errorf("failed to open file: %w", err)
 				}
-				defer file.Close()
 
-				if _, err := io.Copy(tarWriter, file); err != nil {
-					return fmt.Errorf("failed to write file to tar: %w", err)
+				_, copyErr := io.Copy(tarWriter, file)
+				closeErr := file.Close()
+				if copyErr != nil {
+					return fmt.Errorf("failed to write file to tar: %w", copyErr)
+				}
+				if closeErr != nil {
+					return fmt.Errorf("failed to close snapshot source: %w", closeErr)
 				}
 				return nil
 			}(); err != nil {

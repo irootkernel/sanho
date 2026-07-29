@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"time"
 
@@ -123,11 +122,11 @@ func newCLIFixOutput(cmd *cobra.Command) *cliFixOutput {
 }
 
 func (o *cliFixOutput) Info(msg string) {
-	fmt.Fprintf(o.cmd.OutOrStdout(), "sanho: %s\n", msg)
+	o.cmd.Printf("sanho: %s\n", msg)
 }
 
 func (o *cliFixOutput) Warning(msg string) {
-	fmt.Fprintf(o.cmd.OutOrStdout(), "sanho: %s\n", msg)
+	o.cmd.Printf("sanho: %s\n", msg)
 }
 
 func (o *cliFixOutput) Error(msg string) {

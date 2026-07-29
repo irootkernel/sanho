@@ -51,20 +51,6 @@ func TestRenderCommandErrorAsJSON(t *testing.T) {
 	}
 }
 
-func TestCommandErrorCanPreserveHumanMessage(t *testing.T) {
-	err := withErrorCodeMessage(
-		"invalid_socket_path",
-		"sanho socket path must be an absolute path",
-		errors.New("invalid socket configuration"),
-	)
-	if err.Error() != "invalid socket configuration" {
-		t.Fatalf("human message = %q", err.Error())
-	}
-	if commandErrorMessage(err) != "sanho socket path must be an absolute path" {
-		t.Fatalf("JSON message = %q", commandErrorMessage(err))
-	}
-}
-
 func TestJSONFlagIsLimitedToQueryCommands(t *testing.T) {
 	root := NewRootCmd(BuildInfo{})
 	withJSON := map[string]bool{

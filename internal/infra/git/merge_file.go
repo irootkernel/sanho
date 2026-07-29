@@ -27,7 +27,9 @@ func (c *Client) MergeFile(ctx context.Context, baseContent, localContent, remot
 	if err != nil {
 		return MergeResult{}, fmt.Errorf("failed to create temp directory: %w", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		_ = os.RemoveAll(tempDir)
+	}()
 
 	// Write contents to temp files
 	basePath := filepath.Join(tempDir, "base")

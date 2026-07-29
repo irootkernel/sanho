@@ -98,11 +98,11 @@ func newCLIPrePushOutput(cmd *cobra.Command) *cliPrePushOutput {
 }
 
 func (o *cliPrePushOutput) Info(msg string) {
-	fmt.Fprintf(o.cmd.OutOrStdout(), "sanho: %s\n", msg)
+	o.cmd.Printf("sanho: %s\n", msg)
 }
 
 func (o *cliPrePushOutput) Warning(msg string) {
-	fmt.Fprintf(o.cmd.OutOrStdout(), "sanho: %s\n", msg)
+	o.cmd.Printf("sanho: %s\n", msg)
 }
 
 func (o *cliPrePushOutput) Error(msg string) {

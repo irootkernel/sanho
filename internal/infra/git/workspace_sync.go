@@ -152,7 +152,9 @@ func (s *WorkspaceSync) BuildIndexDocsSnapshot(ctx context.Context, repoPath, do
 	if err != nil {
 		return nil, fmt.Errorf("create index snapshot directory: %w", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		_ = os.RemoveAll(tempDir)
+	}()
 
 	prefix := tempDir + string(os.PathSeparator)
 	if _, err := runWorkspaceGit(ctx, repoPath, nil, "checkout-index", "--all", "--prefix="+prefix); err != nil {
@@ -172,7 +174,9 @@ func (s *WorkspaceSync) StageDocsSnapshot(ctx context.Context, repoPath, docsDir
 	if err != nil {
 		return fmt.Errorf("create staging worktree: %w", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		_ = os.RemoveAll(tempDir)
+	}()
 
 	prefix := tempDir + string(os.PathSeparator)
 	if _, err := runWorkspaceGit(ctx, repoPath, nil, "checkout-index", "--all", "--prefix="+prefix); err != nil {
@@ -252,7 +256,9 @@ func (s *WorkspaceSync) buildDocsSyncCommit(
 	if err != nil {
 		return "", fmt.Errorf("create sync commit directory: %w", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		_ = os.RemoveAll(tempDir)
+	}()
 
 	indexPath := filepath.Join(tempDir, "index")
 	workTree := filepath.Join(tempDir, "worktree")
@@ -323,7 +329,9 @@ func (s *WorkspaceSync) ApplyWorktreeDocsSnapshot(repoPath, docsDir string, snap
 	if err != nil {
 		return fmt.Errorf("create worktree snapshot directory: %w", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		_ = os.RemoveAll(tempDir)
+	}()
 
 	if err := s.applier.Apply(snapshot, tempDir, "docs"); err != nil {
 		return fmt.Errorf("apply worktree docs snapshot: %w", err)

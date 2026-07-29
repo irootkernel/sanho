@@ -70,7 +70,9 @@ func TestPrintProjectWorkspacesSortsAndMarksCurrent(t *testing.T) {
 	output := new(bytes.Buffer)
 	command.SetOut(output)
 
-	printProjectWorkspaces(command, status)
+	if err := printProjectWorkspaces(command, status); err != nil {
+		t.Fatal(err)
+	}
 
 	text := output.String()
 	aheadIndex := strings.Index(text, "ahead")

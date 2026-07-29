@@ -34,11 +34,11 @@ func WaitForHealth(ctx context.Context, url string) error {
 		case <-ticker.C:
 			resp, err := client.Get(url)
 			if err == nil && resp.StatusCode == http.StatusOK {
-				resp.Body.Close()
+				_ = resp.Body.Close()
 				return nil
 			}
 			if resp != nil {
-				resp.Body.Close()
+				_ = resp.Body.Close()
 			}
 		}
 	}

@@ -114,7 +114,9 @@ func (h *HookInstaller) resolveHooksDir(ctx context.Context, repoPath string) (s
 	if err != nil {
 		return "", fmt.Errorf("failed to open .git file: %w", err)
 	}
-	defer file.Close()
+	defer func() {
+		_ = file.Close()
+	}()
 
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {

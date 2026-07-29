@@ -210,11 +210,11 @@ func newCLIPreCommitOutput(cmd *cobra.Command) *cliPreCommitOutput {
 }
 
 func (o *cliPreCommitOutput) Info(msg string) {
-	fmt.Fprintf(o.cmd.OutOrStdout(), "sanho: %s\n", msg)
+	o.cmd.Printf("sanho: %s\n", msg)
 }
 
 func (o *cliPreCommitOutput) Warning(msg string) {
-	fmt.Fprintf(o.cmd.OutOrStdout(), "sanho: %s\n", msg)
+	o.cmd.Printf("sanho: %s\n", msg)
 }
 
 func (o *cliPreCommitOutput) Error(msg string) {

@@ -1,11 +1,11 @@
 package handler
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 
 	domain "github.com/irootkernel/sanho/internal/domain/docs"
+	"github.com/irootkernel/sanho/internal/interface/http/httputil"
 	usecase "github.com/irootkernel/sanho/internal/usecase/docs"
 )
 
@@ -20,9 +20,7 @@ func NewDocsHeadHandler(uc usecase.GetDocsHeadUseCase) *DocsHeadHandler {
 func (h *DocsHeadHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	project := r.URL.Query().Get("project")
 	if project == "" {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "missing_project"})
+		httputil.WriteJSONError(w, http.StatusBadRequest, "missing_project")
 		return
 	}
 
@@ -30,18 +28,12 @@ func (h *DocsHeadHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		if errors.Is(err, domain.ErrUnknownProject) {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusBadRequest)
-			json.NewEncoder(w).Encode(map[string]string{"error": "unknown_project"})
+			httputil.WriteJSONError(w, http.StatusBadRequest, "unknown_project")
 			return
 		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		httputil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	resp := map[string]string{"head": string(head)}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	httputil.WriteJSON(w, http.StatusOK, map[string]string{"head": string(head)})
 }

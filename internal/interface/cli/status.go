@@ -218,53 +218,54 @@ func newStatusCmd() *cobra.Command {
 			}
 
 			// Print status
-			out := cmd.OutOrStdout()
-			fmt.Fprintln(out, "sanho status")
-			fmt.Fprintf(out, "  project       : %s\n", config.Project)
-			fmt.Fprintf(out, "  workspace     : %s\n", config.WorkspaceID)
-			fmt.Fprintf(out, "  docs base     : %s\n", localHash)
-			fmt.Fprintf(out, "  docs head     : %s\n", daemonHeadStr)
-			fmt.Fprintf(out, "  status        : %s\n", status)
-			fmt.Fprintf(out, "  docs relation : %s\n", formatCommitRelation(relation))
+			cmd.Println("sanho status")
+			cmd.Printf("  project       : %s\n", config.Project)
+			cmd.Printf("  workspace     : %s\n", config.WorkspaceID)
+			cmd.Printf("  docs base     : %s\n", localHash)
+			cmd.Printf("  docs head     : %s\n", daemonHeadStr)
+			cmd.Printf("  status        : %s\n", status)
+			cmd.Printf("  docs relation : %s\n", formatCommitRelation(relation))
 			if hasPendingFix {
-				fmt.Fprintln(out, "  pending_fix   : yes")
+				cmd.Println("  pending_fix   : yes")
 			} else {
-				fmt.Fprintln(out, "  pending_fix   : no")
+				cmd.Println("  pending_fix   : no")
 			}
 			if daemonError == nil {
-				fmt.Fprintln(out)
+				cmd.Println()
 				if comparisonAvailable {
-					printProjectWorkspaces(cmd, projectStatus)
+					if err := printProjectWorkspaces(cmd, projectStatus); err != nil {
+						return withErrorCode("internal_error", errors.Join(ErrInternal, err))
+					}
 				} else {
-					fmt.Fprintln(out, "project workspaces:")
-					fmt.Fprintln(out, "  (daemon upgrade required for workspace comparisons)")
+					cmd.Println("project workspaces:")
+					cmd.Println("  (daemon upgrade required for workspace comparisons)")
 				}
 			}
 
-			fmt.Fprintln(out)
+			cmd.Println()
 
 			// Additional messages based on status
 			if daemonError != nil {
-				fmt.Fprintln(out, "sanho: unable to determine sync status")
+				cmd.Println("sanho: unable to determine sync status")
 			} else if status == client.DocsStatusOutdated {
-				fmt.Fprintln(out, "sanho: docs base and daemon HEAD are different.")
-				fmt.Fprintln(out, "sanho: a merge may occur during pre-commit.")
+				cmd.Println("sanho: docs base and daemon HEAD are different.")
+				cmd.Println("sanho: a merge may occur during pre-commit.")
 			} else if status == client.DocsStatusUpToDate {
-				fmt.Fprintln(out, "sanho: docs are up to date.")
+				cmd.Println("sanho: docs are up to date.")
 			}
 
 			// Pending fix messages
 			if hasPendingFix {
 				if hasConflicts {
-					fmt.Fprintln(out)
-					fmt.Fprintln(out, "sanho: pending fix detected with conflict markers in docs.")
-					fmt.Fprintln(out, "sanho: please resolve conflicts and run 'sanho fix'.")
-					fmt.Fprintf(out, "sanho: files with conflicts: %v\n", conflictFiles)
+					cmd.Println()
+					cmd.Println("sanho: pending fix detected with conflict markers in docs.")
+					cmd.Println("sanho: please resolve conflicts and run 'sanho fix'.")
+					cmd.Printf("sanho: files with conflicts: %v\n", conflictFiles)
 				} else {
-					fmt.Fprintln(out)
-					fmt.Fprintln(out, "sanho: pending fix detected but no conflict markers found.")
-					fmt.Fprintln(out, "sanho: if you have resolved all conflicts, run 'sanho fix' to finalize.")
-					fmt.Fprintf(out, "sanho: pending fix was created at: %s\n", pendingFixState.CreatedAt.Format(time.RFC3339))
+					cmd.Println()
+					cmd.Println("sanho: pending fix detected but no conflict markers found.")
+					cmd.Println("sanho: if you have resolved all conflicts, run 'sanho fix' to finalize.")
+					cmd.Printf("sanho: pending fix was created at: %s\n", pendingFixState.CreatedAt.Format(time.RFC3339))
 				}
 			}
 
@@ -291,22 +292,28 @@ func formatCommitRelation(relation httpclient.CommitRelation) string {
 	}
 }
 
-func printProjectWorkspaces(cmd *cobra.Command, status httpclient.ProjectStatusResponse) {
+func printProjectWorkspaces(cmd *cobra.Command, status httpclient.ProjectStatusResponse) error {
 	rows := sortedProjectWorkspaces(status.Workspaces)
 	out := cmd.OutOrStdout()
-	fmt.Fprintln(out, "project workspaces:")
+	if _, err := fmt.Fprintln(out, "project workspaces:"); err != nil {
+		return fmt.Errorf("write project workspaces heading: %w", err)
+	}
 	if len(rows) == 0 {
-		fmt.Fprintln(out, "  (none)")
-		return
+		if _, err := fmt.Fprintln(out, "  (none)"); err != nil {
+			return fmt.Errorf("write empty project workspaces: %w", err)
+		}
+		return nil
 	}
 	table := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(table, "  REPOSITORY\tWORKSPACE\tDOCS HASH\tVS CURRENT\tVS HEAD")
+	if _, err := fmt.Fprintln(table, "  REPOSITORY\tWORKSPACE\tDOCS HASH\tVS CURRENT\tVS HEAD"); err != nil {
+		return fmt.Errorf("write project workspaces header: %w", err)
+	}
 	for _, row := range rows {
 		label := repositoryLabel(row.RepoURL, row.LocalPath)
 		if row.WorkspaceID == status.ReferenceWorkspaceID {
 			label += " (current)"
 		}
-		fmt.Fprintf(
+		if _, err := fmt.Fprintf(
 			table,
 			"  %s\t%s\t%s\t%s\t%s\n",
 			label,
@@ -314,9 +321,14 @@ func printProjectWorkspaces(cmd *cobra.Command, status httpclient.ProjectStatusR
 			shortHash(row.DocsHash),
 			formatCommitRelation(row.RelativeToReference),
 			formatCommitRelation(row.RelativeToHead),
-		)
+		); err != nil {
+			return fmt.Errorf("write project workspace row: %w", err)
+		}
 	}
-	_ = table.Flush()
+	if err := table.Flush(); err != nil {
+		return fmt.Errorf("flush project workspaces: %w", err)
+	}
+	return nil
 }
 
 func sortedProjectWorkspaces(workspaces []httpclient.ProjectStatusWorkspace) []httpclient.ProjectStatusWorkspace {

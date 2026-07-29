@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/irootkernel/sanho/internal/interface/http/httputil"
 	"github.com/irootkernel/sanho/internal/usecase/project"
 )
 
@@ -39,14 +40,11 @@ func (h *ProjectHandler) Add(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.addUC.Execute(r.Context(), input); err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		httputil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+	httputil.WriteJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 func (h *ProjectHandler) Delete(w http.ResponseWriter, r *http.Request) {
@@ -55,22 +53,17 @@ func (h *ProjectHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 	err := h.deleteUC.Execute(projectName, force)
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
 		if err == project.ErrUnknownProject {
-			w.WriteHeader(http.StatusNotFound)
-			json.NewEncoder(w).Encode(map[string]string{"error": "unknown_project"})
+			httputil.WriteJSONError(w, http.StatusNotFound, "unknown_project")
 			return
 		}
 		if err == project.ErrProjectHasWorkspaces {
-			w.WriteHeader(http.StatusConflict)
-			json.NewEncoder(w).Encode(map[string]string{"error": "project_has_workspaces"})
+			httputil.WriteJSONError(w, http.StatusConflict, "project_has_workspaces")
 			return
 		}
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+	httputil.WriteJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }

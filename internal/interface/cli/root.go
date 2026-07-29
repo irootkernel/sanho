@@ -96,14 +96,6 @@ func IsVerbose() bool {
 	return verbose
 }
 
-// logDebug prints a debug message if verbose mode is enabled.
-// This function should only be called after CLI initialization.
-func logDebug(cmd *cobra.Command, format string, args ...interface{}) {
-	if verbose && cmd != nil {
-		cmd.PrintErrf("[DEBUG] "+format+"\n", args...)
-	}
-}
-
 // LogDebugStderr prints a debug message to stderr if verbose mode is enabled.
 // Note: verbose flag is set during Cobra flag parsing, so this function
 // only produces output after rootCmd.Execute() has been called.

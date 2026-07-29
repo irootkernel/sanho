@@ -9,6 +9,7 @@ import (
 	"github.com/irootkernel/sanho/internal/domain/docs"
 	workspaceDomain "github.com/irootkernel/sanho/internal/domain/workspace"
 	"github.com/irootkernel/sanho/internal/interface/http/dto"
+	"github.com/irootkernel/sanho/internal/interface/http/httputil"
 	"github.com/irootkernel/sanho/internal/usecase/workspace"
 )
 
@@ -31,11 +32,7 @@ func NewWorkspaceHandler(
 }
 
 func jsonError(w http.ResponseWriter, errorMsg string, code int) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	if err := json.NewEncoder(w).Encode(map[string]string{"error": errorMsg}); err != nil {
-		log.Printf("failed to write json error response: %v", err)
-	}
+	httputil.WriteJSONError(w, code, errorMsg)
 }
 
 func (h *WorkspaceHandler) Register(w http.ResponseWriter, r *http.Request) {
@@ -81,17 +78,14 @@ func (h *WorkspaceHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	if err := h.deleteUC.Execute(id); err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		if err == workspace.ErrUnknownWorkspace {
-			w.WriteHeader(http.StatusNotFound)
-			json.NewEncoder(w).Encode(map[string]string{"error": "unknown_workspace"})
+			httputil.WriteJSONError(w, http.StatusNotFound, "unknown_workspace")
 			return
 		}
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+	httputil.WriteJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 func (h *WorkspaceHandler) ReportDocsHash(w http.ResponseWriter, r *http.Request) {

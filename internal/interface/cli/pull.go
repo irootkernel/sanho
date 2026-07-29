@@ -187,11 +187,11 @@ func newCLIPullOutput(cmd *cobra.Command) *cliPullOutput {
 }
 
 func (o *cliPullOutput) Info(msg string) {
-	fmt.Fprintf(o.cmd.OutOrStdout(), "sanho: %s\n", msg)
+	o.cmd.Printf("sanho: %s\n", msg)
 }
 
 func (o *cliPullOutput) Warning(msg string) {
-	fmt.Fprintf(o.cmd.OutOrStdout(), "sanho: %s\n", msg)
+	o.cmd.Printf("sanho: %s\n", msg)
 }
 
 func (o *cliPullOutput) Error(msg string) {

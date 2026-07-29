@@ -315,7 +315,9 @@ func (r *GitDocsRepository) applySnapshot(docsRoot string, snapshot docs.DocsSna
 	if err != nil {
 		return fmt.Errorf("failed to create gzip reader: %w", err)
 	}
-	defer gzReader.Close()
+	defer func() {
+		_ = gzReader.Close()
+	}()
 
 	// Extract tar
 	tarReader := tar.NewReader(gzReader)

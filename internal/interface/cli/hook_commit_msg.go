@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"time"
 
@@ -66,7 +65,7 @@ func newCLICommitMsgOutput(cmd *cobra.Command) *cliCommitMsgOutput {
 }
 
 func (o *cliCommitMsgOutput) Info(msg string) {
-	fmt.Fprintf(o.cmd.OutOrStdout(), "sanho: %s\n", msg)
+	o.cmd.Printf("sanho: %s\n", msg)
 }
 
 func (o *cliCommitMsgOutput) Warning(msg string) {

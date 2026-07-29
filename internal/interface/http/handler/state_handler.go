@@ -1,12 +1,12 @@
 package handler
 
 import (
-	"encoding/json"
 	"log"
 	"net/http"
 	"time"
 
 	"github.com/irootkernel/sanho/internal/interface/http/dto"
+	"github.com/irootkernel/sanho/internal/interface/http/httputil"
 	"github.com/irootkernel/sanho/internal/usecase/state"
 )
 
@@ -28,9 +28,7 @@ func (h *StateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// TODO: replace with structured logger if/when available
 		log.Printf("StateHandler: failed to get state: %v", err)
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "internal_server_error"})
+		httputil.WriteJSONError(w, http.StatusInternalServerError, "internal_server_error")
 		return
 	}
 
@@ -65,6 +63,5 @@ func (h *StateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Workspaces: workspaceSummaries,
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	httputil.WriteJSON(w, http.StatusOK, resp)
 }

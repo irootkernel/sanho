@@ -55,7 +55,9 @@ func (s *SnapshotApplier) Apply(snapshot []byte, targetDir, docsDir string) erro
 	if err != nil {
 		return fmt.Errorf("failed to create gzip reader: %w", err)
 	}
-	defer gzReader.Close()
+	defer func() {
+		_ = gzReader.Close()
+	}()
 
 	// Create tar reader
 	tarReader := tar.NewReader(gzReader)
@@ -120,10 +122,12 @@ func (s *SnapshotApplier) Apply(snapshot []byte, targetDir, docsDir string) erro
 			}
 
 			if _, err := io.Copy(file, tarReader); err != nil {
-				file.Close()
+				_ = file.Close()
 				return fmt.Errorf("failed to write file %s: %w", targetPath, err)
 			}
-			file.Close()
+			if err := file.Close(); err != nil {
+				return fmt.Errorf("failed to close file %s: %w", targetPath, err)
+			}
 		default:
 			// Skip other types (symlinks, etc.)
 		}

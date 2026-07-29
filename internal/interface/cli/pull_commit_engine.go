@@ -759,7 +759,9 @@ func (e *pullCommitEngine) mergeSnapshots(
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("create merge directory: %w", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		_ = os.RemoveAll(tempDir)
+	}()
 
 	names := []struct {
 		name     string
@@ -824,7 +826,9 @@ func (e *pullCommitEngine) overlayChangedSnapshotPaths(
 	if err != nil {
 		return nil, err
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		_ = os.RemoveAll(tempDir)
+	}()
 
 	roots, err := e.materializeSnapshots(tempDir, docsDir, map[string][]byte{
 		"target":   target,
@@ -869,7 +873,9 @@ func (e *pullCommitEngine) overlaySelectedSnapshotPaths(
 	if err != nil {
 		return nil, err
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		_ = os.RemoveAll(tempDir)
+	}()
 
 	roots, err := e.materializeSnapshots(tempDir, docsDir, map[string][]byte{
 		"target":  target,
@@ -900,7 +906,9 @@ func (e *pullCommitEngine) snapshotsEqual(docsDir string, left, right []byte) (b
 	if err != nil {
 		return false, err
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		_ = os.RemoveAll(tempDir)
+	}()
 
 	roots, err := e.materializeSnapshots(tempDir, docsDir, map[string][]byte{
 		"left":  left,

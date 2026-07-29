@@ -3,7 +3,6 @@ package cli
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 
 	"github.com/spf13/cobra"
@@ -28,13 +27,6 @@ func withErrorCode(code string, err error) error {
 		return nil
 	}
 	return &commandError{code: code, jsonMessage: err.Error(), err: err}
-}
-
-func withErrorCodeMessage(code, message string, err error) error {
-	if err == nil {
-		return nil
-	}
-	return &commandError{code: code, jsonMessage: message, err: err}
 }
 
 type jsonErrorEnvelope struct {
@@ -88,7 +80,7 @@ func renderCommandError(cmd *cobra.Command, err error) {
 			},
 		}
 		if encodeErr := writeJSON(cmd.ErrOrStderr(), envelope); encodeErr != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "Error: %v\n", encodeErr)
+			cmd.PrintErrf("Error: %v\n", encodeErr)
 		}
 		return
 	}

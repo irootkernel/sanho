@@ -241,7 +241,9 @@ func captureDirtyLayers(
 	if err != nil {
 		return "", "", "", err
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		_ = os.RemoveAll(tempDir)
+	}()
 	tempIndex := filepath.Join(tempDir, "index")
 	hooksDir := filepath.Join(tempDir, "hooks")
 	if err := os.Mkdir(hooksDir, 0700); err != nil {
@@ -353,11 +355,15 @@ func rebasePreparedLayers(
 		_ = os.RemoveAll(tempDir)
 		return "", "", "", err
 	}
-	defer os.RemoveAll(hooksDir)
+	defer func() {
+		_ = os.RemoveAll(hooksDir)
+	}()
 	if err := os.Remove(tempDir); err != nil {
 		return "", "", "", err
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		_ = os.RemoveAll(tempDir)
+	}()
 	if _, err := runWorkspaceGit(
 		ctx,
 		repoPath,

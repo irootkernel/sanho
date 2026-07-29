@@ -173,7 +173,9 @@ func (u *PullUseCase) Execute(ctx context.Context, input PullInput) error {
 	if err != nil {
 		return fmt.Errorf("failed to create temp dir for snapshot: %w", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		_ = os.RemoveAll(tempDir)
+	}()
 
 	u.output.Info("Applying snapshot...")
 	if err := u.snapshotApplier.Apply(snapshot, tempDir, config.DocsDir); err != nil {

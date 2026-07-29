@@ -132,7 +132,7 @@ func TestE2ECLI_InitFailsWhenDocsDirty(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected init to fail for dirty docs, but it succeeded:\n%s", string(out))
 	}
-	if !strings.Contains(string(out), "commit 되지 않은 변경") {
+	if !strings.Contains(string(out), "uncommitted changes exist in the docs directory") {
 		t.Fatalf("expected dirty docs message, got:\n%s", string(out))
 	}
 }

@@ -330,7 +330,9 @@ func (u *PreCommitUseCase) handleOutdated(
 	if err != nil {
 		return fmt.Errorf("failed to create temp directory: %w", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		_ = os.RemoveAll(tempDir)
+	}()
 
 	baseDir := filepath.Join(tempDir, "base")
 	remoteDir := filepath.Join(tempDir, "remote")
