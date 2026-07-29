@@ -2,6 +2,7 @@
 package main
 
 import (
+	"github.com/irootkernel/sanho/internal/buildinfo"
 	"github.com/irootkernel/sanho/internal/interface/cli"
 )
 
@@ -14,7 +15,7 @@ var (
 
 func main() {
 	cli.Execute(cli.BuildInfo{
-		Version:   version,
+		Version:   buildinfo.ResolveVersion(version),
 		Commit:    commit,
 		BuildDate: buildDate,
 	})

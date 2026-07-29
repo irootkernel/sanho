@@ -14,12 +14,13 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev
 COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_DATE ?= $(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
 LDFLAGS := -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.buildDate=$(BUILD_DATE)"
+DAEMON_LDFLAGS := -ldflags "-X main.version=$(VERSION)"
 
 .PHONY: \
-	daemon-build daemon-run daemon-run-dev \
+	daemon-build daemon-install daemon-run daemon-run-dev \
 	daemon-test-prepare daemon-test-unit daemon-test-integration daemon-test-e2e daemon-test \
 	cli-build cli-install cli-test-prepare cli-test-unit cli-test-integration cli-test-e2e cli-test \
-	docs-check test-all \
+	install install-test docs-check test-all \
 	build-daemon-binary run-daemon-local run-daemon-dev-local \
 	build-cli install-cli \
 	test-daemon-prepare test-daemon-unit test-daemon-int test-daemon-e2e test-daemon \
@@ -29,7 +30,10 @@ LDFLAGS := -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main
 
 daemon-build:
 	@mkdir -p bin
-	$(GO) build -o $(DAEMON_BINARY) $(DAEMON_CMD)
+	$(GO) build $(DAEMON_LDFLAGS) -o $(DAEMON_BINARY) $(DAEMON_CMD)
+
+daemon-install:
+	$(GO) install $(DAEMON_LDFLAGS) $(DAEMON_CMD)
 
 daemon-run: daemon-build
 	SANHO_HOME="$(SANHO_HOME)" SANHO_SOCKET="$(SANHO_SOCKET)" ./$(DAEMON_BINARY)
@@ -65,7 +69,7 @@ cli-build:
 	$(GO) build $(LDFLAGS) -o $(CLI_BINARY) $(CLI_CMD)
 
 cli-install:
-	$(GO) build $(LDFLAGS) -o $(shell $(GO) env GOPATH)/bin/sanho $(CLI_CMD)
+	$(GO) install $(LDFLAGS) $(CLI_CMD)
 
 cli-test-prepare: cli-build
 	$(GO) fmt ./internal/interface/cli/...
@@ -96,7 +100,12 @@ docs-check:
 		exit 1; \
 	fi
 
-test-all: docs-check daemon-test cli-test
+install: daemon-install cli-install
+
+install-test:
+	$(GO) test ./test/install -count=1
+
+test-all: docs-check install-test daemon-test cli-test
 
 # Compatibility aliases for the previous target names.
 build-daemon-binary: daemon-build

@@ -12,7 +12,7 @@
 
 ## Build, Test, and Development Commands
 - Require Go 1.25+. Local daemon: `go run ./cmd/sanhod` (override `SANHO_HOME`, `SANHO_SOCKET`).
-- CLI build/install: `make cli-build` → `bin/sanho`; `make cli-install` to `$GOPATH/bin`.
+- Build/install: `make daemon-build` → `bin/sanhod`, `make cli-build` → `bin/sanho`; `make install` installs both to Go's binary directory.
 - Server checks: `make daemon-test-prepare` (generate+fmt+vet), `make daemon-test-unit`, `make daemon-test-integration`, `make daemon-test-e2e` (isolated daemon by default; set `E2E_SOCKET` for an explicit server), or `make daemon-test` for all.
 - CLI checks: `make cli-test-prepare`, `make cli-test-unit`, `make cli-test-integration` (sets `SANHO_CLI_BINARY`), `make cli-test-e2e` (`SANHO_E2E_SOCKET`), or `make cli-test`.
 - Local daemon loop: `make daemon-run` builds and runs `bin/sanhod`.

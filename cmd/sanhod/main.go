@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/irootkernel/sanho/internal/buildinfo"
 	"github.com/irootkernel/sanho/internal/config"
 	"github.com/irootkernel/sanho/internal/infra/git"
 	"github.com/irootkernel/sanho/internal/infra/state"
@@ -23,17 +25,25 @@ import (
 	"github.com/irootkernel/sanho/internal/usecase/workspace"
 )
 
+var version = "dev"
+
 func main() {
-	if err := run(os.Args[1:]); err != nil {
+	if err := run(os.Args[1:], os.Stdout); err != nil {
 		log.Fatal(err)
 	}
 }
 
-func run(args []string) error {
+func run(args []string, stdout io.Writer) error {
 	flags := flag.NewFlagSet("sanhod", flag.ContinueOnError)
+	flags.SetOutput(stdout)
 	homeDir := flags.String("home", os.Getenv("SANHO_HOME"), "Sanho runtime home directory")
 	socketPath := flags.String("socket", os.Getenv("SANHO_SOCKET"), "Unix socket path")
+	showVersion := flags.Bool("version", false, "Print sanhod version")
 	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if *showVersion {
+		_, err := fmt.Fprintf(stdout, "sanhod version %s\n", buildinfo.ResolveVersion(version))
 		return err
 	}
 

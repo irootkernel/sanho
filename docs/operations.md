@@ -8,6 +8,16 @@ make cli-build
 make daemon-run
 ```
 
+로컬 checkout에서 두 실행 파일을 Go 설치 경로에 넣으려면 `make install`을
+사용한다. 공개 release는 다음처럼 저장소에서 직접 설치한다.
+
+```bash
+go install github.com/irootkernel/sanho/cmd/sanho@v0.1.0
+go install github.com/irootkernel/sanho/cmd/sanhod@v0.1.0
+sanho version
+sanhod --version
+```
+
 개발 중에는 `make daemon-run-dev`로 `go run`을 사용할 수 있다. daemon은
 별도의 frontend build나 hot-reload 도구를 요구하지 않는다.
 
@@ -126,6 +136,7 @@ make cli-test-prepare
 make cli-test-unit
 make cli-test-integration
 make cli-test-e2e
+make install-test
 ```
 
 server와 CLI E2E는 기본적으로 임시 home과 Unix socket을 사용하는 독립

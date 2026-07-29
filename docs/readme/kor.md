@@ -13,8 +13,20 @@ Web UI, 브라우저 터미널, PTY, 세션 실행 기능은 제공하지 않는
 
 ## 빠른 시작
 
-필수 환경은 Go 1.25 이상과 Git이다. docs 저장소를 읽고 쓸 수 있는 SSH
-인증도 준비해야 한다. Node.js와 npm은 필요하지 않다.
+지원 운영체제는 macOS와 Linux다. 필수 환경은 Go 1.25 이상과 Git이며,
+docs 저장소를 읽고 쓸 수 있는 SSH 인증도 준비해야 한다. Node.js와 npm은
+필요하지 않다.
+
+release 바이너리는 Go module에서 직접 설치할 수 있다.
+
+```bash
+go install github.com/irootkernel/sanho/cmd/sanho@v0.1.0
+go install github.com/irootkernel/sanho/cmd/sanhod@v0.1.0
+```
+
+설치 위치는 `GOBIN`, 설정하지 않았다면 `$(go env GOPATH)/bin`이다.
+이 디렉터리를 `PATH`에 포함해야 한다. 설치 확인은 `sanho version`과
+`sanhod --version`으로 한다.
 
 ```bash
 make daemon-build

@@ -25,6 +25,7 @@ clone to origin so an unpushed local commit cannot become a false HEAD.
 
 - Go 1.25 or later
 - Git
+- macOS or Linux
 - SSH credentials that can read and write the configured docs repositories
 
 Node.js and npm are not required.
@@ -36,6 +37,17 @@ make daemon-build
 make cli-build
 make daemon-run
 ```
+
+Install both commands directly from the module:
+
+```bash
+go install github.com/irootkernel/sanho/cmd/sanho@v0.1.0
+go install github.com/irootkernel/sanho/cmd/sanhod@v0.1.0
+```
+
+The commands are written to `GOBIN`, or to `$(go env GOPATH)/bin` when
+`GOBIN` is unset. Ensure that directory is on `PATH`. `sanho version` and
+`sanhod --version` report the installed module version.
 
 The daemon runs in the foreground and listens only on the Unix socket
 `~/.sanho/sanhod.sock`. It stores state in `~/.sanho/state.json` and managed
@@ -54,10 +66,10 @@ make daemon-run-dev
 
 ## Initialize a workspace
 
-Install the CLI:
+For a checkout-local installation, use:
 
 ```bash
-make cli-install
+make install
 ```
 
 Then run this in an application Git repository:
