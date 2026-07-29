@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/SeventeenthEarth/kkachi/internal/domain/docs"
+	"github.com/irootkernel/sanho/internal/domain/docs"
 )
 
 // Error types for docs hash operations.

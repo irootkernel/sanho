@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/SeventeenthEarth/kkachi/internal/domain/client"
-	"github.com/SeventeenthEarth/kkachi/internal/domain/docs"
+	"github.com/irootkernel/sanho/internal/domain/client"
+	"github.com/irootkernel/sanho/internal/domain/docs"
 )
 
 // Fix-specific errors.
@@ -50,7 +50,7 @@ type FixSnapshotBuilder interface {
 	Build(sourceDir string) ([]byte, error)
 }
 
-// FixHTTPClient communicates with kkachi-server.
+// FixHTTPClient communicates with sanhod.
 type FixHTTPClient interface {
 	DocsHead(ctx context.Context, project docs.ProjectName) (docs.CommitHash, error)
 	DocsPush(ctx context.Context, req DocsPushRequest) (DocsPushResponse, error)
@@ -68,7 +68,7 @@ type FixOutput interface {
 	Error(msg string)
 }
 
-// FixUseCase handles the kkachi fix logic.
+// FixUseCase handles the sanho fix logic.
 type FixUseCase struct {
 	configLoader     FixConfigLoader
 	docsHashStore    FixDocsHashStore
@@ -103,7 +103,7 @@ func NewFixUseCase(
 	}
 }
 
-// Execute runs the kkachi fix logic.
+// Execute runs the sanho fix logic.
 func (u *FixUseCase) Execute(ctx context.Context, workDir string) error {
 	// Step 1: Load configuration
 	config, err := u.configLoader.Load(workDir)
@@ -127,7 +127,7 @@ func (u *FixUseCase) Execute(ctx context.Context, workDir string) error {
 	}
 	if !hasPendingFix {
 		u.output.Error("No pending fix state found (.kkachi_pending_fix does not exist).")
-		u.output.Error("kkachi-cli fix should only be run after a pre-commit merge creates pending state.")
+		u.output.Error("sanho fix should only be run after a pre-commit merge creates pending state.")
 		return ErrNoPendingFix
 	}
 
@@ -142,7 +142,7 @@ func (u *FixUseCase) Execute(ctx context.Context, workDir string) error {
 		for _, f := range conflictFiles {
 			u.output.Error(fmt.Sprintf("  - %s", f))
 		}
-		u.output.Error("Please resolve all conflicts before running 'kkachi-cli fix'.")
+		u.output.Error("Please resolve all conflicts before running 'sanho fix'.")
 		return ErrConflictMarkerFound
 	}
 
@@ -216,12 +216,12 @@ func (u *FixUseCase) Execute(ctx context.Context, workDir string) error {
 		if errors.Is(err, ErrUnknownDocsCommit) {
 			u.output.Error("The docs repo history has been rewritten.")
 			u.output.Error("Cannot automatically recover from pending fix state.")
-			u.output.Error("Please manually sync docs and run 'kkachi-cli init' again.")
+			u.output.Error("Please manually sync docs and run 'sanho init' again.")
 			return ErrUnknownDocsCommit
 		}
 		if errors.Is(err, ErrDocsRepoBusy) {
 			u.output.Error("Another workspace is currently updating docs.")
-			u.output.Error("Please try 'kkachi-cli fix' again in a few moments.")
+			u.output.Error("Please try 'sanho fix' again in a few moments.")
 			return ErrDocsRepoBusy
 		}
 		return fmt.Errorf("failed to push docs: %w", err)
@@ -232,7 +232,7 @@ func (u *FixUseCase) Execute(ctx context.Context, workDir string) error {
 		if resp.Error == "unknown_docs_commit" {
 			u.output.Error("The docs repo history has been rewritten.")
 			u.output.Error("Cannot automatically recover from pending fix state.")
-			u.output.Error("Please manually sync docs and run 'kkachi-cli init' again.")
+			u.output.Error("Please manually sync docs and run 'sanho init' again.")
 			return ErrUnknownDocsCommit
 		}
 		if resp.Error == "docs_repo_busy" {

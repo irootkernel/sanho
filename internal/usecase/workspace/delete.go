@@ -4,7 +4,7 @@ import (
 	"errors"
 	"os"
 
-	"github.com/SeventeenthEarth/kkachi/internal/infra/state"
+	"github.com/irootkernel/sanho/internal/infra/state"
 )
 
 var ErrUnknownWorkspace = errors.New("unknown_workspace")

@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// TestE2EStateCommand verifies kkachi state command against running server.
+// TestE2EStateCommand verifies sanho state command against running server.
 func TestE2EStateCommand(t *testing.T) {
 	cliBinary := getCliBinary(t)
 	serverURL := getServerURL(t)
@@ -45,7 +45,7 @@ func TestE2EStateCommand(t *testing.T) {
 	}
 }
 
-// TestE2EStateAllCommand verifies kkachi state --all command against running server.
+// TestE2EStateAllCommand verifies sanho state --all command against running server.
 func TestE2EStateAllCommand(t *testing.T) {
 	cliBinary := getCliBinary(t)
 	serverURL := getServerURL(t)
@@ -226,7 +226,7 @@ func TestE2EFixNoPendingFix(t *testing.T) {
 	}
 }
 
-// setupE2EWorkspace creates a minimal kkachi workspace for E2E testing.
+// setupE2EWorkspace creates a minimal sanho workspace for E2E testing.
 func setupE2EWorkspace(t *testing.T, tempDir, serverURL, project string) {
 	t.Helper()
 

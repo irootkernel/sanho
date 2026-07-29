@@ -5,8 +5,8 @@ import (
 	"errors"
 	"net/http"
 
-	domain "github.com/SeventeenthEarth/kkachi/internal/domain/docs"
-	usecase "github.com/SeventeenthEarth/kkachi/internal/usecase/docs"
+	domain "github.com/irootkernel/sanho/internal/domain/docs"
+	usecase "github.com/irootkernel/sanho/internal/usecase/docs"
 )
 
 type DocsHeadHandler struct {

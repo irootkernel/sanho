@@ -540,7 +540,7 @@ func TestStateAllWithServerURLOutsideWorkspace(t *testing.T) {
 	}))
 	defer server.Close()
 
-	// Use temp dir WITHOUT any kkachi config (not a workspace)
+	// Use temp dir WITHOUT any sanho config (not a workspace)
 	tempDir := t.TempDir()
 	// Don't call setupKkachiConfig - intentionally no .kkachi.json
 
@@ -568,7 +568,7 @@ func TestStateAllWithServerURLOutsideWorkspace(t *testing.T) {
 func TestStateAllWithoutServerURLOutsideWorkspace(t *testing.T) {
 	cliBinary := getCliBinary(t)
 
-	// Use temp dir WITHOUT any kkachi config (not a workspace)
+	// Use temp dir WITHOUT any sanho config (not a workspace)
 	tempDir := t.TempDir()
 
 	// Run state --all without --server-url

@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-// GitignoreManager ensures .gitignore contains required kkachi entries.
+// GitignoreManager ensures .gitignore contains required sanho entries.
 type GitignoreManager struct{}
 
 // NewGitignoreManager creates a new GitignoreManager.
@@ -17,7 +17,7 @@ func NewGitignoreManager() *GitignoreManager {
 }
 
 // EnsureEntries adds the given entries to .gitignore in dir if they are missing.
-// A header line (e.g., "# Kkachi") is added before the entries when provided
+// A header line (e.g., "# Sanho") is added before the entries when provided
 // and not already present. Existing contents are preserved, and duplicate lines
 // are avoided.
 func (g *GitignoreManager) EnsureEntries(dir string, header string, entries []string) error {
@@ -46,7 +46,7 @@ func (g *GitignoreManager) EnsureEntries(dir string, header string, entries []st
 	}
 
 	// Separate from existing content unless the last line is already part of
-	// the kkachi block.
+	// the sanho block.
 	if len(lines) > 0 {
 		last := lines[len(lines)-1]
 		if last != "" {

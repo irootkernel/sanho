@@ -7,7 +7,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/SeventeenthEarth/kkachi/internal/domain/docs"
+	"github.com/irootkernel/sanho/internal/domain/docs"
 )
 
 // Error types for pending fix operations.

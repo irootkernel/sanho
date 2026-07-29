@@ -8,9 +8,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/SeventeenthEarth/kkachi/internal/infra/fs"
-	"github.com/SeventeenthEarth/kkachi/internal/infra/git"
-	"github.com/SeventeenthEarth/kkachi/internal/infra/httpclient"
+	"github.com/irootkernel/sanho/internal/infra/fs"
+	"github.com/irootkernel/sanho/internal/infra/git"
+	"github.com/irootkernel/sanho/internal/infra/httpclient"
 )
 
 // newCleanCmd creates the clean command.
@@ -24,7 +24,7 @@ func newCleanCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "clean",
-		Short: "Remove kkachi configuration and unlink workspace",
+		Short: "Remove sanho configuration and unlink workspace",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cwd, err := getWorkingDirectory()
 			if err != nil {
@@ -42,14 +42,14 @@ func newCleanCmd() *cobra.Command {
 				return fmt.Errorf("failed to check pull-commit state: %w", err)
 			}
 			if hasPullCommit {
-				return errors.New("cannot clean an incomplete pull-commit transaction; use 'kkachi-cli pull-commit --continue' or '--abort' first")
+				return errors.New("cannot clean an incomplete pull-commit transaction; use 'sanho pull-commit --continue' or '--abort' first")
 			}
 			hasPulledDocs, err := hasPulledDocsBaseline(cmd.Context(), cwd)
 			if err != nil {
 				return fmt.Errorf("failed to check pulled docs baseline: %w", err)
 			}
 			if hasPulledDocs {
-				return errors.New("cannot clean while pulled docs await a base commit; run 'kkachi-cli pull-commit' first")
+				return errors.New("cannot clean while pulled docs await a base commit; run 'sanho pull-commit' first")
 			}
 			hasPendingReport, err := hasPendingWorkspaceReport(cmd.Context(), cwd)
 			if err != nil {
@@ -64,7 +64,7 @@ func newCleanCmd() *cobra.Command {
 			pendingFixPath := filepath.Join(cwd, config.PendingFixFile)
 			docsPath := filepath.Join(cwd, config.DocsDir)
 
-			cmd.Printf("kkachi clean target:\n")
+			cmd.Printf("sanho clean target:\n")
 			cmd.Printf("  server    : %s\n", config.ServerURL)
 			cmd.Printf("  project   : %s\n", config.Project)
 			cmd.Printf("  workspace : %s\n", config.WorkspaceID)
@@ -94,15 +94,15 @@ func newCleanCmd() *cobra.Command {
 				client := httpclient.NewHTTPClient(config.ServerURL)
 				if err := client.DeleteWorkspace(ctx, config.WorkspaceID); err != nil {
 					if errors.Is(err, httpclient.ErrUnknownWorkspace) {
-						cmd.Println("kkachi: workspace already removed on server (unknown_workspace). Continuing...")
+						cmd.Println("sanho: workspace already removed on server (unknown_workspace). Continuing...")
 					} else {
 						return fmt.Errorf("failed to delete workspace on server: %w", err)
 					}
 				} else {
-					cmd.Println("kkachi: workspace removed from server.")
+					cmd.Println("sanho: workspace removed from server.")
 				}
 			} else if offline && !dryRun {
-				cmd.Println("kkachi: offline mode - skipping server workspace deletion.")
+				cmd.Println("sanho: offline mode - skipping server workspace deletion.")
 			}
 
 			removePath := func(p string, allowMissing bool) error {
@@ -112,7 +112,7 @@ func newCleanCmd() *cobra.Command {
 				}
 				if err := os.Remove(p); err != nil {
 					if os.IsNotExist(err) && allowMissing {
-						cmd.Printf("kkachi: %s not found, skipping.\n", p)
+						cmd.Printf("sanho: %s not found, skipping.\n", p)
 						return nil
 					}
 					return fmt.Errorf("failed to remove %s: %w", p, err)
@@ -138,17 +138,17 @@ func newCleanCmd() *cobra.Command {
 				}
 			}
 
-			// Clean kkachi hook lines
+			// Clean sanho hook lines
 			if !dryRun {
 				cleaner := git.NewHookInstaller()
 				hookLines := map[string]string{
-					"pre-commit":    "kkachi-cli hook pre-commit",
-					"post-checkout": "kkachi-cli hook post-checkout",
-					"post-merge":    "kkachi-cli hook post-merge",
-					"post-rewrite":  "kkachi-cli hook post-rewrite \"$@\"",
-					"pre-push":      "kkachi-cli hook pre-push",
-					"commit-msg":    "kkachi-cli hook commit-msg \"$1\"",
-					"post-commit":   "kkachi-cli hook post-commit",
+					"pre-commit":    "sanho hook pre-commit",
+					"post-checkout": "sanho hook post-checkout",
+					"post-merge":    "sanho hook post-merge",
+					"post-rewrite":  "sanho hook post-rewrite \"$@\"",
+					"pre-push":      "sanho hook pre-push",
+					"commit-msg":    "sanho hook commit-msg \"$1\"",
+					"post-commit":   "sanho hook post-commit",
 				}
 				for hookName, line := range hookLines {
 					if err := cleaner.RemoveHookLine(cmd.Context(), cwd, hookName, line); err != nil {
@@ -159,7 +159,7 @@ func newCleanCmd() *cobra.Command {
 				cmd.Println("dry-run: skipping hook cleanup")
 			}
 
-			cmd.Println("kkachi: clean completed.")
+			cmd.Println("sanho: clean completed.")
 			return nil
 		},
 	}

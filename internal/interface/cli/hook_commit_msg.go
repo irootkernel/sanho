@@ -8,9 +8,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/SeventeenthEarth/kkachi/internal/infra/fs"
-	infraGit "github.com/SeventeenthEarth/kkachi/internal/infra/git"
-	"github.com/SeventeenthEarth/kkachi/internal/usecase/hook"
+	"github.com/irootkernel/sanho/internal/infra/fs"
+	infraGit "github.com/irootkernel/sanho/internal/infra/git"
+	"github.com/irootkernel/sanho/internal/usecase/hook"
 )
 
 // commitMsgTimeout is the timeout for commit-msg operations.
@@ -20,7 +20,7 @@ const commitMsgTimeout = 10 * time.Second
 func runCommitMsgHook(cmd *cobra.Command, args []string) error {
 	// Git passes the message file path as the first argument
 	if len(args) == 0 {
-		cmd.PrintErrln("kkachi-cli hook commit-msg: message file path not provided")
+		cmd.PrintErrln("sanho hook commit-msg: message file path not provided")
 		return nil // Don't block commit
 	}
 	msgFilePath := args[0]
@@ -31,7 +31,7 @@ func runCommitMsgHook(cmd *cobra.Command, args []string) error {
 	// Get current working directory
 	cwd, err := os.Getwd()
 	if err != nil {
-		cmd.PrintErrf("kkachi-cli hook commit-msg: failed to get current directory: %v\n", err)
+		cmd.PrintErrf("sanho hook commit-msg: failed to get current directory: %v\n", err)
 		return nil // Don't block commit
 	}
 
@@ -66,12 +66,12 @@ func newCLICommitMsgOutput(cmd *cobra.Command) *cliCommitMsgOutput {
 }
 
 func (o *cliCommitMsgOutput) Info(msg string) {
-	fmt.Fprintf(o.cmd.OutOrStdout(), "kkachi: %s\n", msg)
+	fmt.Fprintf(o.cmd.OutOrStdout(), "sanho: %s\n", msg)
 }
 
 func (o *cliCommitMsgOutput) Warning(msg string) {
 	// Print warnings to stderr but don't block
-	o.cmd.PrintErrf("kkachi: %s\n", msg)
+	o.cmd.PrintErrf("sanho: %s\n", msg)
 }
 
 // commitMsgGitClientAdapter adapts git.Client to hook.CommitMsgGitClient interface.

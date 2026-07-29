@@ -153,16 +153,16 @@ func (h *HookInstaller) resolveHooksDirViaGit(ctx context.Context, repoPath stri
 	return hooksPath, nil
 }
 
-// InstallAllHooks installs all kkachi Git hooks.
+// InstallAllHooks installs all sanho Git hooks.
 func (h *HookInstaller) InstallAllHooks(ctx context.Context, repoPath string) error {
 	hooks := map[string]string{
-		"pre-commit":    "kkachi-cli hook pre-commit",
-		"post-checkout": "kkachi-cli hook post-checkout",
-		"post-merge":    "kkachi-cli hook post-merge",
-		"post-rewrite":  "kkachi-cli hook post-rewrite \"$@\"",
-		"pre-push":      "kkachi-cli hook pre-push",
-		"commit-msg":    "kkachi-cli hook commit-msg \"$1\"",
-		"post-commit":   "kkachi-cli hook post-commit",
+		"pre-commit":    "sanho hook pre-commit",
+		"post-checkout": "sanho hook post-checkout",
+		"post-merge":    "sanho hook post-merge",
+		"post-rewrite":  "sanho hook post-rewrite \"$@\"",
+		"pre-push":      "sanho hook pre-push",
+		"commit-msg":    "sanho hook commit-msg \"$1\"",
+		"post-commit":   "sanho hook post-commit",
 	}
 
 	for hookName, line := range hooks {
@@ -174,7 +174,7 @@ func (h *HookInstaller) InstallAllHooks(ctx context.Context, repoPath string) er
 	return nil
 }
 
-// RemoveHookLine removes a specific kkachi hook line from the given hook script.
+// RemoveHookLine removes a specific sanho hook line from the given hook script.
 // If the hook file does not exist or the line is not present, it returns nil.
 // If the hook file becomes empty after removal, it deletes the file.
 func (h *HookInstaller) RemoveHookLine(ctx context.Context, repoPath, hookName, line string) error {

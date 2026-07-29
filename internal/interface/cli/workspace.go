@@ -7,18 +7,18 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/SeventeenthEarth/kkachi/internal/domain/docs"
-	"github.com/SeventeenthEarth/kkachi/internal/domain/workspace"
-	"github.com/SeventeenthEarth/kkachi/internal/infra/git"
-	"github.com/SeventeenthEarth/kkachi/internal/infra/httpclient"
+	"github.com/irootkernel/sanho/internal/domain/docs"
+	"github.com/irootkernel/sanho/internal/domain/workspace"
+	"github.com/irootkernel/sanho/internal/infra/git"
+	"github.com/irootkernel/sanho/internal/infra/httpclient"
 )
 
 // newWorkspaceCmd creates the workspace parent command.
 func newWorkspaceCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "workspace",
-		Short: "Manage workspaces on the kkachi-server",
-		Long:  `Commands for managing workspaces registered with the kkachi-server.`,
+		Short: "Manage workspaces on the sanhod",
+		Long:  `Commands for managing workspaces registered with the sanhod.`,
 	}
 
 	cmd.AddCommand(newWorkspaceRegisterCmd())
@@ -37,10 +37,10 @@ func newWorkspaceRegisterCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "register [path]",
-		Short: "Register a workspace with the kkachi-server",
-		Long: `Register a workspace directory with the kkachi-server.
+		Short: "Register a workspace with the sanhod",
+		Long: `Register a workspace directory with the sanhod.
 
-This is an alternative to 'kkachi-cli init' for registering workspaces
+This is an alternative to 'sanho init' for registering workspaces
 without creating local configuration files.
 
 If path is not specified, the current directory is used.`,
@@ -117,12 +117,12 @@ If path is not specified, the current directory is used.`,
 			resp, err := httpClient.RegisterWorkspace(ctx, req)
 			if err != nil {
 				if errors.Is(err, httpclient.ErrUnknownProject) {
-					return fmt.Errorf("project '%s' is not registered on the server. Run 'kkachi-cli project add' first", projectName)
+					return fmt.Errorf("project '%s' is not registered on the server. Run 'sanho project add' first", projectName)
 				}
 				return fmt.Errorf("failed to register workspace: %w", err)
 			}
 
-			fmt.Println("kkachi: workspace registered successfully.")
+			fmt.Println("sanho: workspace registered successfully.")
 			fmt.Printf("  workspace_id     : %s\n", resp.WorkspaceID)
 			fmt.Printf("  current_docs_head: %s\n", resp.CurrentDocsHead)
 
@@ -130,7 +130,7 @@ If path is not specified, the current directory is used.`,
 		},
 	}
 
-	cmd.Flags().StringVar(&serverURL, "server-url", "", "kkachi-server URL (required)")
+	cmd.Flags().StringVar(&serverURL, "server-url", "", "sanhod URL (required)")
 	cmd.Flags().StringVar(&projectName, "project", "", "Project name (required)")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "Skip confirmation prompt")
 
@@ -147,8 +147,8 @@ func newWorkspaceUnregisterCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "unregister",
-		Short: "Remove a workspace registration from the kkachi-server",
-		Long: `Remove a workspace registration from the kkachi-server.
+		Short: "Remove a workspace registration from the sanhod",
+		Long: `Remove a workspace registration from the sanhod.
 
 Note: This does not delete any local files. The local .kkachi.json
 and other configuration files will remain.`,
@@ -187,13 +187,13 @@ and other configuration files will remain.`,
 				return fmt.Errorf("failed to unregister workspace: %w", err)
 			}
 
-			fmt.Printf("kkachi: workspace '%s' unregistered successfully.\n", workspaceID)
+			fmt.Printf("sanho: workspace '%s' unregistered successfully.\n", workspaceID)
 
 			return nil
 		},
 	}
 
-	cmd.Flags().StringVar(&serverURL, "server-url", "", "kkachi-server URL (required)")
+	cmd.Flags().StringVar(&serverURL, "server-url", "", "sanhod URL (required)")
 	cmd.Flags().StringVar(&workspaceID, "workspace-id", "", "Workspace ID to unregister (required)")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "Skip confirmation prompt")
 

@@ -10,11 +10,11 @@ if ! command -v git >/dev/null 2>&1; then
   exit 1
 fi
 
-SERVER_BINARY="$SCRIPT_DIR/bin/server"
-if [ ! -x "$SERVER_BINARY" ]; then
-  echo "Server binary not found or not executable: $SERVER_BINARY" >&2
+DAEMON_BINARY="$SCRIPT_DIR/bin/sanhod"
+if [ ! -x "$DAEMON_BINARY" ]; then
+  echo "Daemon binary not found or not executable: $DAEMON_BINARY" >&2
   exit 1
 fi
 
 cd "$SCRIPT_DIR"
-exec "$SERVER_BINARY"
+exec "$DAEMON_BINARY"

@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/SeventeenthEarth/kkachi/internal/domain/client"
+	"github.com/irootkernel/sanho/internal/domain/client"
 )
 
 // Pre-push specific errors.
@@ -69,7 +69,7 @@ func (u *PrePushUseCase) Execute(ctx context.Context, workDir string) error {
 	config, err := u.configLoader.Load(workDir)
 	if err != nil {
 		u.output.Error(fmt.Sprintf("Failed to load configuration: %v", err))
-		u.output.Error("kkachi configuration is broken or missing (.kkachi.json).")
+		u.output.Error("sanho configuration is broken or missing (.kkachi.json).")
 		return fmt.Errorf("%w: %v", ErrConfigBroken, err)
 	}
 	config.ApplyDefaults()
@@ -101,7 +101,7 @@ func (u *PrePushUseCase) Execute(ctx context.Context, workDir string) error {
 		u.output.Error("Pending fix state detected (.kkachi_pending_fix exists).")
 		u.output.Error("")
 		u.output.Error("This workspace has an incomplete docs merge from a previous commit.")
-		u.output.Error("Please run 'kkachi-cli fix' to complete the merge and sync docs.")
+		u.output.Error("Please run 'sanho fix' to complete the merge and sync docs.")
 		u.output.Error("")
 		u.output.Error("Push is blocked until the pending fix is resolved.")
 		return ErrPrePushPendingFixExists

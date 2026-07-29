@@ -9,13 +9,13 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/SeventeenthEarth/kkachi/internal/domain/docs"
-	"github.com/SeventeenthEarth/kkachi/internal/domain/merge"
-	"github.com/SeventeenthEarth/kkachi/internal/domain/workspace"
-	"github.com/SeventeenthEarth/kkachi/internal/infra/fs"
-	infraGit "github.com/SeventeenthEarth/kkachi/internal/infra/git"
-	"github.com/SeventeenthEarth/kkachi/internal/infra/httpclient"
-	"github.com/SeventeenthEarth/kkachi/internal/usecase/hook"
+	"github.com/irootkernel/sanho/internal/domain/docs"
+	"github.com/irootkernel/sanho/internal/domain/merge"
+	"github.com/irootkernel/sanho/internal/domain/workspace"
+	"github.com/irootkernel/sanho/internal/infra/fs"
+	infraGit "github.com/irootkernel/sanho/internal/infra/git"
+	"github.com/irootkernel/sanho/internal/infra/httpclient"
+	"github.com/irootkernel/sanho/internal/usecase/hook"
 )
 
 // fixTimeout is the timeout for fix operations.
@@ -39,7 +39,7 @@ This command will:
 	}
 }
 
-// runFixCommand executes the kkachi fix logic.
+// runFixCommand executes the sanho fix logic.
 func runFixCommand(cmd *cobra.Command) error {
 	ctx, cancel := context.WithTimeout(context.Background(), fixTimeout)
 	defer cancel()
@@ -47,7 +47,7 @@ func runFixCommand(cmd *cobra.Command) error {
 	// Get current working directory
 	cwd, err := os.Getwd()
 	if err != nil {
-		cmd.PrintErrf("kkachi fix: failed to get current directory: %v\n", err)
+		cmd.PrintErrf("sanho fix: failed to get current directory: %v\n", err)
 		return err
 	}
 
@@ -62,8 +62,8 @@ func runFixCommand(cmd *cobra.Command) error {
 	// Load config first to get server URL
 	config, err := configLoader.Load(cwd)
 	if err != nil {
-		cmd.PrintErrf("kkachi fix: %v\n", err)
-		cmd.PrintErrf("kkachi configuration is broken or missing (.kkachi.json / .kkachi_docs_hash).\n")
+		cmd.PrintErrf("sanho fix: %v\n", err)
+		cmd.PrintErrf("sanho configuration is broken or missing (.kkachi.json / .kkachi_docs_hash).\n")
 		return err
 	}
 
@@ -87,7 +87,7 @@ func runFixCommand(cmd *cobra.Command) error {
 		// Handle specific errors with appropriate messages
 		switch {
 		case errors.Is(err, hook.ErrConfigBroken):
-			cmd.PrintErrf("kkachi: configuration is broken. Please run 'kkachi-cli init' to reinitialize.\n")
+			cmd.PrintErrf("sanho: configuration is broken. Please run 'sanho init' to reinitialize.\n")
 		case errors.Is(err, hook.ErrNoPendingFix):
 			// Message already printed by output
 		case errors.Is(err, hook.ErrConflictMarkerFound):
@@ -101,7 +101,7 @@ func runFixCommand(cmd *cobra.Command) error {
 		case errors.Is(err, hook.ErrActorEmailRequired):
 			// Message already printed by output
 		default:
-			cmd.PrintErrf("kkachi fix: %v\n", err)
+			cmd.PrintErrf("sanho fix: %v\n", err)
 		}
 		return err
 	}
@@ -119,15 +119,15 @@ func newCLIFixOutput(cmd *cobra.Command) *cliFixOutput {
 }
 
 func (o *cliFixOutput) Info(msg string) {
-	fmt.Fprintf(o.cmd.OutOrStdout(), "kkachi: %s\n", msg)
+	fmt.Fprintf(o.cmd.OutOrStdout(), "sanho: %s\n", msg)
 }
 
 func (o *cliFixOutput) Warning(msg string) {
-	fmt.Fprintf(o.cmd.OutOrStdout(), "kkachi: %s\n", msg)
+	fmt.Fprintf(o.cmd.OutOrStdout(), "sanho: %s\n", msg)
 }
 
 func (o *cliFixOutput) Error(msg string) {
-	o.cmd.PrintErrf("kkachi: %s\n", msg)
+	o.cmd.PrintErrf("sanho: %s\n", msg)
 }
 
 // fixPendingFixStoreAdapter adapts fs.FilePendingFixStore to hook.FixPendingFixStore interface.

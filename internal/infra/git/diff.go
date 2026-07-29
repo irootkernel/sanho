@@ -81,7 +81,7 @@ func (c *Client) hasDocsStagedForInitialCommit(ctx context.Context, repoPath, do
 }
 
 // HasLocalDocsChanges checks if there are any uncommitted changes (staged, unstaged, or untracked) in the docs directory.
-// This is used by kkachi pull to detect local modifications and prevent data loss.
+// This is used by sanho pull to detect local modifications and prevent data loss.
 func (c *Client) HasLocalDocsChanges(ctx context.Context, repoPath, docsDir string) (bool, error) {
 	// Check for unstaged changes: git diff --quiet <docsDir>
 	cmdUnstaged := exec.CommandContext(ctx, "git", "-C", repoPath, "diff", "--quiet", "--", docsDir)

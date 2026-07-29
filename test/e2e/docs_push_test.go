@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/SeventeenthEarth/kkachi/internal/interface/http/dto"
+	"github.com/irootkernel/sanho/internal/interface/http/dto"
 )
 
 // TestE2E_DocsPush tests the full /docs/push flow with a running server

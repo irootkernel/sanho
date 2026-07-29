@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/SeventeenthEarth/kkachi/internal/interface/http/dto"
-	"github.com/SeventeenthEarth/kkachi/internal/usecase/state"
+	"github.com/irootkernel/sanho/internal/interface/http/dto"
+	"github.com/irootkernel/sanho/internal/usecase/state"
 )
 
 // StateHandler handles GET /state requests.

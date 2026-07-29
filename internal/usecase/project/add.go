@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/SeventeenthEarth/kkachi/internal/config"
+	"github.com/irootkernel/sanho/internal/config"
 )
 
 type AddProjectUseCase struct {

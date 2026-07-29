@@ -5,9 +5,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/SeventeenthEarth/kkachi/internal/domain/docs"
-	"github.com/SeventeenthEarth/kkachi/internal/domain/workspace"
-	uc "github.com/SeventeenthEarth/kkachi/internal/usecase/docs"
+	"github.com/irootkernel/sanho/internal/domain/docs"
+	"github.com/irootkernel/sanho/internal/domain/workspace"
+	uc "github.com/irootkernel/sanho/internal/usecase/docs"
 )
 
 // Mock implementations

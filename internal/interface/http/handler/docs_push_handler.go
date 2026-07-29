@@ -8,9 +8,9 @@ import (
 	"net/http"
 	"net/mail"
 
-	domain "github.com/SeventeenthEarth/kkachi/internal/domain/docs"
-	"github.com/SeventeenthEarth/kkachi/internal/interface/http/dto"
-	usecase "github.com/SeventeenthEarth/kkachi/internal/usecase/docs"
+	domain "github.com/irootkernel/sanho/internal/domain/docs"
+	"github.com/irootkernel/sanho/internal/interface/http/dto"
+	usecase "github.com/irootkernel/sanho/internal/usecase/docs"
 )
 
 type DocsPushHandler struct {

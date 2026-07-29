@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/SeventeenthEarth/kkachi/internal/domain/client"
+	"github.com/irootkernel/sanho/internal/domain/client"
 )
 
 func TestFileConfigLoader_Load(t *testing.T) {

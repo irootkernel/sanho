@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/SeventeenthEarth/kkachi/internal/domain/docs"
+	"github.com/irootkernel/sanho/internal/domain/docs"
 )
 
 func TestFileDocsHashStore_ReadWrite(t *testing.T) {

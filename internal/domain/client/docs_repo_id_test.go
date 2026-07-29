@@ -3,7 +3,7 @@ package client
 import (
 	"testing"
 
-	"github.com/SeventeenthEarth/kkachi/internal/domain/docs"
+	"github.com/irootkernel/sanho/internal/domain/docs"
 )
 
 func TestExtractDocsRepoID(t *testing.T) {

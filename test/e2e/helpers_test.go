@@ -21,8 +21,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/SeventeenthEarth/kkachi/internal/interface/http/dto"
-	testutil "github.com/SeventeenthEarth/kkachi/test/util"
+	"github.com/irootkernel/sanho/internal/interface/http/dto"
+	testutil "github.com/irootkernel/sanho/test/util"
 )
 
 // configuredBaseURL returns an explicitly configured E2E server. With no
@@ -52,7 +52,7 @@ func requireServer(t *testing.T, ctx context.Context) string {
 			t.Fatalf("invalid KKACHI_E2E_BASE_URL %q: %v", base, err)
 		}
 		if !isLocalHost(baseURL.Hostname()) {
-			t.Skipf("Skipping E2E: kkachi-server not reachable at %s (%v)", base, healthErr)
+			t.Skipf("Skipping E2E: sanhod not reachable at %s (%v)", base, healthErr)
 		}
 	} else {
 		listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -75,11 +75,11 @@ func requireServer(t *testing.T, ctx context.Context) string {
 	statePath := filepath.Join(testDir, "kkachi_state.json")
 	serverBinary := strings.TrimSpace(os.Getenv("KKACHI_SERVER_BINARY"))
 	if serverBinary == "" {
-		serverBinary = filepath.Join(testDir, "kkachi-server")
-		build := exec.Command("go", "build", "-o", serverBinary, "./cmd/server")
+		serverBinary = filepath.Join(testDir, "sanhod")
+		build := exec.Command("go", "build", "-o", serverBinary, "./cmd/sanhod")
 		build.Dir = repoRoot(t)
 		if output, buildErr := build.CombinedOutput(); buildErr != nil {
-			t.Fatalf("build kkachi-server for E2E: %v\noutput:\n%s", buildErr, output)
+			t.Fatalf("build sanhod for E2E: %v\noutput:\n%s", buildErr, output)
 		}
 	}
 
@@ -107,13 +107,13 @@ func requireServer(t *testing.T, ctx context.Context) string {
 
 	if err := cmd.Start(); err != nil {
 		stopServer()
-		t.Fatalf("failed to start kkachi-server locally: %v\nserver logs:\n%s", err, logs.String())
+		t.Fatalf("failed to start sanhod locally: %v\nserver logs:\n%s", err, logs.String())
 	}
 	t.Cleanup(stopServer)
 
 	if err := testutil.WaitForHealth(ctx, base+"/healthz"); err != nil {
 		stopServer()
-		t.Fatalf("kkachi-server not healthy at %s after bootstrap: %v\nserver logs:\n%s", base, err, logs.String())
+		t.Fatalf("sanhod not healthy at %s after bootstrap: %v\nserver logs:\n%s", base, err, logs.String())
 	}
 
 	return base
@@ -172,8 +172,8 @@ func repoRoot(t *testing.T) string {
 	return abs
 }
 
-// getCliBinaryE2E returns a kkachi binary path for e2e CLI runs.
-// It prefers KKACHI_CLI_BINARY, then repo-root bin/kkachi, otherwise builds a temp binary.
+// getCliBinaryE2E returns a sanho binary path for e2e CLI runs.
+// It prefers KKACHI_CLI_BINARY, then repo-root bin/sanho, otherwise builds a temp binary.
 func getCliBinaryE2E(t *testing.T) string {
 	t.Helper()
 
@@ -187,7 +187,7 @@ func getCliBinaryE2E(t *testing.T) string {
 
 	// Existing bin under repo root
 	candidates := []string{
-		filepath.Join(repoRoot(t), "bin", "kkachi"),
+		filepath.Join(repoRoot(t), "bin", "sanho"),
 	}
 	for _, c := range candidates {
 		if _, err := os.Stat(c); err == nil {
@@ -197,11 +197,11 @@ func getCliBinaryE2E(t *testing.T) string {
 
 	// Build temp binary
 	tmpDir := t.TempDir()
-	binPath := filepath.Join(tmpDir, "kkachi")
-	cmd := exec.Command("go", "build", "-o", binPath, "./cmd/kkachi")
+	binPath := filepath.Join(tmpDir, "sanho")
+	cmd := exec.Command("go", "build", "-o", binPath, "./cmd/sanho")
 	cmd.Dir = repoRoot(t)
 	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("failed to build kkachi binary: %v\noutput:\n%s", err, string(out))
+		t.Fatalf("failed to build sanho binary: %v\noutput:\n%s", err, string(out))
 	}
 	return binPath
 }
@@ -327,7 +327,7 @@ func createOriginRepo(t *testing.T, files map[string]string) (string, string) {
 	return originPath, head
 }
 
-// sharedRepoTempDir returns a temp directory intended to be visible to kkachi-server
+// sharedRepoTempDir returns a temp directory intended to be visible to sanhod
 // even when it's running inside a container. Our docker dev setup mounts /tmp by default.
 func sharedRepoTempDir(t *testing.T) string {
 	t.Helper()

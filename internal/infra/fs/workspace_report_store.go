@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/SeventeenthEarth/kkachi/internal/domain/docs"
-	"github.com/SeventeenthEarth/kkachi/internal/domain/workspace"
+	"github.com/irootkernel/sanho/internal/domain/docs"
+	"github.com/irootkernel/sanho/internal/domain/workspace"
 )
 
 const WorkspaceReportFallbackFile = ".kkachi_workspace_report"

@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/SeventeenthEarth/kkachi/internal/domain/docs"
+	"github.com/irootkernel/sanho/internal/domain/docs"
 )
 
 // RepoCoordinator serializes every operation that can read or mutate a docs

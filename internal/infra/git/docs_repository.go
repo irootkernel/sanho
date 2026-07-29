@@ -13,9 +13,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/SeventeenthEarth/kkachi/internal/config"
-	"github.com/SeventeenthEarth/kkachi/internal/domain/docs"
-	"github.com/SeventeenthEarth/kkachi/internal/infra/state"
+	"github.com/irootkernel/sanho/internal/config"
+	"github.com/irootkernel/sanho/internal/domain/docs"
+	"github.com/irootkernel/sanho/internal/infra/state"
 )
 
 var ErrRepoConfigMissing = errors.New("repo_config_missing")

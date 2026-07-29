@@ -9,10 +9,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/SeventeenthEarth/kkachi/internal/config"
-	"github.com/SeventeenthEarth/kkachi/internal/domain/docs"
-	"github.com/SeventeenthEarth/kkachi/internal/infra/git"
-	"github.com/SeventeenthEarth/kkachi/internal/infra/state"
+	"github.com/irootkernel/sanho/internal/config"
+	"github.com/irootkernel/sanho/internal/domain/docs"
+	"github.com/irootkernel/sanho/internal/infra/git"
+	"github.com/irootkernel/sanho/internal/infra/state"
 )
 
 func TestGitDocsRepository_GetHead(t *testing.T) {

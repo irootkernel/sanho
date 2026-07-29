@@ -17,8 +17,8 @@ func TestRootCommand(t *testing.T) {
 	cmd := NewRootCmd(info)
 
 	// Test that root command exists and has expected properties
-	if cmd.Use != "kkachi-cli" {
-		t.Errorf("Expected root command Use to be 'kkachi-cli', got '%s'", cmd.Use)
+	if cmd.Use != "sanho" {
+		t.Errorf("Expected root command Use to be 'sanho', got '%s'", cmd.Use)
 	}
 
 	// Test that --verbose flag is registered
@@ -103,8 +103,8 @@ func TestHelpOutput(t *testing.T) {
 	}
 
 	output := buf.String()
-	if !strings.Contains(output, "kkachi") {
-		t.Errorf("Expected help output to contain 'kkachi', got: %s", output)
+	if !strings.Contains(output, "sanho") {
+		t.Errorf("Expected help output to contain 'sanho', got: %s", output)
 	}
 	if !strings.Contains(output, "Available Commands") {
 		t.Errorf("Expected help output to contain 'Available Commands', got: %s", output)

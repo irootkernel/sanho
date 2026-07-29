@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/SeventeenthEarth/kkachi/internal/infra/fs"
+	"github.com/irootkernel/sanho/internal/infra/fs"
 )
 
 func TestCreateMainBasedDocsSyncCommitUpdatesMainAndPreservesDirtyLayers(t *testing.T) {

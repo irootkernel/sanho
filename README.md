@@ -1,11 +1,11 @@
-# Kkachi
+# Sanho
 
-Kkachi keeps the `docs/` directories in application repositories synchronized
+Sanho keeps the `docs/` directories in application repositories synchronized
 with a dedicated canonical docs repository. The product has exactly two
 runtime components:
 
-- `kkachi-server`: a small HTTP daemon that coordinates docs repository access.
-- `kkachi`: a CLI used by developers and Git hooks in application workspaces.
+- `sanhod`: a small HTTP daemon that coordinates docs repository access.
+- `sanho`: a CLI used by developers and Git hooks in application workspaces.
 
 There is no Web UI, browser terminal, PTY, or session runtime.
 
@@ -32,23 +32,23 @@ Node.js and npm are not required.
 ## Build and run
 
 ```bash
-make server-build
+make daemon-build
 make cli-build
-make server-run
+make daemon-run
 ```
 
 The server listens on port `5789` by default and stores runtime state at
 `data/kkachi_state.json`.
 
 ```bash
-PORT=6789 STATE_FILE_PATH=/var/lib/kkachi/state.json make server-run
+PORT=6789 STATE_FILE_PATH=/var/lib/kkachi/state.json make daemon-run
 curl http://127.0.0.1:6789/healthz
 ```
 
 For local development without building first:
 
 ```bash
-make server-run-dev
+make daemon-run-dev
 ```
 
 ## Initialize a workspace
@@ -62,7 +62,7 @@ make cli-install
 Then run this in an application Git repository:
 
 ```bash
-kkachi-cli init \
+sanho init \
   --server-url http://127.0.0.1:5789 \
   --project example \
   --docs-repo-url git@github.com:example/example-docs.git
@@ -71,16 +71,16 @@ kkachi-cli init \
 Useful daily commands:
 
 ```bash
-kkachi-cli status
-kkachi-cli status --json
-kkachi-cli pull
-kkachi-cli pull-commit
-kkachi-cli fix
-kkachi-cli state
-kkachi-cli state --json
+sanho status
+sanho status --json
+sanho pull
+sanho pull-commit
+sanho fix
+sanho state
+sanho state --json
 ```
 
-`kkachi-cli init` installs the Git hooks used to check, merge, and publish docs.
+`sanho init` installs the Git hooks used to check, merge, and publish docs.
 When a commit detects a newer central docs version, the pre-commit hook creates a
 `[KKACHI] Update docs` commit on the latest acceptable `main`, preserves staged
 and unstaged changes, and asks you to rerun the same `git commit` command.
@@ -94,14 +94,14 @@ deletions. `pull-commit` exposes that operation proactively. HEAD-moving hooks
 reconcile `.kkachi_docs_hash` and daemon workspace state after merge, rewrite,
 or branch checkout when the resulting docs tree matches a reachable
 `docs-version` commit.
-Run `kkachi-cli <command> --help` for the complete interface.
+Run `sanho <command> --help` for the complete interface.
 Machine-readable output for query commands is documented in
 [CLI JSON output](docs/cli-json.md).
 
 ## Validation
 
 ```bash
-make server-test
+make daemon-test
 make cli-test
 # or both:
 make test-all

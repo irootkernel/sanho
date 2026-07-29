@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/SeventeenthEarth/kkachi/internal/domain/client"
-	"github.com/SeventeenthEarth/kkachi/internal/domain/docs"
+	"github.com/irootkernel/sanho/internal/domain/client"
+	"github.com/irootkernel/sanho/internal/domain/docs"
 )
 
 // --- Fake implementations for commit-msg testing ---
@@ -73,7 +73,7 @@ func TestCommitMsgUseCase_NoConfig(t *testing.T) {
 		t.Errorf("Expected no error (should not block commit), got: %v", err)
 	}
 	if len(output.warnings) == 0 {
-		t.Error("Expected warning about not being a kkachi workspace")
+		t.Error("Expected warning about not being a sanho workspace")
 	}
 }
 

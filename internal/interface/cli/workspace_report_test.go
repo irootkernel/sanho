@@ -9,7 +9,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/SeventeenthEarth/kkachi/internal/domain/client"
+	"github.com/irootkernel/sanho/internal/domain/client"
 )
 
 func TestWorkspaceReportPersistsFailureAndRetryClearsIt(t *testing.T) {

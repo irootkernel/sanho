@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/SeventeenthEarth/kkachi/internal/domain/client"
-	"github.com/SeventeenthEarth/kkachi/internal/infra/fs"
-	infraGit "github.com/SeventeenthEarth/kkachi/internal/infra/git"
+	"github.com/irootkernel/sanho/internal/domain/client"
+	"github.com/irootkernel/sanho/internal/infra/fs"
+	infraGit "github.com/irootkernel/sanho/internal/infra/git"
 )
 
 func reconcileWorkspaceDocsFromHEAD(
@@ -58,7 +58,7 @@ func reconcileWorkspaceDocsFromHEAD(
 		}
 		if dirty {
 			return false, fmt.Errorf(
-				"HEAD changed while pulled docs were pending and local docs are dirty; run 'kkachi-cli pull-commit' or restore the previous HEAD",
+				"HEAD changed while pulled docs were pending and local docs are dirty; run 'sanho pull-commit' or restore the previous HEAD",
 			)
 		}
 	}

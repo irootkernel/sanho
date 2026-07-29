@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/SeventeenthEarth/kkachi/internal/domain/client"
-	"github.com/SeventeenthEarth/kkachi/internal/domain/workspace"
+	"github.com/irootkernel/sanho/internal/domain/client"
+	"github.com/irootkernel/sanho/internal/domain/workspace"
 )
 
 // --- Fake implementations for testing ---

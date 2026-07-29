@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// TestE2ECLI_InitWorkflow verifies kkachi init happy path against real server.
+// TestE2ECLI_InitWorkflow verifies sanho init happy path against real server.
 func TestE2ECLI_InitWorkflow(t *testing.T) {
 	cliBinary := getCliBinary(t)
 	serverURL := getServerURL(t)
@@ -38,7 +38,7 @@ func TestE2ECLI_InitWorkflow(t *testing.T) {
 	cmd.Dir = workspaceDir
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("kkachi init failed: %v\nOutput:\n%s", err, string(out))
+		t.Fatalf("sanho init failed: %v\nOutput:\n%s", err, string(out))
 	}
 
 	// Config and hash files should exist
@@ -62,7 +62,7 @@ func TestE2ECLI_InitWorkflow(t *testing.T) {
 		t.Fatalf("docs snapshot not applied: %s", string(body))
 	}
 
-	assertGitignoreHasEntries(t, workspaceDir, "# Kkachi", ".kkachi_docs_hash", ".kkachi.json")
+	assertGitignoreHasEntries(t, workspaceDir, "# Sanho", ".kkachi_docs_hash", ".kkachi.json")
 
 	// Cleanup: delete project
 	deleteProjectViaCLI(t, cliBinary, serverURL, project, true)
@@ -107,7 +107,7 @@ func TestE2ECLI_InitForce(t *testing.T) {
 	cmd.Dir = workspaceDir
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("kkachi init --force failed: %v\nOutput:\n%s", err, string(out))
+		t.Fatalf("sanho init --force failed: %v\nOutput:\n%s", err, string(out))
 	}
 
 	// Docs dir should be replaced with snapshot (no junk)
@@ -122,7 +122,7 @@ func TestE2ECLI_InitForce(t *testing.T) {
 		t.Fatalf("docs hash mismatch: got %s want %s", strings.TrimSpace(string(hashBytes)), head)
 	}
 
-	assertGitignoreHasEntries(t, workspaceDir, "# Kkachi", ".kkachi_docs_hash", ".kkachi.json")
+	assertGitignoreHasEntries(t, workspaceDir, "# Sanho", ".kkachi_docs_hash", ".kkachi.json")
 
 	// Cleanup
 	deleteProjectViaCLI(t, cliBinary, serverURL, project, true)

@@ -1,7 +1,7 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-- `cmd/server` hosts the kkachi-server HTTP service; `cmd/kkachi` is the CLI entrypoint.
+- `cmd/sanhod` hosts the sanhod HTTP service; `cmd/sanho` is the CLI entrypoint.
 - Core logic sits in `internal/{config,domain,infra,interface,usecase}`; keep new packages domain-oriented.
 - Docs/roadmaps live in `docs/`; fixture docs repos for tests in `docs_repos/`; runtime artifacts in `data/` and `tmp/` (ignored); builds in `bin/`.
 - Tests: co-locate package unit tests as `*_test.go`; server integration in `test/integration`, server e2e in `test/e2e`; CLI integration/e2e in `test/cli/...`.
@@ -11,15 +11,15 @@
 - Documentation under `docs/` and team communication (including this guide and conversations) should be written in Korean.
 
 ## Build, Test, and Development Commands
-- Require Go 1.25+. Local server: `go run ./cmd/server` (override `PORT`, `STATE_FILE_PATH`).
-- CLI build/install: `make cli-build` → `bin/kkachi`; `make cli-install` to `$GOPATH/bin`.
-- Server checks: `make server-test-prepare` (generate+fmt+vet), `make server-test-unit`, `make server-test-integration`, `make server-test-e2e` (isolated daemon by default; set `E2E_BASE_URL` for an explicit server), or `make server-test` for all.
+- Require Go 1.25+. Local server: `go run ./cmd/sanhod` (override `PORT`, `STATE_FILE_PATH`).
+- CLI build/install: `make cli-build` → `bin/sanho`; `make cli-install` to `$GOPATH/bin`.
+- Server checks: `make daemon-test-prepare` (generate+fmt+vet), `make daemon-test-unit`, `make daemon-test-integration`, `make daemon-test-e2e` (isolated daemon by default; set `E2E_BASE_URL` for an explicit server), or `make daemon-test` for all.
 - CLI checks: `make cli-test-prepare`, `make cli-test-unit`, `make cli-test-integration` (sets `KKACHI_CLI_BINARY`), `make cli-test-e2e` (`KKACHI_E2E_BASE_URL`), or `make cli-test`.
-- Docker dev loop: `make server-run` builds the dev image and runs with Git/SSH mounts.
+- Docker dev loop: `make daemon-run` builds the dev image and runs with Git/SSH mounts.
 
 ## Coding Style & Naming Conventions
 - Use standard Go formatting (`go fmt ./...` is in prep targets); exported names follow Go casing, packages stay lowercase.
-- Keep names explicit about intent and side effects; command wiring in `cmd/kkachi`, HTTP handlers in `internal/interface/http`, domain types in `internal/domain`.
+- Keep names explicit about intent and side effects; command wiring in `cmd/sanho`, HTTP handlers in `internal/interface/http`, domain types in `internal/domain`.
 - Tests use `TestXxx`/`BenchmarkXxx` patterns; table tests for branch-heavy logic are preferred.
 
 ## Testing Guidelines

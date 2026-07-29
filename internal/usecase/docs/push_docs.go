@@ -5,8 +5,8 @@ import (
 	"errors"
 	"log"
 
-	domain "github.com/SeventeenthEarth/kkachi/internal/domain/docs"
-	"github.com/SeventeenthEarth/kkachi/internal/domain/workspace"
+	domain "github.com/irootkernel/sanho/internal/domain/docs"
+	"github.com/irootkernel/sanho/internal/domain/workspace"
 )
 
 // PushDocsUseCase defines the interface for pushing docs changes.

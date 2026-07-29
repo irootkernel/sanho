@@ -5,10 +5,10 @@ PORT ?= 5789
 STATE_FILE_PATH ?= data/kkachi_state.json
 E2E_BASE_URL ?=
 
-SERVER_CMD := ./cmd/server
-SERVER_BINARY := bin/server
-CLI_CMD := ./cmd/kkachi
-CLI_BINARY := bin/kkachi
+DAEMON_CMD := ./cmd/sanhod
+DAEMON_BINARY := bin/sanhod
+CLI_CMD := ./cmd/sanho
+CLI_BINARY := bin/sanho
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
@@ -16,50 +16,50 @@ BUILD_DATE ?= $(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
 LDFLAGS := -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.buildDate=$(BUILD_DATE)"
 
 .PHONY: \
-	server-build server-run server-run-dev \
-	server-test-prepare server-test-unit server-test-integration server-test-e2e server-test \
+	daemon-build daemon-run daemon-run-dev \
+	daemon-test-prepare daemon-test-unit daemon-test-integration daemon-test-e2e daemon-test \
 	cli-build cli-install cli-test-prepare cli-test-unit cli-test-integration cli-test-e2e cli-test \
 	docs-check test-all \
-	build-server-binary run-server-local run-server-dev-local \
+	build-daemon-binary run-daemon-local run-daemon-dev-local \
 	build-cli install-cli \
-	test-server-prepare test-server-unit test-server-int test-server-e2e test-server \
+	test-daemon-prepare test-daemon-unit test-daemon-int test-daemon-e2e test-daemon \
 	test-cli-prepare test-cli-unit test-cli-int test-cli-e2e test-cli \
 	check-github-ssh install-launchagent status-launchagent uninstall-launchagent
 
-# ---- Server ----
+# ---- Daemon ----
 
-server-build:
+daemon-build:
 	@mkdir -p bin
-	$(GO) build -o $(SERVER_BINARY) $(SERVER_CMD)
+	$(GO) build -o $(DAEMON_BINARY) $(DAEMON_CMD)
 
-server-run: server-build
+daemon-run: daemon-build
 	@mkdir -p "$(dir $(STATE_FILE_PATH))"
-	PORT=$(PORT) STATE_FILE_PATH=$(STATE_FILE_PATH) ./$(SERVER_BINARY)
+	PORT=$(PORT) STATE_FILE_PATH=$(STATE_FILE_PATH) ./$(DAEMON_BINARY)
 
-server-run-dev:
+daemon-run-dev:
 	@mkdir -p "$(dir $(STATE_FILE_PATH))"
-	PORT=$(PORT) STATE_FILE_PATH=$(STATE_FILE_PATH) $(GO) run $(SERVER_CMD)
+	PORT=$(PORT) STATE_FILE_PATH=$(STATE_FILE_PATH) $(GO) run $(DAEMON_CMD)
 
-server-test-prepare:
+daemon-test-prepare:
 	@mkdir -p data
 	$(GO) generate ./...
 	$(GO) fmt ./...
 	$(GO) vet ./...
 
-server-test-unit:
+daemon-test-unit:
 	$(GO) test ./cmd/... ./internal/...
 
-server-test-integration:
+daemon-test-integration:
 	$(GO) test ./test/integration -count=1
 
-server-test-e2e: server-build
+daemon-test-e2e: daemon-build
 	@if [ -n "$(strip $(E2E_BASE_URL))" ]; then \
-		KKACHI_SERVER_BINARY="$(CURDIR)/$(SERVER_BINARY)" KKACHI_E2E_BASE_URL="$(E2E_BASE_URL)" $(GO) test ./test/e2e -count=1; \
+		KKACHI_SERVER_BINARY="$(CURDIR)/$(DAEMON_BINARY)" KKACHI_E2E_BASE_URL="$(E2E_BASE_URL)" $(GO) test ./test/e2e -count=1; \
 	else \
-		KKACHI_SERVER_BINARY="$(CURDIR)/$(SERVER_BINARY)" $(GO) test ./test/e2e -count=1; \
+		KKACHI_SERVER_BINARY="$(CURDIR)/$(DAEMON_BINARY)" $(GO) test ./test/e2e -count=1; \
 	fi
 
-server-test: server-test-prepare server-test-unit server-test-integration server-test-e2e
+daemon-test: daemon-test-prepare daemon-test-unit daemon-test-integration daemon-test-e2e
 
 # ---- CLI ----
 
@@ -68,7 +68,7 @@ cli-build:
 	$(GO) build $(LDFLAGS) -o $(CLI_BINARY) $(CLI_CMD)
 
 cli-install:
-	$(GO) build $(LDFLAGS) -o $(shell $(GO) env GOPATH)/bin/kkachi-cli $(CLI_CMD)
+	$(GO) build $(LDFLAGS) -o $(shell $(GO) env GOPATH)/bin/sanho $(CLI_CMD)
 
 cli-test-prepare: cli-build
 	$(GO) fmt ./internal/interface/cli/...
@@ -80,11 +80,11 @@ cli-test-unit:
 cli-test-integration: cli-build
 	KKACHI_CLI_BINARY=$(CURDIR)/$(CLI_BINARY) $(GO) test ./test/cli/integration -count=1 -v
 
-cli-test-e2e: cli-build server-build
+cli-test-e2e: cli-build daemon-build
 	@if [ -n "$(strip $(E2E_BASE_URL))" ]; then \
-		KKACHI_CLI_BINARY="$(CURDIR)/$(CLI_BINARY)" KKACHI_SERVER_BINARY="$(CURDIR)/$(SERVER_BINARY)" KKACHI_E2E_BASE_URL="$(E2E_BASE_URL)" $(GO) test ./test/cli/e2e -count=1 -v; \
+		KKACHI_CLI_BINARY="$(CURDIR)/$(CLI_BINARY)" KKACHI_SERVER_BINARY="$(CURDIR)/$(DAEMON_BINARY)" KKACHI_E2E_BASE_URL="$(E2E_BASE_URL)" $(GO) test ./test/cli/e2e -count=1 -v; \
 	else \
-		KKACHI_CLI_BINARY="$(CURDIR)/$(CLI_BINARY)" KKACHI_SERVER_BINARY="$(CURDIR)/$(SERVER_BINARY)" $(GO) test ./test/cli/e2e -count=1 -v; \
+		KKACHI_CLI_BINARY="$(CURDIR)/$(CLI_BINARY)" KKACHI_SERVER_BINARY="$(CURDIR)/$(DAEMON_BINARY)" $(GO) test ./test/cli/e2e -count=1 -v; \
 	fi
 
 cli-test: cli-test-prepare cli-test-unit cli-test-integration cli-test-e2e
@@ -99,19 +99,19 @@ docs-check:
 		exit 1; \
 	fi
 
-test-all: docs-check server-test cli-test
+test-all: docs-check daemon-test cli-test
 
 # Compatibility aliases for the previous target names.
-build-server-binary: server-build
-run-server-local: server-run
-run-server-dev-local: server-run-dev
+build-daemon-binary: daemon-build
+run-daemon-local: daemon-run
+run-daemon-dev-local: daemon-run-dev
 build-cli: cli-build
 install-cli: cli-install
-test-server-prepare: server-test-prepare
-test-server-unit: server-test-unit
-test-server-int: server-test-integration
-test-server-e2e: server-test-e2e
-test-server: server-test
+test-daemon-prepare: daemon-test-prepare
+test-daemon-unit: daemon-test-unit
+test-daemon-int: daemon-test-integration
+test-daemon-e2e: daemon-test-e2e
+test-daemon: daemon-test
 test-cli-prepare: cli-test-prepare
 test-cli-unit: cli-test-unit
 test-cli-int: cli-test-integration
@@ -134,8 +134,8 @@ check-github-ssh:
 		git ls-remote origin HEAD >/dev/null
 	@echo "GitHub SSH access confirmed."
 
-install-launchagent: check-github-ssh server-build
-	@echo "=== Installing kkachi LaunchAgent ==="
+install-launchagent: check-github-ssh daemon-build
+	@echo "=== Installing sanho LaunchAgent ==="
 	@if [ "$$(uname -s)" != "Darwin" ]; then \
 		echo "Error: LaunchAgent installation is supported only on macOS."; \
 		exit 1; \
@@ -175,7 +175,7 @@ status-launchagent:
 	@launchctl print "$(LAUNCH_SERVICE)"
 
 uninstall-launchagent:
-	@echo "=== Uninstalling kkachi LaunchAgent ==="
+	@echo "=== Uninstalling sanho LaunchAgent ==="
 	@launchctl bootout "$(LAUNCH_SERVICE)" 2>/dev/null || true
 	@rm -f "$(PLIST_DST)"
 	@echo "LaunchAgent uninstalled."

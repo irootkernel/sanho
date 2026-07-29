@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/SeventeenthEarth/kkachi/internal/config"
+	"github.com/irootkernel/sanho/internal/config"
 )
 
 var ErrStateCorrupt = errors.New("state_corrupt")

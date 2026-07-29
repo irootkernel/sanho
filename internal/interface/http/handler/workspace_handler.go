@@ -6,10 +6,10 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/SeventeenthEarth/kkachi/internal/domain/docs"
-	workspaceDomain "github.com/SeventeenthEarth/kkachi/internal/domain/workspace"
-	"github.com/SeventeenthEarth/kkachi/internal/interface/http/dto"
-	"github.com/SeventeenthEarth/kkachi/internal/usecase/workspace"
+	"github.com/irootkernel/sanho/internal/domain/docs"
+	workspaceDomain "github.com/irootkernel/sanho/internal/domain/workspace"
+	"github.com/irootkernel/sanho/internal/interface/http/dto"
+	"github.com/irootkernel/sanho/internal/usecase/workspace"
 )
 
 type WorkspaceHandler struct {

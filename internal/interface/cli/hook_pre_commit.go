@@ -10,14 +10,14 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/SeventeenthEarth/kkachi/internal/domain/client"
-	"github.com/SeventeenthEarth/kkachi/internal/domain/docs"
-	"github.com/SeventeenthEarth/kkachi/internal/domain/merge"
-	"github.com/SeventeenthEarth/kkachi/internal/domain/workspace"
-	"github.com/SeventeenthEarth/kkachi/internal/infra/fs"
-	infraGit "github.com/SeventeenthEarth/kkachi/internal/infra/git"
-	"github.com/SeventeenthEarth/kkachi/internal/infra/httpclient"
-	"github.com/SeventeenthEarth/kkachi/internal/usecase/hook"
+	"github.com/irootkernel/sanho/internal/domain/client"
+	"github.com/irootkernel/sanho/internal/domain/docs"
+	"github.com/irootkernel/sanho/internal/domain/merge"
+	"github.com/irootkernel/sanho/internal/domain/workspace"
+	"github.com/irootkernel/sanho/internal/infra/fs"
+	infraGit "github.com/irootkernel/sanho/internal/infra/git"
+	"github.com/irootkernel/sanho/internal/infra/httpclient"
+	"github.com/irootkernel/sanho/internal/usecase/hook"
 )
 
 // preCommitTimeout is the timeout for pre-commit operations.
@@ -31,7 +31,7 @@ func runPreCommitHook(cmd *cobra.Command) error {
 	// Get current working directory
 	cwd, err := os.Getwd()
 	if err != nil {
-		cmd.PrintErrf("kkachi-cli hook pre-commit: failed to get current directory: %v\n", err)
+		cmd.PrintErrf("sanho hook pre-commit: failed to get current directory: %v\n", err)
 		return err
 	}
 
@@ -48,8 +48,8 @@ func runPreCommitHook(cmd *cobra.Command) error {
 	// Load config first to get server URL
 	config, err := configLoader.Load(cwd)
 	if err != nil {
-		cmd.PrintErrf("kkachi-cli hook pre-commit: %v\n", err)
-		cmd.PrintErrf("kkachi configuration is broken or missing (.kkachi.json / .kkachi_docs_hash).\n")
+		cmd.PrintErrf("sanho hook pre-commit: %v\n", err)
+		cmd.PrintErrf("sanho configuration is broken or missing (.kkachi.json / .kkachi_docs_hash).\n")
 		return err
 	}
 
@@ -58,7 +58,7 @@ func runPreCommitHook(cmd *cobra.Command) error {
 	workspaceSync := infraGit.NewWorkspaceSync(snapshotBuilder, snapshotApplier)
 	pullCommit := newPullCommitEngine(rawHTTPClient)
 	if err := retryPendingWorkspaceReport(ctx, cwd, config); err != nil {
-		return fmt.Errorf("kkachi-cli hook pre-commit: %w", err)
+		return fmt.Errorf("sanho hook pre-commit: %w", err)
 	}
 
 	state, hasTransaction, err := pullCommit.resume(ctx, cwd, config)
@@ -67,10 +67,10 @@ func runPreCommitHook(cmd *cobra.Command) error {
 		case errors.Is(err, errPullCommitConflict):
 			printPullCommitConflicts(cmd, state.ConflictFiles)
 		case errors.Is(err, errPullCommitRetry):
-			cmd.Printf("kkachi-cli: created docs base commit %s.\n", state.SyncCommit)
-			cmd.PrintErrln("kkachi-cli: staged and unstaged docs were preserved. Run the same git commit command again.")
+			cmd.Printf("sanho: created docs base commit %s.\n", state.SyncCommit)
+			cmd.PrintErrln("sanho: staged and unstaged docs were preserved. Run the same git commit command again.")
 		case err != nil:
-			cmd.PrintErrf("kkachi-cli hook pre-commit: %v\n", err)
+			cmd.PrintErrf("sanho hook pre-commit: %v\n", err)
 		}
 		if err != nil {
 			return err
@@ -80,10 +80,10 @@ func runPreCommitHook(cmd *cobra.Command) error {
 	if !hasTransaction {
 		conflictFiles, err := conflictDetector.DetectConflicts(filepath.Join(cwd, config.DocsDir))
 		if err != nil {
-			return fmt.Errorf("kkachi-cli hook pre-commit: check docs conflicts: %w", err)
+			return fmt.Errorf("sanho hook pre-commit: check docs conflicts: %w", err)
 		}
 		if len(conflictFiles) > 0 {
-			cmd.PrintErrln("kkachi-cli: conflict markers found in docs files:")
+			cmd.PrintErrln("sanho: conflict markers found in docs files:")
 			for _, file := range conflictFiles {
 				cmd.PrintErrf("  - %s\n", file)
 			}
@@ -91,24 +91,24 @@ func runPreCommitHook(cmd *cobra.Command) error {
 		}
 		_, hasPendingFix, err := pendingFixStore.Read(filepath.Join(cwd, config.PendingFixFile))
 		if err != nil {
-			return fmt.Errorf("kkachi-cli hook pre-commit: check pending fix state: %w", err)
+			return fmt.Errorf("sanho hook pre-commit: check pending fix state: %w", err)
 		}
 		if hasPendingFix {
-			cmd.PrintErrln("kkachi-cli: legacy pending-fix state exists. Run 'kkachi-cli fix' before committing.")
+			cmd.PrintErrln("sanho: legacy pending-fix state exists. Run 'sanho fix' before committing.")
 			return hook.ErrPendingFixExists
 		}
 
 		baseHash, err := docsHashStore.Read(filepath.Join(cwd, config.DocsHashFile))
 		if err != nil {
-			return fmt.Errorf("kkachi-cli hook pre-commit: read docs hash: %w", err)
+			return fmt.Errorf("sanho hook pre-commit: read docs hash: %w", err)
 		}
 		remoteHash, err := rawHTTPClient.DocsHead(ctx, config.Project)
 		if err != nil {
-			return fmt.Errorf("kkachi-cli hook pre-commit: read server docs version: %w", err)
+			return fmt.Errorf("sanho hook pre-commit: read server docs version: %w", err)
 		}
 		hasPulledDocs, err := pullCommit.hasPulledDocs(ctx, cwd)
 		if err != nil {
-			return fmt.Errorf("kkachi-cli hook pre-commit: check pulled docs baseline: %w", err)
+			return fmt.Errorf("sanho hook pre-commit: check pulled docs baseline: %w", err)
 		}
 		if baseHash != remoteHash || hasPulledDocs {
 			state, err := pullCommit.start(ctx, cwd, config, baseHash, remoteHash)
@@ -116,10 +116,10 @@ func runPreCommitHook(cmd *cobra.Command) error {
 			case errors.Is(err, errPullCommitConflict):
 				printPullCommitConflicts(cmd, state.ConflictFiles)
 			case errors.Is(err, errPullCommitRetry):
-				cmd.Printf("kkachi-cli: created docs base commit %s.\n", state.SyncCommit)
-				cmd.PrintErrln("kkachi-cli: staged and unstaged docs were preserved. Run the same git commit command again.")
+				cmd.Printf("sanho: created docs base commit %s.\n", state.SyncCommit)
+				cmd.PrintErrln("sanho: staged and unstaged docs were preserved. Run the same git commit command again.")
 			case err != nil:
-				cmd.PrintErrf("kkachi-cli hook pre-commit: %v\n", err)
+				cmd.PrintErrf("sanho hook pre-commit: %v\n", err)
 			}
 			if err != nil {
 				return err
@@ -154,8 +154,8 @@ func runPreCommitHook(cmd *cobra.Command) error {
 				printPullCommitConflicts(cmd, state.ConflictFiles)
 			}
 			if errors.Is(err, errPullCommitRetry) {
-				cmd.Printf("kkachi-cli: created docs base commit %s.\n", state.SyncCommit)
-				cmd.PrintErrln("kkachi-cli: staged and unstaged docs were preserved. Run the same git commit command again.")
+				cmd.Printf("sanho: created docs base commit %s.\n", state.SyncCommit)
+				cmd.PrintErrln("sanho: staged and unstaged docs were preserved. Run the same git commit command again.")
 			}
 			return err
 		}),
@@ -166,7 +166,7 @@ func runPreCommitHook(cmd *cobra.Command) error {
 		// Handle specific errors with appropriate messages
 		switch {
 		case errors.Is(err, hook.ErrConfigBroken):
-			cmd.PrintErrf("kkachi: configuration is broken. Please run 'kkachi-cli init' to reinitialize.\n")
+			cmd.PrintErrf("sanho: configuration is broken. Please run 'sanho init' to reinitialize.\n")
 		case errors.Is(err, hook.ErrConflictMarkerFound):
 			// Message already printed by output
 		case errors.Is(err, hook.ErrPendingFixExists):
@@ -178,7 +178,7 @@ func runPreCommitHook(cmd *cobra.Command) error {
 		case errors.Is(err, hook.ErrUnknownDocsCommit):
 			// Message already printed by output
 		default:
-			cmd.PrintErrf("kkachi-cli hook pre-commit: %v\n", err)
+			cmd.PrintErrf("sanho hook pre-commit: %v\n", err)
 		}
 		return err
 	}
@@ -207,15 +207,15 @@ func newCLIPreCommitOutput(cmd *cobra.Command) *cliPreCommitOutput {
 }
 
 func (o *cliPreCommitOutput) Info(msg string) {
-	fmt.Fprintf(o.cmd.OutOrStdout(), "kkachi: %s\n", msg)
+	fmt.Fprintf(o.cmd.OutOrStdout(), "sanho: %s\n", msg)
 }
 
 func (o *cliPreCommitOutput) Warning(msg string) {
-	fmt.Fprintf(o.cmd.OutOrStdout(), "kkachi: %s\n", msg)
+	fmt.Fprintf(o.cmd.OutOrStdout(), "sanho: %s\n", msg)
 }
 
 func (o *cliPreCommitOutput) Error(msg string) {
-	o.cmd.PrintErrf("kkachi: %s\n", msg)
+	o.cmd.PrintErrf("sanho: %s\n", msg)
 }
 
 // preCommitGitClientAdapter adapts git.Client to hook.PreCommitGitClient interface.

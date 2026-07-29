@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/SeventeenthEarth/kkachi/internal/domain/client"
-	"github.com/SeventeenthEarth/kkachi/internal/domain/docs"
+	"github.com/irootkernel/sanho/internal/domain/client"
+	"github.com/irootkernel/sanho/internal/domain/docs"
 )
 
 // CommitMsgConfigLoader loads workspace configuration.
@@ -62,8 +62,8 @@ func (u *CommitMsgUseCase) Execute(ctx context.Context, workDir, msgFilePath str
 	// Step 1: Load configuration
 	config, err := u.configLoader.Load(workDir)
 	if err != nil {
-		// If config doesn't exist, silently skip (not a kkachi workspace)
-		u.output.Warning("Not a kkachi workspace, skipping docs-version tag.")
+		// If config doesn't exist, silently skip (not a sanho workspace)
+		u.output.Warning("Not a sanho workspace, skipping docs-version tag.")
 		return nil
 	}
 	config.ApplyDefaults()

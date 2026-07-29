@@ -38,19 +38,19 @@ func TestE2EVersionCommand(t *testing.T) {
 		t.Fatalf("CLI version command failed: %v\nOutput: %s", err, output)
 	}
 
-	if !strings.Contains(string(output), "kkachi-cli version") {
-		t.Errorf("Expected 'kkachi-cli version' in output, got: %s", output)
+	if !strings.Contains(string(output), "sanho version") {
+		t.Errorf("Expected 'sanho version' in output, got: %s", output)
 	}
 }
 
 // TODO: Add E2E tests for full workflows as features are implemented:
-// - TestE2EInitWorkflow: kkachi init with real server
-// - TestE2EStatusWorkflow: kkachi status with real server
+// - TestE2EInitWorkflow: sanho init with real server
+// - TestE2EStatusWorkflow: sanho status with real server
 // - TestE2EPreCommitOutdated: pre-commit hook with outdated docs
-// - TestE2EFixWorkflow: kkachi fix after conflict resolution
+// - TestE2EFixWorkflow: sanho fix after conflict resolution
 // - TestE2EPrePushBlocking: pre-push hook blocking push with pending fix
 
-// getCliBinary returns the path to the kkachi CLI binary.
+// getCliBinary returns the path to the sanho CLI binary.
 func getCliBinary(t *testing.T) string {
 	t.Helper()
 
@@ -64,9 +64,9 @@ func getCliBinary(t *testing.T) string {
 
 	// Try to find binary relative to project root
 	possiblePaths := []string{
-		"../../bin/kkachi",    // from test/cli/e2e
-		"../../../bin/kkachi", // alternative
-		"bin/kkachi",          // from project root
+		"../../bin/sanho",    // from test/cli/e2e
+		"../../../bin/sanho", // alternative
+		"bin/sanho",          // from project root
 	}
 
 	for _, path := range possiblePaths {
@@ -83,7 +83,7 @@ func getCliBinary(t *testing.T) string {
 	return ""
 }
 
-// getServerURL returns the kkachi-server URL for E2E tests.
+// getServerURL returns the sanhod URL for E2E tests.
 func getServerURL(t *testing.T) string {
 	t.Helper()
 
@@ -114,7 +114,7 @@ func ensureServerAvailable(t *testing.T, rawURL string) {
 
 	conn, err := net.DialTimeout("tcp", hostPort, 2*time.Second)
 	if err != nil {
-		t.Skipf("Skipping E2E: kkachi-server not reachable at %s (%v)", rawURL, err)
+		t.Skipf("Skipping E2E: sanhod not reachable at %s (%v)", rawURL, err)
 	}
 	_ = conn.Close()
 }

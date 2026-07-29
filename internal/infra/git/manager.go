@@ -6,8 +6,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/SeventeenthEarth/kkachi/internal/config"
-	"github.com/SeventeenthEarth/kkachi/internal/domain/docs"
+	"github.com/irootkernel/sanho/internal/config"
+	"github.com/irootkernel/sanho/internal/domain/docs"
 )
 
 type DocsRepoManager struct {
@@ -51,7 +51,7 @@ func (m *DocsRepoManager) syncRepo(ctx context.Context, repo config.DocsRepoConf
 			return fmt.Errorf("failed to refresh %s: %w", repo.ID, err)
 		}
 	}
-	if err := m.client.ConfigUser(ctx, repo.Path, "kkachi-server@local", "kkachi-server"); err != nil {
+	if err := m.client.ConfigUser(ctx, repo.Path, "sanhod@local", "sanhod"); err != nil {
 		return fmt.Errorf("failed to configure git user for %s: %w", repo.ID, err)
 	}
 	return nil

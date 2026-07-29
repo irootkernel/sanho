@@ -18,8 +18,8 @@ func newVersionCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "version",
-		Short: "Print the version of kkachi CLI",
-		Long:  `Print the version, commit hash, and build date of the kkachi CLI.`,
+		Short: "Print the version of sanho CLI",
+		Long:  `Print the version, commit hash, and build date of the sanho CLI.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			version := buildInfo.Version
 			if version == "" {
@@ -27,7 +27,7 @@ func newVersionCmd() *cobra.Command {
 			}
 			if jsonOutput {
 				if err := writeJSON(cmd.OutOrStdout(), versionJSONOutput{
-					Name:    "kkachi-cli",
+					Name:    "sanho",
 					Version: version,
 				}); err != nil {
 					return withErrorCode("internal_error", errors.Join(ErrInternal, err))
@@ -44,7 +44,7 @@ func newVersionCmd() *cobra.Command {
 				buildDate = "unknown"
 			}
 
-			cmd.Printf("kkachi-cli version %s (commit: %s, built: %s)\n", version, commit, buildDate)
+			cmd.Printf("sanho version %s (commit: %s, built: %s)\n", version, commit, buildDate)
 			return nil
 		},
 	}
@@ -63,5 +63,5 @@ func FormatVersion(version, commit, buildDate string) string {
 	if buildDate == "" {
 		buildDate = "unknown"
 	}
-	return fmt.Sprintf("kkachi-cli version %s (commit: %s, built: %s)", version, commit, buildDate)
+	return fmt.Sprintf("sanho version %s (commit: %s, built: %s)", version, commit, buildDate)
 }

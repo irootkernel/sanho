@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/SeventeenthEarth/kkachi/internal/interface/http/dto"
+	"github.com/irootkernel/sanho/internal/interface/http/dto"
 )
 
 // E2E: Prefer hitting a running server via KKACHI_E2E_BASE_URL; otherwise build & launch locally.

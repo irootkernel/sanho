@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/SeventeenthEarth/kkachi/internal/domain/docs"
-	"github.com/SeventeenthEarth/kkachi/internal/domain/workspace"
-	uc "github.com/SeventeenthEarth/kkachi/internal/usecase/workspace"
+	"github.com/irootkernel/sanho/internal/domain/docs"
+	"github.com/irootkernel/sanho/internal/domain/workspace"
+	uc "github.com/irootkernel/sanho/internal/usecase/workspace"
 )
 
 // Mocks

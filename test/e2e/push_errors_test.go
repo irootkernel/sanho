@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/SeventeenthEarth/kkachi/internal/interface/http/dto"
+	"github.com/irootkernel/sanho/internal/interface/http/dto"
 )
 
 func TestE2E_DocsPushNoChangeAndErrors(t *testing.T) {

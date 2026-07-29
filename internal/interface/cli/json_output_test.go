@@ -26,7 +26,7 @@ func TestVersionJSONOutput(t *testing.T) {
 	if err := json.Unmarshal(output.Bytes(), &got); err != nil {
 		t.Fatalf("invalid JSON output %q: %v", output.String(), err)
 	}
-	want := map[string]string{"name": "kkachi-cli", "version": "1.2.3"}
+	want := map[string]string{"name": "sanho", "version": "1.2.3"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("version JSON = %#v, want %#v", got, want)
 	}
@@ -54,13 +54,13 @@ func TestRenderCommandErrorAsJSON(t *testing.T) {
 func TestCommandErrorCanPreserveHumanMessage(t *testing.T) {
 	err := withErrorCodeMessage(
 		"server_url_required",
-		"--server-url is required with --all outside a kkachi workspace",
+		"--server-url is required with --all outside a sanho workspace",
 		errors.New("configuration file not found"),
 	)
 	if err.Error() != "configuration file not found" {
 		t.Fatalf("human message = %q", err.Error())
 	}
-	if commandErrorMessage(err) != "--server-url is required with --all outside a kkachi workspace" {
+	if commandErrorMessage(err) != "--server-url is required with --all outside a sanho workspace" {
 		t.Fatalf("JSON message = %q", commandErrorMessage(err))
 	}
 }

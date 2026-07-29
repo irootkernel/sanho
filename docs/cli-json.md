@@ -1,18 +1,18 @@
 # CLI JSON 출력
 
-Kkachi의 사용자용 조회 명령은 자동화 도구와 AI agent가 안정적으로
+Sanho의 사용자용 조회 명령은 자동화 도구와 AI agent가 안정적으로
 결과를 읽을 수 있도록 `--json`을 지원한다.
 
 ```bash
-kkachi-cli version --json
-kkachi-cli status --json
-kkachi-cli state --json
-kkachi-cli state --all --server-url http://127.0.0.1:5789 --json
+sanho version --json
+sanho status --json
+sanho state --json
+sanho state --all --server-url http://127.0.0.1:5789 --json
 ```
 
 `--json`은 `version`, `status`, `state`의 로컬 옵션이다. Git hook과
 `init`, `pull`, `fix`, `clean`, `project`, `workspace` 같은 변경 명령에는
-적용되지 않는다. `kkachi --json status`처럼 루트 옵션으로 사용할 수도
+적용되지 않는다. `sanho --json status`처럼 루트 옵션으로 사용할 수도
 없다.
 
 ## 공통 규칙
@@ -26,7 +26,7 @@ kkachi-cli state --all --server-url http://127.0.0.1:5789 --json
 오류 형식은 다음과 같다.
 
 ```json
-{"error":{"code":"not_in_workspace","message":"this directory is not a kkachi workspace. Run 'kkachi-cli init' first"}}
+{"error":{"code":"not_in_workspace","message":"this directory is not a sanho workspace. Run 'sanho init' first"}}
 ```
 
 `code`는 자동화 분기에 사용하는 안정 식별자이고, `message`는 진단용
@@ -48,10 +48,10 @@ kkachi-cli state --all --server-url http://127.0.0.1:5789 --json
 공개 계약은 `name`과 `version`만 포함한다.
 
 ```json
-{"name":"kkachi-cli","version":"1.2.3"}
+{"name":"sanho","version":"1.2.3"}
 ```
 
-commit과 build date는 기존 사람용 `kkachi-cli version` 출력에서만 제공한다.
+commit과 build date는 기존 사람용 `sanho version` 출력에서만 제공한다.
 
 ## `status`
 
@@ -107,4 +107,4 @@ commit과 build date는 기존 사람용 `kkachi-cli version` 출력에서만 �
 ```
 
 daemon의 `/state` 응답이 전체 프로젝트를 포함하더라도 기본
-`kkachi-cli state --json` 결과는 현재 프로젝트로 필터링한다.
+`sanho state --json` 결과는 현재 프로젝트로 필터링한다.

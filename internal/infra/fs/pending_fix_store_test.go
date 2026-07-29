@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/SeventeenthEarth/kkachi/internal/domain/docs"
+	"github.com/irootkernel/sanho/internal/domain/docs"
 )
 
 func TestFilePendingFixStore_ReadWriteRemove(t *testing.T) {

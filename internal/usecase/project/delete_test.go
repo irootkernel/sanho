@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/SeventeenthEarth/kkachi/internal/config"
-	"github.com/SeventeenthEarth/kkachi/internal/usecase/project"
+	"github.com/irootkernel/sanho/internal/config"
+	"github.com/irootkernel/sanho/internal/usecase/project"
 )
 
 // Mock implementations for unit testing

@@ -7,9 +7,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/SeventeenthEarth/kkachi/internal/domain/docs"
-	kkachihttp "github.com/SeventeenthEarth/kkachi/internal/interface/http"
-	"github.com/SeventeenthEarth/kkachi/internal/interface/http/handler"
+	"github.com/irootkernel/sanho/internal/domain/docs"
+	kkachihttp "github.com/irootkernel/sanho/internal/interface/http"
+	"github.com/irootkernel/sanho/internal/interface/http/handler"
 )
 
 type mockGetDocsSnapshotUseCase struct {

@@ -10,10 +10,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/SeventeenthEarth/kkachi/internal/domain/client"
-	"github.com/SeventeenthEarth/kkachi/internal/domain/merge"
-	"github.com/SeventeenthEarth/kkachi/internal/infra/fs"
-	"github.com/SeventeenthEarth/kkachi/internal/infra/httpclient"
+	"github.com/irootkernel/sanho/internal/domain/client"
+	"github.com/irootkernel/sanho/internal/domain/merge"
+	"github.com/irootkernel/sanho/internal/infra/fs"
+	"github.com/irootkernel/sanho/internal/infra/httpclient"
 )
 
 // hookStatusTimeout is the timeout for hook status operations.
@@ -30,7 +30,7 @@ func runHookStatus(cmd *cobra.Command, hookName string, reconcile bool) error {
 	// Get current working directory
 	cwd, err := os.Getwd()
 	if err != nil {
-		cmd.PrintErrf("kkachi %s: warning: failed to get current directory: %v\n", hookName, err)
+		cmd.PrintErrf("sanho %s: warning: failed to get current directory: %v\n", hookName, err)
 		return nil // Always exit 0
 	}
 
@@ -39,15 +39,15 @@ func runHookStatus(cmd *cobra.Command, hookName string, reconcile bool) error {
 	config, err := configLoader.Load(cwd)
 	if err != nil {
 		if errors.Is(err, fs.ErrConfigNotFound) {
-			// Not a kkachi workspace - silently ignore
+			// Not a sanho workspace - silently ignore
 			return nil
 		}
-		cmd.PrintErrf("kkachi %s: warning: failed to load config: %v\n", hookName, err)
+		cmd.PrintErrf("sanho %s: warning: failed to load config: %v\n", hookName, err)
 		return nil // Always exit 0
 	}
 	if reconcile {
 		if _, err := reconcileWorkspaceDocsFromHEAD(ctx, cwd, config); err != nil {
-			cmd.PrintErrf("kkachi %s: warning: failed to reconcile docs hash from HEAD: %v\n", hookName, err)
+			cmd.PrintErrf("sanho %s: warning: failed to reconcile docs hash from HEAD: %v\n", hookName, err)
 		}
 	}
 
@@ -57,9 +57,9 @@ func runHookStatus(cmd *cobra.Command, hookName string, reconcile bool) error {
 	localHash, err := hashStore.Read(hashPath)
 	if err != nil {
 		if errors.Is(err, fs.ErrHashFileNotFound) {
-			cmd.PrintErrf("kkachi %s: warning: docs hash file not found\n", hookName)
+			cmd.PrintErrf("sanho %s: warning: docs hash file not found\n", hookName)
 		} else {
-			cmd.PrintErrf("kkachi %s: warning: failed to read docs hash: %v\n", hookName, err)
+			cmd.PrintErrf("sanho %s: warning: failed to read docs hash: %v\n", hookName, err)
 		}
 		return nil // Always exit 0
 	}
@@ -69,7 +69,7 @@ func runHookStatus(cmd *cobra.Command, hookName string, reconcile bool) error {
 	pendingFixPath := filepath.Join(cwd, config.PendingFixFile)
 	_, hasPendingFix, err := pendingFixStore.Read(pendingFixPath)
 	if err != nil {
-		cmd.PrintErrf("kkachi %s: warning: failed to read pending fix state: %v\n", hookName, err)
+		cmd.PrintErrf("sanho %s: warning: failed to read pending fix state: %v\n", hookName, err)
 		return nil // Always exit 0
 	}
 
@@ -81,7 +81,7 @@ func runHookStatus(cmd *cobra.Command, hookName string, reconcile bool) error {
 		conflictFiles, detectErr := conflictDetector.DetectConflicts(docsPath)
 		if detectErr != nil {
 			// Log warning but continue
-			cmd.PrintErrf("kkachi %s: warning: failed to scan for conflicts: %v\n", hookName, detectErr)
+			cmd.PrintErrf("sanho %s: warning: failed to scan for conflicts: %v\n", hookName, detectErr)
 		}
 		hasConflicts = len(conflictFiles) > 0
 	}
@@ -98,9 +98,9 @@ func runHookStatus(cmd *cobra.Command, hookName string, reconcile bool) error {
 		status = client.DocsStatusUnknown
 		serverHeadStr = "(unavailable)"
 		if errors.Is(err, httpclient.ErrUnknownProject) {
-			cmd.PrintErrf("kkachi %s: warning: project '%s' is not registered on server\n", hookName, config.Project)
+			cmd.PrintErrf("sanho %s: warning: project '%s' is not registered on server\n", hookName, config.Project)
 		} else {
-			cmd.PrintErrf("kkachi %s: warning: failed to connect to server: %v\n", hookName, err)
+			cmd.PrintErrf("sanho %s: warning: failed to connect to server: %v\n", hookName, err)
 		}
 	} else {
 		serverHeadStr = string(serverHead)
@@ -112,19 +112,19 @@ func runHookStatus(cmd *cobra.Command, hookName string, reconcile bool) error {
 	}
 
 	// Print concise status
-	fmt.Printf("kkachi %s: docs status: %s\n", hookName, status)
+	fmt.Printf("sanho %s: docs status: %s\n", hookName, status)
 	fmt.Printf("  base: %s\n", localHash)
 	fmt.Printf("  head: %s\n", serverHeadStr)
 
 	// Additional warnings
 	if hasPendingFix {
-		fmt.Printf("kkachi-cli %s: pending fix detected. Run 'kkachi-cli fix' to finalize.\n", hookName)
+		fmt.Printf("sanho %s: pending fix detected. Run 'sanho fix' to finalize.\n", hookName)
 	}
 	if hasConflicts {
-		fmt.Printf("kkachi %s: conflict markers detected in docs.\n", hookName)
+		fmt.Printf("sanho %s: conflict markers detected in docs.\n", hookName)
 	}
 	if status == client.DocsStatusOutdated {
-		fmt.Printf("kkachi %s: docs are outdated. A merge may occur during pre-commit.\n", hookName)
+		fmt.Printf("sanho %s: docs are outdated. A merge may occur during pre-commit.\n", hookName)
 	}
 
 	return nil // Always exit 0

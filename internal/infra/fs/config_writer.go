@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/SeventeenthEarth/kkachi/internal/domain/client"
+	"github.com/irootkernel/sanho/internal/domain/client"
 )
 
 // ConfigWriter defines the interface for writing workspace configuration.

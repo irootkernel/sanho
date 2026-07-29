@@ -4,9 +4,9 @@ import (
 	"sort"
 	"time"
 
-	"github.com/SeventeenthEarth/kkachi/internal/domain/client"
-	"github.com/SeventeenthEarth/kkachi/internal/infra/fs"
-	"github.com/SeventeenthEarth/kkachi/internal/infra/httpclient"
+	"github.com/irootkernel/sanho/internal/domain/client"
+	"github.com/irootkernel/sanho/internal/infra/fs"
+	"github.com/irootkernel/sanho/internal/infra/httpclient"
 )
 
 type statusJSONOutput struct {

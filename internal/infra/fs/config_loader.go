@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/SeventeenthEarth/kkachi/internal/domain/client"
+	"github.com/irootkernel/sanho/internal/domain/client"
 )
 
 // Config file name constant.

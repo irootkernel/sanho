@@ -1,13 +1,13 @@
-# Kkachi
+# Sanho
 
-Kkachi는 여러 애플리케이션 저장소의 `docs/` 디렉터리를 전용 docs
+Sanho는 여러 애플리케이션 저장소의 `docs/` 디렉터리를 전용 docs
 저장소와 동기화하고, 여러 작업공간이 동시에 문서를 갱신할 때 생기는
 충돌을 막는 도구다.
 
 제품은 두 실행 파일만 사용한다.
 
-- `kkachi-server`: docs 저장소의 Git 접근과 작업공간 상태를 조정하는 HTTP daemon
-- `kkachi`: 개발자와 Git hook이 사용하는 CLI
+- `sanhod`: docs 저장소의 Git 접근과 작업공간 상태를 조정하는 HTTP daemon
+- `sanho`: 개발자와 Git hook이 사용하는 CLI
 
 Web UI, 브라우저 터미널, PTY, 세션 실행 기능은 제공하지 않는다.
 
@@ -17,9 +17,9 @@ Web UI, 브라우저 터미널, PTY, 세션 실행 기능은 제공하지 않는
 인증도 준비해야 한다. Node.js와 npm은 필요하지 않다.
 
 ```bash
-make server-build
+make daemon-build
 make cli-build
-make server-run
+make daemon-run
 ```
 
 기본 서버 주소는 `http://127.0.0.1:5789`이고 state 파일은
@@ -28,7 +28,7 @@ make server-run
 애플리케이션 Git 저장소에서 다음 명령으로 작업공간을 초기화한다.
 
 ```bash
-kkachi-cli init \
+sanho init \
   --server-url http://127.0.0.1:5789 \
   --project example \
   --docs-repo-url git@github.com:example/example-docs.git
@@ -40,16 +40,16 @@ kkachi-cli init \
 ## 일상 작업
 
 ```bash
-kkachi-cli status  # 로컬 기준과 HEAD, 같은 프로젝트 작업공간 비교
-kkachi-cli status --json  # 자동화 도구용 구조화 상태
-kkachi-cli pull    # 변경이 없을 때 최신 docs snapshot 반영
-kkachi-cli pull-commit  # staged/unstaged를 보존하며 최신 docs base commit 생성
-kkachi-cli fix     # 기존 pending-fix 상태의 merge 결과 게시
-kkachi-cli state   # 등록된 프로젝트와 작업공간 상태 조회
-kkachi-cli state --json   # 현재 프로젝트 상태를 JSON으로 조회
+sanho status  # 로컬 기준과 HEAD, 같은 프로젝트 작업공간 비교
+sanho status --json  # 자동화 도구용 구조화 상태
+sanho pull    # 변경이 없을 때 최신 docs snapshot 반영
+sanho pull-commit  # staged/unstaged를 보존하며 최신 docs base commit 생성
+sanho fix     # 기존 pending-fix 상태의 merge 결과 게시
+sanho state   # 등록된 프로젝트와 작업공간 상태 조회
+sanho state --json   # 현재 프로젝트 상태를 JSON으로 조회
 ```
 
-`kkachi-cli status`는 현재 작업공간의 전체 docs commit과 HEAD를 보여주고,
+`sanho status`는 현재 작업공간의 전체 docs commit과 HEAD를 보여주고,
 같은 프로젝트에 등록된 모든 작업공간을 현재 로컬
 `.kkachi_docs_hash` 기준으로 비교한다. 관계는 다음과 같다.
 
@@ -68,8 +68,8 @@ commit graph를 기준으로 한다. 새 상태 endpoint가 없는 구버전 dae
 `version`, `status`, `state`의 JSON 필드와 오류 계약은
 [CLI JSON 출력](../cli-json.md)에 정리되어 있다.
 
-로컬 docs 변경이 있을 때 `kkachi-cli pull`로 덮어쓰려면 명시적으로
-`--force`를 사용해야 한다. 설정만 제거하려면 `kkachi-cli clean`을 사용하고,
+로컬 docs 변경이 있을 때 `sanho pull`로 덮어쓰려면 명시적으로
+`--force`를 사용해야 한다. 설정만 제거하려면 `sanho clean`을 사용하고,
 docs 디렉터리까지 지우려면 `--remove-docs`를 별도로 지정한다.
 
 Git commit 시 중앙 docs가 갱신된 상태라면 pre-commit hook이
@@ -83,8 +83,8 @@ history를 바꾸지 않고 실패한다. 성공 시 현재 staged/unstaged 변�
 보존한 staged 변경을 Git의 commit index에 복원해 원래 커밋을 계속한다.
 
 같은 위치를 함께 수정했다면 원격을 덮어쓰지 않고 충돌 상태로 멈춘다.
-파일을 해결하고 stage한 뒤 `kkachi-cli pull-commit --continue`를 실행한다.
-시스템 커밋이 만들어지기 전이라면 `kkachi-cli pull-commit --abort`로
+파일을 해결하고 stage한 뒤 `sanho pull-commit --continue`를 실행한다.
+시스템 커밋이 만들어지기 전이라면 `sanho pull-commit --abort`로
 원래 staged/unstaged docs 상태를 복원할 수 있다. 시스템 커밋 제목은
 `.kkachi.json`의 `docs_sync_commit_message`로 바꿀 수 있으며 기본값은
 `[KKACHI] Update docs`다.
@@ -125,7 +125,7 @@ pull 위에 dirty docs가 남아 있으면 임의의 hash를 선택하지 않는
 ## 테스트
 
 ```bash
-make server-test
+make daemon-test
 make cli-test
 # 전체:
 make test-all

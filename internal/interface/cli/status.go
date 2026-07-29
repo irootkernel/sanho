@@ -14,11 +14,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/SeventeenthEarth/kkachi/internal/domain/client"
-	"github.com/SeventeenthEarth/kkachi/internal/domain/docs"
-	"github.com/SeventeenthEarth/kkachi/internal/domain/merge"
-	"github.com/SeventeenthEarth/kkachi/internal/infra/fs"
-	"github.com/SeventeenthEarth/kkachi/internal/infra/httpclient"
+	"github.com/irootkernel/sanho/internal/domain/client"
+	"github.com/irootkernel/sanho/internal/domain/docs"
+	"github.com/irootkernel/sanho/internal/domain/merge"
+	"github.com/irootkernel/sanho/internal/infra/fs"
+	"github.com/irootkernel/sanho/internal/infra/httpclient"
 )
 
 // newStatusCmd creates the status command.
@@ -53,7 +53,7 @@ func newStatusCmd() *cobra.Command {
 				if errors.Is(err, fs.ErrConfigNotFound) {
 					return withErrorCode(
 						"not_in_workspace",
-						errors.New("this directory is not a kkachi workspace. Run 'kkachi-cli init' first"),
+						errors.New("this directory is not a sanho workspace. Run 'sanho init' first"),
 					)
 				}
 				return withErrorCode("invalid_workspace_config", fmt.Errorf("failed to load config: %w", err))
@@ -67,7 +67,7 @@ func newStatusCmd() *cobra.Command {
 				if errors.Is(err, fs.ErrHashFileNotFound) {
 					return withErrorCode(
 						"docs_hash_not_found",
-						errors.New("docs hash file not found. Workspace may be corrupted. Try 'kkachi-cli init --force'"),
+						errors.New("docs hash file not found. Workspace may be corrupted. Try 'sanho init --force'"),
 					)
 				}
 				return withErrorCode("docs_hash_read_failed", fmt.Errorf("failed to read docs hash file: %w", err))
@@ -216,7 +216,7 @@ func newStatusCmd() *cobra.Command {
 
 			// Print status
 			out := cmd.OutOrStdout()
-			fmt.Fprintln(out, "kkachi-cli status")
+			fmt.Fprintln(out, "sanho status")
 			fmt.Fprintf(out, "  project       : %s\n", config.Project)
 			fmt.Fprintf(out, "  workspace     : %s\n", config.WorkspaceID)
 			fmt.Fprintf(out, "  docs base     : %s\n", localHash)
@@ -242,30 +242,30 @@ func newStatusCmd() *cobra.Command {
 
 			// Additional messages based on status
 			if serverError != nil {
-				fmt.Fprintln(out, "kkachi: unable to determine sync status")
+				fmt.Fprintln(out, "sanho: unable to determine sync status")
 			} else if status == client.DocsStatusOutdated {
-				fmt.Fprintln(out, "kkachi: docs base and server HEAD are different.")
-				fmt.Fprintln(out, "kkachi: a merge may occur during pre-commit.")
+				fmt.Fprintln(out, "sanho: docs base and server HEAD are different.")
+				fmt.Fprintln(out, "sanho: a merge may occur during pre-commit.")
 			} else if status == client.DocsStatusUpToDate {
-				fmt.Fprintln(out, "kkachi: docs are up to date.")
+				fmt.Fprintln(out, "sanho: docs are up to date.")
 			}
 
 			// Pending fix messages
 			if hasPendingFix {
 				if hasConflicts {
 					fmt.Fprintln(out)
-					fmt.Fprintln(out, "kkachi: pending fix detected with conflict markers in docs.")
-					fmt.Fprintln(out, "kkachi: please resolve conflicts and run 'kkachi-cli fix'.")
-					fmt.Fprintf(out, "kkachi: files with conflicts: %v\n", conflictFiles)
+					fmt.Fprintln(out, "sanho: pending fix detected with conflict markers in docs.")
+					fmt.Fprintln(out, "sanho: please resolve conflicts and run 'sanho fix'.")
+					fmt.Fprintf(out, "sanho: files with conflicts: %v\n", conflictFiles)
 				} else {
 					fmt.Fprintln(out)
-					fmt.Fprintln(out, "kkachi: pending fix detected but no conflict markers found.")
-					fmt.Fprintln(out, "kkachi: if you have resolved all conflicts, run 'kkachi-cli fix' to finalize.")
-					fmt.Fprintf(out, "kkachi: pending fix was created at: %s\n", pendingFixState.CreatedAt.Format(time.RFC3339))
+					fmt.Fprintln(out, "sanho: pending fix detected but no conflict markers found.")
+					fmt.Fprintln(out, "sanho: if you have resolved all conflicts, run 'sanho fix' to finalize.")
+					fmt.Fprintf(out, "sanho: pending fix was created at: %s\n", pendingFixState.CreatedAt.Format(time.RFC3339))
 				}
 			}
 
-			// Return error if server was unreachable (roadmap: kkachi status should exit 1 on server error)
+			// Return error if server was unreachable (roadmap: sanho status should exit 1 on server error)
 			return serverError
 		},
 	}

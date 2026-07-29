@@ -5,15 +5,15 @@ import (
 	"log"
 	"os"
 
-	"github.com/SeventeenthEarth/kkachi/internal/config"
-	"github.com/SeventeenthEarth/kkachi/internal/infra/git"
-	"github.com/SeventeenthEarth/kkachi/internal/infra/state"
-	"github.com/SeventeenthEarth/kkachi/internal/interface/http"
-	"github.com/SeventeenthEarth/kkachi/internal/interface/http/handler"
-	"github.com/SeventeenthEarth/kkachi/internal/usecase/docs"
-	"github.com/SeventeenthEarth/kkachi/internal/usecase/project"
-	stateuc "github.com/SeventeenthEarth/kkachi/internal/usecase/state"
-	"github.com/SeventeenthEarth/kkachi/internal/usecase/workspace"
+	"github.com/irootkernel/sanho/internal/config"
+	"github.com/irootkernel/sanho/internal/infra/git"
+	"github.com/irootkernel/sanho/internal/infra/state"
+	"github.com/irootkernel/sanho/internal/interface/http"
+	"github.com/irootkernel/sanho/internal/interface/http/handler"
+	"github.com/irootkernel/sanho/internal/usecase/docs"
+	"github.com/irootkernel/sanho/internal/usecase/project"
+	stateuc "github.com/irootkernel/sanho/internal/usecase/state"
+	"github.com/irootkernel/sanho/internal/usecase/workspace"
 )
 
 func main() {

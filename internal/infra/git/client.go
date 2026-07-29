@@ -220,7 +220,7 @@ func (c *Client) AddDocs(ctx context.Context, path string) error {
 
 // Commit creates a new commit with the given message.
 func (c *Client) Commit(ctx context.Context, path, message, authorEmail string) error {
-	cmd := exec.CommandContext(ctx, "git", "-C", path, "commit", "-m", message, "--author", fmt.Sprintf("Kkachi User <%s>", authorEmail))
+	cmd := exec.CommandContext(ctx, "git", "-C", path, "commit", "-m", message, "--author", fmt.Sprintf("Sanho User <%s>", authorEmail))
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("git commit failed: %w\n%s", err, string(output))
 	}

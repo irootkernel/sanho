@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/SeventeenthEarth/kkachi/internal/infra/git"
+	"github.com/irootkernel/sanho/internal/infra/git"
 )
 
 // Default timeout for CLI operations.

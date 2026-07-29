@@ -9,9 +9,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/SeventeenthEarth/kkachi/internal/domain/merge"
-	"github.com/SeventeenthEarth/kkachi/internal/infra/fs"
-	"github.com/SeventeenthEarth/kkachi/internal/usecase/hook"
+	"github.com/irootkernel/sanho/internal/domain/merge"
+	"github.com/irootkernel/sanho/internal/infra/fs"
+	"github.com/irootkernel/sanho/internal/usecase/hook"
 )
 
 // prePushTimeout is the timeout for pre-push operations.
@@ -25,33 +25,33 @@ func runPrePushHook(cmd *cobra.Command) error {
 	// Get current working directory
 	cwd, err := os.Getwd()
 	if err != nil {
-		cmd.PrintErrf("kkachi-cli hook pre-push: failed to get current directory: %v\n", err)
+		cmd.PrintErrf("sanho hook pre-push: failed to get current directory: %v\n", err)
 		return err
 	}
 	config, err := fs.NewFileConfigLoader().Load(cwd)
 	if err != nil {
-		return fmt.Errorf("kkachi-cli hook pre-push: load configuration: %w", err)
+		return fmt.Errorf("sanho hook pre-push: load configuration: %w", err)
 	}
 	if err := retryPendingWorkspaceReport(ctx, cwd, config); err != nil {
-		return fmt.Errorf("kkachi-cli hook pre-push: %w", err)
+		return fmt.Errorf("sanho hook pre-push: %w", err)
 	}
 	hasPullCommit, err := newPullCommitEngine(nil).hasTransaction(ctx, cwd)
 	if err != nil {
-		return fmt.Errorf("kkachi-cli hook pre-push: check pull-commit state: %w", err)
+		return fmt.Errorf("sanho hook pre-push: check pull-commit state: %w", err)
 	}
 	if hasPullCommit {
-		cmd.PrintErrln("kkachi-cli: an incomplete pull-commit transaction exists.")
-		cmd.PrintErrln("Complete the pending commit or resolve it with 'kkachi-cli pull-commit --continue'.")
+		cmd.PrintErrln("sanho: an incomplete pull-commit transaction exists.")
+		cmd.PrintErrln("Complete the pending commit or resolve it with 'sanho pull-commit --continue'.")
 		cmd.PrintErrln("Push is blocked so the docs base commit cannot be published alone.")
 		return errors.New("pull-commit transaction exists - push blocked")
 	}
 	hasPulledDocs, err := hasPulledDocsBaseline(ctx, cwd)
 	if err != nil {
-		return fmt.Errorf("kkachi-cli hook pre-push: check pulled docs baseline: %w", err)
+		return fmt.Errorf("sanho hook pre-push: check pulled docs baseline: %w", err)
 	}
 	if hasPulledDocs {
-		cmd.PrintErrln("kkachi-cli: pulled docs have not been materialized in application history.")
-		cmd.PrintErrln("Run 'kkachi-cli pull-commit' before pushing.")
+		cmd.PrintErrln("sanho: pulled docs have not been materialized in application history.")
+		cmd.PrintErrln("Run 'sanho pull-commit' before pushing.")
 		return errors.New("pulled docs baseline exists - push blocked")
 	}
 
@@ -80,7 +80,7 @@ func runPrePushHook(cmd *cobra.Command) error {
 		case errors.Is(err, hook.ErrPrePushPendingFixExists):
 			// Message already printed by output
 		default:
-			cmd.PrintErrf("kkachi-cli hook pre-push: %v\n", err)
+			cmd.PrintErrf("sanho hook pre-push: %v\n", err)
 		}
 		return err
 	}
@@ -98,15 +98,15 @@ func newCLIPrePushOutput(cmd *cobra.Command) *cliPrePushOutput {
 }
 
 func (o *cliPrePushOutput) Info(msg string) {
-	fmt.Fprintf(o.cmd.OutOrStdout(), "kkachi: %s\n", msg)
+	fmt.Fprintf(o.cmd.OutOrStdout(), "sanho: %s\n", msg)
 }
 
 func (o *cliPrePushOutput) Warning(msg string) {
-	fmt.Fprintf(o.cmd.OutOrStdout(), "kkachi: %s\n", msg)
+	fmt.Fprintf(o.cmd.OutOrStdout(), "sanho: %s\n", msg)
 }
 
 func (o *cliPrePushOutput) Error(msg string) {
-	o.cmd.PrintErrf("kkachi: %s\n", msg)
+	o.cmd.PrintErrf("sanho: %s\n", msg)
 }
 
 // prePushPendingFixStoreAdapter adapts fs.FilePendingFixStore to hook.PrePushPendingFixStore interface.

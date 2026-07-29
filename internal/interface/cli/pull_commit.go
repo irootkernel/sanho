@@ -10,8 +10,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/SeventeenthEarth/kkachi/internal/infra/fs"
-	"github.com/SeventeenthEarth/kkachi/internal/infra/httpclient"
+	"github.com/irootkernel/sanho/internal/infra/fs"
+	"github.com/irootkernel/sanho/internal/infra/httpclient"
 )
 
 const pullCommitTimeout = 2 * time.Minute
@@ -47,43 +47,43 @@ func runPullCommitCommand(cmd *cobra.Command, continueTransaction, abortTransact
 
 	workDir, err := os.Getwd()
 	if err != nil {
-		return fmt.Errorf("kkachi-cli pull-commit: get current directory: %w", err)
+		return fmt.Errorf("sanho pull-commit: get current directory: %w", err)
 	}
 	configLoader := fs.NewFileConfigLoader()
 	config, err := configLoader.Load(workDir)
 	if err != nil {
-		return fmt.Errorf("kkachi-cli pull-commit: %w", err)
+		return fmt.Errorf("sanho pull-commit: %w", err)
 	}
 	httpClient := httpclient.NewHTTPClient(config.ServerURL)
 	engine := newPullCommitEngine(httpClient)
 
 	if abortTransaction {
 		if err := engine.abort(ctx, workDir, config); err != nil {
-			return fmt.Errorf("kkachi-cli pull-commit --abort: %w", err)
+			return fmt.Errorf("sanho pull-commit --abort: %w", err)
 		}
-		cmd.Println("kkachi-cli: pull-commit aborted; original staged and unstaged docs were restored.")
+		cmd.Println("sanho: pull-commit aborted; original staged and unstaged docs were restored.")
 		return nil
 	}
 	if err := retryPendingWorkspaceReport(ctx, workDir, config); err != nil {
-		return fmt.Errorf("kkachi-cli pull-commit: %w", err)
+		return fmt.Errorf("sanho pull-commit: %w", err)
 	}
 
 	if continueTransaction {
 		state, exists, err := engine.resume(ctx, workDir, config)
 		if !exists {
-			return errors.New("kkachi-cli pull-commit --continue: no transaction exists")
+			return errors.New("sanho pull-commit --continue: no transaction exists")
 		}
 		if errors.Is(err, errPullCommitConflict) {
 			printPullCommitConflicts(cmd, state.ConflictFiles)
 			return err
 		}
 		if err != nil && !errors.Is(err, errPullCommitRetry) {
-			return fmt.Errorf("kkachi-cli pull-commit --continue: %w", err)
+			return fmt.Errorf("sanho pull-commit --continue: %w", err)
 		}
 		if err := engine.finishManual(ctx, workDir, config); err != nil {
-			return fmt.Errorf("kkachi-cli pull-commit --continue: %w", err)
+			return fmt.Errorf("sanho pull-commit --continue: %w", err)
 		}
-		cmd.Printf("kkachi-cli: created docs base commit %s and restored staged/unstaged docs layers.\n", state.SyncCommit)
+		cmd.Printf("sanho: created docs base commit %s and restored staged/unstaged docs layers.\n", state.SyncCommit)
 		return nil
 	}
 
@@ -99,14 +99,14 @@ func runPullCommitCommand(cmd *cobra.Command, continueTransaction, abortTransact
 		return fmt.Errorf("check legacy pending-fix state: %w", err)
 	}
 	if hasPendingFix {
-		return errors.New("legacy pending-fix state exists; run 'kkachi-cli fix' first")
+		return errors.New("legacy pending-fix state exists; run 'sanho fix' first")
 	}
 	conflicts, err := engine.conflictDetector.DetectConflicts(filepath.Join(workDir, config.DocsDir))
 	if err != nil {
 		return fmt.Errorf("check docs conflicts: %w", err)
 	}
 	if len(conflicts) > 0 {
-		cmd.PrintErrln("kkachi-cli: existing conflict markers found in docs:")
+		cmd.PrintErrln("sanho: existing conflict markers found in docs:")
 		for _, file := range conflicts {
 			cmd.PrintErrf("  - %s\n", file)
 		}
@@ -126,7 +126,7 @@ func runPullCommitCommand(cmd *cobra.Command, continueTransaction, abortTransact
 		return fmt.Errorf("check pulled docs baseline: %w", err)
 	}
 	if hash == remoteHash && !hasPulledDocs {
-		cmd.Println("kkachi-cli: docs base is already up to date.")
+		cmd.Println("sanho: docs base is already up to date.")
 		return nil
 	}
 
@@ -136,20 +136,20 @@ func runPullCommitCommand(cmd *cobra.Command, continueTransaction, abortTransact
 		return err
 	}
 	if err != nil && !errors.Is(err, errPullCommitRetry) {
-		return fmt.Errorf("kkachi-cli pull-commit: %w", err)
+		return fmt.Errorf("sanho pull-commit: %w", err)
 	}
 	if err := engine.finishManual(ctx, workDir, config); err != nil {
-		return fmt.Errorf("kkachi-cli pull-commit: %w", err)
+		return fmt.Errorf("sanho pull-commit: %w", err)
 	}
-	cmd.Printf("kkachi-cli: created docs base commit %s and restored staged/unstaged docs layers.\n", state.SyncCommit)
+	cmd.Printf("sanho: created docs base commit %s and restored staged/unstaged docs layers.\n", state.SyncCommit)
 	return nil
 }
 
 func printPullCommitConflicts(cmd *cobra.Command, files []string) {
-	cmd.PrintErrln("kkachi-cli: docs merge has conflicts:")
+	cmd.PrintErrln("sanho: docs merge has conflicts:")
 	for _, file := range files {
 		cmd.PrintErrf("  - %s\n", file)
 	}
-	cmd.PrintErrln("Resolve the files, stage them, then run 'kkachi-cli pull-commit --continue'.")
-	cmd.PrintErrln("Use 'kkachi-cli pull-commit --abort' to restore the original docs state.")
+	cmd.PrintErrln("Resolve the files, stage them, then run 'sanho pull-commit --continue'.")
+	cmd.PrintErrln("Use 'sanho pull-commit --abort' to restore the original docs state.")
 }

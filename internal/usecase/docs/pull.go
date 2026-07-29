@@ -8,14 +8,14 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/SeventeenthEarth/kkachi/internal/domain/client"
-	"github.com/SeventeenthEarth/kkachi/internal/domain/docs"
+	"github.com/irootkernel/sanho/internal/domain/client"
+	"github.com/irootkernel/sanho/internal/domain/docs"
 )
 
 // Pull-specific errors.
 var (
-	// ErrPullConfigBroken indicates kkachi configuration is broken.
-	ErrPullConfigBroken = errors.New("kkachi configuration is broken")
+	// ErrPullConfigBroken indicates sanho configuration is broken.
+	ErrPullConfigBroken = errors.New("sanho configuration is broken")
 	// ErrPullPendingFix indicates a pending fix state exists that must be resolved first.
 	ErrPullPendingFix = errors.New("pending fix state exists")
 	// ErrPullLocalChanges indicates uncommitted local changes exist.
@@ -44,7 +44,7 @@ type PullPendingFixStore interface {
 	Exists(path string) (bool, error)
 }
 
-// PullHTTPClient communicates with kkachi-server.
+// PullHTTPClient communicates with sanhod.
 type PullHTTPClient interface {
 	DocsHead(ctx context.Context, project docs.ProjectName) (docs.CommitHash, error)
 	DocsSnapshot(ctx context.Context, project docs.ProjectName, commit docs.CommitHash) (docs.DocsSnapshot, docs.CommitHash, error)
@@ -73,7 +73,7 @@ type PullInput struct {
 	Force   bool
 }
 
-// PullUseCase handles the kkachi pull logic.
+// PullUseCase handles the sanho pull logic.
 type PullUseCase struct {
 	configLoader    PullConfigLoader
 	docsHashStore   PullDocsHashStore
@@ -105,7 +105,7 @@ func NewPullUseCase(
 	}
 }
 
-// Execute runs the kkachi pull logic.
+// Execute runs the sanho pull logic.
 func (u *PullUseCase) Execute(ctx context.Context, input PullInput) error {
 	// Step 1: Load configuration
 	config, err := u.configLoader.Load(input.WorkDir)
@@ -129,7 +129,7 @@ func (u *PullUseCase) Execute(ctx context.Context, input PullInput) error {
 	}
 	if hasPendingFix {
 		u.output.Error("Cannot pull while in pending fix state.")
-		u.output.Error("Please complete 'kkachi-cli fix' first to resolve the pending merge.")
+		u.output.Error("Please complete 'sanho fix' first to resolve the pending merge.")
 		return ErrPullPendingFix
 	}
 
@@ -155,7 +155,7 @@ func (u *PullUseCase) Execute(ctx context.Context, input PullInput) error {
 		}
 		if hasChanges {
 			u.output.Error("Local docs have uncommitted changes.")
-			u.output.Error("Use 'kkachi-cli pull --force' to overwrite local changes,")
+			u.output.Error("Use 'sanho pull --force' to overwrite local changes,")
 			u.output.Error("or commit/stash your changes first.")
 			return ErrPullLocalChanges
 		}

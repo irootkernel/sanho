@@ -34,7 +34,7 @@ func TestCLIClean_RemovesFilesAndHooks(t *testing.T) {
 		t.Fatal(err)
 	}
 	hookPath := filepath.Join(hooksDir, "pre-commit")
-	hookContent := "#!/bin/sh\necho keep-me\nkkachi-cli hook pre-commit\n"
+	hookContent := "#!/bin/sh\necho keep-me\nsanho hook pre-commit\n"
 	if err := os.WriteFile(hookPath, []byte(hookContent), 0755); err != nil {
 		t.Fatalf("failed to write hook file: %v", err)
 	}
@@ -65,7 +65,7 @@ func TestCLIClean_RemovesFilesAndHooks(t *testing.T) {
 	cmd.Dir = wsDir
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("kkachi clean failed: %v\nOutput: %s", err, output)
+		t.Fatalf("sanho clean failed: %v\nOutput: %s", err, output)
 	}
 
 	if deleteCalls != 1 {
@@ -90,8 +90,8 @@ func TestCLIClean_RemovesFilesAndHooks(t *testing.T) {
 		t.Fatalf("failed to read hook file: %v", err)
 	}
 	text := string(data)
-	if strings.Contains(text, "kkachi-cli hook pre-commit") {
-		t.Fatalf("expected kkachi hook line removed, content:\n%s", text)
+	if strings.Contains(text, "sanho hook pre-commit") {
+		t.Fatalf("expected sanho hook line removed, content:\n%s", text)
 	}
 	if !strings.Contains(text, "echo keep-me") {
 		t.Fatalf("expected other hook lines preserved, content:\n%s", text)
@@ -126,6 +126,6 @@ func TestCLIClean_OfflineSkipsServer(t *testing.T) {
 	cmd.Dir = wsDir
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("kkachi clean offline failed: %v\nOutput: %s", err, output)
+		t.Fatalf("sanho clean offline failed: %v\nOutput: %s", err, output)
 	}
 }

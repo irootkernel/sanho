@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/SeventeenthEarth/kkachi/internal/domain/docs"
-	"github.com/SeventeenthEarth/kkachi/internal/domain/workspace"
-	"github.com/SeventeenthEarth/kkachi/internal/interface/http/dto"
-	"github.com/SeventeenthEarth/kkachi/internal/interface/http/handler"
-	stateuc "github.com/SeventeenthEarth/kkachi/internal/usecase/state"
+	"github.com/irootkernel/sanho/internal/domain/docs"
+	"github.com/irootkernel/sanho/internal/domain/workspace"
+	"github.com/irootkernel/sanho/internal/interface/http/dto"
+	"github.com/irootkernel/sanho/internal/interface/http/handler"
+	stateuc "github.com/irootkernel/sanho/internal/usecase/state"
 )
 
 // Mock implementations for state handler tests

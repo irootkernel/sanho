@@ -9,9 +9,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/SeventeenthEarth/kkachi/internal/infra/state"
-	"github.com/SeventeenthEarth/kkachi/internal/interface/http/handler"
-	"github.com/SeventeenthEarth/kkachi/internal/usecase/workspace"
+	"github.com/irootkernel/sanho/internal/infra/state"
+	"github.com/irootkernel/sanho/internal/interface/http/handler"
+	"github.com/irootkernel/sanho/internal/usecase/workspace"
 )
 
 func TestWorkspaceHandler_Delete(t *testing.T) {

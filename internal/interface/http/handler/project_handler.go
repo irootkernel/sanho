@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/SeventeenthEarth/kkachi/internal/usecase/project"
+	"github.com/irootkernel/sanho/internal/usecase/project"
 )
 
 type ProjectHandler struct {

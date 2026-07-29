@@ -3,7 +3,7 @@ package docs
 import (
 	"context"
 
-	domain "github.com/SeventeenthEarth/kkachi/internal/domain/docs"
+	domain "github.com/irootkernel/sanho/internal/domain/docs"
 )
 
 type GetDocsHeadUseCase interface {

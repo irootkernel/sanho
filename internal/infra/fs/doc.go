@@ -1,4 +1,4 @@
-// Package fs provides file system utilities for kkachi CLI.
+// Package fs provides file system utilities for sanho CLI.
 //
 // This package will contain:
 // - Config loader for .kkachi.json

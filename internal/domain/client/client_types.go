@@ -1,9 +1,9 @@
-// Package client provides domain types for the kkachi CLI client.
+// Package client provides domain types for the sanho CLI client.
 package client
 
 import (
-	"github.com/SeventeenthEarth/kkachi/internal/domain/docs"
-	"github.com/SeventeenthEarth/kkachi/internal/domain/workspace"
+	"github.com/irootkernel/sanho/internal/domain/docs"
+	"github.com/irootkernel/sanho/internal/domain/workspace"
 )
 
 // DocsStatus represents the synchronization status of local docs with the server.
@@ -40,7 +40,7 @@ func (s DocsStatus) IsValid() bool {
 
 // WorkspaceConfig represents the local workspace configuration stored in .kkachi.json.
 type WorkspaceConfig struct {
-	// ServerURL is the base URL of the kkachi-server.
+	// ServerURL is the base URL of the sanhod.
 	ServerURL string `json:"server_url"`
 	// WorkspaceID is the unique identifier for this workspace.
 	WorkspaceID workspace.WorkspaceID `json:"workspace_id"`

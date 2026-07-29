@@ -22,7 +22,7 @@ func TestCLIHelp(t *testing.T) {
 	// Verify expected content in help output
 	outputStr := string(output)
 	expectedStrings := []string{
-		"kkachi",
+		"sanho",
 		"Available Commands",
 		"init",
 		"status",
@@ -52,8 +52,8 @@ func TestCLIVersion(t *testing.T) {
 	}
 
 	outputStr := string(output)
-	if !strings.HasPrefix(outputStr, "kkachi-cli version") {
-		t.Errorf("Expected version output to start with 'kkachi-cli version', got: %s", outputStr)
+	if !strings.HasPrefix(outputStr, "sanho version") {
+		t.Errorf("Expected version output to start with 'sanho version', got: %s", outputStr)
 	}
 	if !strings.Contains(outputStr, "commit:") {
 		t.Errorf("Expected version output to contain 'commit:', got: %s", outputStr)
@@ -74,7 +74,7 @@ func TestCLIVerboseFlag(t *testing.T) {
 	}
 
 	// Just verify the command runs successfully with verbose flag
-	if !strings.Contains(string(output), "kkachi-cli version") {
+	if !strings.Contains(string(output), "sanho version") {
 		t.Errorf("Expected version output with verbose flag, got: %s", output)
 	}
 }
@@ -120,11 +120,11 @@ func TestCLIImplementedCommandsRequireFlags(t *testing.T) {
 	}
 }
 
-// TestCLIStatusRequiresWorkspace verifies status command requires kkachi workspace.
+// TestCLIStatusRequiresWorkspace verifies status command requires sanho workspace.
 func TestCLIStatusRequiresWorkspace(t *testing.T) {
 	cliBinary := getCliBinary(t)
 
-	// Run status from temp dir (not a kkachi workspace)
+	// Run status from temp dir (not a sanho workspace)
 	tempDir := t.TempDir()
 	cmd := exec.Command(cliBinary, "status")
 	cmd.Dir = tempDir
@@ -134,17 +134,17 @@ func TestCLIStatusRequiresWorkspace(t *testing.T) {
 		t.Error("Expected non-zero exit code for status without workspace")
 	}
 
-	if !strings.Contains(string(output), "not a kkachi workspace") {
-		t.Errorf("Expected 'not a kkachi workspace' message, got: %s", output)
+	if !strings.Contains(string(output), "not a sanho workspace") {
+		t.Errorf("Expected 'not a sanho workspace' message, got: %s", output)
 	}
 }
 
 // TestCLIReadOnlyHooksAlwaysExitZero verifies that read-only hooks always exit 0
-// even when not in a kkachi workspace (per Phase 3 requirement).
+// even when not in a sanho workspace (per Phase 3 requirement).
 func TestCLIReadOnlyHooksAlwaysExitZero(t *testing.T) {
 	cliBinary := getCliBinary(t)
 
-	// Run from temp dir (not a kkachi workspace)
+	// Run from temp dir (not a sanho workspace)
 	tempDir := t.TempDir()
 
 	tests := []struct {
@@ -263,7 +263,7 @@ func TestCLICommitMsgHookAddsDocsVersion(t *testing.T) {
 func TestCLICommitMsgHookNoConfigExitsZero(t *testing.T) {
 	cliBinary := getCliBinary(t)
 
-	// Create temp dir without kkachi config
+	// Create temp dir without sanho config
 	tempDir := t.TempDir()
 
 	// Create commit message file
@@ -288,7 +288,7 @@ func TestCLICommitMsgHookNoConfigExitsZero(t *testing.T) {
 func TestCLIPreCommitHookRequiresConfig(t *testing.T) {
 	cliBinary := getCliBinary(t)
 
-	// Run from temp dir without kkachi config
+	// Run from temp dir without sanho config
 	tempDir := t.TempDir()
 
 	cmd := exec.Command(cliBinary, "hook", "pre-commit")
@@ -317,9 +317,9 @@ func runGitCommand(t *testing.T, dir string, args ...string) {
 	}
 }
 
-// getCliBinary returns the path to the kkachi CLI binary.
+// getCliBinary returns the path to the sanho CLI binary.
 // It first checks for KKACHI_CLI_BINARY environment variable,
-// then falls back to the default bin/kkachi location.
+// then falls back to the default bin/sanho location.
 func getCliBinary(t *testing.T) string {
 	t.Helper()
 
@@ -334,10 +334,10 @@ func getCliBinary(t *testing.T) string {
 	// Try to find binary relative to project root
 	// When running tests, we're typically in the test directory
 	possiblePaths := []string{
-		"../../bin/kkachi",    // from test/cli/integration
-		"../../../bin/kkachi", // alternative
-		"bin/kkachi",          // from project root
-		"./bin/kkachi",        // explicit current dir
+		"../../bin/sanho",    // from test/cli/integration
+		"../../../bin/sanho", // alternative
+		"bin/sanho",          // from project root
+		"./bin/sanho",        // explicit current dir
 	}
 
 	for _, path := range possiblePaths {

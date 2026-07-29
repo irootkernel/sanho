@@ -11,11 +11,11 @@ import (
 	"testing"
 )
 
-// TestCLIPullRequiresWorkspace verifies pull command requires kkachi workspace.
+// TestCLIPullRequiresWorkspace verifies pull command requires sanho workspace.
 func TestCLIPullRequiresWorkspace(t *testing.T) {
 	cliBinary := getCliBinary(t)
 
-	// Run pull from temp dir (not a kkachi workspace)
+	// Run pull from temp dir (not a sanho workspace)
 	tempDir := t.TempDir()
 	cmd := exec.Command(cliBinary, "pull")
 	cmd.Dir = tempDir
@@ -25,8 +25,8 @@ func TestCLIPullRequiresWorkspace(t *testing.T) {
 		t.Error("Expected non-zero exit code for pull without workspace")
 	}
 
-	if !strings.Contains(string(output), "not a kkachi workspace") {
-		t.Errorf("Expected 'not a kkachi workspace' message, got: %s", output)
+	if !strings.Contains(string(output), "not a sanho workspace") {
+		t.Errorf("Expected 'not a sanho workspace' message, got: %s", output)
 	}
 }
 

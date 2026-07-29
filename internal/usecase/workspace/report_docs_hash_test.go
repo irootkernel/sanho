@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/SeventeenthEarth/kkachi/internal/domain/docs"
-	domainWorkspace "github.com/SeventeenthEarth/kkachi/internal/domain/workspace"
+	"github.com/irootkernel/sanho/internal/domain/docs"
+	domainWorkspace "github.com/irootkernel/sanho/internal/domain/workspace"
 )
 
 func TestReportDocsHashAcceptsCurrentOrAncestorAndUpdatesWorkspace(t *testing.T) {

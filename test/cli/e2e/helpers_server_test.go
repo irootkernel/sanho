@@ -47,7 +47,7 @@ func createOriginRepo(t *testing.T, files map[string]string) (originPath string,
 	return originPath, head
 }
 
-// sharedRepoTempDir returns a temp directory intended to be visible to kkachi-server
+// sharedRepoTempDir returns a temp directory intended to be visible to sanhod
 // even when it's running inside a container. Our docker dev setup mounts /tmp by default.
 func sharedRepoTempDir(t *testing.T) string {
 	t.Helper()
@@ -56,7 +56,7 @@ func sharedRepoTempDir(t *testing.T) string {
 	if runtime.GOOS == "darwin" {
 		base = "/tmp"
 	}
-	dir, err := os.MkdirTemp(base, "kkachi-cli-e2e-*")
+	dir, err := os.MkdirTemp(base, "sanho-e2e-*")
 	if err != nil {
 		t.Fatalf("failed to create shared temp dir: %v", err)
 	}

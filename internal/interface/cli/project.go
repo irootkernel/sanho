@@ -6,17 +6,17 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/SeventeenthEarth/kkachi/internal/domain/client"
-	"github.com/SeventeenthEarth/kkachi/internal/domain/docs"
-	"github.com/SeventeenthEarth/kkachi/internal/infra/httpclient"
+	"github.com/irootkernel/sanho/internal/domain/client"
+	"github.com/irootkernel/sanho/internal/domain/docs"
+	"github.com/irootkernel/sanho/internal/infra/httpclient"
 )
 
 // newProjectCmd creates the project parent command.
 func newProjectCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "project",
-		Short: "Manage projects on the kkachi-server",
-		Long:  `Commands for managing projects registered with the kkachi-server.`,
+		Short: "Manage projects on the sanhod",
+		Long:  `Commands for managing projects registered with the sanhod.`,
 	}
 
 	cmd.AddCommand(newProjectAddCmd())
@@ -35,8 +35,8 @@ func newProjectAddCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "add",
-		Short: "Register a project with the kkachi-server",
-		Long: `Register a new project and its associated docs repository with the kkachi-server.
+		Short: "Register a project with the sanhod",
+		Long: `Register a new project and its associated docs repository with the sanhod.
 
 This command requires:
 - Project name
@@ -91,7 +91,7 @@ For example: git@github.com:org/my_docs.git -> docs_repo_id = "my_docs"`,
 				return fmt.Errorf("failed to create/update project: %w", err)
 			}
 
-			fmt.Printf("kkachi: project '%s' registered successfully.\n", projectName)
+			fmt.Printf("sanho: project '%s' registered successfully.\n", projectName)
 			fmt.Printf("  docs_repo_id  : %s\n", docsRepoID)
 			fmt.Printf("  docs_repo_url : %s\n", docsRepoURL)
 
@@ -99,7 +99,7 @@ For example: git@github.com:org/my_docs.git -> docs_repo_id = "my_docs"`,
 		},
 	}
 
-	cmd.Flags().StringVar(&serverURL, "server-url", "", "kkachi-server URL (required)")
+	cmd.Flags().StringVar(&serverURL, "server-url", "", "sanhod URL (required)")
 	cmd.Flags().StringVar(&projectName, "project", "", "Project name (required)")
 	cmd.Flags().StringVar(&docsRepoURL, "docs-repo-url", "", "Docs repository Git URL (required)")
 
@@ -117,8 +117,8 @@ func newProjectDeleteCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "delete",
-		Short: "Remove a project from the kkachi-server",
-		Long: `Remove a project from the kkachi-server.
+		Short: "Remove a project from the sanhod",
+		Long: `Remove a project from the sanhod.
 
 Note: This does not delete any local directories or files.
 Workspaces associated with this project will no longer function.
@@ -162,14 +162,14 @@ Use --force to delete a project even if it has registered workspaces.`,
 				return fmt.Errorf("failed to delete project: %w", err)
 			}
 
-			fmt.Printf("kkachi: project '%s' deleted successfully.\n", projectName)
+			fmt.Printf("sanho: project '%s' deleted successfully.\n", projectName)
 			fmt.Println("Workspaces connected to this project will no longer communicate with kkachi.")
 
 			return nil
 		},
 	}
 
-	cmd.Flags().StringVar(&serverURL, "server-url", "", "kkachi-server URL (required)")
+	cmd.Flags().StringVar(&serverURL, "server-url", "", "sanhod URL (required)")
 	cmd.Flags().StringVar(&projectName, "project", "", "Project name to delete (required)")
 	cmd.Flags().BoolVar(&force, "force", false, "Force delete even if workspaces exist")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "Skip confirmation prompt")

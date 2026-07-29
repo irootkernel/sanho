@@ -13,15 +13,15 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/SeventeenthEarth/kkachi/internal/infra/git"
-	"github.com/SeventeenthEarth/kkachi/internal/infra/state"
-	kkachihttp "github.com/SeventeenthEarth/kkachi/internal/interface/http"
-	"github.com/SeventeenthEarth/kkachi/internal/interface/http/dto"
-	"github.com/SeventeenthEarth/kkachi/internal/interface/http/handler"
-	"github.com/SeventeenthEarth/kkachi/internal/usecase/docs"
-	"github.com/SeventeenthEarth/kkachi/internal/usecase/project"
-	stateUsecase "github.com/SeventeenthEarth/kkachi/internal/usecase/state"
-	"github.com/SeventeenthEarth/kkachi/internal/usecase/workspace"
+	"github.com/irootkernel/sanho/internal/infra/git"
+	"github.com/irootkernel/sanho/internal/infra/state"
+	kkachihttp "github.com/irootkernel/sanho/internal/interface/http"
+	"github.com/irootkernel/sanho/internal/interface/http/dto"
+	"github.com/irootkernel/sanho/internal/interface/http/handler"
+	"github.com/irootkernel/sanho/internal/usecase/docs"
+	"github.com/irootkernel/sanho/internal/usecase/project"
+	stateUsecase "github.com/irootkernel/sanho/internal/usecase/state"
+	"github.com/irootkernel/sanho/internal/usecase/workspace"
 )
 
 // This test spins up the HTTP server in-process to validate handler wiring.
@@ -162,7 +162,7 @@ func TestIntegration_Server(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(originPath, "docs"), 0755); err != nil {
 		t.Fatalf("failed to create docs directory: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(originPath, "docs", "index.md"), []byte("Hello Kkachi"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(originPath, "docs", "index.md"), []byte("Hello Sanho"), 0644); err != nil {
 		t.Fatalf("failed to write docs file: %v", err)
 	}
 	runCmd(t, originPath, "git", "add", ".")

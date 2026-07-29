@@ -7,11 +7,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/SeventeenthEarth/kkachi/internal/config"
-	"github.com/SeventeenthEarth/kkachi/internal/infra/git"
-	"github.com/SeventeenthEarth/kkachi/internal/infra/state"
-	"github.com/SeventeenthEarth/kkachi/internal/interface/http/handler"
-	"github.com/SeventeenthEarth/kkachi/internal/usecase/project"
+	"github.com/irootkernel/sanho/internal/config"
+	"github.com/irootkernel/sanho/internal/infra/git"
+	"github.com/irootkernel/sanho/internal/infra/state"
+	"github.com/irootkernel/sanho/internal/interface/http/handler"
+	"github.com/irootkernel/sanho/internal/usecase/project"
 )
 
 func TestDeleteProject(t *testing.T) {

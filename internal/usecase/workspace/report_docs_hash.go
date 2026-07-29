@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
-	"github.com/SeventeenthEarth/kkachi/internal/domain/docs"
-	domainWorkspace "github.com/SeventeenthEarth/kkachi/internal/domain/workspace"
+	"github.com/irootkernel/sanho/internal/domain/docs"
+	domainWorkspace "github.com/irootkernel/sanho/internal/domain/workspace"
 )
 
 var ErrDocsHashNotInCurrentHistory = errors.New("docs hash is not in current history")

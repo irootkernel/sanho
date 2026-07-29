@@ -10,11 +10,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/SeventeenthEarth/kkachi/internal/domain/docs"
-	"github.com/SeventeenthEarth/kkachi/internal/infra/fs"
-	infraGit "github.com/SeventeenthEarth/kkachi/internal/infra/git"
-	"github.com/SeventeenthEarth/kkachi/internal/infra/httpclient"
-	docsUsecase "github.com/SeventeenthEarth/kkachi/internal/usecase/docs"
+	"github.com/irootkernel/sanho/internal/domain/docs"
+	"github.com/irootkernel/sanho/internal/infra/fs"
+	infraGit "github.com/irootkernel/sanho/internal/infra/git"
+	"github.com/irootkernel/sanho/internal/infra/httpclient"
+	docsUsecase "github.com/irootkernel/sanho/internal/usecase/docs"
 )
 
 // pullTimeout is the timeout for pull operations.
@@ -25,7 +25,7 @@ func newPullCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "pull",
 		Short: "Pull latest docs snapshot from server",
-		Long: `Pull the latest documentation snapshot from the kkachi server
+		Long: `Pull the latest documentation snapshot from the sanho server
 and apply it to the local docs directory.
 
 This command will:
@@ -46,7 +46,7 @@ If local changes exist, use --force to overwrite them.`,
 	return cmd
 }
 
-// runPullCommand executes the kkachi pull logic.
+// runPullCommand executes the sanho pull logic.
 func runPullCommand(cmd *cobra.Command, force bool) error {
 	ctx, cancel := context.WithTimeout(context.Background(), pullTimeout)
 	defer cancel()
@@ -54,7 +54,7 @@ func runPullCommand(cmd *cobra.Command, force bool) error {
 	// Get current working directory
 	cwd, err := os.Getwd()
 	if err != nil {
-		cmd.PrintErrf("kkachi pull: failed to get current directory: %v\n", err)
+		cmd.PrintErrf("sanho pull: failed to get current directory: %v\n", err)
 		return err
 	}
 
@@ -68,15 +68,15 @@ func runPullCommand(cmd *cobra.Command, force bool) error {
 	// Load config first to get server URL
 	config, err := configLoader.Load(cwd)
 	if err != nil {
-		cmd.PrintErrf("kkachi pull: %v\n", err)
-		cmd.PrintErrf("This directory is not a kkachi workspace.\n")
-		cmd.PrintErrf("Run 'kkachi-cli init' first to initialize.\n")
+		cmd.PrintErrf("sanho pull: %v\n", err)
+		cmd.PrintErrf("This directory is not a sanho workspace.\n")
+		cmd.PrintErrf("Run 'sanho init' first to initialize.\n")
 		return err
 	}
 
 	rawHTTPClient := httpclient.NewHTTPClient(config.ServerURL)
 	if err := retryPendingWorkspaceReport(ctx, cwd, config); err != nil {
-		return fmt.Errorf("kkachi pull: %w", err)
+		return fmt.Errorf("sanho pull: %w", err)
 	}
 	httpClient := newPullHTTPClientAdapter(rawHTTPClient)
 	engine := newPullCommitEngine(rawHTTPClient)
@@ -84,11 +84,11 @@ func runPullCommand(cmd *cobra.Command, force bool) error {
 	workspaceSync := infraGit.NewWorkspaceSync(fs.NewSnapshotBuilder(), snapshotApplier)
 	previousHash, err := docsHashStore.Read(filepath.Join(cwd, config.DocsHashFile))
 	if err != nil {
-		return fmt.Errorf("kkachi pull: read current docs hash: %w", err)
+		return fmt.Errorf("sanho pull: read current docs hash: %w", err)
 	}
 	originalIndex, err := workspaceSync.BuildIndexDocsSnapshot(ctx, cwd, config.DocsDir)
 	if err != nil {
-		return fmt.Errorf("kkachi pull: capture docs index: %w", err)
+		return fmt.Errorf("sanho pull: capture docs index: %w", err)
 	}
 
 	// Create usecase
@@ -113,7 +113,7 @@ func runPullCommand(cmd *cobra.Command, force bool) error {
 		// Handle specific errors with appropriate messages
 		switch {
 		case errors.Is(pullErr, docsUsecase.ErrPullConfigBroken):
-			cmd.PrintErrf("kkachi: configuration is broken. Please run 'kkachi-cli init' to reinitialize.\n")
+			cmd.PrintErrf("sanho: configuration is broken. Please run 'sanho init' to reinitialize.\n")
 		case errors.Is(pullErr, docsUsecase.ErrPullPendingFix):
 			// Message already printed by output
 		case errors.Is(pullErr, docsUsecase.ErrPullLocalChanges):
@@ -121,13 +121,13 @@ func runPullCommand(cmd *cobra.Command, force bool) error {
 		case errors.Is(pullErr, docsUsecase.ErrPullAlreadyUpToDate):
 			pullErr = nil
 		case errors.Is(pullErr, docsUsecase.ErrPullUnknownProject):
-			cmd.PrintErrf("kkachi: project '%s' is not registered on server.\n", config.Project)
-			cmd.PrintErrf("kkachi: run 'kkachi-cli init' or 'kkachi-cli project add' to register it.\n")
+			cmd.PrintErrf("sanho: project '%s' is not registered on server.\n", config.Project)
+			cmd.PrintErrf("sanho: run 'sanho init' or 'sanho project add' to register it.\n")
 		case errors.Is(pullErr, docsUsecase.ErrPullUnknownWorkspace):
-			cmd.PrintErrf("kkachi: workspace '%s' is not registered on server.\n", config.WorkspaceID)
-			cmd.PrintErrf("kkachi: run 'kkachi-cli init' or 'kkachi-cli workspace register' to register it.\n")
+			cmd.PrintErrf("sanho: workspace '%s' is not registered on server.\n", config.WorkspaceID)
+			cmd.PrintErrf("sanho: run 'sanho init' or 'sanho workspace register' to register it.\n")
 		default:
-			cmd.PrintErrf("kkachi pull: %v\n", pullErr)
+			cmd.PrintErrf("sanho pull: %v\n", pullErr)
 		}
 		if pullErr != nil {
 			return pullErr
@@ -136,21 +136,21 @@ func runPullCommand(cmd *cobra.Command, force bool) error {
 
 	hash, err := docsHashStore.Read(filepath.Join(cwd, config.DocsHashFile))
 	if err != nil {
-		return fmt.Errorf("kkachi pull: read synchronized docs hash: %w", err)
+		return fmt.Errorf("sanho pull: read synchronized docs hash: %w", err)
 	}
 	if hash != previousHash {
 		if force {
 			if err := workspaceSync.ResetIndexDocsToHead(ctx, cwd, config.DocsDir); err != nil {
-				return fmt.Errorf("kkachi pull: discard staged docs for force pull: %w", err)
+				return fmt.Errorf("sanho pull: discard staged docs for force pull: %w", err)
 			}
 			originalIndex, err = workspaceSync.BuildIndexDocsSnapshot(ctx, cwd, config.DocsDir)
 			if err != nil {
-				return fmt.Errorf("kkachi pull: capture reset docs index: %w", err)
+				return fmt.Errorf("sanho pull: capture reset docs index: %w", err)
 			}
 		}
 		adoptedSnapshot, actualHash, err := rawHTTPClient.DocsSnapshot(ctx, config.Project, hash)
 		if err != nil {
-			return fmt.Errorf("kkachi pull: reload adopted docs snapshot: %w", err)
+			return fmt.Errorf("sanho pull: reload adopted docs snapshot: %w", err)
 		}
 		if !actualHash.IsZero() {
 			hash = actualHash
@@ -164,12 +164,12 @@ func runPullCommand(cmd *cobra.Command, force bool) error {
 			adoptedSnapshot,
 			force,
 		); err != nil {
-			return fmt.Errorf("kkachi pull: record pulled docs baseline: %w", err)
+			return fmt.Errorf("sanho pull: record pulled docs baseline: %w", err)
 		}
-		cmd.Println("kkachi: Pulled docs will be materialized in a [KKACHI] Update docs commit before the next commit.")
+		cmd.Println("sanho: Pulled docs will be materialized in a [KKACHI] Update docs commit before the next commit.")
 	}
 	if err := reportWorkspaceDocsHash(ctx, cwd, config, hash); err != nil {
-		return fmt.Errorf("kkachi pull: %w", err)
+		return fmt.Errorf("sanho pull: %w", err)
 	}
 	return nil
 }
@@ -184,15 +184,15 @@ func newCLIPullOutput(cmd *cobra.Command) *cliPullOutput {
 }
 
 func (o *cliPullOutput) Info(msg string) {
-	fmt.Fprintf(o.cmd.OutOrStdout(), "kkachi: %s\n", msg)
+	fmt.Fprintf(o.cmd.OutOrStdout(), "sanho: %s\n", msg)
 }
 
 func (o *cliPullOutput) Warning(msg string) {
-	fmt.Fprintf(o.cmd.OutOrStdout(), "kkachi: %s\n", msg)
+	fmt.Fprintf(o.cmd.OutOrStdout(), "sanho: %s\n", msg)
 }
 
 func (o *cliPullOutput) Error(msg string) {
-	o.cmd.PrintErrf("kkachi: %s\n", msg)
+	o.cmd.PrintErrf("sanho: %s\n", msg)
 }
 
 // pullPendingFixStoreAdapter adapts fs.FilePendingFixStore to docsUsecase.PullPendingFixStore.

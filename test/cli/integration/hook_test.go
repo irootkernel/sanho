@@ -66,7 +66,7 @@ func setupTempWorkspace(t *testing.T, serverURL, localHash string) string {
 	return tempDir
 }
 
-// setupFakeServer creates a fake kkachi-server that responds to /docs/head.
+// setupFakeServer creates a fake sanhod that responds to /docs/head.
 func setupFakeServer(t *testing.T, headHash string, statusCode int, errorCode string) *httptest.Server {
 	t.Helper()
 

@@ -1,4 +1,4 @@
-// Package httpclient provides an HTTP client for communicating with kkachi-server.
+// Package httpclient provides an HTTP client for communicating with sanhod.
 //
 // This package implements the KkachiClient interface for CLI operations such as
 // workspace registration, docs head queries, and docs push operations.
@@ -15,8 +15,8 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/SeventeenthEarth/kkachi/internal/domain/docs"
-	"github.com/SeventeenthEarth/kkachi/internal/domain/workspace"
+	"github.com/irootkernel/sanho/internal/domain/docs"
+	"github.com/irootkernel/sanho/internal/domain/workspace"
 )
 
 // Default configuration values.
@@ -142,7 +142,7 @@ type ProjectStatusResponse struct {
 
 // ---- Client Interface ----
 
-// KkachiClient defines the interface for communicating with kkachi-server.
+// KkachiClient defines the interface for communicating with sanhod.
 type KkachiClient interface {
 	// DocsHead retrieves the current HEAD commit hash for the given project.
 	DocsHead(ctx context.Context, project docs.ProjectName) (docs.CommitHash, error)

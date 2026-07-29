@@ -309,11 +309,11 @@ func captureDirtyLayers(
 	}
 	replayWorkTree := strings.TrimSpace(string(out))
 
-	stagedCommit, err := createSyntheticCommit(ctx, repoPath, replayStagedTree, currentHead, "kkachi staged layer")
+	stagedCommit, err := createSyntheticCommit(ctx, repoPath, replayStagedTree, currentHead, "sanho staged layer")
 	if err != nil {
 		return "", "", "", err
 	}
-	workCommit, err = createSyntheticCommit(ctx, repoPath, replayWorkTree, stagedCommit, "kkachi worktree layer")
+	workCommit, err = createSyntheticCommit(ctx, repoPath, replayWorkTree, stagedCommit, "sanho worktree layer")
 	if err != nil {
 		return "", "", "", err
 	}

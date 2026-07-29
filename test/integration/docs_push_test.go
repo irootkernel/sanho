@@ -15,14 +15,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/SeventeenthEarth/kkachi/internal/infra/git"
-	"github.com/SeventeenthEarth/kkachi/internal/infra/state"
-	kkachihttp "github.com/SeventeenthEarth/kkachi/internal/interface/http"
-	"github.com/SeventeenthEarth/kkachi/internal/interface/http/dto"
-	"github.com/SeventeenthEarth/kkachi/internal/interface/http/handler"
-	"github.com/SeventeenthEarth/kkachi/internal/usecase/docs"
-	"github.com/SeventeenthEarth/kkachi/internal/usecase/project"
-	"github.com/SeventeenthEarth/kkachi/internal/usecase/workspace"
+	"github.com/irootkernel/sanho/internal/infra/git"
+	"github.com/irootkernel/sanho/internal/infra/state"
+	kkachihttp "github.com/irootkernel/sanho/internal/interface/http"
+	"github.com/irootkernel/sanho/internal/interface/http/dto"
+	"github.com/irootkernel/sanho/internal/interface/http/handler"
+	"github.com/irootkernel/sanho/internal/usecase/docs"
+	"github.com/irootkernel/sanho/internal/usecase/project"
+	"github.com/irootkernel/sanho/internal/usecase/workspace"
 )
 
 // TestDocsPush_Integration tests the full /docs/push flow with real Git operations

@@ -1,6 +1,6 @@
-# Kkachi
+# Sanho
 
-**Kkachi** is a central document coordination system designed to synchronize a specific documentation directory (e.g., `docs/`) across multiple Git repositories (workspaces). It ensures that documentation remains consistent and version-controlled in a dedicated repository (e.g., `sudal_docs`), separate from the application code.
+**Sanho** is a central document coordination system designed to synchronize a specific documentation directory (e.g., `docs/`) across multiple Git repositories (workspaces). It ensures that documentation remains consistent and version-controlled in a dedicated repository (e.g., `sudal_docs`), separate from the application code.
 
 ## Language & Communication Guidelines
 
@@ -14,16 +14,16 @@
 
 The system consists of two main components:
 
-1.  **kkachi-server**: A central server that:
+1.  **sanhod**: A central server that:
     *   Manages local clones of documentation repositories.
     *   Provides REST APIs to query the current HEAD, register workspaces, and push document changes.
     *   Maintains the state of all registered workspaces and projects.
     *   Handles the actual Git operations (commit, push) to the central documentation repository.
 
-2.  **kkachi CLI**: A command-line tool used by developers in their local workspaces.
+2.  **Sanho CLI**: A command-line tool used by developers in their local workspaces.
     *   Integrates via Git hooks (`pre-commit`, `pre-push`, etc.) to automate synchronization.
     *   Detects "outdated" documentation states and facilitates 3-way merges.
-    *   Communicates with `kkachi-server` to fetch snapshots and push changes.
+    *   Communicates with `sanhod` to fetch snapshots and push changes.
 
 ### Core Technologies
 *   **Language:** Go 1.25.0
@@ -39,7 +39,7 @@ The project follows a Clean Architecture approach, co-locating server and client
 /
 ├── cmd/
 │   └── server/           # Server entry point
-│   └── kkachi/           # CLI entry point (planned)
+│   └── sanho/            # CLI entry point
 ├── internal/
 │   ├── config/           # Configuration handling
 │   ├── domain/           # Core business entities and repository interfaces (No external deps)
@@ -88,7 +88,7 @@ export PORT=5789
 export STATE_FILE_PATH=data/kkachi_state.json
 
 # Run the server
-go run cmd/server/main.go
+go run cmd/sanhod/main.go
 ```
 
 ### Testing
@@ -126,4 +126,3 @@ This section records mistakes made by the agent during development (specifically
 ### 5. Adherence to Communication Guidelines
 *   **Mistake:** Failed to maintain the user's preferred interaction language (Korean), occasionally reverting to English without permission.
 *   **Correction:** Strictly respect the communication guidelines established by the user. Maintain consistent language usage even across context switches.
-

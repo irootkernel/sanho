@@ -9,10 +9,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	domain "github.com/SeventeenthEarth/kkachi/internal/domain/docs"
-	"github.com/SeventeenthEarth/kkachi/internal/interface/http/dto"
-	"github.com/SeventeenthEarth/kkachi/internal/interface/http/handler"
-	uc "github.com/SeventeenthEarth/kkachi/internal/usecase/docs"
+	domain "github.com/irootkernel/sanho/internal/domain/docs"
+	"github.com/irootkernel/sanho/internal/interface/http/dto"
+	"github.com/irootkernel/sanho/internal/interface/http/handler"
+	uc "github.com/irootkernel/sanho/internal/usecase/docs"
 )
 
 type mockPushDocsUseCase struct {

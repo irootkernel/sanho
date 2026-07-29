@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	workspaceUsecase "github.com/SeventeenthEarth/kkachi/internal/usecase/workspace"
+	workspaceUsecase "github.com/irootkernel/sanho/internal/usecase/workspace"
 )
 
 func TestWorkspaceHandlerReportDocsHash(t *testing.T) {

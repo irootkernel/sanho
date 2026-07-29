@@ -3,7 +3,7 @@ package project
 import (
 	"context"
 
-	"github.com/SeventeenthEarth/kkachi/internal/config"
+	"github.com/irootkernel/sanho/internal/config"
 )
 
 // State access needed by AddProject use case.

@@ -40,9 +40,9 @@ func NewRootCmd(info BuildInfo) *cobra.Command {
 	buildInfo = info
 
 	rootCmd := &cobra.Command{
-		Use:   "kkachi-cli",
+		Use:   "sanho",
 		Short: "A document coordination system for Git repositories",
-		Long: `Kkachi is a central document coordination system designed to synchronize
+		Long: `Sanho is a central document coordination system designed to synchronize
 a specific documentation directory (e.g., docs/) across multiple Git repositories.
 
 It ensures that documentation remains consistent and version-controlled

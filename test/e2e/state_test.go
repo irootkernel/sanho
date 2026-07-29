@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/SeventeenthEarth/kkachi/internal/interface/http/dto"
+	"github.com/irootkernel/sanho/internal/interface/http/dto"
 )
 
 // TestE2E_State tests the /state endpoint with real server and Git operations.

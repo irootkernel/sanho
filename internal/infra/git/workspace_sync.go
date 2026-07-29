@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/SeventeenthEarth/kkachi/internal/infra/fs"
+	"github.com/irootkernel/sanho/internal/infra/fs"
 )
 
 // WorkspaceSync performs docs-only Git operations without disturbing the

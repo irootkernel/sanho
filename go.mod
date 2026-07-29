@@ -1,4 +1,4 @@
-module github.com/SeventeenthEarth/kkachi
+module github.com/irootkernel/sanho
 
 go 1.25.0
 

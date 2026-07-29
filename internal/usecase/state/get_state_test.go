@@ -5,9 +5,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/SeventeenthEarth/kkachi/internal/domain/docs"
-	"github.com/SeventeenthEarth/kkachi/internal/domain/workspace"
-	stateuc "github.com/SeventeenthEarth/kkachi/internal/usecase/state"
+	"github.com/irootkernel/sanho/internal/domain/docs"
+	"github.com/irootkernel/sanho/internal/domain/workspace"
+	stateuc "github.com/irootkernel/sanho/internal/usecase/state"
 )
 
 // Mock DocsReadRepository

@@ -7,10 +7,10 @@ import (
 	"log"
 	"net/http"
 
-	domain "github.com/SeventeenthEarth/kkachi/internal/domain/docs"
-	"github.com/SeventeenthEarth/kkachi/internal/interface/http/dto"
-	"github.com/SeventeenthEarth/kkachi/internal/interface/http/httputil"
-	usecase "github.com/SeventeenthEarth/kkachi/internal/usecase/docs"
+	domain "github.com/irootkernel/sanho/internal/domain/docs"
+	"github.com/irootkernel/sanho/internal/interface/http/dto"
+	"github.com/irootkernel/sanho/internal/interface/http/httputil"
+	usecase "github.com/irootkernel/sanho/internal/usecase/docs"
 )
 
 type DocsSnapshotHandler struct {

@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/SeventeenthEarth/kkachi/internal/interface/http/dto"
+	"github.com/irootkernel/sanho/internal/interface/http/dto"
 )
 
-// E2E: kkachi clean should remove server workspace and local artifacts.
+// E2E: sanho clean should remove server workspace and local artifacts.
 func TestE2E_CliClean_RemovesWorkspaceAndLocalFiles(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
@@ -49,7 +49,7 @@ func TestE2E_CliClean_RemovesWorkspaceAndLocalFiles(t *testing.T) {
 		ActorEmail: "dev@example.com",
 	})
 
-	// Seed kkachi files and hooks
+	// Seed sanho files and hooks
 	configJSON := `{
   "server_url": "` + baseURL + `",
   "workspace_id": "` + wsID + `",
@@ -76,12 +76,12 @@ func TestE2E_CliClean_RemovesWorkspaceAndLocalFiles(t *testing.T) {
 		t.Fatalf("failed to create hooks dir: %v", err)
 	}
 	hookPath := filepath.Join(hooksDir, "pre-commit")
-	hookContent := "#!/bin/sh\necho keep\nkkachi-cli hook pre-commit\n"
+	hookContent := "#!/bin/sh\necho keep\nsanho hook pre-commit\n"
 	if err := os.WriteFile(hookPath, []byte(hookContent), 0755); err != nil {
 		t.Fatalf("failed to write hook: %v", err)
 	}
 
-	// Run kkachi clean
+	// Run sanho clean
 	cliBin := getCliBinaryE2E(t)
 	runCmdE2E(t, wsDir, nil, cliBin, "clean", "--yes", "--remove-docs")
 
@@ -107,14 +107,14 @@ func TestE2E_CliClean_RemovesWorkspaceAndLocalFiles(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(wsDir, "docs")); !os.IsNotExist(err) {
 		t.Fatalf("expected docs dir removed, err=%v", err)
 	}
-	// Hook cleaned (kkachi line removed, other content preserved)
+	// Hook cleaned (sanho line removed, other content preserved)
 	data, err := os.ReadFile(hookPath)
 	if err != nil {
 		t.Fatalf("failed to read hook after clean: %v", err)
 	}
 	text := string(data)
-	if strings.Contains(text, "kkachi-cli hook pre-commit") {
-		t.Fatalf("expected kkachi hook line removed, content:\n%s", text)
+	if strings.Contains(text, "sanho hook pre-commit") {
+		t.Fatalf("expected sanho hook line removed, content:\n%s", text)
 	}
 	if !strings.Contains(text, "echo keep") {
 		t.Fatalf("expected other hook content preserved, content:\n%s", text)

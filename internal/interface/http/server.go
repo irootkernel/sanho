@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/SeventeenthEarth/kkachi/internal/interface/http/handler"
+	"github.com/irootkernel/sanho/internal/interface/http/handler"
 )
 
 // ServerConfig holds configuration for the HTTP server.

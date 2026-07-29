@@ -10,9 +10,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/SeventeenthEarth/kkachi/internal/domain/docs"
-	"github.com/SeventeenthEarth/kkachi/internal/infra/fs"
-	"github.com/SeventeenthEarth/kkachi/internal/infra/httpclient"
+	"github.com/irootkernel/sanho/internal/domain/docs"
+	"github.com/irootkernel/sanho/internal/infra/fs"
+	"github.com/irootkernel/sanho/internal/infra/httpclient"
 )
 
 // stateTimeout is the timeout for state operations.
@@ -42,13 +42,13 @@ func newStateCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "state",
 		Short: "Query server state for registered projects and workspaces",
-		Long: `Query the kkachi-server for the current state of docs HEAD
+		Long: `Query the sanhod for the current state of docs HEAD
 and registered workspaces.
 
 By default, shows only the current project's state.
 Use --all to see all projects.
 
-When using --all outside a kkachi workspace, provide --server-url.`,
+When using --all outside a sanho workspace, provide --server-url.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runStateCommand(cmd, showAll, serverURLFlag, jsonOutput)
 		},
@@ -61,7 +61,7 @@ When using --all outside a kkachi workspace, provide --server-url.`,
 	return cmd
 }
 
-// runStateCommand executes the kkachi state logic.
+// runStateCommand executes the sanho state logic.
 func runStateCommand(cmd *cobra.Command, showAll bool, serverURLFlag string, jsonOutput bool) error {
 	ctx, cancel := context.WithTimeout(context.Background(), stateTimeout)
 	defer cancel()
@@ -70,7 +70,7 @@ func runStateCommand(cmd *cobra.Command, showAll bool, serverURLFlag string, jso
 	cwd, err := os.Getwd()
 	if err != nil {
 		if !jsonOutput {
-			cmd.PrintErrf("kkachi state: failed to get current directory: %v\n", err)
+			cmd.PrintErrf("sanho state: failed to get current directory: %v\n", err)
 		}
 		return withErrorCode("internal_error", err)
 	}
@@ -90,24 +90,24 @@ func runStateCommand(cmd *cobra.Command, showAll bool, serverURLFlag string, jso
 		} else if showAll {
 			// --all without --server-url: suggest using --server-url
 			if !jsonOutput {
-				cmd.PrintErrf("kkachi state: no .kkachi.json found.\n")
+				cmd.PrintErrf("sanho state: no .kkachi.json found.\n")
 				cmd.PrintErrf("When using --all outside a workspace, provide --server-url flag.\n")
-				cmd.PrintErrf("Example: kkachi-cli state --all --server-url http://localhost:5789\n")
+				cmd.PrintErrf("Example: sanho state --all --server-url http://localhost:5789\n")
 			}
 			return withErrorCodeMessage(
 				"server_url_required",
-				"--server-url is required with --all outside a kkachi workspace",
+				"--server-url is required with --all outside a sanho workspace",
 				err,
 			)
 		} else if errors.Is(err, fs.ErrConfigNotFound) {
 			if !jsonOutput {
-				cmd.PrintErrf("kkachi state: this directory is not a kkachi workspace.\n")
-				cmd.PrintErrf("Please run 'kkachi-cli init' first or use --all with --server-url.\n")
+				cmd.PrintErrf("sanho state: this directory is not a sanho workspace.\n")
+				cmd.PrintErrf("Please run 'sanho init' first or use --all with --server-url.\n")
 			}
 			return withErrorCode("not_in_workspace", err)
 		} else {
 			if !jsonOutput {
-				cmd.PrintErrf("kkachi state: failed to load config: %v\n", err)
+				cmd.PrintErrf("sanho state: failed to load config: %v\n", err)
 			}
 			return withErrorCode("invalid_workspace_config", err)
 		}
@@ -135,13 +135,13 @@ func runStateCommand(cmd *cobra.Command, showAll bool, serverURLFlag string, jso
 	if err != nil {
 		if errors.Is(err, httpclient.ErrUnknownProject) {
 			if !jsonOutput {
-				cmd.PrintErrf("kkachi state: project '%s' is not registered on server.\n", currentProject)
-				cmd.PrintErrf("Please run 'kkachi-cli project add' to register the project.\n")
+				cmd.PrintErrf("sanho state: project '%s' is not registered on server.\n", currentProject)
+				cmd.PrintErrf("Please run 'sanho project add' to register the project.\n")
 			}
 			return withErrorCode("unknown_project", err)
 		}
 		if !jsonOutput {
-			cmd.PrintErrf("kkachi state: failed to get state from server: %v\n", err)
+			cmd.PrintErrf("sanho state: failed to get state from server: %v\n", err)
 		}
 		return withErrorCode("server_request_failed", err)
 	}
@@ -210,7 +210,7 @@ func buildStateJSONOutput(showAll bool, project docs.ProjectName, resp httpclien
 
 // printProjectState prints state for the current project only.
 func printProjectState(cmd *cobra.Command, project docs.ProjectName, resp httpclient.StateResponse) {
-	fmt.Fprintf(cmd.OutOrStdout(), "kkachi-cli state:\n")
+	fmt.Fprintf(cmd.OutOrStdout(), "sanho state:\n")
 	fmt.Fprintf(cmd.OutOrStdout(), "  project: %s\n", project)
 
 	// Get docs head for this project
@@ -236,7 +236,7 @@ func printProjectState(cmd *cobra.Command, project docs.ProjectName, resp httpcl
 
 // printAllState prints state for all projects.
 func printAllState(cmd *cobra.Command, resp httpclient.StateResponse) {
-	fmt.Fprintf(cmd.OutOrStdout(), "kkachi-cli state --all:\n")
+	fmt.Fprintf(cmd.OutOrStdout(), "sanho state --all:\n")
 
 	// Print docs heads
 	fmt.Fprintf(cmd.OutOrStdout(), "  docs_heads:\n")

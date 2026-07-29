@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	testutil "github.com/SeventeenthEarth/kkachi/test/util"
+	testutil "github.com/irootkernel/sanho/test/util"
 )
 
 func TestMain(m *testing.M) {
@@ -23,7 +23,7 @@ func TestMain(m *testing.M) {
 
 	stopServer, err := startIsolatedServer()
 	if err != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "start isolated kkachi-server for CLI E2E: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "start isolated sanhod for CLI E2E: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -42,7 +42,7 @@ func startIsolatedServer() (func(), error) {
 		return nil, fmt.Errorf("release reserved port: %w", err)
 	}
 
-	tempDir, err := os.MkdirTemp("", "kkachi-cli-e2e-server-*")
+	tempDir, err := os.MkdirTemp("", "sanho-e2e-server-*")
 	if err != nil {
 		return nil, fmt.Errorf("create temp directory: %w", err)
 	}
@@ -52,8 +52,8 @@ func startIsolatedServer() (func(), error) {
 	}
 	serverBinary := strings.TrimSpace(os.Getenv("KKACHI_SERVER_BINARY"))
 	if serverBinary == "" {
-		serverBinary = filepath.Join(tempDir, "kkachi-server")
-		build := exec.Command("go", "build", "-o", serverBinary, "./cmd/server")
+		serverBinary = filepath.Join(tempDir, "sanhod")
+		build := exec.Command("go", "build", "-o", serverBinary, "./cmd/sanhod")
 		build.Dir = cliE2ERepoRoot()
 		if output, buildErr := build.CombinedOutput(); buildErr != nil {
 			cleanupTempDir()

@@ -11,16 +11,16 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/SeventeenthEarth/kkachi/internal/domain/client"
-	"github.com/SeventeenthEarth/kkachi/internal/domain/docs"
-	"github.com/SeventeenthEarth/kkachi/internal/domain/workspace"
-	"github.com/SeventeenthEarth/kkachi/internal/infra/fs"
+	"github.com/irootkernel/sanho/internal/domain/client"
+	"github.com/irootkernel/sanho/internal/domain/docs"
+	"github.com/irootkernel/sanho/internal/domain/workspace"
+	"github.com/irootkernel/sanho/internal/infra/fs"
 )
 
 // Pre-commit specific errors.
 var (
-	// ErrConfigBroken indicates that the kkachi configuration is missing or corrupt.
-	ErrConfigBroken = errors.New("kkachi configuration is broken")
+	// ErrConfigBroken indicates that the sanho configuration is missing or corrupt.
+	ErrConfigBroken = errors.New("sanho configuration is broken")
 	// ErrConflictMarkerFound indicates that conflict markers were found in docs.
 	ErrConflictMarkerFound = errors.New("conflict markers found in docs")
 	// ErrPendingFixExists indicates that a pending fix state exists.
@@ -100,7 +100,7 @@ type DocsPushResponse struct {
 	Error           string
 }
 
-// PreCommitHTTPClient communicates with kkachi-server.
+// PreCommitHTTPClient communicates with sanhod.
 type PreCommitHTTPClient interface {
 	DocsPush(ctx context.Context, req DocsPushRequest) (DocsPushResponse, error)
 	DocsSnapshot(ctx context.Context, project docs.ProjectName, commit docs.CommitHash) (docs.DocsSnapshot, docs.CommitHash, error)
@@ -214,7 +214,7 @@ func (u *PreCommitUseCase) Execute(ctx context.Context, workDir string) error {
 	}
 	if hasPendingFix {
 		u.output.Error("This workspace is in pending fix state from a previous merge.")
-		u.output.Error("Please run 'kkachi-cli fix' to complete the merge and sync docs.")
+		u.output.Error("Please run 'sanho fix' to complete the merge and sync docs.")
 		u.output.Error("Commit is blocked until pending fix is resolved.")
 		return ErrPendingFixExists
 	}
@@ -249,7 +249,7 @@ func (u *PreCommitUseCase) Execute(ctx context.Context, workDir string) error {
 		// Handle specific errors with appropriate messages
 		if errors.Is(err, ErrUnknownDocsCommit) {
 			u.output.Error("The docs repo history has been rewritten.")
-			u.output.Error("Cannot automatically recover. Please manually sync docs and run 'kkachi-cli init' again.")
+			u.output.Error("Cannot automatically recover. Please manually sync docs and run 'sanho init' again.")
 			return ErrUnknownDocsCommit
 		}
 		if errors.Is(err, ErrDocsRepoBusy) {
@@ -263,7 +263,7 @@ func (u *PreCommitUseCase) Execute(ctx context.Context, workDir string) error {
 	if !resp.Ok {
 		if resp.Error == "unknown_docs_commit" {
 			u.output.Error("The docs repo history has been rewritten.")
-			u.output.Error("Cannot automatically recover. Please manually sync docs and run 'kkachi-cli init' again.")
+			u.output.Error("Cannot automatically recover. Please manually sync docs and run 'sanho init' again.")
 			return ErrUnknownDocsCommit
 		}
 		if resp.Error == "docs_repo_busy" {
@@ -388,8 +388,8 @@ func (u *PreCommitUseCase) handleOutdated(
 	}
 
 	u.output.Warning("")
-	u.output.Warning("After reviewing/resolving, run 'kkachi-cli fix' to complete the sync.")
-	u.output.Warning("Commit is blocked until 'kkachi-cli fix' is completed.")
+	u.output.Warning("After reviewing/resolving, run 'sanho fix' to complete the sync.")
+	u.output.Warning("Commit is blocked until 'sanho fix' is completed.")
 
 	return ErrOutdated
 }

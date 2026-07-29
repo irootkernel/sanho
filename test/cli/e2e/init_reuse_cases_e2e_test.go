@@ -48,7 +48,7 @@ func TestE2ECLI_InitReuseWithExistingDocs(t *testing.T) {
 	cmd.Dir = wsDir
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("kkachi init reuse failed: %v\nOutput:\n%s", err, string(out))
+		t.Fatalf("sanho init reuse failed: %v\nOutput:\n%s", err, string(out))
 	}
 
 	hashBytes, err := os.ReadFile(filepath.Join(wsDir, ".kkachi_docs_hash"))
@@ -62,7 +62,7 @@ func TestE2ECLI_InitReuseWithExistingDocs(t *testing.T) {
 		t.Fatalf("expected reuse mode message in output, got:\n%s", string(out))
 	}
 
-	assertGitignoreHasEntries(t, wsDir, "# Kkachi", ".kkachi_docs_hash", ".kkachi.json")
+	assertGitignoreHasEntries(t, wsDir, "# Sanho", ".kkachi_docs_hash", ".kkachi.json")
 }
 
 // docs 존재 + docs-version 없음 → init 실패 (레거시 보호)

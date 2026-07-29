@@ -1,14 +1,14 @@
-# Kkachi 운영 가이드
+# Sanho 운영 가이드
 
 ## 빌드와 실행
 
 ```bash
-make server-build
+make daemon-build
 make cli-build
-make server-run
+make daemon-run
 ```
 
-개발 중에는 `make server-run-dev`로 `go run`을 사용할 수 있다. daemon은
+개발 중에는 `make daemon-run-dev`로 `go run`을 사용할 수 있다. daemon은
 별도의 frontend build나 hot-reload 도구를 요구하지 않는다.
 
 환경 변수는 두 개다.
@@ -52,8 +52,8 @@ make uninstall-launchagent
 
 ```bash
 curl --fail http://127.0.0.1:5789/healthz
-kkachi-cli state --all --server-url http://127.0.0.1:5789
-kkachi-cli state --all --server-url http://127.0.0.1:5789 --json
+sanho state --all --server-url http://127.0.0.1:5789
+sanho state --all --server-url http://127.0.0.1:5789 --json
 ```
 
 정상 health 응답은 `{"ok":true}`다. `/state`는 등록된 모든 프로젝트의
@@ -86,8 +86,8 @@ branch는 history를 바꾸지 않고 실패한다. 이 과정은 임시 clone�
 원격 애플리케이션 저장소에는 자동 push하지 않는다.
 
 충돌이 있으면 파일을 해결하고 stage한 뒤
-`kkachi-cli pull-commit --continue`를 실행한다. 시스템 커밋 생성 전에는
-`kkachi-cli pull-commit --abort`로 원래 상태를 복원할 수 있다. 원격
+`sanho pull-commit --continue`를 실행한다. 시스템 커밋 생성 전에는
+`sanho pull-commit --abort`로 원래 상태를 복원할 수 있다. 원격
 history를 강제 push로 덮어쓰지 않는다.
 
 `pull`, system commit, 일반 사용자 commit은 성공한 docs hash를 daemon에
@@ -134,10 +134,10 @@ primary state 파일이 깨졌다면 daemon은 `<state-path>.bak`에서 자동
 ## 검증
 
 ```bash
-make server-test-prepare
-make server-test-unit
-make server-test-integration
-make server-test-e2e
+make daemon-test-prepare
+make daemon-test-unit
+make daemon-test-integration
+make daemon-test-e2e
 
 make cli-test-prepare
 make cli-test-unit
@@ -150,8 +150,8 @@ server와 CLI E2E는 기본적으로 임의 loopback port와 임시 state를 사
 경우에만 `E2E_BASE_URL`을 명시한다.
 
 ```bash
-make server-test-e2e
-make server-test-e2e E2E_BASE_URL=http://127.0.0.1:5789
+make daemon-test-e2e
+make daemon-test-e2e E2E_BASE_URL=http://127.0.0.1:5789
 make cli-test-e2e
 make cli-test-e2e E2E_BASE_URL=http://127.0.0.1:5789
 ```

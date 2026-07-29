@@ -1,8 +1,8 @@
-// Package main is the entry point for the kkachi CLI.
+// Package main is the entry point for the Sanho CLI.
 package main
 
 import (
-	"github.com/SeventeenthEarth/kkachi/internal/interface/cli"
+	"github.com/irootkernel/sanho/internal/interface/cli"
 )
 
 // Build-time variables injected via ldflags

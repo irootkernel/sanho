@@ -1,12 +1,12 @@
-# Kkachi 아키텍처
+# Sanho 아키텍처
 
 ## 제품 경계
 
-Kkachi의 책임은 전용 docs 저장소를 단일 진실의 원천으로 유지하고,
+Sanho의 책임은 전용 docs 저장소를 단일 진실의 원천으로 유지하고,
 애플리케이션 저장소의 `docs/` 작업 사본이 어느 commit을 기준으로 하는지
 추적하는 것이다.
 
-실행 구성요소는 `kkachi-server`와 `kkachi` CLI뿐이다. 서버는 셸 명령을
+실행 구성요소는 `sanhod`와 `sanho` CLI뿐이다. 서버는 셸 명령을
 사용자 대신 실행하거나, 터미널·PTY·에이전트 세션을 만들거나, Web UI를
 제공하지 않는다.
 
@@ -18,7 +18,7 @@ application repo
              |
              | HTTP
              v
-       kkachi-server
+       sanhod
        | state file
        | repo coordinator
        v

@@ -5,7 +5,7 @@ import (
 	"path"
 	"strings"
 
-	"github.com/SeventeenthEarth/kkachi/internal/domain/docs"
+	"github.com/irootkernel/sanho/internal/domain/docs"
 )
 
 // ExtractDocsRepoID extracts the repository name from a Git URL and returns it as DocsRepoID.
