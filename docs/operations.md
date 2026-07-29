@@ -130,29 +130,29 @@ primary state 파일이 깨졌다면 daemon은 `<state-path>.bak`에서 자동
 ## 검증
 
 ```bash
-make daemon-test-prepare
-make daemon-test-unit
-make daemon-test-integration
-make daemon-test-e2e
-
-make cli-test-prepare
-make cli-test-unit
-make cli-test-integration
-make cli-test-e2e
-make install-test
+make test-prepare
+make test-unit
+make test-int
+make test-e2e
 ```
 
-daemon과 CLI E2E는 기본적으로 임시 home과 Unix socket을 사용하는 독립
-daemon을 띄운다. 실행 중인 별도 daemon을 대상으로 확인하려는 경우에만
-`E2E_SOCKET`에 절대 socket 경로를 명시한다.
+`make test`는 위 네 단계를 표시된 순서대로 모두 실행한다.
+`test-prepare`는 코드 생성, format, 모듈 검증, 문서 검사, daemon/client
+패키지 소유권 검사, 아키텍처 guardrail, vet, lint를 수행한다. 각 단계는
+`test-prepare-daemon`, `test-unit-client`처럼 `-daemon` 또는 `-client`
+접미사가 붙은 target으로 범위를 좁힐 수 있다.
+
+daemon과 client E2E는 기본적으로 임시 home과 Unix socket을 사용하는
+독립 daemon을 띄운다. 실행 중인 별도 daemon을 대상으로 확인하려는
+경우에만 `E2E_SOCKET`에 절대 socket 경로를 명시한다.
 
 ```bash
-make daemon-test-e2e
-make daemon-test-e2e E2E_SOCKET=/absolute/path/to/sanhod.sock
-make cli-test-e2e
-make cli-test-e2e E2E_SOCKET=/absolute/path/to/sanhod.sock
+make test-e2e-daemon
+make test-e2e-daemon E2E_SOCKET=/absolute/path/to/sanhod.sock
+make test-e2e-client
+make test-e2e-client E2E_SOCKET=/absolute/path/to/sanhod.sock
 ```
 
 통합·E2E 테스트의 docs 저장소에는 실제 운영 저장소 대신 `/tmp` 아래의
 폐기 가능한 bare Git 저장소와 clone을 사용한다. 전체 검증은
-`make test-all`로 실행한다.
+`make test`로 실행한다.

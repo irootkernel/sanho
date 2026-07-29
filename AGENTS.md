@@ -13,8 +13,8 @@
 ## Build, Test, and Development Commands
 - Require Go 1.25+. Local daemon: `go run ./cmd/sanhod` (override `SANHO_HOME`, `SANHO_SOCKET`).
 - Build/install: `make daemon-build` → `bin/sanhod`, `make cli-build` → `bin/sanho`; `make install` installs both to Go's binary directory.
-- Daemon checks: `make daemon-test-prepare` (generate+fmt+vet), `make daemon-test-unit`, `make daemon-test-integration`, `make daemon-test-e2e` (isolated daemon by default; set `E2E_SOCKET` for an explicit daemon), or `make daemon-test` for all.
-- CLI checks: `make cli-test-prepare`, `make cli-test-unit`, `make cli-test-integration` (sets `SANHO_CLI_BINARY`), `make cli-test-e2e` (`SANHO_E2E_SOCKET`), or `make cli-test`.
+- 전체 검증은 `make test`가 `test-prepare`, `test-unit`, `test-int`, `test-e2e`를 순서대로 실행한다.
+- 각 단계는 `-daemon` 또는 `-client` target으로 나눠 실행할 수 있다. E2E는 기본적으로 독립 daemon을 사용하며, 명시한 daemon을 대상으로 할 때만 `E2E_SOCKET`을 설정한다.
 - Local daemon loop: `make daemon-run` builds and runs `bin/sanhod`.
 
 ## Coding Style & Naming Conventions

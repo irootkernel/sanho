@@ -117,11 +117,12 @@ Machine-readable output for query commands is documented in
 ## Validation
 
 ```bash
-make daemon-test
-make cli-test
-# or both:
-make test-all
+make test
 ```
+
+`make test` runs `test-prepare`, `test-unit`, `test-int`, and `test-e2e` in
+that order. Each phase can be run independently, or narrowed to its
+`-daemon`/`-client` target.
 
 The daemon and CLI end-to-end suites launch isolated daemons with temporary
 runtime homes and Unix sockets by default. Set `E2E_SOCKET` to an absolute

@@ -141,11 +141,12 @@ daemon은 같은 `docs_repo_id`에 대한 sync, HEAD 조회, snapshot 조회, pu
 ## 테스트
 
 ```bash
-make daemon-test
-make cli-test
-# 전체:
-make test-all
+make test
 ```
+
+`make test`는 `test-prepare`, `test-unit`, `test-int`, `test-e2e`를
+순서대로 실행한다. 각 단계는 따로 실행할 수 있고, `-daemon` 또는
+`-client` 접미사가 붙은 target으로 범위를 좁힐 수도 있다.
 
 구조와 운영 절차는 [아키텍처](../architecture.md)와
 [운영 가이드](../operations.md)를 참고한다.
