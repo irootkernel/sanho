@@ -15,8 +15,8 @@ make daemon-run
 사용한다. 공개 release는 다음처럼 저장소에서 직접 설치한다.
 
 ```bash
-go install github.com/irootkernel/sanho/cmd/sanho@v0.1.0
-go install github.com/irootkernel/sanho/cmd/sanhod@v0.1.0
+go install github.com/irootkernel/sanho/cmd/sanho@v0.1.1
+go install github.com/irootkernel/sanho/cmd/sanhod@v0.1.1
 sanho version
 sanhod --version
 ```

@@ -1,11 +1,19 @@
 # Changelog
 
-## Unreleased
+## v0.1.1 - 2026-07-29
+
+### Fixed
+
+- Runtime cleanup and response-writing failures are now handled explicitly.
 
 ### Changed
 
 - Standardized Sanho-owned component terminology on `daemon` across
   documentation, CLI output, errors, internal identifiers, and tests.
+- Domain and use-case boundaries are enforced by an architecture guardrail.
+- `golangci-lint` v2.11.3 is pinned as a reproducible Go tool dependency.
+- `make test` runs prepare, unit, integration, and end-to-end phases in order,
+  with separate daemon and client targets.
 
 ### Compatibility
 
