@@ -65,7 +65,7 @@ func newCleanCmd() *cobra.Command {
 			docsPath := filepath.Join(cwd, config.DocsDir)
 
 			cmd.Printf("sanho clean target:\n")
-			cmd.Printf("  server    : %s\n", config.ServerURL)
+			cmd.Printf("  socket    : %s\n", config.SocketPath)
 			cmd.Printf("  project   : %s\n", config.Project)
 			cmd.Printf("  workspace : %s\n", config.WorkspaceID)
 			cmd.Printf("  remove files: %s, %s, %s\n", configPath, docsHashPath, pendingFixPath)
@@ -91,7 +91,10 @@ func newCleanCmd() *cobra.Command {
 				ctx, cancel := createContext(DefaultTimeout)
 				defer cancel()
 
-				client := httpclient.NewHTTPClient(config.ServerURL)
+				client, err := newDaemonClient(config.SocketPath)
+				if err != nil {
+					return err
+				}
 				if err := client.DeleteWorkspace(ctx, config.WorkspaceID); err != nil {
 					if errors.Is(err, httpclient.ErrUnknownWorkspace) {
 						cmd.Println("sanho: workspace already removed on server (unknown_workspace). Continuing...")

@@ -98,10 +98,10 @@ func TestCLIImplementedCommandsRequireFlags(t *testing.T) {
 	}{
 		// init prompts for interactive input; without stdin it fails fast on read
 		{[]string{"init"}, "failed to read input", true},
-		{[]string{"project", "add"}, "--server-url is required", true},
-		{[]string{"project", "delete"}, "--server-url is required", true},
-		{[]string{"workspace", "register"}, "--server-url is required", true},
-		{[]string{"workspace", "unregister"}, "--server-url is required", true},
+		{[]string{"project", "add"}, "--project is required", true},
+		{[]string{"project", "delete"}, "--project is required", true},
+		{[]string{"workspace", "register"}, "--project is required", true},
+		{[]string{"workspace", "unregister"}, "--workspace-id is required", true},
 	}
 
 	for _, tt := range tests {
@@ -213,7 +213,7 @@ func TestCLICommitMsgHookAddsDocsVersion(t *testing.T) {
 
 	// Create .sanho.json
 	config := `{
-		"server_url": "http://localhost:5789",
+		"socket_path": "/tmp/sanhod-test.sock",
 		"workspace_id": "test-workspace",
 		"project": "test-project",
 		"actor_email": "test@example.com",

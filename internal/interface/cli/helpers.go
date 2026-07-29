@@ -10,7 +10,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/irootkernel/sanho/internal/config"
 	"github.com/irootkernel/sanho/internal/infra/git"
+	"github.com/irootkernel/sanho/internal/infra/httpclient"
 )
 
 // Default timeout for CLI operations.
@@ -118,6 +120,31 @@ func validateRequiredFlag(name, value string) error {
 		return fmt.Errorf("--%s is required", name)
 	}
 	return nil
+}
+
+func resolveSocketPath(configuredPath string) (string, error) {
+	if socketPathFlag != "" {
+		configuredPath = socketPathFlag
+	}
+	if configuredPath != "" {
+		if !filepath.IsAbs(configuredPath) {
+			return "", errors.New("sanho socket path must be an absolute path")
+		}
+		return filepath.Clean(configuredPath), nil
+	}
+	paths, err := config.ResolveRuntimePaths(os.Getenv("SANHO_HOME"), os.Getenv("SANHO_SOCKET"))
+	if err != nil {
+		return "", err
+	}
+	return paths.SocketPath, nil
+}
+
+func newDaemonClient(configuredPath string) (*httpclient.HTTPClient, error) {
+	socketPath, err := resolveSocketPath(configuredPath)
+	if err != nil {
+		return nil, err
+	}
+	return httpclient.NewHTTPClient(socketPath), nil
 }
 
 // resolveDocsPath resolves docsDir against cwd and ensures that the resulting

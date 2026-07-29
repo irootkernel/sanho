@@ -12,8 +12,8 @@ import (
 // docs 존재 + docs-version 있음 + clean → init 성공 (reuse 모드)
 func TestE2ECLI_InitReuseWithExistingDocs(t *testing.T) {
 	cliBinary := getCliBinary(t)
-	serverURL := getServerURL(t)
-	ensureServerAvailable(t, serverURL)
+	socketPath := getSocketPath(t)
+	ensureServerAvailable(t, socketPath)
 
 	originPath, head := createOriginRepo(t, map[string]string{
 		"docs/index.md": "# reuse init\n",
@@ -37,11 +37,11 @@ func TestE2ECLI_InitReuseWithExistingDocs(t *testing.T) {
 
 	project := "cli-init-reuse-" + strings.ReplaceAll(filepath.Base(wsDir), string(filepath.Separator), "_")
 	t.Cleanup(func() {
-		deleteProjectViaCLI(t, cliBinary, serverURL, project, true)
+		deleteProjectViaCLI(t, cliBinary, socketPath, project, true)
 	})
 
 	cmd := exec.Command(cliBinary, "init",
-		"--server-url", serverURL,
+		"--socket", socketPath,
 		"--project", project,
 		"--docs-repo-url", originPath,
 	)
@@ -83,7 +83,7 @@ func TestE2ECLI_InitFailsOnLegacyDocsWithoutDocsVersion(t *testing.T) {
 	runCmd(t, wsDir, "git", "commit", "-m", "legacy docs without tag")
 
 	cmd := exec.Command(cliBinary, "init",
-		"--server-url", getServerURL(t),
+		"--socket", getSocketPath(t),
 		"--project", "legacy-no-tag",
 		"--docs-repo-url", "git@example.com/some_docs.git",
 	)
@@ -120,7 +120,7 @@ func TestE2ECLI_InitFailsWhenDocsDirty(t *testing.T) {
 	}
 
 	cmd := exec.Command(cliBinary, "init",
-		"--server-url", getServerURL(t),
+		"--socket", getSocketPath(t),
 		"--project", "dirty-docs",
 		"--docs-repo-url", "git@example.com/some_docs.git",
 	)

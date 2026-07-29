@@ -7,13 +7,7 @@ import (
 	"github.com/irootkernel/sanho/internal/interface/http/handler"
 )
 
-// ServerConfig holds configuration for the HTTP server.
-type ServerConfig struct {
-	Addr string
-}
-
 func NewHTTPServer(
-	cfg ServerConfig,
 	projectHandler *handler.ProjectHandler,
 	workspaceHandler *handler.WorkspaceHandler,
 	docsHeadHandler *handler.DocsHeadHandler,
@@ -65,7 +59,6 @@ func NewHTTPServer(
 	})
 
 	return &http.Server{
-		Addr:    cfg.Addr,
 		Handler: loggingMiddleware(mux),
 	}
 }

@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,12 +12,10 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	testutil "github.com/irootkernel/sanho/test/util"
 )
 
 func TestMain(m *testing.M) {
-	if strings.TrimSpace(os.Getenv("SANHO_E2E_BASE_URL")) != "" {
+	if strings.TrimSpace(os.Getenv("SANHO_E2E_SOCKET")) != "" {
 		os.Exit(m.Run())
 	}
 
@@ -33,16 +31,7 @@ func TestMain(m *testing.M) {
 }
 
 func startIsolatedServer() (func(), error) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return nil, fmt.Errorf("reserve port: %w", err)
-	}
-	port := listener.Addr().(*net.TCPAddr).Port
-	if err := listener.Close(); err != nil {
-		return nil, fmt.Errorf("release reserved port: %w", err)
-	}
-
-	tempDir, err := os.MkdirTemp("", "sanho-e2e-server-*")
+	tempDir, err := os.MkdirTemp("/tmp", "sanho-cli-e2e-")
 	if err != nil {
 		return nil, fmt.Errorf("create temp directory: %w", err)
 	}
@@ -66,8 +55,8 @@ func startIsolatedServer() (func(), error) {
 	cmd := exec.CommandContext(ctx, serverBinary)
 	cmd.Dir = cliE2ERepoRoot()
 	cmd.Env = append(os.Environ(),
-		fmt.Sprintf("PORT=%d", port),
-		"STATE_FILE_PATH="+filepath.Join(tempDir, "sanho_state.json"),
+		"SANHO_HOME="+filepath.Join(tempDir, "home"),
+		"SANHO_SOCKET="+filepath.Join(tempDir, "sanhod.sock"),
 	)
 	cmd.Stdout = &logs
 	cmd.Stderr = &logs
@@ -78,26 +67,38 @@ func startIsolatedServer() (func(), error) {
 		return nil, fmt.Errorf("start server: %w", err)
 	}
 
-	baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)
+	socketPath := filepath.Join(tempDir, "sanhod.sock")
 	waitCtx, waitCancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer waitCancel()
-	if err := testutil.WaitForHealth(waitCtx, baseURL+"/healthz"); err != nil {
-		cancel()
-		_ = cmd.Wait()
-		cleanupTempDir()
-		return nil, fmt.Errorf("wait for health at %s: %w\nserver logs:\n%s", baseURL, err, logs.String())
+	for {
+		req, _ := http.NewRequestWithContext(waitCtx, http.MethodGet, "http://sanho/healthz", nil)
+		resp, healthErr := unixHTTPClient(socketPath, 250*time.Millisecond).Do(req)
+		if healthErr == nil {
+			_ = resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				break
+			}
+		}
+		select {
+		case <-waitCtx.Done():
+			cancel()
+			_ = cmd.Wait()
+			cleanupTempDir()
+			return nil, fmt.Errorf("wait for health at %s: %w\nserver logs:\n%s", socketPath, waitCtx.Err(), logs.String())
+		case <-time.After(25 * time.Millisecond):
+		}
 	}
-	if err := os.Setenv("SANHO_E2E_BASE_URL", baseURL); err != nil {
+	if err := os.Setenv("SANHO_E2E_SOCKET", socketPath); err != nil {
 		cancel()
 		_ = cmd.Wait()
 		cleanupTempDir()
-		return nil, fmt.Errorf("configure server URL: %w", err)
+		return nil, fmt.Errorf("configure server socket: %w", err)
 	}
 
 	return func() {
 		cancel()
 		_ = cmd.Wait()
-		_ = os.Unsetenv("SANHO_E2E_BASE_URL")
+		_ = os.Unsetenv("SANHO_E2E_SOCKET")
 		cleanupTempDir()
 	}, nil
 }

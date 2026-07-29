@@ -99,7 +99,7 @@ func (m *mockPullOutput) Error(msg string)   { m.errors = append(m.errors, msg) 
 func TestPullUseCase_AlreadyUpToDate(t *testing.T) {
 	configLoader := &mockPullConfigLoader{
 		config: &client.WorkspaceConfig{
-			ServerURL:      "http://localhost:5789",
+			SocketPath:     "/tmp/sanhod-test.sock",
 			WorkspaceID:    "test-ws",
 			Project:        "test-project",
 			DocsDir:        "docs",
@@ -150,7 +150,7 @@ func TestPullUseCase_AlreadyUpToDate(t *testing.T) {
 func TestPullUseCase_SuccessfulPull(t *testing.T) {
 	configLoader := &mockPullConfigLoader{
 		config: &client.WorkspaceConfig{
-			ServerURL:      "http://localhost:5789",
+			SocketPath:     "/tmp/sanhod-test.sock",
 			WorkspaceID:    "test-ws",
 			Project:        "test-project",
 			DocsDir:        "docs",
@@ -191,7 +191,7 @@ func TestPullUseCase_SuccessfulPull(t *testing.T) {
 func TestPullUseCase_PendingFixBlocks(t *testing.T) {
 	configLoader := &mockPullConfigLoader{
 		config: &client.WorkspaceConfig{
-			ServerURL:      "http://localhost:5789",
+			SocketPath:     "/tmp/sanhod-test.sock",
 			WorkspaceID:    "test-ws",
 			Project:        "test-project",
 			DocsDir:        "docs",
@@ -226,7 +226,7 @@ func TestPullUseCase_PendingFixBlocks(t *testing.T) {
 func TestPullUseCase_LocalChangesBlock(t *testing.T) {
 	configLoader := &mockPullConfigLoader{
 		config: &client.WorkspaceConfig{
-			ServerURL:      "http://localhost:5789",
+			SocketPath:     "/tmp/sanhod-test.sock",
 			WorkspaceID:    "test-ws",
 			Project:        "test-project",
 			DocsDir:        "docs",
@@ -261,7 +261,7 @@ func TestPullUseCase_LocalChangesBlock(t *testing.T) {
 func TestPullUseCase_LocalChangesWithForce(t *testing.T) {
 	configLoader := &mockPullConfigLoader{
 		config: &client.WorkspaceConfig{
-			ServerURL:      "http://localhost:5789",
+			SocketPath:     "/tmp/sanhod-test.sock",
 			WorkspaceID:    "test-ws",
 			Project:        "test-project",
 			DocsDir:        "docs",
@@ -339,7 +339,7 @@ func TestPullUseCase_ApplyFailureKeepsExistingDocs(t *testing.T) {
 
 	configLoader := &mockPullConfigLoader{
 		config: &client.WorkspaceConfig{
-			ServerURL:      "http://localhost:5789",
+			SocketPath:     "/tmp/sanhod-test.sock",
 			WorkspaceID:    "test-ws",
 			Project:        "test-project",
 			DocsDir:        "docs",

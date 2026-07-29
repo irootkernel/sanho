@@ -7,7 +7,7 @@ Sanho의 사용자용 조회 명령은 자동화 도구와 AI agent가 안정적
 sanho version --json
 sanho status --json
 sanho state --json
-sanho state --all --server-url http://127.0.0.1:5789 --json
+sanho --socket /absolute/path/to/sanhod.sock state --all --json
 ```
 
 `--json`은 `version`, `status`, `state`의 로컬 옵션이다. Git hook과
@@ -34,8 +34,8 @@ sanho state --all --server-url http://127.0.0.1:5789 --json
 
 공개 오류 코드는 다음과 같다.
 
-- 입력·실행 위치: `invalid_arguments`, `not_in_workspace`,
-  `server_url_required`
+- 입력·실행 위치: `invalid_arguments`, `invalid_socket_path`,
+  `not_in_workspace`
 - 로컬 상태: `invalid_workspace_config`, `docs_hash_not_found`,
   `docs_hash_read_failed`, `pending_fix_read_failed`
 - server 상태: `unknown_project`, `unknown_workspace`,

@@ -74,7 +74,10 @@ func runPullCommand(cmd *cobra.Command, force bool) error {
 		return err
 	}
 
-	rawHTTPClient := httpclient.NewHTTPClient(config.ServerURL)
+	rawHTTPClient, err := newDaemonClient(config.SocketPath)
+	if err != nil {
+		return err
+	}
 	if err := retryPendingWorkspaceReport(ctx, cwd, config); err != nil {
 		return fmt.Errorf("sanho pull: %w", err)
 	}

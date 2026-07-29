@@ -9,14 +9,20 @@ import (
 )
 
 type AddProjectUseCase struct {
-	stateRepo  AddProjectStateRepository
-	gitManager DocsRepoManager
+	stateRepo    AddProjectStateRepository
+	gitManager   DocsRepoManager
+	docsReposDir string
 }
 
-func NewAddProjectUseCase(stateRepo AddProjectStateRepository, gitManager DocsRepoManager) *AddProjectUseCase {
+func NewAddProjectUseCase(
+	stateRepo AddProjectStateRepository,
+	gitManager DocsRepoManager,
+	docsReposDir string,
+) *AddProjectUseCase {
 	return &AddProjectUseCase{
-		stateRepo:  stateRepo,
-		gitManager: gitManager,
+		stateRepo:    stateRepo,
+		gitManager:   gitManager,
+		docsReposDir: docsReposDir,
 	}
 }
 
@@ -28,10 +34,13 @@ type AddProjectInput struct {
 }
 
 func (uc *AddProjectUseCase) Execute(ctx context.Context, input AddProjectInput) error {
-	repoPath, err := filepath.Abs(filepath.Join("data", "docs_repos", input.DocsRepoID))
-	if err != nil {
-		return fmt.Errorf("could not determine absolute path for repo: %w", err)
+	if input.DocsRepoID == "" ||
+		input.DocsRepoID == "." ||
+		input.DocsRepoID == ".." ||
+		filepath.Base(input.DocsRepoID) != input.DocsRepoID {
+		return fmt.Errorf("invalid docs_repo_id: %q", input.DocsRepoID)
 	}
+	repoPath := filepath.Join(uc.docsReposDir, input.DocsRepoID)
 
 	repoConfig := config.DocsRepoConfig{
 		ID:      input.DocsRepoID,

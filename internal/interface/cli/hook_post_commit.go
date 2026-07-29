@@ -10,7 +10,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/irootkernel/sanho/internal/infra/fs"
-	"github.com/irootkernel/sanho/internal/infra/httpclient"
 )
 
 func runPostCommitHook(cmd *cobra.Command) error {
@@ -26,7 +25,12 @@ func runPostCommitHook(cmd *cobra.Command) error {
 	if err != nil {
 		return nil
 	}
-	engine := newPullCommitEngine(httpclient.NewHTTPClient(config.ServerURL))
+	httpClient, err := newDaemonClient(config.SocketPath)
+	if err != nil {
+		cmd.PrintErrf("sanho hook post-commit: invalid socket path: %v\n", err)
+		return nil
+	}
+	engine := newPullCommitEngine(httpClient)
 	if err := engine.clearAfterCommit(ctx, workDir); err != nil {
 		cmd.PrintErrf("sanho hook post-commit: failed to clear pull-commit state: %v\n", err)
 	}

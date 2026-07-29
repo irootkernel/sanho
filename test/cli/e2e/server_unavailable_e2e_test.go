@@ -11,12 +11,11 @@ import (
 func TestE2ECLI_StatusServerUnavailable(t *testing.T) {
 	cliBinary := getCliBinary(t)
 
-	// Intentionally unreachable server (closed port)
-	badServerURL := "http://127.0.0.1:1"
-
 	workspaceDir := t.TempDir()
+	// Intentionally unavailable daemon socket.
+	badSocketPath := filepath.Join(workspaceDir, "missing-sanhod.sock")
 	// Minimal config/hash to allow status to run
-	writeConfig(t, workspaceDir, badServerURL, "unreachable-project", "ws-"+filepath.Base(workspaceDir), "offline@example.com")
+	writeConfig(t, workspaceDir, badSocketPath, "unreachable-project", "ws-"+filepath.Base(workspaceDir), "offline@example.com")
 	writeDocsHash(t, workspaceDir, "deadbeef")
 
 	cmd := exec.Command(cliBinary, "status")

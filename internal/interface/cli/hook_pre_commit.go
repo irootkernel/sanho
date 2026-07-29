@@ -53,8 +53,11 @@ func runPreCommitHook(cmd *cobra.Command) error {
 		return err
 	}
 
-	httpClient := newPreCommitHTTPClientAdapter(httpclient.NewHTTPClient(config.ServerURL))
-	rawHTTPClient := httpclient.NewHTTPClient(config.ServerURL)
+	rawHTTPClient, err := newDaemonClient(config.SocketPath)
+	if err != nil {
+		return err
+	}
+	httpClient := newPreCommitHTTPClientAdapter(rawHTTPClient)
 	workspaceSync := infraGit.NewWorkspaceSync(snapshotBuilder, snapshotApplier)
 	pullCommit := newPullCommitEngine(rawHTTPClient)
 	if err := retryPendingWorkspaceReport(ctx, cwd, config); err != nil {

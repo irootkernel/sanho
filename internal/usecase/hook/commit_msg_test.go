@@ -81,7 +81,7 @@ func TestCommitMsgUseCase_NoDocsChanges(t *testing.T) {
 	output := &fakeCommitMsgOutput{}
 	uc := NewCommitMsgUseCase(
 		&fakeCommitMsgConfigLoader{config: &client.WorkspaceConfig{
-			ServerURL:   "http://localhost",
+			SocketPath:  "http://localhost",
 			WorkspaceID: "test",
 			Project:     "test",
 		}},
@@ -112,7 +112,7 @@ func TestCommitMsgUseCase_AddsDocsVersionTag(t *testing.T) {
 	output := &fakeCommitMsgOutput{}
 	uc := NewCommitMsgUseCase(
 		&fakeCommitMsgConfigLoader{config: &client.WorkspaceConfig{
-			ServerURL:    "http://localhost",
+			SocketPath:   "http://localhost",
 			WorkspaceID:  "test",
 			Project:      "test",
 			DocsHashFile: ".sanho_docs_hash",
@@ -150,7 +150,7 @@ func TestCommitMsgUseCase_DocsVersionAlreadyExists(t *testing.T) {
 	output := &fakeCommitMsgOutput{}
 	uc := NewCommitMsgUseCase(
 		&fakeCommitMsgConfigLoader{config: &client.WorkspaceConfig{
-			ServerURL:    "http://localhost",
+			SocketPath:   "http://localhost",
 			WorkspaceID:  "test",
 			Project:      "test",
 			DocsHashFile: ".sanho_docs_hash",

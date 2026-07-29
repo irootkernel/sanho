@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"os/exec"
 	"sync/atomic"
 	"testing"
@@ -21,7 +20,7 @@ func TestWorkspaceReportPersistsFailureAndRetryClearsIt(t *testing.T) {
 	var fail atomic.Bool
 	fail.Store(true)
 	var calls atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := newUnixTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
 		if r.Method != http.MethodPut || r.URL.Path != "/workspaces/workspace-1/docs-hash" {
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
@@ -43,7 +42,7 @@ func TestWorkspaceReportPersistsFailureAndRetryClearsIt(t *testing.T) {
 	defer server.Close()
 
 	config := &client.WorkspaceConfig{
-		ServerURL:   server.URL,
+		SocketPath:  server.URL,
 		WorkspaceID: "workspace-1",
 		ActorEmail:  "actor@example.com",
 	}

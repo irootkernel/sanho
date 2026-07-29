@@ -67,7 +67,11 @@ func runFixCommand(cmd *cobra.Command) error {
 		return err
 	}
 
-	httpClient := newFixHTTPClientAdapter(httpclient.NewHTTPClient(config.ServerURL))
+	rawHTTPClient, err := newDaemonClient(config.SocketPath)
+	if err != nil {
+		return err
+	}
+	httpClient := newFixHTTPClientAdapter(rawHTTPClient)
 	gitClient := newFixGitClientAdapter(infraGit.NewDetector())
 
 	// Create usecase

@@ -25,54 +25,41 @@ import (
 	testutil "github.com/irootkernel/sanho/test/util"
 )
 
-// configuredBaseURL returns an explicitly configured E2E server. With no
+const testDaemonBaseURL = "http://sanho"
+
+// configuredSocketPath returns an explicitly configured E2E server. With no
 // override, tests must launch an isolated server instead of reusing a
 // developer's daemon and persistent state.
-func configuredBaseURL() (string, bool) {
-	if base := strings.TrimSpace(os.Getenv("SANHO_E2E_BASE_URL")); base != "" {
-		return strings.TrimRight(base, "/"), true
+func configuredSocketPath() (string, bool) {
+	if path := strings.TrimSpace(os.Getenv("SANHO_E2E_SOCKET")); path != "" {
+		return path, true
 	}
 	return "", false
 }
 
 // requireServer uses an explicit server override when present. Otherwise it
-// launches a server with a fresh state file on an ephemeral loopback port.
-func requireServer(t *testing.T, ctx context.Context) string {
+// launches a server with a fresh runtime home and Unix socket.
+func requireServer(t *testing.T, ctx context.Context) (string, *http.Client, string) {
 	t.Helper()
 
-	base, configured := configuredBaseURL()
+	socketPath, configured := configuredSocketPath()
 	if configured {
-		healthErr := pingHealth(base, 2*time.Second)
-		if healthErr == nil {
-			return base
+		if !filepath.IsAbs(socketPath) {
+			t.Fatalf("SANHO_E2E_SOCKET must be absolute: %q", socketPath)
 		}
-
-		baseURL, err := url.Parse(base)
-		if err != nil {
-			t.Fatalf("invalid SANHO_E2E_BASE_URL %q: %v", base, err)
+		if err := pingHealth(socketPath, 2*time.Second); err != nil {
+			t.Fatalf("sanhod not reachable at %s: %v", socketPath, err)
 		}
-		if !isLocalHost(baseURL.Hostname()) {
-			t.Skipf("Skipping E2E: sanhod not reachable at %s (%v)", base, healthErr)
-		}
-	} else {
-		listener, err := net.Listen("tcp", "127.0.0.1:0")
-		if err != nil {
-			t.Fatalf("reserve E2E server port: %v", err)
-		}
-		port := listener.Addr().(*net.TCPAddr).Port
-		if err := listener.Close(); err != nil {
-			t.Fatalf("release E2E server port: %v", err)
-		}
-		base = fmt.Sprintf("http://127.0.0.1:%d", port)
+		return testDaemonBaseURL, unixHTTPClient(socketPath, 10*time.Second), socketPath
 	}
 
-	baseURL, err := url.Parse(base)
+	testDir, err := os.MkdirTemp("/tmp", "sanho-server-e2e-")
 	if err != nil {
-		t.Fatalf("invalid SANHO_E2E_BASE_URL %q: %v", base, err)
+		t.Fatalf("create E2E runtime directory: %v", err)
 	}
-	port := portOrDefault(baseURL)
-	testDir := t.TempDir()
-	statePath := filepath.Join(testDir, "sanho_state.json")
+	t.Cleanup(func() { _ = os.RemoveAll(testDir) })
+	runtimeHome := filepath.Join(testDir, "home")
+	socketPath = filepath.Join(testDir, "sanhod.sock")
 	serverBinary := strings.TrimSpace(os.Getenv("SANHO_DAEMON_BINARY"))
 	if serverBinary == "" {
 		serverBinary = filepath.Join(testDir, "sanhod")
@@ -88,8 +75,8 @@ func requireServer(t *testing.T, ctx context.Context) string {
 	cmd := exec.CommandContext(serverCtx, serverBinary)
 	cmd.Dir = repoRoot(t)
 	cmd.Env = append(os.Environ(),
-		"PORT="+port,
-		"STATE_FILE_PATH="+statePath,
+		"SANHO_HOME="+runtimeHome,
+		"SANHO_SOCKET="+socketPath,
 	)
 	cmd.Stdout = &logs
 	cmd.Stderr = &logs
@@ -111,25 +98,32 @@ func requireServer(t *testing.T, ctx context.Context) string {
 	}
 	t.Cleanup(stopServer)
 
-	if err := testutil.WaitForHealth(ctx, base+"/healthz"); err != nil {
-		stopServer()
-		t.Fatalf("sanhod not healthy at %s after bootstrap: %v\nserver logs:\n%s", base, err, logs.String())
+	for {
+		if err := pingHealth(socketPath, 100*time.Millisecond); err == nil {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			stopServer()
+			t.Fatalf("sanhod not healthy at %s after bootstrap: %v\nserver logs:\n%s", socketPath, ctx.Err(), logs.String())
+		case <-time.After(25 * time.Millisecond):
+		}
 	}
 
-	return base
+	return testDaemonBaseURL, unixHTTPClient(socketPath, 10*time.Second), socketPath
 }
 
 // pingHealth performs a single health check with a short timeout.
-func pingHealth(base string, timeout time.Duration) error {
+func pingHealth(socketPath string, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/healthz", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, testDaemonBaseURL+"/healthz", nil)
 	if err != nil {
 		return err
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := unixHTTPClient(socketPath, timeout).Do(req)
 	if err != nil {
 		return err
 	}
@@ -141,20 +135,16 @@ func pingHealth(base string, timeout time.Duration) error {
 	return nil
 }
 
-// isLocalHost returns true for loopback or unspecified hosts.
-func isLocalHost(host string) bool {
-	if host == "" || host == "localhost" {
-		return true
+func unixHTTPClient(socketPath string, timeout time.Duration) *http.Client {
+	return &http.Client{
+		Timeout: timeout,
+		Transport: &http.Transport{
+			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+				var dialer net.Dialer
+				return dialer.DialContext(ctx, "unix", socketPath)
+			},
+		},
 	}
-	ip := net.ParseIP(host)
-	return ip != nil && (ip.IsLoopback() || ip.IsUnspecified())
-}
-
-func portOrDefault(u *url.URL) string {
-	if port := u.Port(); port != "" {
-		return port
-	}
-	return "5789"
 }
 
 func repoRoot(t *testing.T) string {

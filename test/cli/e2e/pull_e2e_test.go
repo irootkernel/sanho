@@ -11,8 +11,8 @@ import (
 // TestE2ECLI_PullAlreadyUpToDate tests pull when docs are already synced.
 func TestE2ECLI_PullAlreadyUpToDate(t *testing.T) {
 	cliBinary := getCliBinary(t)
-	serverURL := getServerURL(t)
-	ensureServerAvailable(t, serverURL)
+	socketPath := getSocketPath(t)
+	ensureServerAvailable(t, socketPath)
 
 	// Create origin docs repo
 	originPath, initialHead := createOriginRepo(t, map[string]string{
@@ -28,14 +28,14 @@ func TestE2ECLI_PullAlreadyUpToDate(t *testing.T) {
 	project := "cli-pull-uptodate-" + strings.ReplaceAll(filepath.Base(workspaceDir), string(filepath.Separator), "_")
 
 	// Register project and workspace
-	registerProjectViaCLI(t, cliBinary, serverURL, project, originPath, workspaceDir)
-	wsID, currentHead := registerWorkspaceViaCLI(t, cliBinary, serverURL, project, workspaceDir)
+	registerProjectViaCLI(t, cliBinary, socketPath, project, originPath, workspaceDir)
+	wsID, currentHead := registerWorkspaceViaCLI(t, cliBinary, socketPath, project, workspaceDir)
 	if currentHead == "" {
 		currentHead = initialHead
 	}
 
 	// Prepare workspace config files
-	writeConfig(t, workspaceDir, serverURL, project, wsID, "cli-pull@example.com")
+	writeConfig(t, workspaceDir, socketPath, project, wsID, "cli-pull@example.com")
 	writeDocsHash(t, workspaceDir, currentHead)
 
 	// Create docs directory (matching server content)
@@ -60,14 +60,14 @@ func TestE2ECLI_PullAlreadyUpToDate(t *testing.T) {
 	}
 
 	// Cleanup
-	deleteProjectViaCLI(t, cliBinary, serverURL, project, true)
+	deleteProjectViaCLI(t, cliBinary, socketPath, project, true)
 }
 
 // TestE2ECLI_PullOutdated tests pull when server has newer docs.
 func TestE2ECLI_PullOutdated(t *testing.T) {
 	cliBinary := getCliBinary(t)
-	serverURL := getServerURL(t)
-	ensureServerAvailable(t, serverURL)
+	socketPath := getSocketPath(t)
+	ensureServerAvailable(t, socketPath)
 
 	// Create origin docs repo
 	originPath, initialHead := createOriginRepo(t, map[string]string{
@@ -83,14 +83,14 @@ func TestE2ECLI_PullOutdated(t *testing.T) {
 	project := "cli-pull-outdated-" + strings.ReplaceAll(filepath.Base(workspaceDir), string(filepath.Separator), "_")
 
 	// Register project and workspace
-	registerProjectViaCLI(t, cliBinary, serverURL, project, originPath, workspaceDir)
-	wsID, currentHead := registerWorkspaceViaCLI(t, cliBinary, serverURL, project, workspaceDir)
+	registerProjectViaCLI(t, cliBinary, socketPath, project, originPath, workspaceDir)
+	wsID, currentHead := registerWorkspaceViaCLI(t, cliBinary, socketPath, project, workspaceDir)
 	if currentHead == "" {
 		currentHead = initialHead
 	}
 
 	// Prepare workspace config files
-	writeConfig(t, workspaceDir, serverURL, project, wsID, "cli-pull@example.com")
+	writeConfig(t, workspaceDir, socketPath, project, wsID, "cli-pull@example.com")
 	writeDocsHash(t, workspaceDir, currentHead)
 
 	// Create local docs directory
@@ -107,12 +107,12 @@ func TestE2ECLI_PullOutdated(t *testing.T) {
 	runCmd(t, workspaceDir, "git", "commit", "-m", "seed docs")
 
 	// Push updated docs from "another workspace" via HTTP
-	newHead := pushDocsViaHTTP(t, serverURL, wsID, currentHead, map[string]string{
+	newHead := pushDocsViaHTTP(t, socketPath, wsID, currentHead, map[string]string{
 		"docs/index.md": "# updated by another workspace\n",
 	}, "other@example.com")
 
 	// Verify server has new head
-	serverHead := fetchHeadViaHTTP(t, serverURL, project)
+	serverHead := fetchHeadViaHTTP(t, socketPath, project)
 	if serverHead != newHead {
 		t.Fatalf("server head %s != pushed head %s", serverHead, newHead)
 	}
@@ -149,13 +149,13 @@ func TestE2ECLI_PullOutdated(t *testing.T) {
 	}
 
 	// Cleanup
-	deleteProjectViaCLI(t, cliBinary, serverURL, project, true)
+	deleteProjectViaCLI(t, cliBinary, socketPath, project, true)
 }
 
 func TestE2ECLI_PullThenPullCommitPreservesRemoteAddedFile(t *testing.T) {
 	cliBinary := getCliBinary(t)
-	serverURL := getServerURL(t)
-	ensureServerAvailable(t, serverURL)
+	socketPath := getSocketPath(t)
+	ensureServerAvailable(t, socketPath)
 
 	docsOrigin, initialDocsHead := createOriginRepo(t, map[string]string{
 		"docs/index.md": "# initial docs\n",
@@ -185,15 +185,15 @@ func TestE2ECLI_PullThenPullCommitPreservesRemoteAddedFile(t *testing.T) {
 	setGitUser(t, workspaceDir, "cli-pull-baseline@example.com")
 
 	project := "cli-pull-baseline-" + strings.ReplaceAll(filepath.Base(docsOrigin), string(filepath.Separator), "_")
-	registerProjectViaCLI(t, cliBinary, serverURL, project, docsOrigin, workspaceDir)
-	wsID, currentHead := registerWorkspaceViaCLI(t, cliBinary, serverURL, project, workspaceDir)
+	registerProjectViaCLI(t, cliBinary, socketPath, project, docsOrigin, workspaceDir)
+	wsID, currentHead := registerWorkspaceViaCLI(t, cliBinary, socketPath, project, workspaceDir)
 	if currentHead == "" {
 		currentHead = initialDocsHead
 	}
-	writeConfig(t, workspaceDir, serverURL, project, wsID, "cli-pull-baseline@example.com")
+	writeConfig(t, workspaceDir, socketPath, project, wsID, "cli-pull-baseline@example.com")
 	writeDocsHash(t, workspaceDir, currentHead)
 
-	firstRemoteHead := pushDocsViaHTTP(t, serverURL, wsID, currentHead, map[string]string{
+	firstRemoteHead := pushDocsViaHTTP(t, socketPath, wsID, currentHead, map[string]string{
 		"docs/index.md":     "# first remote update\n",
 		"docs/preserved.md": "must survive\n",
 	}, "first-remote@example.com")
@@ -204,7 +204,7 @@ func TestE2ECLI_PullThenPullCommitPreservesRemoteAddedFile(t *testing.T) {
 		t.Fatalf("pull failed: %v\nOutput:\n%s", err, output)
 	}
 
-	secondRemoteHead := pushDocsViaHTTP(t, serverURL, wsID, firstRemoteHead, map[string]string{
+	secondRemoteHead := pushDocsViaHTTP(t, socketPath, wsID, firstRemoteHead, map[string]string{
 		"docs/index.md":     "# second remote update\n",
 		"docs/preserved.md": "must survive\n",
 	}, "second-remote@example.com")
@@ -249,8 +249,8 @@ func TestE2ECLI_PullThenPullCommitPreservesRemoteAddedFile(t *testing.T) {
 // TestE2ECLI_PullBlockedByPendingFix tests pull is blocked when pending fix exists.
 func TestE2ECLI_PullBlockedByPendingFix(t *testing.T) {
 	cliBinary := getCliBinary(t)
-	serverURL := getServerURL(t)
-	ensureServerAvailable(t, serverURL)
+	socketPath := getSocketPath(t)
+	ensureServerAvailable(t, socketPath)
 
 	// Create origin docs repo
 	originPath, initialHead := createOriginRepo(t, map[string]string{
@@ -266,14 +266,14 @@ func TestE2ECLI_PullBlockedByPendingFix(t *testing.T) {
 	project := "cli-pull-pending-" + strings.ReplaceAll(filepath.Base(workspaceDir), string(filepath.Separator), "_")
 
 	// Register project and workspace
-	registerProjectViaCLI(t, cliBinary, serverURL, project, originPath, workspaceDir)
-	wsID, currentHead := registerWorkspaceViaCLI(t, cliBinary, serverURL, project, workspaceDir)
+	registerProjectViaCLI(t, cliBinary, socketPath, project, originPath, workspaceDir)
+	wsID, currentHead := registerWorkspaceViaCLI(t, cliBinary, socketPath, project, workspaceDir)
 	if currentHead == "" {
 		currentHead = initialHead
 	}
 
 	// Prepare workspace config files with pending fix
-	writeConfig(t, workspaceDir, serverURL, project, wsID, "cli-pull@example.com")
+	writeConfig(t, workspaceDir, socketPath, project, wsID, "cli-pull@example.com")
 	writeDocsHash(t, workspaceDir, currentHead)
 	writePendingFix(t, workspaceDir, currentHead, currentHead)
 
@@ -297,14 +297,14 @@ func TestE2ECLI_PullBlockedByPendingFix(t *testing.T) {
 	}
 
 	// Cleanup
-	deleteProjectViaCLI(t, cliBinary, serverURL, project, true)
+	deleteProjectViaCLI(t, cliBinary, socketPath, project, true)
 }
 
 // TestE2ECLI_PullForce tests pull --force overwrites local changes.
 func TestE2ECLI_PullForce(t *testing.T) {
 	cliBinary := getCliBinary(t)
-	serverURL := getServerURL(t)
-	ensureServerAvailable(t, serverURL)
+	socketPath := getSocketPath(t)
+	ensureServerAvailable(t, socketPath)
 
 	// Create origin docs repo
 	originPath, initialHead := createOriginRepo(t, map[string]string{
@@ -320,14 +320,14 @@ func TestE2ECLI_PullForce(t *testing.T) {
 	project := "cli-pull-force-" + strings.ReplaceAll(filepath.Base(workspaceDir), string(filepath.Separator), "_")
 
 	// Register project and workspace
-	registerProjectViaCLI(t, cliBinary, serverURL, project, originPath, workspaceDir)
-	wsID, currentHead := registerWorkspaceViaCLI(t, cliBinary, serverURL, project, workspaceDir)
+	registerProjectViaCLI(t, cliBinary, socketPath, project, originPath, workspaceDir)
+	wsID, currentHead := registerWorkspaceViaCLI(t, cliBinary, socketPath, project, workspaceDir)
 	if currentHead == "" {
 		currentHead = initialHead
 	}
 
 	// Prepare workspace config files
-	writeConfig(t, workspaceDir, serverURL, project, wsID, "cli-pull@example.com")
+	writeConfig(t, workspaceDir, socketPath, project, wsID, "cli-pull@example.com")
 	writeDocsHash(t, workspaceDir, currentHead)
 
 	// Create local docs with modifications
@@ -353,7 +353,7 @@ func TestE2ECLI_PullForce(t *testing.T) {
 	}
 
 	// Push updated docs from "another workspace"
-	newHead := pushDocsViaHTTP(t, serverURL, wsID, currentHead, map[string]string{
+	newHead := pushDocsViaHTTP(t, socketPath, wsID, currentHead, map[string]string{
 		"docs/index.md": "# from server\n",
 	}, "other@example.com")
 
@@ -394,14 +394,14 @@ func TestE2ECLI_PullForce(t *testing.T) {
 	}
 
 	// Cleanup
-	deleteProjectViaCLI(t, cliBinary, serverURL, project, true)
+	deleteProjectViaCLI(t, cliBinary, socketPath, project, true)
 }
 
 // TestE2ECLI_PullBlockedByUntrackedFiles tests pull is blocked when untracked files exist in docs.
 func TestE2ECLI_PullBlockedByUntrackedFiles(t *testing.T) {
 	cliBinary := getCliBinary(t)
-	serverURL := getServerURL(t)
-	ensureServerAvailable(t, serverURL)
+	socketPath := getSocketPath(t)
+	ensureServerAvailable(t, socketPath)
 
 	// Create origin docs repo
 	originPath, initialHead := createOriginRepo(t, map[string]string{
@@ -417,14 +417,14 @@ func TestE2ECLI_PullBlockedByUntrackedFiles(t *testing.T) {
 	project := "cli-pull-untracked-" + strings.ReplaceAll(filepath.Base(workspaceDir), string(filepath.Separator), "_")
 
 	// Register project and workspace
-	registerProjectViaCLI(t, cliBinary, serverURL, project, originPath, workspaceDir)
-	wsID, currentHead := registerWorkspaceViaCLI(t, cliBinary, serverURL, project, workspaceDir)
+	registerProjectViaCLI(t, cliBinary, socketPath, project, originPath, workspaceDir)
+	wsID, currentHead := registerWorkspaceViaCLI(t, cliBinary, socketPath, project, workspaceDir)
 	if currentHead == "" {
 		currentHead = initialHead
 	}
 
 	// Prepare workspace config files
-	writeConfig(t, workspaceDir, serverURL, project, wsID, "cli-pull@example.com")
+	writeConfig(t, workspaceDir, socketPath, project, wsID, "cli-pull@example.com")
 	writeDocsHash(t, workspaceDir, currentHead)
 
 	// Create docs directory with tracked file
@@ -446,7 +446,7 @@ func TestE2ECLI_PullBlockedByUntrackedFiles(t *testing.T) {
 	}
 
 	// Push updated docs from "another workspace"
-	newHead := pushDocsViaHTTP(t, serverURL, wsID, currentHead, map[string]string{
+	newHead := pushDocsViaHTTP(t, socketPath, wsID, currentHead, map[string]string{
 		"docs/index.md": "# from server\n",
 	}, "other@example.com")
 	_ = newHead // suppress unused warning
@@ -478,5 +478,5 @@ func TestE2ECLI_PullBlockedByUntrackedFiles(t *testing.T) {
 	}
 
 	// Cleanup
-	deleteProjectViaCLI(t, cliBinary, serverURL, project, true)
+	deleteProjectViaCLI(t, cliBinary, socketPath, project, true)
 }

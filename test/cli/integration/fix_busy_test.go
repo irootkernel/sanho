@@ -3,7 +3,6 @@ package integration
 import (
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,7 +17,7 @@ func TestCLIFixRetriesOnDocsRepoBusy(t *testing.T) {
 
 	// Fake server that returns docs_repo_busy twice, then success
 	var pushCount int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := newUnixTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.HasPrefix(r.URL.Path, "/docs/head"):
 			w.Header().Set("Content-Type", "application/json")
@@ -45,7 +44,7 @@ func TestCLIFixRetriesOnDocsRepoBusy(t *testing.T) {
 	// Prepare workspace with pending fix and config
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, ".sanho.json"), []byte(`{
-  "server_url": "`+server.URL+`",
+  "socket_path": "`+server.URL+`",
   "project": "p1",
   "workspace_id": "ws1",
   "actor_email": "fix-busy@example.com",

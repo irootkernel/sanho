@@ -317,7 +317,7 @@ func mustMarshalState(s *State) []byte {
 
 func writeAtomic(path string, data []byte) (returnErr error) {
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
 	}
 	temp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp-*")
@@ -330,7 +330,7 @@ func writeAtomic(path string, data []byte) (returnErr error) {
 			_ = os.Remove(tempPath)
 		}
 	}()
-	if err := temp.Chmod(0644); err != nil {
+	if err := temp.Chmod(0600); err != nil {
 		_ = temp.Close()
 		return err
 	}

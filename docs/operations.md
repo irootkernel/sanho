@@ -11,15 +11,17 @@ make daemon-run
 개발 중에는 `make daemon-run-dev`로 `go run`을 사용할 수 있다. daemon은
 별도의 frontend build나 hot-reload 도구를 요구하지 않는다.
 
-환경 변수는 두 개다.
+런타임 경로를 바꾸는 환경 변수는 두 개다.
 
 | 변수 | 기본값 | 설명 |
 |---|---|---|
-| `PORT` | `5789` | HTTP listen port |
-| `STATE_FILE_PATH` | `data/sanho_state.json` | daemon state JSON 경로 |
+| `SANHO_HOME` | `~/.sanho` | state와 docs clone을 보관하는 daemon 전용 디렉터리 |
+| `SANHO_SOCKET` | `$SANHO_HOME/sanhod.sock` | Unix socket의 절대 경로 |
 
-docs clone은 프로젝트 등록 시 `data/docs_repos/<docs_repo_id>` 아래에
-생성된다. `data/`, `tmp/`, `.sanho*`와 인증 정보는 commit하지 않는다.
+state는 `$SANHO_HOME/state.json`, docs clone은 프로젝트 등록 시
+`$SANHO_HOME/docs_repos/<docs_repo_id>` 아래에 생성된다. daemon은 home과
+docs clone 디렉터리를 `0700`, state와 socket을 `0600`으로 관리한다.
+`.sanho*`와 인증 정보는 commit하지 않는다.
 
 ## 서비스 관리
 
@@ -31,9 +33,10 @@ manager에 직접 등록해 관리한다. 저장소의 Make target은 service를
 ## 상태 확인
 
 ```bash
-curl --fail http://127.0.0.1:5789/healthz
-sanho state --all --server-url http://127.0.0.1:5789
-sanho state --all --server-url http://127.0.0.1:5789 --json
+curl --fail --unix-socket ~/.sanho/sanhod.sock http://sanho/healthz
+sanho state --all
+sanho state --all --json
+sanho --socket /absolute/path/to/sanhod.sock state --all
 ```
 
 정상 health 응답은 `{"ok":true}`다. `/state`는 등록된 모든 프로젝트의
@@ -102,7 +105,7 @@ git ls-remote <docs-repo-url> HEAD
 ```
 
 daemon은 실패 후 clone을 origin으로 reset한다. 장애 조사 중에도
-`data/docs_repos`의 clone에서 임의 commit이나 force push를 만들지 않는다.
+`~/.sanho/docs_repos`의 clone에서 임의 commit이나 force push를 만들지 않는다.
 
 ### state 손상
 
@@ -125,15 +128,15 @@ make cli-test-integration
 make cli-test-e2e
 ```
 
-server와 CLI E2E는 기본적으로 임의 loopback port와 임시 state를 사용하는
-독립 daemon을 띄운다. 실행 중인 별도 daemon을 대상으로 확인하려는
-경우에만 `E2E_BASE_URL`을 명시한다.
+server와 CLI E2E는 기본적으로 임시 home과 Unix socket을 사용하는 독립
+daemon을 띄운다. 실행 중인 별도 daemon을 대상으로 확인하려는 경우에만
+`E2E_SOCKET`에 절대 socket 경로를 명시한다.
 
 ```bash
 make daemon-test-e2e
-make daemon-test-e2e E2E_BASE_URL=http://127.0.0.1:5789
+make daemon-test-e2e E2E_SOCKET=/absolute/path/to/sanhod.sock
 make cli-test-e2e
-make cli-test-e2e E2E_BASE_URL=http://127.0.0.1:5789
+make cli-test-e2e E2E_SOCKET=/absolute/path/to/sanhod.sock
 ```
 
 통합·E2E 테스트의 docs 저장소에는 실제 운영 저장소 대신 `/tmp` 아래의

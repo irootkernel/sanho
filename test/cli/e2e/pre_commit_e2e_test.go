@@ -13,8 +13,8 @@ import (
 // two-attempt commit flow while preserving the user's staged docs.
 func TestE2ECLI_PreCommitOutdatedCreatesDocsBaseCommit(t *testing.T) {
 	cliBinary := getCliBinary(t)
-	serverURL := getServerURL(t)
-	ensureServerAvailable(t, serverURL)
+	socketPath := getSocketPath(t)
+	ensureServerAvailable(t, socketPath)
 
 	originPath, initialHead := createOriginRepo(t, map[string]string{
 		"docs/index.md": "# base\n",
@@ -36,14 +36,14 @@ func TestE2ECLI_PreCommitOutdatedCreatesDocsBaseCommit(t *testing.T) {
 	project := "cli-precommit-" + strings.ReplaceAll(filepath.Base(workspaceDir), string(filepath.Separator), "_")
 
 	// Register project/workspace
-	registerProjectViaCLI(t, cliBinary, serverURL, project, originPath, workspaceDir)
-	wsID, currentHead := registerWorkspaceViaCLI(t, cliBinary, serverURL, project, workspaceDir)
+	registerProjectViaCLI(t, cliBinary, socketPath, project, originPath, workspaceDir)
+	wsID, currentHead := registerWorkspaceViaCLI(t, cliBinary, socketPath, project, workspaceDir)
 	if currentHead == "" {
 		currentHead = initialHead
 	}
 
 	// Prepare local workspace state files
-	writeConfig(t, workspaceDir, serverURL, project, wsID, "cli-precommit@example.com")
+	writeConfig(t, workspaceDir, socketPath, project, wsID, "cli-precommit@example.com")
 	writeDocsHash(t, workspaceDir, currentHead)
 	hooksDir := filepath.Join(workspaceDir, ".git", "hooks")
 	if err := os.MkdirAll(hooksDir, 0755); err != nil {
@@ -70,7 +70,7 @@ func TestE2ECLI_PreCommitOutdatedCreatesDocsBaseCommit(t *testing.T) {
 	runCmd(t, workspaceDir, "git", "add", "docs/docs/index.md")
 
 	// Advance server HEAD by pushing new snapshot via HTTP (simulating another workspace)
-	remoteHead := pushDocsViaHTTP(t, serverURL, wsID, currentHead, map[string]string{
+	remoteHead := pushDocsViaHTTP(t, socketPath, wsID, currentHead, map[string]string{
 		"docs/index.md":  "# base\n",
 		"docs/server.md": "# server update\n",
 	}, "remote@example.com")
@@ -129,5 +129,5 @@ func TestE2ECLI_PreCommitOutdatedCreatesDocsBaseCommit(t *testing.T) {
 	}
 
 	// Clean up project
-	deleteProjectViaCLI(t, cliBinary, serverURL, project, true)
+	deleteProjectViaCLI(t, cliBinary, socketPath, project, true)
 }

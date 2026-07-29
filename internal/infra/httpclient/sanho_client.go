@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"time"
@@ -22,6 +23,7 @@ import (
 // Default configuration values.
 const (
 	DefaultTimeout = 30 * time.Second
+	daemonBaseURL  = "http://sanho"
 )
 
 // Error types for client operations.
@@ -214,12 +216,19 @@ func WithRetryDelay(delay time.Duration) HTTPClientOption {
 	}
 }
 
-// NewHTTPClient creates a new HTTPClient.
-func NewHTTPClient(baseURL string, opts ...HTTPClientOption) *HTTPClient {
+// NewHTTPClient creates an HTTP client that communicates over a Unix socket.
+func NewHTTPClient(socketPath string, opts ...HTTPClientOption) *HTTPClient {
+	transport := &http.Transport{
+		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			var dialer net.Dialer
+			return dialer.DialContext(ctx, "unix", socketPath)
+		},
+	}
 	c := &HTTPClient{
-		baseURL: baseURL,
+		baseURL: daemonBaseURL,
 		httpClient: &http.Client{
-			Timeout: DefaultTimeout,
+			Timeout:   DefaultTimeout,
+			Transport: transport,
 		},
 		maxRetries: 3,
 		retryDelay: 300 * time.Millisecond,

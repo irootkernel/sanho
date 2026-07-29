@@ -28,7 +28,6 @@ func newProjectCmd() *cobra.Command {
 // newProjectAddCmd creates the project add command.
 func newProjectAddCmd() *cobra.Command {
 	var (
-		serverURL   string
 		projectName string
 		docsRepoURL string
 	)
@@ -49,9 +48,6 @@ For example: git@github.com:org/my_docs.git -> docs_repo_id = "my_docs"`,
 			defer cancel()
 
 			// Validate required flags
-			if err := validateRequiredFlag("server-url", serverURL); err != nil {
-				return err
-			}
 			if err := validateRequiredFlag("project", projectName); err != nil {
 				return err
 			}
@@ -76,7 +72,10 @@ For example: git@github.com:org/my_docs.git -> docs_repo_id = "my_docs"`,
 			}
 
 			// Create HTTP client and call API
-			httpClient := httpclient.NewHTTPClient(serverURL)
+			httpClient, err := newDaemonClient("")
+			if err != nil {
+				return err
+			}
 			req := httpclient.CreateProjectRequest{
 				Project:     docs.ProjectName(projectName),
 				DocsRepoID:  docsRepoID,
@@ -99,7 +98,6 @@ For example: git@github.com:org/my_docs.git -> docs_repo_id = "my_docs"`,
 		},
 	}
 
-	cmd.Flags().StringVar(&serverURL, "server-url", "", "sanhod URL (required)")
 	cmd.Flags().StringVar(&projectName, "project", "", "Project name (required)")
 	cmd.Flags().StringVar(&docsRepoURL, "docs-repo-url", "", "Docs repository Git URL (required)")
 
@@ -109,7 +107,6 @@ For example: git@github.com:org/my_docs.git -> docs_repo_id = "my_docs"`,
 // newProjectDeleteCmd creates the project delete command.
 func newProjectDeleteCmd() *cobra.Command {
 	var (
-		serverURL   string
 		projectName string
 		force       bool
 		yes         bool
@@ -129,9 +126,6 @@ Use --force to delete a project even if it has registered workspaces.`,
 			defer cancel()
 
 			// Validate required flags
-			if err := validateRequiredFlag("server-url", serverURL); err != nil {
-				return err
-			}
 			if err := validateRequiredFlag("project", projectName); err != nil {
 				return err
 			}
@@ -150,7 +144,10 @@ Use --force to delete a project even if it has registered workspaces.`,
 			}
 
 			// Create HTTP client and call API
-			httpClient := httpclient.NewHTTPClient(serverURL)
+			httpClient, err := newDaemonClient("")
+			if err != nil {
+				return err
+			}
 
 			if err := httpClient.DeleteProject(ctx, docs.ProjectName(projectName), force); err != nil {
 				if errors.Is(err, httpclient.ErrUnknownProject) {
@@ -169,7 +166,6 @@ Use --force to delete a project even if it has registered workspaces.`,
 		},
 	}
 
-	cmd.Flags().StringVar(&serverURL, "server-url", "", "sanhod URL (required)")
 	cmd.Flags().StringVar(&projectName, "project", "", "Project name to delete (required)")
 	cmd.Flags().BoolVar(&force, "force", false, "Force delete even if workspaces exist")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "Skip confirmation prompt")

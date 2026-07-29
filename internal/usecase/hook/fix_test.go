@@ -141,7 +141,7 @@ func (f *fakeFixOutput) Error(msg string)   { f.errors = append(f.errors, msg) }
 
 func defaultFixConfig() *client.WorkspaceConfig {
 	return &client.WorkspaceConfig{
-		ServerURL:   "http://localhost",
+		SocketPath:  "http://localhost",
 		WorkspaceID: workspace.WorkspaceID("test-workspace"),
 		Project:     "test-project",
 		ActorEmail:  "test@example.com",
@@ -375,7 +375,7 @@ func TestFixUseCase_ActorEmailMissing(t *testing.T) {
 	output := &fakeFixOutput{}
 	uc := NewFixUseCase(
 		&fakeFixConfigLoader{config: &client.WorkspaceConfig{
-			ServerURL:   "http://localhost",
+			SocketPath:  "http://localhost",
 			WorkspaceID: workspace.WorkspaceID("test-workspace"),
 			Project:     "test-project",
 			ActorEmail:  "",
@@ -402,7 +402,7 @@ func TestFixUseCase_ActorEmailRequired_EmptyConfigAndGit(t *testing.T) {
 	output := &fakeFixOutput{}
 	// Config with empty actor email, git also returns empty
 	emptyEmailConfig := &client.WorkspaceConfig{
-		ServerURL:   "http://localhost",
+		SocketPath:  "http://localhost",
 		WorkspaceID: workspace.WorkspaceID("test-workspace"),
 		Project:     "test-project",
 		ActorEmail:  "", // Empty!
@@ -433,7 +433,7 @@ func TestFixUseCase_ActorEmailFallbackToGit(t *testing.T) {
 	hashStore := &fakeFixDocsHashStore{hash: "abc123"}
 	// Config with empty actor email, but git returns valid email
 	emptyEmailConfig := &client.WorkspaceConfig{
-		ServerURL:   "http://localhost",
+		SocketPath:  "http://localhost",
 		WorkspaceID: workspace.WorkspaceID("test-workspace"),
 		Project:     "test-project",
 		ActorEmail:  "", // Empty - will fallback to git
@@ -477,7 +477,7 @@ func TestFixUseCase_ActorEmailGitReadError(t *testing.T) {
 	output := &fakeFixOutput{}
 	// Config with empty actor email, git returns error
 	emptyEmailConfig := &client.WorkspaceConfig{
-		ServerURL:   "http://localhost",
+		SocketPath:  "http://localhost",
 		WorkspaceID: workspace.WorkspaceID("test-workspace"),
 		Project:     "test-project",
 		ActorEmail:  "", // Empty!

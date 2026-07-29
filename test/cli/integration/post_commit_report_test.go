@@ -3,7 +3,6 @@ package integration
 import (
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,7 +14,7 @@ import (
 func TestCLIPostCommitReportsWorkspaceDocsHash(t *testing.T) {
 	cliBinary := getCliBinary(t)
 	var calls atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := newUnixTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
 		if r.Method != http.MethodPut || r.URL.Path != "/workspaces/workspace-1/docs-hash" {
 			t.Fatalf("request=%s %s", r.Method, r.URL.Path)
@@ -57,10 +56,10 @@ func TestCLIPostCommitReportsWorkspaceDocsHash(t *testing.T) {
 	}
 }
 
-func writePostCommitReportConfig(t *testing.T, repo, serverURL string) {
+func writePostCommitReportConfig(t *testing.T, repo, socketPath string) {
 	t.Helper()
 	config := map[string]string{
-		"server_url":     serverURL,
+		"socket_path":    socketPath,
 		"workspace_id":   "workspace-1",
 		"project":        "project-1",
 		"actor_email":    "actor@example.com",

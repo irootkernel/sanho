@@ -11,7 +11,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/irootkernel/sanho/internal/infra/fs"
-	"github.com/irootkernel/sanho/internal/infra/httpclient"
 )
 
 const pullCommitTimeout = 2 * time.Minute
@@ -54,7 +53,10 @@ func runPullCommitCommand(cmd *cobra.Command, continueTransaction, abortTransact
 	if err != nil {
 		return fmt.Errorf("sanho pull-commit: %w", err)
 	}
-	httpClient := httpclient.NewHTTPClient(config.ServerURL)
+	httpClient, err := newDaemonClient(config.SocketPath)
+	if err != nil {
+		return fmt.Errorf("sanho pull-commit: %w", err)
+	}
 	engine := newPullCommitEngine(httpClient)
 
 	if abortTransaction {

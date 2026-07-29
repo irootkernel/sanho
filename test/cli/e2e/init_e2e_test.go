@@ -11,8 +11,8 @@ import (
 // TestE2ECLI_InitWorkflow verifies sanho init happy path against real server.
 func TestE2ECLI_InitWorkflow(t *testing.T) {
 	cliBinary := getCliBinary(t)
-	serverURL := getServerURL(t)
-	ensureServerAvailable(t, serverURL)
+	socketPath := getSocketPath(t)
+	ensureServerAvailable(t, socketPath)
 
 	originPath, head := createOriginRepo(t, map[string]string{
 		"docs/index.md": "# init workflow\n",
@@ -27,11 +27,11 @@ func TestE2ECLI_InitWorkflow(t *testing.T) {
 
 	// Ensure project is deleted even if the test fails midway.
 	t.Cleanup(func() {
-		deleteProjectViaCLI(t, cliBinary, serverURL, project, true)
+		deleteProjectViaCLI(t, cliBinary, socketPath, project, true)
 	})
 
 	cmd := exec.Command(cliBinary, "init",
-		"--server-url", serverURL,
+		"--socket", socketPath,
 		"--project", project,
 		"--docs-repo-url", originPath,
 	)
@@ -65,14 +65,14 @@ func TestE2ECLI_InitWorkflow(t *testing.T) {
 	assertGitignoreHasEntries(t, workspaceDir, "# Sanho", ".sanho_docs_hash", ".sanho.json")
 
 	// Cleanup: delete project
-	deleteProjectViaCLI(t, cliBinary, serverURL, project, true)
+	deleteProjectViaCLI(t, cliBinary, socketPath, project, true)
 }
 
 // TestE2ECLI_InitForce verifies init --force overwrites existing docs dir.
 func TestE2ECLI_InitForce(t *testing.T) {
 	cliBinary := getCliBinary(t)
-	serverURL := getServerURL(t)
-	ensureServerAvailable(t, serverURL)
+	socketPath := getSocketPath(t)
+	ensureServerAvailable(t, socketPath)
 
 	originPath, head := createOriginRepo(t, map[string]string{
 		"docs/index.md": "# init force\n",
@@ -95,11 +95,11 @@ func TestE2ECLI_InitForce(t *testing.T) {
 
 	// Ensure project is deleted even if the test fails midway.
 	t.Cleanup(func() {
-		deleteProjectViaCLI(t, cliBinary, serverURL, project, true)
+		deleteProjectViaCLI(t, cliBinary, socketPath, project, true)
 	})
 
 	cmd := exec.Command(cliBinary, "init",
-		"--server-url", serverURL,
+		"--socket", socketPath,
 		"--project", project,
 		"--docs-repo-url", originPath,
 		"--force",
@@ -125,5 +125,5 @@ func TestE2ECLI_InitForce(t *testing.T) {
 	assertGitignoreHasEntries(t, workspaceDir, "# Sanho", ".sanho_docs_hash", ".sanho.json")
 
 	// Cleanup
-	deleteProjectViaCLI(t, cliBinary, serverURL, project, true)
+	deleteProjectViaCLI(t, cliBinary, socketPath, project, true)
 }

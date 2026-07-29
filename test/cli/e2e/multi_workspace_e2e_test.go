@@ -9,13 +9,14 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestE2ECLI_TwoWorkspacesSequentialPush verifies outdated/current_hash behavior with two workspaces.
 func TestE2ECLI_TwoWorkspacesSequentialPush(t *testing.T) {
 	cliBinary := getCliBinary(t)
-	serverURL := getServerURL(t)
-	ensureServerAvailable(t, serverURL)
+	socketPath := getSocketPath(t)
+	ensureServerAvailable(t, socketPath)
 
 	originPath, initialHead := createOriginRepo(t, map[string]string{
 		"docs/index.md": "# initial\n",
@@ -34,9 +35,9 @@ func TestE2ECLI_TwoWorkspacesSequentialPush(t *testing.T) {
 	runCmd(t, wsDir2, "git", "remote", "add", "origin", originPath)
 
 	// Register project & workspaces via CLI
-	registerProjectViaCLI(t, cliBinary, serverURL, project, originPath, wsDir1)
-	ws1ID, head1 := registerWorkspaceViaCLI(t, cliBinary, serverURL, project, wsDir1)
-	ws2ID, head2 := registerWorkspaceViaCLI(t, cliBinary, serverURL, project, wsDir2)
+	registerProjectViaCLI(t, cliBinary, socketPath, project, originPath, wsDir1)
+	ws1ID, head1 := registerWorkspaceViaCLI(t, cliBinary, socketPath, project, wsDir1)
+	ws2ID, head2 := registerWorkspaceViaCLI(t, cliBinary, socketPath, project, wsDir2)
 	if head1 == "" {
 		head1 = initialHead
 	}
@@ -45,7 +46,7 @@ func TestE2ECLI_TwoWorkspacesSequentialPush(t *testing.T) {
 	}
 
 	// Prepare local state for ws1 to push via HTTP
-	writeConfig(t, wsDir1, serverURL, project, ws1ID, "ws1@example.com")
+	writeConfig(t, wsDir1, socketPath, project, ws1ID, "ws1@example.com")
 	writeDocsHash(t, wsDir1, head1)
 	if err := os.MkdirAll(filepath.Join(wsDir1, "docs", "docs"), 0755); err != nil {
 		t.Fatalf("mkdir docs: %v", err)
@@ -55,7 +56,7 @@ func TestE2ECLI_TwoWorkspacesSequentialPush(t *testing.T) {
 	}
 
 	// Push from ws1 using HTTP helper (updated)
-	newHead := pushDocsViaHTTP(t, serverURL, ws1ID, head1, map[string]string{
+	newHead := pushDocsViaHTTP(t, socketPath, ws1ID, head1, map[string]string{
 		"docs/index.md": "# updated by ws1\n",
 	}, "ws1@example.com")
 	if newHead == head1 {
@@ -72,7 +73,11 @@ func TestE2ECLI_TwoWorkspacesSequentialPush(t *testing.T) {
 		"docs_snapshot":  base64.StdEncoding.EncodeToString(snapshot),
 		"actor_email":    "ws2@example.com",
 	})
-	resp, err := http.Post(strings.TrimRight(serverURL, "/")+"/docs/push", "application/json", bytes.NewReader(reqBody))
+	resp, err := unixHTTPClient(socketPath, 10*time.Second).Post(
+		"http://sanho/docs/push",
+		"application/json",
+		bytes.NewReader(reqBody),
+	)
 	if err != nil {
 		t.Fatalf("ws2 push failed: %v", err)
 	}
@@ -92,5 +97,5 @@ func TestE2ECLI_TwoWorkspacesSequentialPush(t *testing.T) {
 	}
 
 	// Cleanup
-	deleteProjectViaCLI(t, cliBinary, serverURL, project, true)
+	deleteProjectViaCLI(t, cliBinary, socketPath, project, true)
 }

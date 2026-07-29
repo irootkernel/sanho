@@ -87,7 +87,10 @@ func runHookStatus(cmd *cobra.Command, hookName string, reconcile bool) error {
 	}
 
 	// Step 5: Call /docs/head to get server HEAD
-	httpClient := httpclient.NewHTTPClient(config.ServerURL)
+	httpClient, err := newDaemonClient(config.SocketPath)
+	if err != nil {
+		return err
+	}
 	serverHead, err := httpClient.DocsHead(ctx, config.Project)
 
 	// Determine status

@@ -36,7 +36,6 @@ type stateJSONWorkspace struct {
 // newStateCmd creates the state command.
 func newStateCmd() *cobra.Command {
 	var showAll bool
-	var serverURLFlag string
 	var jsonOutput bool
 
 	cmd := &cobra.Command{
@@ -48,21 +47,20 @@ and registered workspaces.
 By default, shows only the current project's state.
 Use --all to see all projects.
 
-When using --all outside a sanho workspace, provide --server-url.`,
+Outside a sanho workspace, --all uses the configured or default daemon socket.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runStateCommand(cmd, showAll, serverURLFlag, jsonOutput)
+			return runStateCommand(cmd, showAll, jsonOutput)
 		},
 	}
 
 	cmd.Flags().BoolVar(&showAll, "all", false, "Show all projects and workspaces")
-	cmd.Flags().StringVar(&serverURLFlag, "server-url", "", "Server URL (required with --all when outside a workspace)")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Print machine-readable JSON")
 
 	return cmd
 }
 
 // runStateCommand executes the sanho state logic.
-func runStateCommand(cmd *cobra.Command, showAll bool, serverURLFlag string, jsonOutput bool) error {
+func runStateCommand(cmd *cobra.Command, showAll bool, jsonOutput bool) error {
 	ctx, cancel := context.WithTimeout(context.Background(), stateTimeout)
 	defer cancel()
 
@@ -79,30 +77,17 @@ func runStateCommand(cmd *cobra.Command, showAll bool, serverURLFlag string, jso
 	configLoader := fs.NewFileConfigLoader()
 	config, err := configLoader.Load(cwd)
 
-	var serverURL string
+	var socketPath string
 	var currentProject docs.ProjectName
 
 	if err != nil {
 		// Config not found
-		if showAll && serverURLFlag != "" {
-			// --all with explicit --server-url: allow running without workspace
-			serverURL = serverURLFlag
-		} else if showAll {
-			// --all without --server-url: suggest using --server-url
-			if !jsonOutput {
-				cmd.PrintErrf("sanho state: no .sanho.json found.\n")
-				cmd.PrintErrf("When using --all outside a workspace, provide --server-url flag.\n")
-				cmd.PrintErrf("Example: sanho state --all --server-url http://localhost:5789\n")
-			}
-			return withErrorCodeMessage(
-				"server_url_required",
-				"--server-url is required with --all outside a sanho workspace",
-				err,
-			)
+		if showAll && errors.Is(err, fs.ErrConfigNotFound) {
+			socketPath = ""
 		} else if errors.Is(err, fs.ErrConfigNotFound) {
 			if !jsonOutput {
 				cmd.PrintErrf("sanho state: this directory is not a sanho workspace.\n")
-				cmd.PrintErrf("Please run 'sanho init' first or use --all with --server-url.\n")
+				cmd.PrintErrf("Please run 'sanho init' first or use --all with --socket.\n")
 			}
 			return withErrorCode("not_in_workspace", err)
 		} else {
@@ -113,16 +98,15 @@ func runStateCommand(cmd *cobra.Command, showAll bool, serverURLFlag string, jso
 		}
 	} else {
 		// Config found
-		serverURL = config.ServerURL
+		socketPath = config.SocketPath
 		currentProject = config.Project
-		// If --server-url provided, it overrides config
-		if serverURLFlag != "" {
-			serverURL = serverURLFlag
-		}
 	}
 
 	// Create HTTP client
-	httpClient := httpclient.NewHTTPClient(serverURL)
+	httpClient, err := newDaemonClient(socketPath)
+	if err != nil {
+		return withErrorCode("invalid_socket_path", err)
+	}
 
 	// Get state from server
 	var resp httpclient.StateResponse

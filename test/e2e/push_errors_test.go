@@ -17,8 +17,7 @@ func TestE2E_DocsPushNoChangeAndErrors(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	baseURL := requireServer(t, ctx)
-	client := &http.Client{Timeout: 10 * time.Second}
+	baseURL, client, _ := requireServer(t, ctx)
 
 	originPath, initialHead := createOriginRepo(t, map[string]string{
 		"docs/index.md": "# Initial\n",

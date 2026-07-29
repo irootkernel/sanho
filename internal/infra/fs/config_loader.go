@@ -59,8 +59,11 @@ func (l *FileConfigLoader) Load(dir string) (*client.WorkspaceConfig, error) {
 	}
 
 	// Validate required fields
-	if config.ServerURL == "" {
-		return nil, fmt.Errorf("%w: server_url", ErrConfigMissingField)
+	if config.SocketPath == "" {
+		return nil, fmt.Errorf("%w: socket_path", ErrConfigMissingField)
+	}
+	if !filepath.IsAbs(config.SocketPath) {
+		return nil, fmt.Errorf("%w: socket_path must be absolute", ErrConfigParse)
 	}
 	if config.WorkspaceID == "" {
 		return nil, fmt.Errorf("%w: workspace_id", ErrConfigMissingField)

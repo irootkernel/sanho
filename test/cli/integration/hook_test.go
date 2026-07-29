@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,7 +14,7 @@ import (
 
 // WorkspaceConfig mirrors the client.WorkspaceConfig for test setup.
 type WorkspaceConfig struct {
-	ServerURL      string `json:"server_url"`
+	SocketPath     string `json:"socket_path"`
 	WorkspaceID    string `json:"workspace_id"`
 	Project        string `json:"project"`
 	ActorEmail     string `json:"actor_email"`
@@ -32,14 +31,14 @@ type PendingFixState struct {
 }
 
 // setupTempWorkspace creates a temporary workspace with .sanho.json and .sanho_docs_hash.
-func setupTempWorkspace(t *testing.T, serverURL, localHash string) string {
+func setupTempWorkspace(t *testing.T, socketPath, localHash string) string {
 	t.Helper()
 
 	tempDir := t.TempDir()
 
 	// Create .sanho.json
 	config := WorkspaceConfig{
-		ServerURL:   serverURL,
+		SocketPath:  socketPath,
 		WorkspaceID: "test-workspace-123",
 		Project:     "test-project",
 		ActorEmail:  "test@example.com",
@@ -67,10 +66,10 @@ func setupTempWorkspace(t *testing.T, serverURL, localHash string) string {
 }
 
 // setupFakeServer creates a fake sanhod that responds to /docs/head.
-func setupFakeServer(t *testing.T, headHash string, statusCode int, errorCode string) *httptest.Server {
+func setupFakeServer(t *testing.T, headHash string, statusCode int, errorCode string) *unixTestServer {
 	t.Helper()
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := newUnixTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/docs/head" {
 			if statusCode != http.StatusOK {
 				w.WriteHeader(statusCode)
@@ -263,7 +262,7 @@ func TestHookPostMergeReconcilesHashAndReportsDaemon(t *testing.T) {
 	cliBinary := getCliBinary(t)
 	var reportMu sync.Mutex
 	var reportedHash string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := newUnixTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/docs/head":
 			_ = json.NewEncoder(w).Encode(map[string]string{"head": "docs-new"})
@@ -320,7 +319,7 @@ func TestGitPullPostMergeHookReconcilesHashAndReportsDaemon(t *testing.T) {
 	cliBinary := getCliBinary(t)
 	var reportMu sync.Mutex
 	var reportedHash string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := newUnixTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/docs/head":
 			_ = json.NewEncoder(w).Encode(map[string]string{"head": "docs-new"})

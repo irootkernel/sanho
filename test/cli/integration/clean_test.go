@@ -3,7 +3,6 @@ package integration
 import (
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,7 +14,7 @@ func TestCLIClean_RemovesFilesAndHooks(t *testing.T) {
 	cliBinary := getCliBinary(t)
 
 	deleteCalls := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := newUnixTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/workspaces/") {
 			deleteCalls++
 			w.Header().Set("Content-Type", "application/json")
@@ -41,7 +40,7 @@ func TestCLIClean_RemovesFilesAndHooks(t *testing.T) {
 
 	// Workspace files
 	config := `{
-  "server_url": "` + server.URL + `",
+  "socket_path": "` + server.URL + `",
   "workspace_id": "proj:` + wsDir + `",
   "project": "proj",
   "docs_dir": "docs",
@@ -101,7 +100,7 @@ func TestCLIClean_RemovesFilesAndHooks(t *testing.T) {
 func TestCLIClean_OfflineSkipsServer(t *testing.T) {
 	cliBinary := getCliBinary(t)
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := newUnixTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatalf("server should not be called in offline mode")
 	}))
 	defer server.Close()
@@ -111,7 +110,7 @@ func TestCLIClean_OfflineSkipsServer(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := `{
-  "server_url": "` + server.URL + `",
+  "socket_path": "` + server.URL + `",
   "workspace_id": "proj:` + wsDir + `",
   "project": "proj",
   "docs_dir": "docs",

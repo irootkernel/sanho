@@ -101,7 +101,10 @@ func newStatusCmd() *cobra.Command {
 			}
 
 			// Step 5: Get docs HEAD and compare project workspaces.
-			httpClient := httpclient.NewHTTPClient(config.ServerURL)
+			httpClient, err := newDaemonClient(config.SocketPath)
+			if err != nil {
+				return err
+			}
 			projectStatus, err := httpClient.GetProjectStatus(
 				ctx,
 				config.Project,

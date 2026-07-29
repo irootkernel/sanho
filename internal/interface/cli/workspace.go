@@ -30,7 +30,6 @@ func newWorkspaceCmd() *cobra.Command {
 // newWorkspaceRegisterCmd creates the workspace register command.
 func newWorkspaceRegisterCmd() *cobra.Command {
 	var (
-		serverURL   string
 		projectName string
 		yes         bool
 	)
@@ -59,9 +58,6 @@ If path is not specified, the current directory is used.`,
 			}
 
 			// Validate required flags
-			if err := validateRequiredFlag("server-url", serverURL); err != nil {
-				return err
-			}
 			if err := validateRequiredFlag("project", projectName); err != nil {
 				return err
 			}
@@ -101,7 +97,10 @@ If path is not specified, the current directory is used.`,
 			}
 
 			// Create HTTP client and call API
-			httpClient := httpclient.NewHTTPClient(serverURL)
+			httpClient, err := newDaemonClient("")
+			if err != nil {
+				return err
+			}
 
 			// Create context for the registration request after all interactive input
 			ctx, cancel := createContext(DefaultTimeout)
@@ -130,7 +129,6 @@ If path is not specified, the current directory is used.`,
 		},
 	}
 
-	cmd.Flags().StringVar(&serverURL, "server-url", "", "sanhod URL (required)")
 	cmd.Flags().StringVar(&projectName, "project", "", "Project name (required)")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "Skip confirmation prompt")
 
@@ -140,7 +138,6 @@ If path is not specified, the current directory is used.`,
 // newWorkspaceUnregisterCmd creates the workspace unregister command.
 func newWorkspaceUnregisterCmd() *cobra.Command {
 	var (
-		serverURL   string
 		workspaceID string
 		yes         bool
 	)
@@ -157,9 +154,6 @@ and other configuration files will remain.`,
 			defer cancel()
 
 			// Validate required flags
-			if err := validateRequiredFlag("server-url", serverURL); err != nil {
-				return err
-			}
 			if err := validateRequiredFlag("workspace-id", workspaceID); err != nil {
 				return err
 			}
@@ -178,7 +172,10 @@ and other configuration files will remain.`,
 			}
 
 			// Create HTTP client and call API
-			httpClient := httpclient.NewHTTPClient(serverURL)
+			httpClient, err := newDaemonClient("")
+			if err != nil {
+				return err
+			}
 
 			if err := httpClient.DeleteWorkspace(ctx, workspace.WorkspaceID(workspaceID)); err != nil {
 				if errors.Is(err, httpclient.ErrUnknownWorkspace) {
@@ -193,7 +190,6 @@ and other configuration files will remain.`,
 		},
 	}
 
-	cmd.Flags().StringVar(&serverURL, "server-url", "", "sanhod URL (required)")
 	cmd.Flags().StringVar(&workspaceID, "workspace-id", "", "Workspace ID to unregister (required)")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "Skip confirmation prompt")
 

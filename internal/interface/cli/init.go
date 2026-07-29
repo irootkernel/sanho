@@ -19,7 +19,6 @@ import (
 // newInitCmd creates the init command.
 func newInitCmd() *cobra.Command {
 	var (
-		serverURL   string
 		projectName string
 		docsDir     string
 		docsRepoURL string
@@ -58,18 +57,13 @@ Prerequisites:
 				return err
 			}
 
+			resolvedSocketPath, err := resolveSocketPath("")
+			if err != nil {
+				return err
+			}
+
 			// Collect required values interactively if not provided via flags.
 			// This keeps sanho init primarily conversational, as designed.
-			if serverURL == "" {
-				input, err := promptForInput("Enter sanhod URL: ")
-				if err != nil {
-					return err
-				}
-				if input == "" {
-					return errors.New("server URL is required")
-				}
-				serverURL = input
-			}
 			if projectName == "" {
 				input, err := promptForInput("Enter project name: ")
 				if err != nil {
@@ -187,7 +181,7 @@ Prerequisites:
 			}
 
 			// Create HTTP client
-			httpClient := httpclient.NewHTTPClient(serverURL)
+			httpClient := httpclient.NewHTTPClient(resolvedSocketPath)
 
 			// Step 1: Register project (idempotent)
 			fmt.Printf("Registering project '%s'...\n", projectName)
@@ -262,7 +256,7 @@ Prerequisites:
 
 			// Step 5: Write .sanho.json
 			config := &client.WorkspaceConfig{
-				ServerURL:             serverURL,
+				SocketPath:            resolvedSocketPath,
 				WorkspaceID:           workspaceResp.WorkspaceID,
 				Project:               docs.ProjectName(projectName),
 				ActorEmail:            actorEmail,
@@ -325,7 +319,6 @@ Prerequisites:
 		},
 	}
 
-	cmd.Flags().StringVar(&serverURL, "server-url", "", "sanhod URL (required)")
 	cmd.Flags().StringVar(&projectName, "project", "", "Project name (required)")
 	cmd.Flags().StringVar(&docsDir, "docs-dir", "", "Local docs directory (default: docs)")
 	cmd.Flags().StringVar(&docsRepoURL, "docs-repo-url", "", "Docs repository Git URL (required)")

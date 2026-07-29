@@ -49,7 +49,7 @@ func reportWorkspaceDocsHash(
 	if err := store.Save(state); err != nil {
 		return fmt.Errorf("persist pending workspace report: %w", err)
 	}
-	if err := sendWorkspaceReport(ctx, config.ServerURL, state); err != nil {
+	if err := sendWorkspaceReport(ctx, config.SocketPath, state); err != nil {
 		return fmt.Errorf("report docs hash to daemon; report remains pending: %w", err)
 	}
 	if err := store.Remove(); err != nil {
@@ -77,7 +77,7 @@ func retryPendingWorkspaceReport(
 	if state.WorkspaceID != config.WorkspaceID {
 		return fmt.Errorf("pending workspace report belongs to workspace %s", state.WorkspaceID)
 	}
-	if err := sendWorkspaceReport(ctx, config.ServerURL, state); err != nil {
+	if err := sendWorkspaceReport(ctx, config.SocketPath, state); err != nil {
 		return fmt.Errorf("retry pending workspace report: %w", err)
 	}
 	if err := store.Remove(); err != nil {
@@ -95,8 +95,12 @@ func hasPendingWorkspaceReport(ctx context.Context, workDir string) (bool, error
 	return exists, err
 }
 
-func sendWorkspaceReport(ctx context.Context, serverURL string, state fs.WorkspaceReportState) error {
-	return httpclient.NewHTTPClient(serverURL).ReportWorkspaceDocsHash(
+func sendWorkspaceReport(ctx context.Context, socketPath string, state fs.WorkspaceReportState) error {
+	client, err := newDaemonClient(socketPath)
+	if err != nil {
+		return err
+	}
+	return client.ReportWorkspaceDocsHash(
 		ctx,
 		state.WorkspaceID,
 		httpclient.ReportWorkspaceDocsHashRequest{

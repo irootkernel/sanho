@@ -92,15 +92,15 @@ func runCmd(t *testing.T, dir string, name string, args ...string) []byte {
 }
 
 // registerProjectViaCLI registers a project using the CLI and returns repoID.
-func registerProjectViaCLI(t *testing.T, cli, serverURL, project, repoURL, cwd string) string {
+func registerProjectViaCLI(t *testing.T, cli, socketPath, project, repoURL, cwd string) string {
 	t.Helper()
 	t.Cleanup(func() {
 		// Ensure projects are always torn down, even if the test fails midway.
-		deleteProjectViaCLI(t, cli, serverURL, project, true)
+		deleteProjectViaCLI(t, cli, socketPath, project, true)
 	})
 
 	cmd := exec.Command(cli, "project", "add",
-		"--server-url", serverURL,
+		"--socket", socketPath,
 		"--project", project,
 		"--docs-repo-url", repoURL,
 	)
@@ -114,10 +114,10 @@ func registerProjectViaCLI(t *testing.T, cli, serverURL, project, repoURL, cwd s
 }
 
 // registerWorkspaceViaCLI registers a workspace using the CLI and returns workspaceID & current head.
-func registerWorkspaceViaCLI(t *testing.T, cli, serverURL, project, cwd string) (workspaceID string, currentHead string) {
+func registerWorkspaceViaCLI(t *testing.T, cli, socketPath, project, cwd string) (workspaceID string, currentHead string) {
 	t.Helper()
 	cmd := exec.Command(cli, "workspace", "register",
-		"--server-url", serverURL,
+		"--socket", socketPath,
 		"--project", project,
 		"--yes",
 		cwd,
@@ -148,15 +148,15 @@ func registerWorkspaceViaCLI(t *testing.T, cli, serverURL, project, cwd string) 
 
 	// Ensure workspace is unregistered even if the test fails later.
 	t.Cleanup(func() {
-		deleteWorkspaceViaCLI(t, cli, serverURL, workspaceID)
+		deleteWorkspaceViaCLI(t, cli, socketPath, workspaceID)
 	})
 
 	return workspaceID, currentHead
 }
 
-func deleteProjectViaCLI(t *testing.T, cli, serverURL, project string, force bool) {
+func deleteProjectViaCLI(t *testing.T, cli, socketPath, project string, force bool) {
 	t.Helper()
-	args := []string{"project", "delete", "--server-url", serverURL, "--project", project, "--yes"}
+	args := []string{"project", "delete", "--socket", socketPath, "--project", project, "--yes"}
 	if force {
 		args = append(args, "--force")
 	}
@@ -172,10 +172,10 @@ func deleteProjectViaCLI(t *testing.T, cli, serverURL, project string, force boo
 	}
 }
 
-func deleteWorkspaceViaCLI(t *testing.T, cli, serverURL, workspaceID string) {
+func deleteWorkspaceViaCLI(t *testing.T, cli, socketPath, workspaceID string) {
 	t.Helper()
 	cmd := exec.Command(cli, "workspace", "unregister",
-		"--server-url", serverURL,
+		"--socket", socketPath,
 		"--workspace-id", workspaceID,
 		"--yes",
 	)
@@ -192,13 +192,13 @@ func deleteWorkspaceViaCLI(t *testing.T, cli, serverURL, workspaceID string) {
 }
 
 // fetchHeadViaHTTP gets /docs/head for validation.
-func fetchHeadViaHTTP(t *testing.T, serverURL, project string) string {
+func fetchHeadViaHTTP(t *testing.T, socketPath, project string) string {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	reqURL := fmt.Sprintf("%s/docs/head?project=%s", strings.TrimRight(serverURL, "/"), url.QueryEscape(project))
+	reqURL := fmt.Sprintf("http://sanho/docs/head?project=%s", url.QueryEscape(project))
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := unixHTTPClient(socketPath, 10*time.Second).Do(req)
 	if err != nil {
 		t.Fatalf("get head failed: %v", err)
 	}
@@ -214,12 +214,12 @@ func fetchHeadViaHTTP(t *testing.T, serverURL, project string) string {
 }
 
 // fetchStateViaHTTP retrieves /state for validation.
-func fetchStateViaHTTP(t *testing.T, serverURL string) map[string]interface{} {
+func fetchStateViaHTTP(t *testing.T, socketPath string) map[string]interface{} {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(serverURL, "/")+"/state", nil)
-	resp, err := http.DefaultClient.Do(req)
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://sanho/state", nil)
+	resp, err := unixHTTPClient(socketPath, 10*time.Second).Do(req)
 	if err != nil {
 		t.Fatalf("get state failed: %v", err)
 	}
@@ -235,10 +235,10 @@ func fetchStateViaHTTP(t *testing.T, serverURL string) map[string]interface{} {
 }
 
 // writeConfig writes .sanho.json with provided values.
-func writeConfig(t *testing.T, dir, serverURL, project, workspaceID, actorEmail string) {
+func writeConfig(t *testing.T, dir, socketPath, project, workspaceID, actorEmail string) {
 	t.Helper()
 	cfg := map[string]any{
-		"server_url":   serverURL,
+		"socket_path":  socketPath,
 		"project":      project,
 		"workspace_id": workspaceID,
 		"actor_email":  actorEmail,
@@ -314,7 +314,7 @@ func createSnapshotTar(t *testing.T, files map[string]string) []byte {
 }
 
 // pushDocsViaHTTP pushes a snapshot to the server and returns new docs hash.
-func pushDocsViaHTTP(t *testing.T, serverURL, workspaceID, baseHash string, files map[string]string, actor string) string {
+func pushDocsViaHTTP(t *testing.T, socketPath, workspaceID, baseHash string, files map[string]string, actor string) string {
 	t.Helper()
 	snapshot := createSnapshotTar(t, files)
 	reqBody, _ := json.Marshal(map[string]string{
@@ -323,7 +323,11 @@ func pushDocsViaHTTP(t *testing.T, serverURL, workspaceID, baseHash string, file
 		"docs_snapshot":  base64.StdEncoding.EncodeToString(snapshot),
 		"actor_email":    actor,
 	})
-	resp, err := http.Post(strings.TrimRight(serverURL, "/")+"/docs/push", "application/json", bytes.NewReader(reqBody))
+	resp, err := unixHTTPClient(socketPath, 10*time.Second).Post(
+		"http://sanho/docs/push",
+		"application/json",
+		bytes.NewReader(reqBody),
+	)
 	if err != nil {
 		t.Fatalf("push docs failed: %v", err)
 	}

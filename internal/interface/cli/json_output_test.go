@@ -53,14 +53,14 @@ func TestRenderCommandErrorAsJSON(t *testing.T) {
 
 func TestCommandErrorCanPreserveHumanMessage(t *testing.T) {
 	err := withErrorCodeMessage(
-		"server_url_required",
-		"--server-url is required with --all outside a sanho workspace",
-		errors.New("configuration file not found"),
+		"invalid_socket_path",
+		"sanho socket path must be an absolute path",
+		errors.New("invalid socket configuration"),
 	)
-	if err.Error() != "configuration file not found" {
+	if err.Error() != "invalid socket configuration" {
 		t.Fatalf("human message = %q", err.Error())
 	}
-	if commandErrorMessage(err) != "--server-url is required with --all outside a sanho workspace" {
+	if commandErrorMessage(err) != "sanho socket path must be an absolute path" {
 		t.Fatalf("JSON message = %q", commandErrorMessage(err))
 	}
 }

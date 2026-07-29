@@ -22,20 +22,22 @@ make cli-build
 make daemon-run
 ```
 
-기본 서버 주소는 `http://127.0.0.1:5789`이고 state 파일은
-`data/sanho_state.json`에 저장된다.
+daemon은 기본적으로 `~/.sanho/sanhod.sock` Unix socket에서 요청을 받고,
+state와 docs clone을 각각 `~/.sanho/state.json`,
+`~/.sanho/docs_repos/`에 저장한다.
 
 애플리케이션 Git 저장소에서 다음 명령으로 작업공간을 초기화한다.
 
 ```bash
 sanho init \
-  --server-url http://127.0.0.1:5789 \
   --project example \
   --docs-repo-url git@github.com:example/example-docs.git
 ```
 
 `init`은 현재 docs snapshot을 내려받고 `.sanho.json`,
 `.sanho_docs_hash`를 만든 뒤 문서 동기화용 Git hook을 설치한다.
+기본값이 아닌 daemon을 사용하려면 전역 옵션
+`--socket /absolute/path/to/sanhod.sock`을 지정한다.
 
 ## 일상 작업
 

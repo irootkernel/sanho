@@ -19,7 +19,7 @@ func TestFileConfigLoader_Load(t *testing.T) {
 		{
 			name: "valid config with all fields",
 			configJSON: `{
-				"server_url": "http://localhost:5789",
+				"socket_path": "/tmp/sanhod.sock",
 				"workspace_id": "ws-123",
 				"project": "sudal",
 				"actor_email": "user@example.com",
@@ -30,7 +30,7 @@ func TestFileConfigLoader_Load(t *testing.T) {
 			}`,
 			wantErr: nil,
 			wantConfig: &client.WorkspaceConfig{
-				ServerURL:             "http://localhost:5789",
+				SocketPath:            "/tmp/sanhod.sock",
 				WorkspaceID:           "ws-123",
 				Project:               "sudal",
 				ActorEmail:            "user@example.com",
@@ -43,13 +43,13 @@ func TestFileConfigLoader_Load(t *testing.T) {
 		{
 			name: "valid config with defaults applied",
 			configJSON: `{
-				"server_url": "http://localhost:5789",
+				"socket_path": "/tmp/sanhod.sock",
 				"workspace_id": "ws-456",
 				"project": "dolgorae"
 			}`,
 			wantErr: nil,
 			wantConfig: &client.WorkspaceConfig{
-				ServerURL:             "http://localhost:5789",
+				SocketPath:            "/tmp/sanhod.sock",
 				WorkspaceID:           "ws-456",
 				Project:               "dolgorae",
 				ActorEmail:            "",
@@ -60,20 +60,20 @@ func TestFileConfigLoader_Load(t *testing.T) {
 			},
 		},
 		{
-			name:       "missing server_url",
+			name:       "missing socket_path",
 			configJSON: `{"workspace_id": "ws-123", "project": "sudal"}`,
 			wantErr:    ErrConfigMissingField,
 			wantConfig: nil,
 		},
 		{
 			name:       "missing workspace_id",
-			configJSON: `{"server_url": "http://localhost:5789", "project": "sudal"}`,
+			configJSON: `{"socket_path": "/tmp/sanhod.sock", "project": "sudal"}`,
 			wantErr:    ErrConfigMissingField,
 			wantConfig: nil,
 		},
 		{
 			name:       "missing project",
-			configJSON: `{"server_url": "http://localhost:5789", "workspace_id": "ws-123"}`,
+			configJSON: `{"socket_path": "/tmp/sanhod.sock", "workspace_id": "ws-123"}`,
 			wantErr:    ErrConfigMissingField,
 			wantConfig: nil,
 		},
@@ -86,7 +86,7 @@ func TestFileConfigLoader_Load(t *testing.T) {
 		{
 			name: "invalid multiline docs sync commit message",
 			configJSON: `{
-				"server_url": "http://localhost:5789",
+				"socket_path": "/tmp/sanhod.sock",
 				"workspace_id": "ws-123",
 				"project": "sudal",
 				"docs_sync_commit_message": "line one\nline two"
@@ -129,8 +129,8 @@ func TestFileConfigLoader_Load(t *testing.T) {
 			}
 
 			// Check config values
-			if config.ServerURL != tt.wantConfig.ServerURL {
-				t.Errorf("ServerURL = %v, want %v", config.ServerURL, tt.wantConfig.ServerURL)
+			if config.SocketPath != tt.wantConfig.SocketPath {
+				t.Errorf("SocketPath = %v, want %v", config.SocketPath, tt.wantConfig.SocketPath)
 			}
 			if config.WorkspaceID != tt.wantConfig.WorkspaceID {
 				t.Errorf("WorkspaceID = %v, want %v", config.WorkspaceID, tt.wantConfig.WorkspaceID)

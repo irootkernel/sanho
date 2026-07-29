@@ -96,3 +96,24 @@ func TestFileStateRepositoryLeavesNoTemporaryFiles(t *testing.T) {
 		t.Fatalf("temporary state files remain: %v", matches)
 	}
 }
+
+func TestFileStateRepositoryUsesPrivateFilePermissions(t *testing.T) {
+	statePath := filepath.Join(t.TempDir(), "state.json")
+	repository, err := state.NewFileStateRepository(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.AddProject("project", "docs"); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, path := range []string{statePath, statePath + ".bak"} {
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatalf("stat %s: %v", path, err)
+		}
+		if got := info.Mode().Perm(); got != 0600 {
+			t.Fatalf("%s mode = %o, want 600", path, got)
+		}
+	}
+}

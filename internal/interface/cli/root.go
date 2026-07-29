@@ -32,12 +32,17 @@ type BuildInfo struct {
 // verbose is a global flag for enabling debug output.
 var verbose bool
 
+// socketPathFlag overrides workspace and environment socket configuration.
+var socketPathFlag string
+
 // buildInfo stores build-time information.
 var buildInfo BuildInfo
 
 // NewRootCmd creates and returns the root command.
 func NewRootCmd(info BuildInfo) *cobra.Command {
 	buildInfo = info
+	verbose = false
+	socketPathFlag = ""
 
 	rootCmd := &cobra.Command{
 		Use:   "sanho",
@@ -53,6 +58,7 @@ in a dedicated repository, separate from the application code.`,
 
 	// Global flags
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose output")
+	rootCmd.PersistentFlags().StringVar(&socketPathFlag, "socket", "", "sanhod Unix socket path")
 
 	// Register subcommands
 	rootCmd.AddCommand(newVersionCmd())

@@ -24,9 +24,7 @@ func TestE2E_State(t *testing.T) {
 	projectName := uniqueName("state-test-project")
 	repoID := uniqueName("state-test-repo")
 
-	baseURL := requireServer(t, ctx)
-
-	client := &http.Client{Timeout: 5 * time.Second}
+	baseURL, client, _ := requireServer(t, ctx)
 
 	// Add project.
 	body, _ := json.Marshal(map[string]string{

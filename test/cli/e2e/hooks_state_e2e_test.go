@@ -12,12 +12,12 @@ import (
 // TestE2EStateCommand verifies sanho state command against running server.
 func TestE2EStateCommand(t *testing.T) {
 	cliBinary := getCliBinary(t)
-	serverURL := getServerURL(t)
-	ensureServerAvailable(t, serverURL)
+	socketPath := getSocketPath(t)
+	ensureServerAvailable(t, socketPath)
 
 	// Set up a temp workspace with config pointing to real server
 	tempDir := t.TempDir()
-	setupE2EWorkspace(t, tempDir, serverURL, "test-e2e-project")
+	setupE2EWorkspace(t, tempDir, socketPath, "test-e2e-project")
 
 	// Create docs directory
 	docsDir := filepath.Join(tempDir, "docs")
@@ -48,12 +48,12 @@ func TestE2EStateCommand(t *testing.T) {
 // TestE2EStateAllCommand verifies sanho state --all command against running server.
 func TestE2EStateAllCommand(t *testing.T) {
 	cliBinary := getCliBinary(t)
-	serverURL := getServerURL(t)
-	ensureServerAvailable(t, serverURL)
+	socketPath := getSocketPath(t)
+	ensureServerAvailable(t, socketPath)
 
 	// Set up a temp workspace with config pointing to real server
 	tempDir := t.TempDir()
-	setupE2EWorkspace(t, tempDir, serverURL, "test-e2e-project")
+	setupE2EWorkspace(t, tempDir, socketPath, "test-e2e-project")
 
 	// Create docs directory
 	docsDir := filepath.Join(tempDir, "docs")
@@ -81,12 +81,12 @@ func TestE2EStateAllCommand(t *testing.T) {
 // TestE2EPrePushNoIssues verifies pre-push succeeds when no issues.
 func TestE2EPrePushNoIssues(t *testing.T) {
 	cliBinary := getCliBinary(t)
-	serverURL := getServerURL(t)
-	ensureServerAvailable(t, serverURL)
+	socketPath := getSocketPath(t)
+	ensureServerAvailable(t, socketPath)
 
 	// Set up a temp workspace with config
 	tempDir := t.TempDir()
-	setupE2EWorkspace(t, tempDir, serverURL, "test-e2e-project")
+	setupE2EWorkspace(t, tempDir, socketPath, "test-e2e-project")
 
 	// Create clean docs directory
 	docsDir := filepath.Join(tempDir, "docs")
@@ -111,12 +111,12 @@ func TestE2EPrePushNoIssues(t *testing.T) {
 // TestE2EPrePushBlocksOnConflict verifies pre-push blocks with conflict markers.
 func TestE2EPrePushBlocksOnConflict(t *testing.T) {
 	cliBinary := getCliBinary(t)
-	serverURL := getServerURL(t)
-	ensureServerAvailable(t, serverURL)
+	socketPath := getSocketPath(t)
+	ensureServerAvailable(t, socketPath)
 
 	// Set up a temp workspace with config
 	tempDir := t.TempDir()
-	setupE2EWorkspace(t, tempDir, serverURL, "test-e2e-project")
+	setupE2EWorkspace(t, tempDir, socketPath, "test-e2e-project")
 
 	// Create docs with conflict markers
 	docsDir := filepath.Join(tempDir, "docs")
@@ -154,12 +154,12 @@ Remote version
 // TestE2EPrePushBlocksOnPendingFix verifies pre-push blocks with pending fix.
 func TestE2EPrePushBlocksOnPendingFix(t *testing.T) {
 	cliBinary := getCliBinary(t)
-	serverURL := getServerURL(t)
-	ensureServerAvailable(t, serverURL)
+	socketPath := getSocketPath(t)
+	ensureServerAvailable(t, socketPath)
 
 	// Set up a temp workspace with config
 	tempDir := t.TempDir()
-	setupE2EWorkspace(t, tempDir, serverURL, "test-e2e-project")
+	setupE2EWorkspace(t, tempDir, socketPath, "test-e2e-project")
 
 	// Create clean docs
 	docsDir := filepath.Join(tempDir, "docs")
@@ -197,12 +197,12 @@ func TestE2EPrePushBlocksOnPendingFix(t *testing.T) {
 // TestE2EFixNoPendingFix verifies fix fails without pending fix.
 func TestE2EFixNoPendingFix(t *testing.T) {
 	cliBinary := getCliBinary(t)
-	serverURL := getServerURL(t)
-	ensureServerAvailable(t, serverURL)
+	socketPath := getSocketPath(t)
+	ensureServerAvailable(t, socketPath)
 
 	// Set up a temp workspace with config (no pending fix)
 	tempDir := t.TempDir()
-	setupE2EWorkspace(t, tempDir, serverURL, "test-e2e-project")
+	setupE2EWorkspace(t, tempDir, socketPath, "test-e2e-project")
 
 	// Create docs directory
 	docsDir := filepath.Join(tempDir, "docs")
@@ -227,11 +227,11 @@ func TestE2EFixNoPendingFix(t *testing.T) {
 }
 
 // setupE2EWorkspace creates a minimal sanho workspace for E2E testing.
-func setupE2EWorkspace(t *testing.T, tempDir, serverURL, project string) {
+func setupE2EWorkspace(t *testing.T, tempDir, socketPath, project string) {
 	t.Helper()
 
 	config := map[string]interface{}{
-		"server_url":   serverURL,
+		"socket_path":  socketPath,
 		"workspace_id": project + ":" + tempDir,
 		"project":      project,
 		"actor_email":  "e2e-test@example.com",

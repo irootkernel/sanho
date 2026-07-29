@@ -10,8 +10,8 @@ import (
 // TestE2ECLI_StatusUnknownProject checks unknown_project handling.
 func TestE2ECLI_StatusUnknownProject(t *testing.T) {
 	cliBinary := getCliBinary(t)
-	serverURL := getServerURL(t)
-	ensureServerAvailable(t, serverURL)
+	socketPath := getSocketPath(t)
+	ensureServerAvailable(t, socketPath)
 
 	workspaceDir := t.TempDir()
 	// minimal git to satisfy status conflict scan if needed
@@ -19,7 +19,7 @@ func TestE2ECLI_StatusUnknownProject(t *testing.T) {
 	setGitUser(t, workspaceDir, "cli-status@example.com")
 
 	unknownProject := "unknown-project-" + filepath.Base(workspaceDir)
-	writeConfig(t, workspaceDir, serverURL, unknownProject, "ws-"+workspaceDir, "cli-status@example.com")
+	writeConfig(t, workspaceDir, socketPath, unknownProject, "ws-"+workspaceDir, "cli-status@example.com")
 	writeDocsHash(t, workspaceDir, "deadbeef")
 
 	cmd := exec.Command(cliBinary, "status")
@@ -36,11 +36,11 @@ func TestE2ECLI_StatusUnknownProject(t *testing.T) {
 // TestE2ECLI_WorkspaceUnregisterUnknown checks unknown workspace message.
 func TestE2ECLI_WorkspaceUnregisterUnknown(t *testing.T) {
 	cliBinary := getCliBinary(t)
-	serverURL := getServerURL(t)
-	ensureServerAvailable(t, serverURL)
+	socketPath := getSocketPath(t)
+	ensureServerAvailable(t, socketPath)
 
 	cmd := exec.Command(cliBinary, "workspace", "unregister",
-		"--server-url", serverURL,
+		"--socket", socketPath,
 		"--workspace-id", "non-existent-workspace-id",
 		"--yes",
 	)
@@ -56,11 +56,11 @@ func TestE2ECLI_WorkspaceUnregisterUnknown(t *testing.T) {
 // TestE2ECLI_ProjectDeleteUnknown checks unknown project delete message.
 func TestE2ECLI_ProjectDeleteUnknown(t *testing.T) {
 	cliBinary := getCliBinary(t)
-	serverURL := getServerURL(t)
-	ensureServerAvailable(t, serverURL)
+	socketPath := getSocketPath(t)
+	ensureServerAvailable(t, socketPath)
 
 	cmd := exec.Command(cliBinary, "project", "delete",
-		"--server-url", serverURL,
+		"--socket", socketPath,
 		"--project", "non-existent-project-id",
 		"--yes",
 	)

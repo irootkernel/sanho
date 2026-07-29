@@ -35,7 +35,7 @@ func TestDeleteProject(t *testing.T) {
 	gitClient := git.NewClient()
 	gitManager := git.NewDocsRepoManager(gitClient, git.NewRepoCoordinator())
 	uc := project.NewDeleteProjectUseCase(stateRepo, gitManager)
-	addUC := project.NewAddProjectUseCase(stateRepo, gitManager)
+	addUC := project.NewAddProjectUseCase(stateRepo, gitManager, t.TempDir())
 	h := handler.NewProjectHandler(uc, addUC)
 
 	// Test: Delete success and cleanup
@@ -87,7 +87,7 @@ func TestDeleteProjectWithWorkspaces(t *testing.T) {
 	gitClient := git.NewClient()
 	gitManager := git.NewDocsRepoManager(gitClient, git.NewRepoCoordinator())
 	uc := project.NewDeleteProjectUseCase(stateRepo, gitManager)
-	addUC := project.NewAddProjectUseCase(stateRepo, gitManager)
+	addUC := project.NewAddProjectUseCase(stateRepo, gitManager, t.TempDir())
 	h := handler.NewProjectHandler(uc, addUC)
 
 	t.Run("delete without force should return 409", func(t *testing.T) {

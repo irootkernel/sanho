@@ -93,7 +93,7 @@ func TestDocsPush_Integration(t *testing.T) {
 	workspaceRepo := state.NewFileWorkspaceRepository(stateRepo)
 
 	// Add project
-	addProjectUC := project.NewAddProjectUseCase(stateRepo, gitManager)
+	addProjectUC := project.NewAddProjectUseCase(stateRepo, gitManager, t.TempDir())
 	if err := addProjectUC.Execute(ctx, project.AddProjectInput{
 		Project:     "test-project",
 		DocsRepoID:  "test-repo",
@@ -128,7 +128,7 @@ func TestDocsPush_Integration(t *testing.T) {
 	docsSnapshotHandler := handler.NewDocsSnapshotHandler(getDocsSnapshotUC)
 	docsPushHandler := handler.NewDocsPushHandler(pushDocsUC)
 
-	srv := sanhohttp.NewHTTPServer(sanhohttp.ServerConfig{Addr: ":0"}, projectHandler, workspaceHandler, docsHeadHandler, docsSnapshotHandler, docsPushHandler, nil, nil)
+	srv := sanhohttp.NewHTTPServer(projectHandler, workspaceHandler, docsHeadHandler, docsSnapshotHandler, docsPushHandler, nil, nil)
 	ts := httptest.NewServer(srv.Handler)
 	defer ts.Close()
 

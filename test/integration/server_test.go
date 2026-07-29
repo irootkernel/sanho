@@ -71,7 +71,7 @@ func TestIntegration_Server(t *testing.T) {
 	}
 
 	deleteProjectUC := project.NewDeleteProjectUseCase(stateRepo, gitManager)
-	addProjectUC := project.NewAddProjectUseCase(stateRepo, gitManager)
+	addProjectUC := project.NewAddProjectUseCase(stateRepo, gitManager, t.TempDir())
 	deleteWorkspaceUC := workspace.NewDeleteWorkspaceUseCase(stateRepo)
 	getDocsHeadUC := docs.NewGetDocsHeadUseCase(docsRepo)
 
@@ -90,7 +90,7 @@ func TestIntegration_Server(t *testing.T) {
 	projectStatusHandler := handler.NewProjectStatusHandler(getProjectStatusUC)
 	stateHandler := handler.NewStateHandler(getStateUC)
 
-	srv := sanhohttp.NewHTTPServer(sanhohttp.ServerConfig{Addr: ":0"}, projectHandler, workspaceHandler, docsHeadHandler, docsSnapshotHandler, nil, stateHandler, projectStatusHandler)
+	srv := sanhohttp.NewHTTPServer(projectHandler, workspaceHandler, docsHeadHandler, docsSnapshotHandler, nil, stateHandler, projectStatusHandler)
 	ts := httptest.NewServer(srv.Handler)
 	defer ts.Close()
 

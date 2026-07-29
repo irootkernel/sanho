@@ -4,8 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 )
 
@@ -26,7 +27,7 @@ func TestCLIVersionJSON(t *testing.T) {
 }
 
 func TestCLIStateJSONFiltersCurrentProject(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := newUnixTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"docs_heads": map[string]string{
 				"test-project": "test-head",
@@ -85,7 +86,7 @@ func TestCLIStateJSONFiltersCurrentProject(t *testing.T) {
 }
 
 func TestCLIStatusJSON(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := newUnixTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/projects/test-project/status" {
 			http.NotFound(w, r)
 			return
@@ -151,7 +152,7 @@ func TestCLIStatusJSON(t *testing.T) {
 }
 
 func TestCLIStatusJSONMarksLegacyComparisonUnavailable(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := newUnixTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/projects/test-project/status":
 			w.WriteHeader(http.StatusNotFound)
@@ -186,7 +187,7 @@ func TestCLIStatusJSONMarksLegacyComparisonUnavailable(t *testing.T) {
 }
 
 func TestCLIStateAllJSONOutsideWorkspace(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := newUnixTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"docs_heads": map[string]string{"alpha": "head"},
 			"workspaces": []map[string]any{},
@@ -198,7 +199,7 @@ func TestCLIStateAllJSONOutsideWorkspace(t *testing.T) {
 		getCliBinary(t),
 		"state",
 		"--all",
-		"--server-url",
+		"--socket",
 		server.URL,
 		"--json",
 	)
@@ -259,7 +260,7 @@ func TestCLIStatusJSONUsesStableServerErrorCodes(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := newUnixTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(test.statusCode)
 				_ = json.NewEncoder(w).Encode(map[string]string{"error": test.serverCode})
 			}))
@@ -303,16 +304,16 @@ func TestCLIJSONOperationalErrors(t *testing.T) {
 		wantCode string
 	}{
 		{
-			name:     "state all requires server URL outside workspace",
+			name:     "state all reports unavailable default socket outside workspace",
 			args:     []string{"state", "--all", "--json"},
 			setupDir: func(t *testing.T, dir string) {},
-			wantCode: "server_url_required",
+			wantCode: "server_request_failed",
 		},
 		{
 			name: "status reports unavailable server",
 			args: []string{"status", "--json"},
 			setupDir: func(t *testing.T, dir string) {
-				setupSanhoConfig(t, dir, "http://127.0.0.1:1")
+				setupSanhoConfig(t, dir, "/tmp/sanhod-unavailable.sock")
 			},
 			wantCode: "server_request_failed",
 		},
@@ -323,6 +324,7 @@ func TestCLIJSONOperationalErrors(t *testing.T) {
 			test.setupDir(t, workspaceDir)
 			cmd := exec.Command(getCliBinary(t), test.args...)
 			cmd.Dir = workspaceDir
+			cmd.Env = append(os.Environ(), "SANHO_HOME="+filepath.Join(workspaceDir, "runtime"))
 			var stdout bytes.Buffer
 			var stderr bytes.Buffer
 			cmd.Stdout = &stdout

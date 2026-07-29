@@ -61,7 +61,7 @@ func (f *fakePrePushOutput) Error(msg string)   { f.errors = append(f.errors, ms
 
 func defaultPrePushConfig() *client.WorkspaceConfig {
 	return &client.WorkspaceConfig{
-		ServerURL:   "http://localhost",
+		SocketPath:  "http://localhost",
 		WorkspaceID: workspace.WorkspaceID("test-workspace"),
 		Project:     "test-project",
 		ActorEmail:  "test@example.com",

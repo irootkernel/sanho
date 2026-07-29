@@ -40,8 +40,8 @@ func (s DocsStatus) IsValid() bool {
 
 // WorkspaceConfig represents the local workspace configuration stored in .sanho.json.
 type WorkspaceConfig struct {
-	// ServerURL is the base URL of the sanhod.
-	ServerURL string `json:"server_url"`
+	// SocketPath is the absolute path to the sanhod Unix socket.
+	SocketPath string `json:"socket_path"`
 	// WorkspaceID is the unique identifier for this workspace.
 	WorkspaceID workspace.WorkspaceID `json:"workspace_id"`
 	// Project is the project name this workspace belongs to.

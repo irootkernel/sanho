@@ -193,7 +193,7 @@ func TestPreCommitUseCase_ConfigBroken(t *testing.T) {
 func TestPreCommitUseCase_HashFileBroken(t *testing.T) {
 	uc := NewPreCommitUseCase(
 		&fakeConfigLoader{config: &client.WorkspaceConfig{
-			ServerURL:   "http://localhost",
+			SocketPath:  "http://localhost",
 			WorkspaceID: "test",
 			Project:     "test",
 		}},
@@ -217,7 +217,7 @@ func TestPreCommitUseCase_ConflictMarkersFound(t *testing.T) {
 	output := &fakeOutput{}
 	uc := NewPreCommitUseCase(
 		&fakeConfigLoader{config: &client.WorkspaceConfig{
-			ServerURL:   "http://localhost",
+			SocketPath:  "http://localhost",
 			WorkspaceID: "test",
 			Project:     "test",
 		}},
@@ -244,7 +244,7 @@ func TestPreCommitUseCase_PendingFixExists(t *testing.T) {
 	output := &fakeOutput{}
 	uc := NewPreCommitUseCase(
 		&fakeConfigLoader{config: &client.WorkspaceConfig{
-			ServerURL:   "http://localhost",
+			SocketPath:  "http://localhost",
 			WorkspaceID: "test",
 			Project:     "test",
 		}},
@@ -272,7 +272,7 @@ func TestPreCommitUseCase_NoDocsChanges(t *testing.T) {
 	output := &fakeOutput{}
 	uc := NewPreCommitUseCase(
 		&fakeConfigLoader{config: &client.WorkspaceConfig{
-			ServerURL:   "http://localhost",
+			SocketPath:  "http://localhost",
 			WorkspaceID: "test",
 			Project:     "test",
 		}},
@@ -300,7 +300,7 @@ func TestPreCommitUseCase_PushUpdated(t *testing.T) {
 	output := &fakeOutput{}
 	uc := NewPreCommitUseCase(
 		&fakeConfigLoader{config: &client.WorkspaceConfig{
-			ServerURL:   "http://localhost",
+			SocketPath:  "http://localhost",
 			WorkspaceID: workspace.WorkspaceID("test"),
 			Project:     "test",
 		}},
@@ -332,7 +332,7 @@ func TestPreCommitUseCase_PushNoChange(t *testing.T) {
 	output := &fakeOutput{}
 	uc := NewPreCommitUseCase(
 		&fakeConfigLoader{config: &client.WorkspaceConfig{
-			ServerURL:   "http://localhost",
+			SocketPath:  "http://localhost",
 			WorkspaceID: workspace.WorkspaceID("test"),
 			Project:     "test",
 		}},
@@ -360,7 +360,7 @@ func TestPreCommitUseCase_UnknownDocsCommit(t *testing.T) {
 	output := &fakeOutput{}
 	uc := NewPreCommitUseCase(
 		&fakeConfigLoader{config: &client.WorkspaceConfig{
-			ServerURL:   "http://localhost",
+			SocketPath:  "http://localhost",
 			WorkspaceID: workspace.WorkspaceID("test"),
 			Project:     "test",
 		}},
@@ -387,7 +387,7 @@ func TestPreCommitUseCase_DocsRepoBusy(t *testing.T) {
 	output := &fakeOutput{}
 	uc := NewPreCommitUseCase(
 		&fakeConfigLoader{config: &client.WorkspaceConfig{
-			ServerURL:   "http://localhost",
+			SocketPath:  "http://localhost",
 			WorkspaceID: workspace.WorkspaceID("test"),
 			Project:     "test",
 		}},

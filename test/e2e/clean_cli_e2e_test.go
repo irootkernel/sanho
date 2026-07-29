@@ -18,8 +18,7 @@ func TestE2E_CliClean_RemovesWorkspaceAndLocalFiles(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 
-	baseURL := requireServer(t, ctx)
-	client := &http.Client{Timeout: 5 * time.Second}
+	baseURL, client, socketPath := requireServer(t, ctx)
 
 	originPath, head := createOriginRepo(t, map[string]string{
 		"docs/index.md": "# Clean E2E\n",
@@ -51,7 +50,7 @@ func TestE2E_CliClean_RemovesWorkspaceAndLocalFiles(t *testing.T) {
 
 	// Seed sanho files and hooks
 	configJSON := `{
-  "server_url": "` + baseURL + `",
+  "socket_path": "` + socketPath + `",
   "workspace_id": "` + wsID + `",
   "project": "` + projectName + `",
   "actor_email": "dev@example.com",

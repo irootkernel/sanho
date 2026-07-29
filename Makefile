@@ -1,9 +1,9 @@
 SHELL := /bin/bash
 
 GO := go
-PORT ?= 5789
-STATE_FILE_PATH ?= data/sanho_state.json
-E2E_BASE_URL ?=
+SANHO_HOME ?=
+SANHO_SOCKET ?=
+E2E_SOCKET ?=
 
 DAEMON_CMD := ./cmd/sanhod
 DAEMON_BINARY := bin/sanhod
@@ -32,12 +32,10 @@ daemon-build:
 	$(GO) build -o $(DAEMON_BINARY) $(DAEMON_CMD)
 
 daemon-run: daemon-build
-	@mkdir -p "$(dir $(STATE_FILE_PATH))"
-	PORT=$(PORT) STATE_FILE_PATH=$(STATE_FILE_PATH) ./$(DAEMON_BINARY)
+	SANHO_HOME="$(SANHO_HOME)" SANHO_SOCKET="$(SANHO_SOCKET)" ./$(DAEMON_BINARY)
 
 daemon-run-dev:
-	@mkdir -p "$(dir $(STATE_FILE_PATH))"
-	PORT=$(PORT) STATE_FILE_PATH=$(STATE_FILE_PATH) $(GO) run $(DAEMON_CMD)
+	SANHO_HOME="$(SANHO_HOME)" SANHO_SOCKET="$(SANHO_SOCKET)" $(GO) run $(DAEMON_CMD)
 
 daemon-test-prepare:
 	@mkdir -p data
@@ -52,8 +50,8 @@ daemon-test-integration:
 	$(GO) test ./test/integration -count=1
 
 daemon-test-e2e: daemon-build
-	@if [ -n "$(strip $(E2E_BASE_URL))" ]; then \
-		SANHO_DAEMON_BINARY="$(CURDIR)/$(DAEMON_BINARY)" SANHO_E2E_BASE_URL="$(E2E_BASE_URL)" $(GO) test ./test/e2e -count=1; \
+	@if [ -n "$(strip $(E2E_SOCKET))" ]; then \
+		SANHO_DAEMON_BINARY="$(CURDIR)/$(DAEMON_BINARY)" SANHO_E2E_SOCKET="$(E2E_SOCKET)" $(GO) test ./test/e2e -count=1; \
 	else \
 		SANHO_DAEMON_BINARY="$(CURDIR)/$(DAEMON_BINARY)" $(GO) test ./test/e2e -count=1; \
 	fi
@@ -80,8 +78,8 @@ cli-test-integration: cli-build
 	SANHO_CLI_BINARY=$(CURDIR)/$(CLI_BINARY) $(GO) test ./test/cli/integration -count=1 -v
 
 cli-test-e2e: cli-build daemon-build
-	@if [ -n "$(strip $(E2E_BASE_URL))" ]; then \
-		SANHO_CLI_BINARY="$(CURDIR)/$(CLI_BINARY)" SANHO_DAEMON_BINARY="$(CURDIR)/$(DAEMON_BINARY)" SANHO_E2E_BASE_URL="$(E2E_BASE_URL)" $(GO) test ./test/cli/e2e -count=1 -v; \
+	@if [ -n "$(strip $(E2E_SOCKET))" ]; then \
+		SANHO_CLI_BINARY="$(CURDIR)/$(CLI_BINARY)" SANHO_DAEMON_BINARY="$(CURDIR)/$(DAEMON_BINARY)" SANHO_E2E_SOCKET="$(E2E_SOCKET)" $(GO) test ./test/cli/e2e -count=1 -v; \
 	else \
 		SANHO_CLI_BINARY="$(CURDIR)/$(CLI_BINARY)" SANHO_DAEMON_BINARY="$(CURDIR)/$(DAEMON_BINARY)" $(GO) test ./test/cli/e2e -count=1 -v; \
 	fi

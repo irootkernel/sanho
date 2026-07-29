@@ -16,13 +16,13 @@ Sanho의 책임은 전용 docs 저장소를 단일 진실의 원천으로 유지
 application repo
   docs/ + .sanho.json + Git hooks
              |
-             | HTTP
+             | HTTP over Unix socket
              v
        sanhod
-       | state file
+       | ~/.sanho/state.json
        | repo coordinator
        v
-  local docs clone <----> canonical docs origin
+  ~/.sanho/docs_repos/* <----> canonical docs origin
 ```
 
 - CLI는 로컬 docs snapshot 생성, 병합, 상태 표시, hook 연동을 담당한다.
@@ -92,6 +92,10 @@ state 변경은 메모리의 복사본에 먼저 적용한다. 디스크 저장�
 계속하지 않고 시작에 실패한다.
 
 ## HTTP 인터페이스
+
+HTTP는 TCP port를 열지 않고 기본 `~/.sanho/sanhod.sock` Unix socket을
+통해서만 전달한다. CLI는 `.sanho.json`의 절대 `socket_path`를 사용하며,
+전역 `--socket`, `SANHO_SOCKET`, `SANHO_HOME`으로 기본 경로를 바꿀 수 있다.
 
 | Method | Path | 용도 |
 |---|---|---|

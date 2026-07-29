@@ -1,8 +1,9 @@
 package e2e
 
 import (
+	"context"
 	"net"
-	"net/url"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -21,11 +22,11 @@ func TestE2ESetup(t *testing.T) {
 	}
 
 	// Verify TestMain configured either an isolated server or an explicit override.
-	serverURL := os.Getenv("SANHO_E2E_BASE_URL")
-	if serverURL == "" {
-		t.Fatal("SANHO_E2E_BASE_URL was not configured by the E2E test harness")
+	socketPath := os.Getenv("SANHO_E2E_SOCKET")
+	if socketPath == "" {
+		t.Fatal("SANHO_E2E_SOCKET was not configured by the E2E test harness")
 	}
-	t.Logf("E2E test environment: CLI=%s, Server=%s", cliBinary, serverURL)
+	t.Logf("E2E test environment: CLI=%s, Server=%s", cliBinary, socketPath)
 }
 
 // TestE2EVersionCommand is a simple E2E test that verifies the CLI runs correctly.
@@ -83,38 +84,38 @@ func getCliBinary(t *testing.T) string {
 	return ""
 }
 
-// getServerURL returns the sanhod URL for E2E tests.
-func getServerURL(t *testing.T) string {
+// getSocketPath returns the sanhod Unix socket for E2E tests.
+func getSocketPath(t *testing.T) string {
 	t.Helper()
 
-	url := os.Getenv("SANHO_E2E_BASE_URL")
-	if url == "" {
-		t.Fatal("SANHO_E2E_BASE_URL was not configured by the E2E test harness")
+	path := os.Getenv("SANHO_E2E_SOCKET")
+	if path == "" {
+		t.Fatal("SANHO_E2E_SOCKET was not configured by the E2E test harness")
 	}
-	return url
+	if !filepath.IsAbs(path) {
+		t.Fatalf("SANHO_E2E_SOCKET must be absolute: %q", path)
+	}
+	return path
 }
 
-// ensureServerAvailable checks TCP connectivity to the given server URL and skips the test if unreachable.
-func ensureServerAvailable(t *testing.T, rawURL string) {
+// ensureServerAvailable checks connectivity to the daemon Unix socket.
+func ensureServerAvailable(t *testing.T, socketPath string) {
 	t.Helper()
-
-	parsed, err := url.Parse(rawURL)
-	if err != nil || parsed.Host == "" {
-		t.Skipf("Skipping E2E: invalid server URL %q", rawURL)
-	}
-
-	hostPort := parsed.Host
-	if !strings.Contains(hostPort, ":") {
-		if parsed.Scheme == "https" {
-			hostPort = hostPort + ":443"
-		} else {
-			hostPort = hostPort + ":80"
-		}
-	}
-
-	conn, err := net.DialTimeout("tcp", hostPort, 2*time.Second)
+	conn, err := net.DialTimeout("unix", socketPath, 2*time.Second)
 	if err != nil {
-		t.Skipf("Skipping E2E: sanhod not reachable at %s (%v)", rawURL, err)
+		t.Fatalf("sanhod not reachable at %s: %v", socketPath, err)
 	}
 	_ = conn.Close()
+}
+
+func unixHTTPClient(socketPath string, timeout time.Duration) *http.Client {
+	return &http.Client{
+		Timeout: timeout,
+		Transport: &http.Transport{
+			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+				var dialer net.Dialer
+				return dialer.DialContext(ctx, "unix", socketPath)
+			},
+		},
+	}
 }

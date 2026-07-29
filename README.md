@@ -37,12 +37,13 @@ make cli-build
 make daemon-run
 ```
 
-The server listens on port `5789` by default and stores runtime state at
-`data/sanho_state.json`.
+The daemon runs in the foreground and listens only on the Unix socket
+`~/.sanho/sanhod.sock`. It stores state in `~/.sanho/state.json` and managed
+docs clones under `~/.sanho/docs_repos/`.
 
 ```bash
-PORT=6789 STATE_FILE_PATH=/var/lib/sanho/state.json make daemon-run
-curl http://127.0.0.1:6789/healthz
+curl --unix-socket ~/.sanho/sanhod.sock http://sanho/healthz
+SANHO_HOME=/var/lib/sanho SANHO_SOCKET=/run/user/$(id -u)/sanhod.sock make daemon-run
 ```
 
 For local development without building first:
@@ -63,10 +64,13 @@ Then run this in an application Git repository:
 
 ```bash
 sanho init \
-  --server-url http://127.0.0.1:5789 \
   --project example \
   --docs-repo-url git@github.com:example/example-docs.git
 ```
+
+Use the global `--socket /absolute/path/to/sanhod.sock` option when the daemon
+does not use the default socket. `sanho init` persists the resolved absolute
+path as `socket_path` in `.sanho.json`.
 
 Useful daily commands:
 
@@ -107,9 +111,9 @@ make cli-test
 make test-all
 ```
 
-The server and CLI end-to-end suites launch isolated daemons on ephemeral
-loopback ports with temporary state by default. Set `E2E_BASE_URL` only to test
-an explicitly selected running server.
+The server and CLI end-to-end suites launch isolated daemons with temporary
+runtime homes and Unix sockets by default. Set `E2E_SOCKET` to an absolute
+socket path only when testing an explicitly selected running daemon.
 
 ## Operations and design
 

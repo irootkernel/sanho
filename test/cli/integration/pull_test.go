@@ -3,7 +3,6 @@ package integration
 import (
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -35,7 +34,7 @@ func TestCLIPullAlreadyUpToDate(t *testing.T) {
 	cliBinary := getCliBinary(t)
 
 	// Create a fake server
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := newUnixTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.HasPrefix(r.URL.Path, "/docs/head"):
 			w.Header().Set("Content-Type", "application/json")
@@ -68,7 +67,7 @@ func TestCLIPullAlreadyUpToDate(t *testing.T) {
 
 	// Create .sanho.json
 	config := map[string]interface{}{
-		"server_url":       server.URL,
+		"socket_path":      server.URL,
 		"workspace_id":     "test-workspace",
 		"project":          "test-project",
 		"actor_email":      "test@example.com",
@@ -105,7 +104,7 @@ func TestCLIPullPendingFixBlocks(t *testing.T) {
 	cliBinary := getCliBinary(t)
 
 	// Create a fake server
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := newUnixTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.HasPrefix(r.URL.Path, "/docs/head"):
 			w.Header().Set("Content-Type", "application/json")
@@ -132,7 +131,7 @@ func TestCLIPullPendingFixBlocks(t *testing.T) {
 
 	// Create .sanho.json
 	config := map[string]interface{}{
-		"server_url":       server.URL,
+		"socket_path":      server.URL,
 		"workspace_id":     "test-workspace",
 		"project":          "test-project",
 		"actor_email":      "test@example.com",
@@ -180,7 +179,7 @@ func TestCLIPullUnknownProject(t *testing.T) {
 	cliBinary := getCliBinary(t)
 
 	// Fake server returns unknown_project for docs/head
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := newUnixTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/docs/head") {
 			w.WriteHeader(http.StatusBadRequest)
 			json.NewEncoder(w).Encode(map[string]string{"error": "unknown_project"})
@@ -208,7 +207,7 @@ func TestCLIPullUnknownProject(t *testing.T) {
 
 	// Create .sanho.json
 	config := map[string]interface{}{
-		"server_url":       server.URL,
+		"socket_path":      server.URL,
 		"workspace_id":     "test-workspace",
 		"project":          "unknown-project",
 		"actor_email":      "test@example.com",
@@ -245,7 +244,7 @@ func TestCLIPullUnknownWorkspace(t *testing.T) {
 	cliBinary := getCliBinary(t)
 
 	// Fake server returns unknown_workspace for docs/head
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := newUnixTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/docs/head") {
 			w.WriteHeader(http.StatusBadRequest)
 			json.NewEncoder(w).Encode(map[string]string{"error": "unknown_workspace"})
@@ -273,7 +272,7 @@ func TestCLIPullUnknownWorkspace(t *testing.T) {
 
 	// Create .sanho.json
 	config := map[string]interface{}{
-		"server_url":       server.URL,
+		"socket_path":      server.URL,
 		"workspace_id":     "test-workspace",
 		"project":          "test-project",
 		"actor_email":      "test@example.com",

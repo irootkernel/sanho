@@ -24,9 +24,7 @@ func TestE2E_DocsPush(t *testing.T) {
 	projectName := uniqueName("test-push")
 	repoID := uniqueName("test-repo")
 
-	baseURL := requireServer(t, ctx)
-
-	client := &http.Client{Timeout: 10 * time.Second}
+	baseURL, client, _ := requireServer(t, ctx)
 
 	// Add project
 	body, _ := json.Marshal(map[string]string{

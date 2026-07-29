@@ -7,13 +7,14 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestE2ECLI_ProjectWorkspaceLifecycle covers project add, workspace register/unregister, and project delete via CLI against real server.
 func TestE2ECLI_ProjectWorkspaceLifecycle(t *testing.T) {
 	cliBinary := getCliBinary(t)
-	serverURL := getServerURL(t)
-	ensureServerAvailable(t, serverURL)
+	socketPath := getSocketPath(t)
+	ensureServerAvailable(t, socketPath)
 
 	originPath, _ := createOriginRepo(t, map[string]string{
 		"docs/index.md": "# lifecycle\n",
@@ -27,16 +28,16 @@ func TestE2ECLI_ProjectWorkspaceLifecycle(t *testing.T) {
 	project := "cli-e2e-project-" + strings.ReplaceAll(filepath.Base(workspaceDir), string(filepath.Separator), "_")
 
 	// Project add
-	repoID := registerProjectViaCLI(t, cliBinary, serverURL, project, originPath, workspaceDir)
+	repoID := registerProjectViaCLI(t, cliBinary, socketPath, project, originPath, workspaceDir)
 
 	// Workspace register
-	wsID, currentHead := registerWorkspaceViaCLI(t, cliBinary, serverURL, project, workspaceDir)
+	wsID, currentHead := registerWorkspaceViaCLI(t, cliBinary, socketPath, project, workspaceDir)
 	if currentHead == "" {
 		t.Fatalf("current head empty")
 	}
 
 	// Validate server state contains workspace
-	state := fetchStateViaHTTP(t, serverURL)
+	state := fetchStateViaHTTP(t, socketPath)
 	found := false
 	if wss, ok := state["workspaces"].([]interface{}); ok {
 		for _, w := range wss {
@@ -51,14 +52,14 @@ func TestE2ECLI_ProjectWorkspaceLifecycle(t *testing.T) {
 	}
 
 	// Workspace unregister
-	deleteWorkspaceViaCLI(t, cliBinary, serverURL, wsID)
+	deleteWorkspaceViaCLI(t, cliBinary, socketPath, wsID)
 
 	// Project delete with force (cleanup)
-	deleteProjectViaCLI(t, cliBinary, serverURL, project, true)
+	deleteProjectViaCLI(t, cliBinary, socketPath, project, true)
 
 	// Verify project removal: /docs/head should now be unknown_project
-	req, _ := http.NewRequest(http.MethodGet, strings.TrimRight(serverURL, "/")+"/docs/head?project="+project, nil)
-	resp, err := http.DefaultClient.Do(req)
+	req, _ := http.NewRequest(http.MethodGet, "http://sanho/docs/head?project="+project, nil)
+	resp, err := unixHTTPClient(socketPath, 10*time.Second).Do(req)
 	if err != nil {
 		t.Fatalf("head after delete failed: %v", err)
 	}
@@ -74,8 +75,8 @@ func TestE2ECLI_ProjectWorkspaceLifecycle(t *testing.T) {
 // TestE2ECLI_FixWorkflow exercises fix happy-path: pending fix exists, push updated docs, hashes update.
 func TestE2ECLI_FixWorkflow(t *testing.T) {
 	cliBinary := getCliBinary(t)
-	serverURL := getServerURL(t)
-	ensureServerAvailable(t, serverURL)
+	socketPath := getSocketPath(t)
+	ensureServerAvailable(t, socketPath)
 
 	originPath, initialHead := createOriginRepo(t, map[string]string{
 		"docs/index.md": "# initial\n",
@@ -88,14 +89,14 @@ func TestE2ECLI_FixWorkflow(t *testing.T) {
 
 	project := "cli-fix-project-" + strings.ReplaceAll(filepath.Base(workspaceDir), string(filepath.Separator), "_")
 
-	registerProjectViaCLI(t, cliBinary, serverURL, project, originPath, workspaceDir)
-	wsID, currentHead := registerWorkspaceViaCLI(t, cliBinary, serverURL, project, workspaceDir)
+	registerProjectViaCLI(t, cliBinary, socketPath, project, originPath, workspaceDir)
+	wsID, currentHead := registerWorkspaceViaCLI(t, cliBinary, socketPath, project, workspaceDir)
 	if currentHead == "" {
 		currentHead = initialHead
 	}
 
 	// Prepare workspace config and state files
-	writeConfig(t, workspaceDir, serverURL, project, wsID, "cli-fix@example.com")
+	writeConfig(t, workspaceDir, socketPath, project, wsID, "cli-fix@example.com")
 	writeDocsHash(t, workspaceDir, currentHead)
 	writePendingFix(t, workspaceDir, currentHead, currentHead)
 
@@ -132,7 +133,7 @@ func TestE2ECLI_FixWorkflow(t *testing.T) {
 	}
 
 	// Server head should match updated hash
-	serverHead := fetchHeadViaHTTP(t, serverURL, project)
+	serverHead := fetchHeadViaHTTP(t, socketPath, project)
 	if serverHead != newHash {
 		t.Fatalf("server head %s != local hash %s", serverHead, newHash)
 	}
