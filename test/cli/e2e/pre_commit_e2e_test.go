@@ -14,7 +14,7 @@ import (
 func TestE2ECLI_PreCommitOutdatedCreatesDocsBaseCommit(t *testing.T) {
 	cliBinary := getCliBinary(t)
 	socketPath := getSocketPath(t)
-	ensureServerAvailable(t, socketPath)
+	ensureDaemonAvailable(t, socketPath)
 
 	originPath, initialHead := createOriginRepo(t, map[string]string{
 		"docs/index.md": "# base\n",
@@ -69,10 +69,10 @@ func TestE2ECLI_PreCommitOutdatedCreatesDocsBaseCommit(t *testing.T) {
 	}
 	runCmd(t, workspaceDir, "git", "add", "docs/docs/index.md")
 
-	// Advance server HEAD by pushing new snapshot via HTTP (simulating another workspace)
+	// Advance daemon HEAD by pushing new snapshot via HTTP (simulating another workspace)
 	remoteHead := pushDocsViaHTTP(t, socketPath, wsID, currentHead, map[string]string{
 		"docs/index.md":  "# base\n",
-		"docs/server.md": "# server update\n",
+		"docs/daemon.md": "# daemon update\n",
 	}, "remote@example.com")
 
 	// First pre-commit attempt creates only the remote docs base commit and stops.
@@ -104,8 +104,8 @@ func TestE2ECLI_PreCommitOutdatedCreatesDocsBaseCommit(t *testing.T) {
 	if subject != "[SANHO] Update docs" {
 		t.Fatalf("system commit subject = %q", subject)
 	}
-	remoteContent := strings.TrimSpace(string(runCmd(t, workspaceDir, "git", "show", "HEAD:docs/docs/server.md")))
-	if remoteContent != "# server update" {
+	remoteContent := strings.TrimSpace(string(runCmd(t, workspaceDir, "git", "show", "HEAD:docs/docs/daemon.md")))
+	if remoteContent != "# daemon update" {
 		t.Fatalf("system commit remote content = %q", remoteContent)
 	}
 

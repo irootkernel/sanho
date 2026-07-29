@@ -162,16 +162,16 @@ func TestFixNoPendingFix(t *testing.T) {
 func TestFixWithConflictMarkers(t *testing.T) {
 	cliBinary := getCliBinary(t)
 
-	// Setup fake server
-	server := newUnixTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Should not reach server when conflicts exist
+	// Setup fake daemon
+	daemon := newUnixTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Should not reach daemon when conflicts exist
 		w.WriteHeader(http.StatusOK)
 	}))
-	defer server.Close()
+	defer daemon.Close()
 
 	// Setup temp workspace with config and pending fix
 	tempDir := t.TempDir()
-	setupSanhoConfig(t, tempDir, server.URL)
+	setupSanhoConfig(t, tempDir, daemon.SocketPath)
 
 	// Create docs with conflict markers
 	docsDir := filepath.Join(tempDir, "docs")
@@ -237,12 +237,12 @@ func TestStateNoConfig(t *testing.T) {
 	}
 }
 
-// TestStateWithFakeServer verifies state shows project info with fake server.
-func TestStateWithFakeServer(t *testing.T) {
+// TestStateWithFakeDaemon verifies state shows project info with fake daemon.
+func TestStateWithFakeDaemon(t *testing.T) {
 	cliBinary := getCliBinary(t)
 
-	// Setup fake server that returns state
-	server := newUnixTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	// Setup fake daemon that returns state
+	daemon := newUnixTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/state" {
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]interface{}{
@@ -264,11 +264,11 @@ func TestStateWithFakeServer(t *testing.T) {
 		}
 		w.WriteHeader(http.StatusNotFound)
 	}))
-	defer server.Close()
+	defer daemon.Close()
 
-	// Setup temp workspace with config pointing to fake server
+	// Setup temp workspace with config pointing to fake daemon
 	tempDir := t.TempDir()
-	setupSanhoConfig(t, tempDir, server.URL)
+	setupSanhoConfig(t, tempDir, daemon.SocketPath)
 
 	// Create docs directory
 	docsDir := filepath.Join(tempDir, "docs")
@@ -296,12 +296,12 @@ func TestStateWithFakeServer(t *testing.T) {
 	}
 }
 
-// TestStateAllWithFakeServer verifies state --all shows all projects.
-func TestStateAllWithFakeServer(t *testing.T) {
+// TestStateAllWithFakeDaemon verifies state --all shows all projects.
+func TestStateAllWithFakeDaemon(t *testing.T) {
 	cliBinary := getCliBinary(t)
 
-	// Setup fake server that returns multiple projects
-	server := newUnixTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	// Setup fake daemon that returns multiple projects
+	daemon := newUnixTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/state" {
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]interface{}{
@@ -332,11 +332,11 @@ func TestStateAllWithFakeServer(t *testing.T) {
 		}
 		w.WriteHeader(http.StatusNotFound)
 	}))
-	defer server.Close()
+	defer daemon.Close()
 
-	// Setup temp workspace with config pointing to fake server
+	// Setup temp workspace with config pointing to fake daemon
 	tempDir := t.TempDir()
-	setupSanhoConfig(t, tempDir, server.URL)
+	setupSanhoConfig(t, tempDir, daemon.SocketPath)
 
 	// Create docs directory
 	docsDir := filepath.Join(tempDir, "docs")
@@ -391,7 +391,7 @@ func setupSanhoConfig(t *testing.T, tempDir, socketPath string) {
 
 func TestStatusShowsProjectWorkspaceComparisons(t *testing.T) {
 	cliBinary := getCliBinary(t)
-	server := newUnixTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	daemon := newUnixTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/projects/test-project/status" {
 			http.NotFound(w, r)
 			return
@@ -447,10 +447,10 @@ func TestStatusShowsProjectWorkspaceComparisons(t *testing.T) {
 			},
 		})
 	}))
-	defer server.Close()
+	defer daemon.Close()
 
 	tempDir := t.TempDir()
-	setupSanhoConfig(t, tempDir, server.URL)
+	setupSanhoConfig(t, tempDir, daemon.SocketPath)
 	cmd := exec.Command(cliBinary, "status")
 	cmd.Dir = tempDir
 	output, err := cmd.CombinedOutput()
@@ -475,9 +475,9 @@ func TestStatusShowsProjectWorkspaceComparisons(t *testing.T) {
 	}
 }
 
-func TestStatusFallsBackToDocsHeadForOlderServer(t *testing.T) {
+func TestStatusFallsBackToDocsHeadForOlderDaemon(t *testing.T) {
 	cliBinary := getCliBinary(t)
-	server := newUnixTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	daemon := newUnixTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/projects/test-project/status":
 			w.WriteHeader(http.StatusNotFound)
@@ -488,10 +488,10 @@ func TestStatusFallsBackToDocsHeadForOlderServer(t *testing.T) {
 			http.NotFound(w, r)
 		}
 	}))
-	defer server.Close()
+	defer daemon.Close()
 
 	tempDir := t.TempDir()
-	setupSanhoConfig(t, tempDir, server.URL)
+	setupSanhoConfig(t, tempDir, daemon.SocketPath)
 	cmd := exec.Command(cliBinary, "status")
 	cmd.Dir = tempDir
 	output, err := cmd.CombinedOutput()
@@ -502,7 +502,7 @@ func TestStatusFallsBackToDocsHeadForOlderServer(t *testing.T) {
 	for _, expected := range []string{
 		"status        : up_to_date",
 		"docs relation : same",
-		"server upgrade required for workspace comparisons",
+		"daemon upgrade required for workspace comparisons",
 	} {
 		if !strings.Contains(text, expected) {
 			t.Errorf("output missing %q:\n%s", expected, text)
@@ -514,8 +514,8 @@ func TestStatusFallsBackToDocsHeadForOlderServer(t *testing.T) {
 func TestStateAllWithSocketPathOutsideWorkspace(t *testing.T) {
 	cliBinary := getCliBinary(t)
 
-	// Setup fake server
-	server := newUnixTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	// Setup fake daemon
+	daemon := newUnixTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/state" {
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]interface{}{
@@ -537,14 +537,14 @@ func TestStateAllWithSocketPathOutsideWorkspace(t *testing.T) {
 		}
 		w.WriteHeader(http.StatusNotFound)
 	}))
-	defer server.Close()
+	defer daemon.Close()
 
 	// Use temp dir WITHOUT any sanho config (not a workspace)
 	tempDir := t.TempDir()
 	// Don't call setupSanhoConfig - intentionally no .sanho.json
 
 	// Run state --all --socket
-	cmd := exec.Command(cliBinary, "state", "--all", "--socket", server.URL)
+	cmd := exec.Command(cliBinary, "state", "--all", "--socket", daemon.SocketPath)
 	cmd.Dir = tempDir
 	output, err := cmd.CombinedOutput()
 	outputStr := string(output)
@@ -554,7 +554,7 @@ func TestStateAllWithSocketPathOutsideWorkspace(t *testing.T) {
 		t.Errorf("Expected state --all --socket to succeed without workspace, got error: %v\nOutput: %s", err, outputStr)
 	}
 
-	// Should show project info from server
+	// Should show project info from daemon
 	if !strings.Contains(outputStr, "project-x") {
 		t.Errorf("Expected output to contain 'project-x', got: %s", outputStr)
 	}

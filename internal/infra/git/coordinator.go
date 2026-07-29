@@ -8,7 +8,7 @@ import (
 )
 
 // RepoCoordinator serializes every operation that can read or mutate a docs
-// repository clone. A single coordinator must be shared by the server's Git
+// repository clone. A single coordinator must be shared by the daemon's Git
 // adapters and docs push use case.
 type RepoCoordinator struct {
 	mu    sync.Mutex

@@ -14,7 +14,7 @@
 
 The system consists of two main components:
 
-1.  **sanhod**: A central server that:
+1.  **sanhod**: A central daemon that:
     *   Manages local clones of documentation repositories.
     *   Provides REST APIs to query the current HEAD, register workspaces, and push document changes.
     *   Maintains the state of all registered workspaces and projects.
@@ -33,19 +33,19 @@ The system consists of two main components:
 
 ## Architecture & Directory Structure
 
-The project follows a Clean Architecture approach, co-locating server and client code in the same repository.
+The project follows a Clean Architecture approach, co-locating daemon and client code in the same repository.
 
 ```text
 /
 ├── cmd/
-│   └── server/           # Server entry point
+│   └── sanhod/           # Daemon entry point
 │   └── sanho/            # CLI entry point
 ├── internal/
 │   ├── config/           # Configuration handling
 │   ├── domain/           # Core business entities and repository interfaces (No external deps)
 │   ├── usecase/          # Application business logic (Depends on Domain)
 │   ├── interface/        # Interface adapters (HTTP handlers, CLI commands)
-│   │   ├── http/         # Server HTTP handlers
+│   │   ├── http/         # Daemon HTTP handlers
 │   │   └── cli/          # CLI command implementations (planned)
 │   └── infra/            # Infrastructure implementations (Git, FS, State)
 │       ├── git/          # Git client wrapper
@@ -65,11 +65,11 @@ The project follows a Clean Architecture approach, co-locating server and client
 ### 2. Testing
 *   **Unit Tests:** Focus on Domain and Usecase logic using mocks/fakes.
 *   **Integration Tests:** Verify interactions between adapters and real/fake infrastructure.
-*   **E2E Tests:** Located in `test/e2e`, verify the full system flow (Server + Git operations).
+*   **E2E Tests:** Located in `test/e2e`, verify the full system flow (Daemon + Git operations).
 
 ### 3. Git & Documentation Management
-*   **Server State:** The server maintains a single JSON file (default: `data/sanho_state.json`) to track projects and workspaces.
-*   **Docs Repos:** The server manages local clones of the documentation repositories. It performs `git fetch` on startup and ensures synchronization.
+*   **Daemon State:** The daemon maintains a single JSON file (default: `~/.sanho/state.json`) to track projects and workspaces.
+*   **Docs Repos:** The daemon manages local clones of the documentation repositories. It performs `git fetch` on startup and ensures synchronization.
 *   **Conflict Resolution:** The system detects conflicts ("outdated" state) but relies on the user to resolve them manually using standard Git conflict markers.
 
 ## Building and Running
@@ -78,17 +78,17 @@ The project follows a Clean Architecture approach, co-locating server and client
 *   Go 1.25+
 *   Git installed and available in `PATH`.
 
-### Server
+### Daemon
 
-To run the server locally:
+To run the daemon locally:
 
 ```bash
 # Set environment variables (optional, defaults shown)
-export PORT=5789
-export STATE_FILE_PATH=data/sanho_state.json
+export SANHO_HOME="$HOME/.sanho"
+export SANHO_SOCKET="$SANHO_HOME/sanhod.sock"
 
-# Run the server
-go run cmd/sanhod/main.go
+# Run the daemon
+go run ./cmd/sanhod
 ```
 
 ### Testing

@@ -1,7 +1,7 @@
 package dto
 
-// ServerStateResponse is the response DTO for GET /state.
-type ServerStateResponse struct {
+// DaemonStateResponse is the response DTO for GET /state.
+type DaemonStateResponse struct {
 	DocsHeads  map[string]string  `json:"docs_heads"`
 	Workspaces []WorkspaceSummary `json:"workspaces"`
 }

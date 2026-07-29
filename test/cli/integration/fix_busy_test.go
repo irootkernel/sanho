@@ -15,9 +15,9 @@ import (
 func TestCLIFixRetriesOnDocsRepoBusy(t *testing.T) {
 	cliBinary := getCliBinary(t)
 
-	// Fake server that returns docs_repo_busy twice, then success
+	// Fake daemon that returns docs_repo_busy twice, then success
 	var pushCount int32
-	server := newUnixTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	daemon := newUnixTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.HasPrefix(r.URL.Path, "/docs/head"):
 			w.Header().Set("Content-Type", "application/json")
@@ -39,12 +39,12 @@ func TestCLIFixRetriesOnDocsRepoBusy(t *testing.T) {
 			http.NotFound(w, r)
 		}
 	}))
-	defer server.Close()
+	defer daemon.Close()
 
 	// Prepare workspace with pending fix and config
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, ".sanho.json"), []byte(`{
-  "socket_path": "`+server.URL+`",
+  "socket_path": "`+daemon.SocketPath+`",
   "project": "p1",
   "workspace_id": "ws1",
   "actor_email": "fix-busy@example.com",

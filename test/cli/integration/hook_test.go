@@ -65,11 +65,11 @@ func setupTempWorkspace(t *testing.T, socketPath, localHash string) string {
 	return tempDir
 }
 
-// setupFakeServer creates a fake sanhod that responds to /docs/head.
-func setupFakeServer(t *testing.T, headHash string, statusCode int, errorCode string) *unixTestServer {
+// setupFakeDaemon creates a fake sanhod that responds to /docs/head.
+func setupFakeDaemon(t *testing.T, headHash string, statusCode int, errorCode string) *unixTestDaemon {
 	t.Helper()
 
-	server := newUnixTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	daemon := newUnixTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/docs/head" {
 			if statusCode != http.StatusOK {
 				w.WriteHeader(statusCode)
@@ -86,8 +86,8 @@ func setupFakeServer(t *testing.T, headHash string, statusCode int, errorCode st
 		w.WriteHeader(http.StatusNotFound)
 	}))
 
-	t.Cleanup(server.Close)
-	return server
+	t.Cleanup(daemon.Close)
+	return daemon
 }
 
 // TestHookPostCheckoutWithWorkspace verifies post-checkout hook in a real workspace.
@@ -97,8 +97,8 @@ func TestHookPostCheckoutWithWorkspace(t *testing.T) {
 	testCases := []struct {
 		name           string
 		localHash      string
-		serverHash     string
-		serverStatus   int
+		daemonHash     string
+		daemonStatus   int
 		errorCode      string
 		expectInOutput []string
 		expectExitZero bool
@@ -106,32 +106,32 @@ func TestHookPostCheckoutWithWorkspace(t *testing.T) {
 		{
 			name:           "up to date",
 			localHash:      "abc123def456",
-			serverHash:     "abc123def456",
-			serverStatus:   http.StatusOK,
+			daemonHash:     "abc123def456",
+			daemonStatus:   http.StatusOK,
 			expectInOutput: []string{"up_to_date", "abc123def456"},
 			expectExitZero: true,
 		},
 		{
 			name:           "outdated",
 			localHash:      "old-hash-111",
-			serverHash:     "new-hash-222",
-			serverStatus:   http.StatusOK,
+			daemonHash:     "new-hash-222",
+			daemonStatus:   http.StatusOK,
 			expectInOutput: []string{"outdated", "old-hash-111", "new-hash-222"},
 			expectExitZero: true,
 		},
 		{
-			name:           "server error - still exit 0",
+			name:           "daemon error - still exit 0",
 			localHash:      "abc123",
-			serverHash:     "",
-			serverStatus:   http.StatusInternalServerError,
+			daemonHash:     "",
+			daemonStatus:   http.StatusInternalServerError,
 			expectInOutput: []string{"warning", "unknown"},
 			expectExitZero: true,
 		},
 		{
 			name:           "unknown project - still exit 0",
 			localHash:      "abc123",
-			serverHash:     "",
-			serverStatus:   http.StatusBadRequest,
+			daemonHash:     "",
+			daemonStatus:   http.StatusBadRequest,
 			errorCode:      "unknown_project",
 			expectInOutput: []string{"warning", "not registered"},
 			expectExitZero: true,
@@ -140,11 +140,11 @@ func TestHookPostCheckoutWithWorkspace(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			// Setup fake server
-			server := setupFakeServer(t, tc.serverHash, tc.serverStatus, tc.errorCode)
+			// Setup fake daemon
+			daemon := setupFakeDaemon(t, tc.daemonHash, tc.daemonStatus, tc.errorCode)
 
 			// Setup temp workspace
-			tempDir := setupTempWorkspace(t, server.URL, tc.localHash)
+			tempDir := setupTempWorkspace(t, daemon.SocketPath, tc.localHash)
 
 			// Run hook
 			cmd := exec.Command(cliBinary, "hook", "post-checkout")
@@ -171,11 +171,11 @@ func TestHookPostCheckoutWithWorkspace(t *testing.T) {
 func TestHookPostMergeWithWorkspace(t *testing.T) {
 	cliBinary := getCliBinary(t)
 
-	// Setup fake server (up to date)
-	server := setupFakeServer(t, "abc123", http.StatusOK, "")
+	// Setup fake daemon (up to date)
+	daemon := setupFakeDaemon(t, "abc123", http.StatusOK, "")
 
 	// Setup temp workspace
-	tempDir := setupTempWorkspace(t, server.URL, "abc123")
+	tempDir := setupTempWorkspace(t, daemon.SocketPath, "abc123")
 
 	// Run hook
 	cmd := exec.Command(cliBinary, "hook", "post-merge", "0") // squash flag
@@ -195,8 +195,8 @@ func TestHookPostMergeWithWorkspace(t *testing.T) {
 func TestHookPostRewriteReconcilesAllRewrites(t *testing.T) {
 	cliBinary := getCliBinary(t)
 
-	// Setup fake server
-	server := setupFakeServer(t, "abc123", http.StatusOK, "")
+	// Setup fake daemon
+	daemon := setupFakeDaemon(t, "abc123", http.StatusOK, "")
 
 	testCases := []struct {
 		name         string
@@ -233,7 +233,7 @@ func TestHookPostRewriteReconcilesAllRewrites(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Setup temp workspace
-			tempDir := setupTempWorkspace(t, server.URL, "abc123")
+			tempDir := setupTempWorkspace(t, daemon.SocketPath, "abc123")
 
 			// Run hook
 			cmd := exec.Command(cliBinary, tc.args...)
@@ -262,7 +262,7 @@ func TestHookPostMergeReconcilesHashAndReportsDaemon(t *testing.T) {
 	cliBinary := getCliBinary(t)
 	var reportMu sync.Mutex
 	var reportedHash string
-	server := newUnixTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	daemon := newUnixTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/docs/head":
 			_ = json.NewEncoder(w).Encode(map[string]string{"head": "docs-new"})
@@ -283,9 +283,9 @@ func TestHookPostMergeReconcilesHashAndReportsDaemon(t *testing.T) {
 			http.NotFound(w, r)
 		}
 	}))
-	t.Cleanup(server.Close)
+	t.Cleanup(daemon.Close)
 
-	tempDir := setupTempWorkspace(t, server.URL, "docs-old")
+	tempDir := setupTempWorkspace(t, daemon.SocketPath, "docs-old")
 	runGitCommand(t, tempDir, "init")
 	runGitCommand(t, tempDir, "config", "user.email", "test@example.com")
 	runGitCommand(t, tempDir, "config", "user.name", "Test User")
@@ -319,7 +319,7 @@ func TestGitPullPostMergeHookReconcilesHashAndReportsDaemon(t *testing.T) {
 	cliBinary := getCliBinary(t)
 	var reportMu sync.Mutex
 	var reportedHash string
-	server := newUnixTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	daemon := newUnixTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/docs/head":
 			_ = json.NewEncoder(w).Encode(map[string]string{"head": "docs-new"})
@@ -339,9 +339,9 @@ func TestGitPullPostMergeHookReconcilesHashAndReportsDaemon(t *testing.T) {
 			http.NotFound(w, r)
 		}
 	}))
-	t.Cleanup(server.Close)
+	t.Cleanup(daemon.Close)
 
-	workspaceDir := setupTempWorkspace(t, server.URL, "docs-old")
+	workspaceDir := setupTempWorkspace(t, daemon.SocketPath, "docs-old")
 	runGitCommand(t, workspaceDir, "init", "--initial-branch=main")
 	runGitCommand(t, workspaceDir, "config", "user.email", "test@example.com")
 	runGitCommand(t, workspaceDir, "config", "user.name", "Test User")
@@ -393,11 +393,11 @@ func TestGitPullPostMergeHookReconcilesHashAndReportsDaemon(t *testing.T) {
 func TestHookWithPendingFix(t *testing.T) {
 	cliBinary := getCliBinary(t)
 
-	// Setup fake server
-	server := setupFakeServer(t, "abc123", http.StatusOK, "")
+	// Setup fake daemon
+	daemon := setupFakeDaemon(t, "abc123", http.StatusOK, "")
 
 	// Setup temp workspace
-	tempDir := setupTempWorkspace(t, server.URL, "abc123")
+	tempDir := setupTempWorkspace(t, daemon.SocketPath, "abc123")
 
 	// Create .sanho_pending_fix
 	pendingFix := PendingFixState{
@@ -431,11 +431,11 @@ func TestHookWithPendingFix(t *testing.T) {
 func TestHookWithConflictMarkers(t *testing.T) {
 	cliBinary := getCliBinary(t)
 
-	// Setup fake server
-	server := setupFakeServer(t, "abc123", http.StatusOK, "")
+	// Setup fake daemon
+	daemon := setupFakeDaemon(t, "abc123", http.StatusOK, "")
 
 	// Setup temp workspace
-	tempDir := setupTempWorkspace(t, server.URL, "abc123")
+	tempDir := setupTempWorkspace(t, daemon.SocketPath, "abc123")
 
 	// Create file with conflict markers in docs/
 	conflictContent := `Some content

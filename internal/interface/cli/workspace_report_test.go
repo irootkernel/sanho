@@ -20,7 +20,7 @@ func TestWorkspaceReportPersistsFailureAndRetryClearsIt(t *testing.T) {
 	var fail atomic.Bool
 	fail.Store(true)
 	var calls atomic.Int32
-	server := newUnixTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	daemon := newUnixTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
 		if r.Method != http.MethodPut || r.URL.Path != "/workspaces/workspace-1/docs-hash" {
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
@@ -39,16 +39,16 @@ func TestWorkspaceReportPersistsFailureAndRetryClearsIt(t *testing.T) {
 		}
 		_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 	}))
-	defer server.Close()
+	defer daemon.Close()
 
 	config := &client.WorkspaceConfig{
-		SocketPath:  server.URL,
+		SocketPath:  daemon.SocketPath,
 		WorkspaceID: "workspace-1",
 		ActorEmail:  "actor@example.com",
 	}
 	err := reportWorkspaceDocsHash(context.Background(), repo, config, "docs-2")
 	if err == nil {
-		t.Fatal("report succeeded while server was failing")
+		t.Fatal("report succeeded while daemon was failing")
 	}
 	pending, pendingErr := hasPendingWorkspaceReport(context.Background(), repo)
 	if pendingErr != nil || !pending {

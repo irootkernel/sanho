@@ -12,12 +12,12 @@ type ProjectLister interface {
 	ListProjects() []string
 }
 
-// GetStateUseCase defines the interface for retrieving server state.
+// GetStateUseCase defines the interface for retrieving daemon state.
 type GetStateUseCase interface {
 	Execute(ctx context.Context) (*StateResult, error)
 }
 
-// StateResult contains the aggregated server state.
+// StateResult contains the aggregated daemon state.
 type StateResult struct {
 	DocsHeads  map[docs.ProjectName]docs.CommitHash
 	Workspaces []*workspace.Workspace
@@ -42,7 +42,7 @@ func NewGetStateUseCase(
 	}
 }
 
-// Execute retrieves the current server state including docs heads and workspaces.
+// Execute retrieves the current daemon state including docs heads and workspaces.
 func (u *getStateUseCase) Execute(ctx context.Context) (*StateResult, error) {
 	// Get all workspaces
 	workspaces, err := u.workspaceRepo.List(ctx)

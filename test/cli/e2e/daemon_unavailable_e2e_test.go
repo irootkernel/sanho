@@ -7,8 +7,8 @@ import (
 	"testing"
 )
 
-// TestE2ECLI_StatusServerUnavailable checks UX when server is unreachable.
-func TestE2ECLI_StatusServerUnavailable(t *testing.T) {
+// TestE2ECLI_StatusDaemonUnavailable checks UX when daemon is unreachable.
+func TestE2ECLI_StatusDaemonUnavailable(t *testing.T) {
 	cliBinary := getCliBinary(t)
 
 	workspaceDir := t.TempDir()
@@ -22,10 +22,10 @@ func TestE2ECLI_StatusServerUnavailable(t *testing.T) {
 	cmd.Dir = workspaceDir
 	out, err := cmd.CombinedOutput()
 	if err == nil {
-		t.Fatalf("expected status to fail when server unreachable")
+		t.Fatalf("expected status to fail when daemon unreachable")
 	}
 	outStr := strings.ToLower(string(out))
 	if !strings.Contains(outStr, "failed to connect") && !strings.Contains(outStr, "unreachable") {
-		t.Fatalf("expected message about server unreachable, got:\n%s", string(out))
+		t.Fatalf("expected message about daemon unreachable, got:\n%s", string(out))
 	}
 }

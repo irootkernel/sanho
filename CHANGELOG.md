@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Standardized Sanho-owned component terminology on `daemon` across
+  documentation, CLI output, errors, internal identifiers, and tests.
+
+### Compatibility
+
+- Existing `.sanho.json` files, Git hooks, Unix socket paths, and daemon runtime
+  state remain compatible and do not require workspace reinitialization.
+- The machine-readable CLI error code `server_request_failed` is now
+  `daemon_request_failed`. Automation that matches the previous code must
+  update; no compatibility alias is provided.
+
 ## v0.1.0 - 2026-07-29
 
 First public Sanho release.

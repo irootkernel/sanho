@@ -126,7 +126,7 @@ pull 위에 dirty docs가 남아 있으면 임의의 hash를 선택하지 않는
 
 ## 충돌 방지 원칙
 
-서버는 같은 `docs_repo_id`에 대한 sync, HEAD 조회, snapshot 조회, push,
+daemon은 같은 `docs_repo_id`에 대한 sync, HEAD 조회, snapshot 조회, push,
 삭제를 직렬화한다. push를 시작할 때 origin을 fetch하고 로컬 clone을
 원격 기본 브랜치로 되돌린 다음, 요청의 base commit과 현재 HEAD를 비교한다.
 

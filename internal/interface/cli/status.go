@@ -31,7 +31,7 @@ func newStatusCmd() *cobra.Command {
 		Long: `Display the current workspace docs status including:
 - Workspace ID
 - Local docs base hash
-- Server docs HEAD hash
+- Daemon docs HEAD hash
 - Exact docs commit relation to HEAD
 - Same-project workspace comparisons
 - Synchronization status (up_to_date, outdated, unknown)
@@ -115,16 +115,16 @@ func newStatusCmd() *cobra.Command {
 			legacyDifferent := false
 			if errors.Is(err, httpclient.ErrEndpointNotFound) {
 				comparisonAvailable = false
-				serverHead, headErr := httpClient.DocsHead(ctx, config.Project)
+				daemonHead, headErr := httpClient.DocsHead(ctx, config.Project)
 				err = headErr
 				if headErr == nil {
 					projectStatus = httpclient.ProjectStatusResponse{
 						Project:              string(config.Project),
 						ReferenceWorkspaceID: string(config.WorkspaceID),
 						ReferenceDocsHash:    string(localHash),
-						DocsHead:             string(serverHead),
+						DocsHead:             string(daemonHead),
 					}
-					if localHash == serverHead {
+					if localHash == daemonHead {
 						projectStatus.ReferenceToHead.Status = docs.CommitRelationSame
 					} else {
 						projectStatus.ReferenceToHead.Status = docs.CommitRelationUnknown
@@ -135,57 +135,57 @@ func newStatusCmd() *cobra.Command {
 
 			// Determine status
 			var status client.DocsStatus
-			var serverHeadStr string
+			var daemonHeadStr string
 			relation := httpclient.CommitRelation{Status: docs.CommitRelationUnknown}
-			var serverError error // Track server error to return at the end
+			var daemonError error // Track daemon error to return at the end
 
 			if err != nil {
 				status = client.DocsStatusUnknown
-				serverHeadStr = "(unavailable)"
+				daemonHeadStr = "(unavailable)"
 				switch {
 				case errors.Is(err, httpclient.ErrUnknownProject):
 					if !jsonOutput {
-						cmd.PrintErrf("Warning: project '%s' is not registered on server\n", config.Project)
+						cmd.PrintErrf("Warning: project '%s' is not registered on daemon\n", config.Project)
 					}
-					serverError = withErrorCode(
+					daemonError = withErrorCode(
 						"unknown_project",
-						fmt.Errorf("project '%s' is not registered on server", config.Project),
+						fmt.Errorf("project '%s' is not registered on daemon", config.Project),
 					)
 				case errors.Is(err, httpclient.ErrUnknownWorkspace):
 					if !jsonOutput {
-						cmd.PrintErrf("Warning: workspace '%s' is not registered on server\n", config.WorkspaceID)
+						cmd.PrintErrf("Warning: workspace '%s' is not registered on daemon\n", config.WorkspaceID)
 					}
-					serverError = withErrorCode(
+					daemonError = withErrorCode(
 						"unknown_workspace",
-						fmt.Errorf("workspace '%s' is not registered on server", config.WorkspaceID),
+						fmt.Errorf("workspace '%s' is not registered on daemon", config.WorkspaceID),
 					)
 				case errors.Is(err, httpclient.ErrWorkspaceProjectMismatch):
 					if !jsonOutput {
 						cmd.PrintErrf("Warning: workspace '%s' is registered under another project\n", config.WorkspaceID)
 					}
-					serverError = withErrorCode(
+					daemonError = withErrorCode(
 						"workspace_project_mismatch",
 						fmt.Errorf("workspace '%s' belongs to another project", config.WorkspaceID),
 					)
 				case errors.Is(err, httpclient.ErrUnknownDocsCommit):
 					if !jsonOutput {
-						cmd.PrintErrf("Warning: local docs commit '%s' is not available on server\n", localHash)
+						cmd.PrintErrf("Warning: local docs commit '%s' is not available on daemon\n", localHash)
 					}
-					serverError = withErrorCode(
+					daemonError = withErrorCode(
 						"unknown_docs_commit",
 						fmt.Errorf("local docs commit '%s' is unknown", localHash),
 					)
 				default:
 					if !jsonOutput {
-						cmd.PrintErrf("Warning: failed to connect to server: %v\n", err)
+						cmd.PrintErrf("Warning: failed to connect to daemon: %v\n", err)
 					}
-					serverError = withErrorCode(
-						"server_request_failed",
+					daemonError = withErrorCode(
+						"daemon_request_failed",
 						fmt.Errorf("failed to fetch project status: %w", err),
 					)
 				}
 			} else {
-				serverHeadStr = projectStatus.DocsHead
+				daemonHeadStr = projectStatus.DocsHead
 				relation = projectStatus.ReferenceToHead
 				if relation.Status == docs.CommitRelationSame {
 					status = client.DocsStatusUpToDate
@@ -197,8 +197,8 @@ func newStatusCmd() *cobra.Command {
 			}
 
 			if jsonOutput {
-				if serverError != nil {
-					return serverError
+				if daemonError != nil {
+					return daemonError
 				}
 				output := buildStatusJSONOutput(
 					config,
@@ -223,7 +223,7 @@ func newStatusCmd() *cobra.Command {
 			fmt.Fprintf(out, "  project       : %s\n", config.Project)
 			fmt.Fprintf(out, "  workspace     : %s\n", config.WorkspaceID)
 			fmt.Fprintf(out, "  docs base     : %s\n", localHash)
-			fmt.Fprintf(out, "  docs head     : %s\n", serverHeadStr)
+			fmt.Fprintf(out, "  docs head     : %s\n", daemonHeadStr)
 			fmt.Fprintf(out, "  status        : %s\n", status)
 			fmt.Fprintf(out, "  docs relation : %s\n", formatCommitRelation(relation))
 			if hasPendingFix {
@@ -231,23 +231,23 @@ func newStatusCmd() *cobra.Command {
 			} else {
 				fmt.Fprintln(out, "  pending_fix   : no")
 			}
-			if serverError == nil {
+			if daemonError == nil {
 				fmt.Fprintln(out)
 				if comparisonAvailable {
 					printProjectWorkspaces(cmd, projectStatus)
 				} else {
 					fmt.Fprintln(out, "project workspaces:")
-					fmt.Fprintln(out, "  (server upgrade required for workspace comparisons)")
+					fmt.Fprintln(out, "  (daemon upgrade required for workspace comparisons)")
 				}
 			}
 
 			fmt.Fprintln(out)
 
 			// Additional messages based on status
-			if serverError != nil {
+			if daemonError != nil {
 				fmt.Fprintln(out, "sanho: unable to determine sync status")
 			} else if status == client.DocsStatusOutdated {
-				fmt.Fprintln(out, "sanho: docs base and server HEAD are different.")
+				fmt.Fprintln(out, "sanho: docs base and daemon HEAD are different.")
 				fmt.Fprintln(out, "sanho: a merge may occur during pre-commit.")
 			} else if status == client.DocsStatusUpToDate {
 				fmt.Fprintln(out, "sanho: docs are up to date.")
@@ -268,8 +268,8 @@ func newStatusCmd() *cobra.Command {
 				}
 			}
 
-			// Return error if server was unreachable (roadmap: sanho status should exit 1 on server error)
-			return serverError
+			// Return error if daemon was unreachable (roadmap: sanho status should exit 1 on daemon error)
+			return daemonError
 		},
 	}
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Print machine-readable JSON")

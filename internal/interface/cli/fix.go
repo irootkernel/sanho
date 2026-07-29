@@ -25,13 +25,13 @@ const fixTimeout = 60 * time.Second
 func newFixCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "fix",
-		Short: "Complete pending docs merge and push to server",
+		Short: "Complete pending docs merge and push to daemon",
 		Long: `After resolving merge conflicts in the docs directory,
-run this command to push the merged documentation to the server.
+run this command to push the merged documentation to the daemon.
 
 This command will:
 - Verify all conflict markers are resolved
-- Push the merged docs to the server
+- Push the merged docs to the daemon
 - Clear the pending fix state`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runFixCommand(cmd)
@@ -59,7 +59,7 @@ func runFixCommand(cmd *cobra.Command) error {
 	snapshotBuilder := fs.NewSnapshotBuilder()
 	output := newCLIFixOutput(cmd)
 
-	// Load config first to get server URL
+	// Load config first to get daemon socket path
 	config, err := configLoader.Load(cwd)
 	if err != nil {
 		cmd.PrintErrf("sanho fix: %v\n", err)

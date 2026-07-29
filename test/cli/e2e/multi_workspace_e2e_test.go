@@ -16,7 +16,7 @@ import (
 func TestE2ECLI_TwoWorkspacesSequentialPush(t *testing.T) {
 	cliBinary := getCliBinary(t)
 	socketPath := getSocketPath(t)
-	ensureServerAvailable(t, socketPath)
+	ensureDaemonAvailable(t, socketPath)
 
 	originPath, initialHead := createOriginRepo(t, map[string]string{
 		"docs/index.md": "# initial\n",

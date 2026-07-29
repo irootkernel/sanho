@@ -14,7 +14,7 @@ func TestE2E_DocsSnapshot(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	baseURL, client, _ := requireServer(t, ctx)
+	baseURL, client, _ := requireDaemon(t, ctx)
 
 	originPath, initialHead := createOriginRepo(t, map[string]string{
 		"README.md":      "# Root\n",

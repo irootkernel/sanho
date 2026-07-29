@@ -9,13 +9,13 @@ import (
 	"testing"
 )
 
-// TestE2EStateCommand verifies sanho state command against running server.
+// TestE2EStateCommand verifies sanho state command against running daemon.
 func TestE2EStateCommand(t *testing.T) {
 	cliBinary := getCliBinary(t)
 	socketPath := getSocketPath(t)
-	ensureServerAvailable(t, socketPath)
+	ensureDaemonAvailable(t, socketPath)
 
-	// Set up a temp workspace with config pointing to real server
+	// Set up a temp workspace with config pointing to real daemon
 	tempDir := t.TempDir()
 	setupE2EWorkspace(t, tempDir, socketPath, "test-e2e-project")
 
@@ -25,7 +25,7 @@ func TestE2EStateCommand(t *testing.T) {
 		t.Fatalf("Failed to create docs directory: %v", err)
 	}
 
-	// Note: The project might not exist on server, so we expect either
+	// Note: The project might not exist on daemon, so we expect either
 	// success (project exists) or specific error (project not found)
 	cmd := exec.Command(cliBinary, "state")
 	cmd.Dir = tempDir
@@ -45,13 +45,13 @@ func TestE2EStateCommand(t *testing.T) {
 	}
 }
 
-// TestE2EStateAllCommand verifies sanho state --all command against running server.
+// TestE2EStateAllCommand verifies sanho state --all command against running daemon.
 func TestE2EStateAllCommand(t *testing.T) {
 	cliBinary := getCliBinary(t)
 	socketPath := getSocketPath(t)
-	ensureServerAvailable(t, socketPath)
+	ensureDaemonAvailable(t, socketPath)
 
-	// Set up a temp workspace with config pointing to real server
+	// Set up a temp workspace with config pointing to real daemon
 	tempDir := t.TempDir()
 	setupE2EWorkspace(t, tempDir, socketPath, "test-e2e-project")
 
@@ -82,7 +82,7 @@ func TestE2EStateAllCommand(t *testing.T) {
 func TestE2EPrePushNoIssues(t *testing.T) {
 	cliBinary := getCliBinary(t)
 	socketPath := getSocketPath(t)
-	ensureServerAvailable(t, socketPath)
+	ensureDaemonAvailable(t, socketPath)
 
 	// Set up a temp workspace with config
 	tempDir := t.TempDir()
@@ -112,7 +112,7 @@ func TestE2EPrePushNoIssues(t *testing.T) {
 func TestE2EPrePushBlocksOnConflict(t *testing.T) {
 	cliBinary := getCliBinary(t)
 	socketPath := getSocketPath(t)
-	ensureServerAvailable(t, socketPath)
+	ensureDaemonAvailable(t, socketPath)
 
 	// Set up a temp workspace with config
 	tempDir := t.TempDir()
@@ -155,7 +155,7 @@ Remote version
 func TestE2EPrePushBlocksOnPendingFix(t *testing.T) {
 	cliBinary := getCliBinary(t)
 	socketPath := getSocketPath(t)
-	ensureServerAvailable(t, socketPath)
+	ensureDaemonAvailable(t, socketPath)
 
 	// Set up a temp workspace with config
 	tempDir := t.TempDir()
@@ -198,7 +198,7 @@ func TestE2EPrePushBlocksOnPendingFix(t *testing.T) {
 func TestE2EFixNoPendingFix(t *testing.T) {
 	cliBinary := getCliBinary(t)
 	socketPath := getSocketPath(t)
-	ensureServerAvailable(t, socketPath)
+	ensureDaemonAvailable(t, socketPath)
 
 	// Set up a temp workspace with config (no pending fix)
 	tempDir := t.TempDir()

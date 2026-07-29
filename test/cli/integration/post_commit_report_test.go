@@ -14,7 +14,7 @@ import (
 func TestCLIPostCommitReportsWorkspaceDocsHash(t *testing.T) {
 	cliBinary := getCliBinary(t)
 	var calls atomic.Int32
-	server := newUnixTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	daemon := newUnixTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
 		if r.Method != http.MethodPut || r.URL.Path != "/workspaces/workspace-1/docs-hash" {
 			t.Fatalf("request=%s %s", r.Method, r.URL.Path)
@@ -28,11 +28,11 @@ func TestCLIPostCommitReportsWorkspaceDocsHash(t *testing.T) {
 		}
 		_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 	}))
-	defer server.Close()
+	defer daemon.Close()
 
 	repo := t.TempDir()
 	runGitCommand(t, repo, "init", "--initial-branch=main")
-	writePostCommitReportConfig(t, repo, server.URL)
+	writePostCommitReportConfig(t, repo, daemon.SocketPath)
 
 	cmd := exec.Command(cliBinary, "hook", "post-commit")
 	cmd.Dir = repo

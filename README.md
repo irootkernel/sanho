@@ -13,12 +13,12 @@ There is no Web UI, browser terminal, PTY, or session runtime.
 
 Each initialized application workspace records the docs commit on which its
 local `docs/` tree is based. The CLI compares that commit with the canonical
-remote docs HEAD through the server.
+remote docs HEAD through the daemon.
 
-When a workspace publishes docs, the server serializes all Git operations for
+When a workspace publishes docs, the daemon serializes all Git operations for
 that `docs_repo_id`, refreshes its clone from origin, and accepts the snapshot
 only when the submitted base still matches remote HEAD. An outdated writer is
-rejected and must merge or pull before retrying. Failed pushes reset the server
+rejected and must merge or pull before retrying. Failed pushes reset the daemon
 clone to origin so an unpushed local commit cannot become a false HEAD.
 
 ## Requirements
@@ -123,7 +123,7 @@ make cli-test
 make test-all
 ```
 
-The server and CLI end-to-end suites launch isolated daemons with temporary
+The daemon and CLI end-to-end suites launch isolated daemons with temporary
 runtime homes and Unix sockets by default. Set `E2E_SOCKET` to an absolute
 socket path only when testing an explicitly selected running daemon.
 

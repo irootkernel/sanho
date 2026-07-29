@@ -22,10 +22,10 @@ var (
 	ErrPullLocalChanges = errors.New("local changes exist in docs")
 	// ErrPullAlreadyUpToDate indicates docs are already up to date.
 	ErrPullAlreadyUpToDate = errors.New("already up to date")
-	// ErrPullUnknownProject indicates the project is not registered on the server.
-	ErrPullUnknownProject = errors.New("project not registered on server")
-	// ErrPullUnknownWorkspace indicates the workspace is not registered on the server.
-	ErrPullUnknownWorkspace = errors.New("workspace not registered on server")
+	// ErrPullUnknownProject indicates the project is not registered on the daemon.
+	ErrPullUnknownProject = errors.New("project not registered on daemon")
+	// ErrPullUnknownWorkspace indicates the workspace is not registered on the daemon.
+	ErrPullUnknownWorkspace = errors.New("workspace not registered on daemon")
 )
 
 // PullConfigLoader loads workspace configuration.
@@ -133,15 +133,15 @@ func (u *PullUseCase) Execute(ctx context.Context, input PullInput) error {
 		return ErrPullPendingFix
 	}
 
-	// Step 4: Get server HEAD
-	u.output.Info("Checking server docs HEAD...")
-	serverHead, err := u.httpClient.DocsHead(ctx, config.Project)
+	// Step 4: Get daemon HEAD
+	u.output.Info("Checking daemon docs HEAD...")
+	daemonHead, err := u.httpClient.DocsHead(ctx, config.Project)
 	if err != nil {
-		return fmt.Errorf("failed to get server HEAD: %w", err)
+		return fmt.Errorf("failed to get daemon HEAD: %w", err)
 	}
 
 	// Step 5: Compare hashes
-	if string(localHash) == string(serverHead) {
+	if string(localHash) == string(daemonHead) {
 		u.output.Info("Already up to date.")
 		return nil
 	}
@@ -163,7 +163,7 @@ func (u *PullUseCase) Execute(ctx context.Context, input PullInput) error {
 
 	// Step 7: Download snapshot
 	u.output.Info("Downloading docs snapshot...")
-	snapshot, actualCommit, err := u.httpClient.DocsSnapshot(ctx, config.Project, serverHead)
+	snapshot, actualCommit, err := u.httpClient.DocsSnapshot(ctx, config.Project, daemonHead)
 	if err != nil {
 		return fmt.Errorf("failed to download snapshot: %w", err)
 	}

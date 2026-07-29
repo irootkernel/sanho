@@ -86,28 +86,28 @@ func runHookStatus(cmd *cobra.Command, hookName string, reconcile bool) error {
 		hasConflicts = len(conflictFiles) > 0
 	}
 
-	// Step 5: Call /docs/head to get server HEAD
+	// Step 5: Call /docs/head to get daemon HEAD
 	httpClient, err := newDaemonClient(config.SocketPath)
 	if err != nil {
 		return err
 	}
-	serverHead, err := httpClient.DocsHead(ctx, config.Project)
+	daemonHead, err := httpClient.DocsHead(ctx, config.Project)
 
 	// Determine status
 	var status client.DocsStatus
-	var serverHeadStr string
+	var daemonHeadStr string
 
 	if err != nil {
 		status = client.DocsStatusUnknown
-		serverHeadStr = "(unavailable)"
+		daemonHeadStr = "(unavailable)"
 		if errors.Is(err, httpclient.ErrUnknownProject) {
-			cmd.PrintErrf("sanho %s: warning: project '%s' is not registered on server\n", hookName, config.Project)
+			cmd.PrintErrf("sanho %s: warning: project '%s' is not registered on daemon\n", hookName, config.Project)
 		} else {
-			cmd.PrintErrf("sanho %s: warning: failed to connect to server: %v\n", hookName, err)
+			cmd.PrintErrf("sanho %s: warning: failed to connect to daemon: %v\n", hookName, err)
 		}
 	} else {
-		serverHeadStr = string(serverHead)
-		if string(localHash) == string(serverHead) {
+		daemonHeadStr = string(daemonHead)
+		if string(localHash) == string(daemonHead) {
 			status = client.DocsStatusUpToDate
 		} else {
 			status = client.DocsStatusOutdated
@@ -117,7 +117,7 @@ func runHookStatus(cmd *cobra.Command, hookName string, reconcile bool) error {
 	// Print concise status
 	fmt.Printf("sanho %s: docs status: %s\n", hookName, status)
 	fmt.Printf("  base: %s\n", localHash)
-	fmt.Printf("  head: %s\n", serverHeadStr)
+	fmt.Printf("  head: %s\n", daemonHeadStr)
 
 	// Additional warnings
 	if hasPendingFix {

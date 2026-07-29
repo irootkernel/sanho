@@ -12,7 +12,7 @@ import (
 	"github.com/irootkernel/sanho/internal/interface/http/dto"
 )
 
-// TestE2E_DocsPush tests the full /docs/push flow with a running server
+// TestE2E_DocsPush tests the full /docs/push flow with a running daemon
 func TestE2E_DocsPush(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -24,7 +24,7 @@ func TestE2E_DocsPush(t *testing.T) {
 	projectName := uniqueName("test-push")
 	repoID := uniqueName("test-repo")
 
-	baseURL, client, _ := requireServer(t, ctx)
+	baseURL, client, _ := requireDaemon(t, ctx)
 
 	// Add project
 	body, _ := json.Marshal(map[string]string{

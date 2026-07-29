@@ -12,7 +12,7 @@ import (
 func TestE2ECLI_PullAlreadyUpToDate(t *testing.T) {
 	cliBinary := getCliBinary(t)
 	socketPath := getSocketPath(t)
-	ensureServerAvailable(t, socketPath)
+	ensureDaemonAvailable(t, socketPath)
 
 	// Create origin docs repo
 	originPath, initialHead := createOriginRepo(t, map[string]string{
@@ -38,7 +38,7 @@ func TestE2ECLI_PullAlreadyUpToDate(t *testing.T) {
 	writeConfig(t, workspaceDir, socketPath, project, wsID, "cli-pull@example.com")
 	writeDocsHash(t, workspaceDir, currentHead)
 
-	// Create docs directory (matching server content)
+	// Create docs directory (matching daemon content)
 	docsDir := filepath.Join(workspaceDir, "docs", "docs")
 	if err := os.MkdirAll(docsDir, 0755); err != nil {
 		t.Fatalf("mkdir docs: %v", err)
@@ -63,11 +63,11 @@ func TestE2ECLI_PullAlreadyUpToDate(t *testing.T) {
 	deleteProjectViaCLI(t, cliBinary, socketPath, project, true)
 }
 
-// TestE2ECLI_PullOutdated tests pull when server has newer docs.
+// TestE2ECLI_PullOutdated tests pull when daemon has newer docs.
 func TestE2ECLI_PullOutdated(t *testing.T) {
 	cliBinary := getCliBinary(t)
 	socketPath := getSocketPath(t)
-	ensureServerAvailable(t, socketPath)
+	ensureDaemonAvailable(t, socketPath)
 
 	// Create origin docs repo
 	originPath, initialHead := createOriginRepo(t, map[string]string{
@@ -111,10 +111,10 @@ func TestE2ECLI_PullOutdated(t *testing.T) {
 		"docs/index.md": "# updated by another workspace\n",
 	}, "other@example.com")
 
-	// Verify server has new head
-	serverHead := fetchHeadViaHTTP(t, socketPath, project)
-	if serverHead != newHead {
-		t.Fatalf("server head %s != pushed head %s", serverHead, newHead)
+	// Verify daemon has new head
+	daemonHead := fetchHeadViaHTTP(t, socketPath, project)
+	if daemonHead != newHead {
+		t.Fatalf("daemon head %s != pushed head %s", daemonHead, newHead)
 	}
 
 	// Run pull - should download new content
@@ -136,7 +136,7 @@ func TestE2ECLI_PullOutdated(t *testing.T) {
 	}
 	localHash := strings.TrimSpace(string(newHashBytes))
 	if localHash != newHead {
-		t.Errorf("local hash %s != server head %s", localHash, newHead)
+		t.Errorf("local hash %s != daemon head %s", localHash, newHead)
 	}
 
 	// Verify docs content updated
@@ -155,7 +155,7 @@ func TestE2ECLI_PullOutdated(t *testing.T) {
 func TestE2ECLI_PullThenPullCommitPreservesRemoteAddedFile(t *testing.T) {
 	cliBinary := getCliBinary(t)
 	socketPath := getSocketPath(t)
-	ensureServerAvailable(t, socketPath)
+	ensureDaemonAvailable(t, socketPath)
 
 	docsOrigin, initialDocsHead := createOriginRepo(t, map[string]string{
 		"docs/index.md": "# initial docs\n",
@@ -250,7 +250,7 @@ func TestE2ECLI_PullThenPullCommitPreservesRemoteAddedFile(t *testing.T) {
 func TestE2ECLI_PullBlockedByPendingFix(t *testing.T) {
 	cliBinary := getCliBinary(t)
 	socketPath := getSocketPath(t)
-	ensureServerAvailable(t, socketPath)
+	ensureDaemonAvailable(t, socketPath)
 
 	// Create origin docs repo
 	originPath, initialHead := createOriginRepo(t, map[string]string{
@@ -304,7 +304,7 @@ func TestE2ECLI_PullBlockedByPendingFix(t *testing.T) {
 func TestE2ECLI_PullForce(t *testing.T) {
 	cliBinary := getCliBinary(t)
 	socketPath := getSocketPath(t)
-	ensureServerAvailable(t, socketPath)
+	ensureDaemonAvailable(t, socketPath)
 
 	// Create origin docs repo
 	originPath, initialHead := createOriginRepo(t, map[string]string{
@@ -354,7 +354,7 @@ func TestE2ECLI_PullForce(t *testing.T) {
 
 	// Push updated docs from "another workspace"
 	newHead := pushDocsViaHTTP(t, socketPath, wsID, currentHead, map[string]string{
-		"docs/index.md": "# from server\n",
+		"docs/index.md": "# from daemon\n",
 	}, "other@example.com")
 
 	// Run pull without --force - MUST fail due to local changes
@@ -378,13 +378,13 @@ func TestE2ECLI_PullForce(t *testing.T) {
 		t.Fatalf("pull --force failed: %v\nOutput:\n%s", err, string(out))
 	}
 
-	// Verify docs content from server
+	// Verify docs content from daemon
 	content, err := os.ReadFile(filepath.Join(docsDir, "index.md"))
 	if err != nil {
 		t.Fatalf("read docs: %v", err)
 	}
-	if !strings.Contains(string(content), "from server") {
-		t.Errorf("docs not updated from server, got:\n%s", string(content))
+	if !strings.Contains(string(content), "from daemon") {
+		t.Errorf("docs not updated from daemon, got:\n%s", string(content))
 	}
 
 	// Verify hash updated
@@ -401,7 +401,7 @@ func TestE2ECLI_PullForce(t *testing.T) {
 func TestE2ECLI_PullBlockedByUntrackedFiles(t *testing.T) {
 	cliBinary := getCliBinary(t)
 	socketPath := getSocketPath(t)
-	ensureServerAvailable(t, socketPath)
+	ensureDaemonAvailable(t, socketPath)
 
 	// Create origin docs repo
 	originPath, initialHead := createOriginRepo(t, map[string]string{
@@ -447,7 +447,7 @@ func TestE2ECLI_PullBlockedByUntrackedFiles(t *testing.T) {
 
 	// Push updated docs from "another workspace"
 	newHead := pushDocsViaHTTP(t, socketPath, wsID, currentHead, map[string]string{
-		"docs/index.md": "# from server\n",
+		"docs/index.md": "# from daemon\n",
 	}, "other@example.com")
 	_ = newHead // suppress unused warning
 

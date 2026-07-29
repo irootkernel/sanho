@@ -13,12 +13,12 @@ import (
 	"github.com/irootkernel/sanho/internal/interface/http/dto"
 )
 
-// E2E: sanho clean should remove server workspace and local artifacts.
+// E2E: sanho clean should remove daemon workspace and local artifacts.
 func TestE2E_CliClean_RemovesWorkspaceAndLocalFiles(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 
-	baseURL, client, socketPath := requireServer(t, ctx)
+	baseURL, client, socketPath := requireDaemon(t, ctx)
 
 	originPath, head := createOriginRepo(t, map[string]string{
 		"docs/index.md": "# Clean E2E\n",
@@ -84,11 +84,11 @@ func TestE2E_CliClean_RemovesWorkspaceAndLocalFiles(t *testing.T) {
 	cliBin := getCliBinaryE2E(t)
 	runCmdE2E(t, wsDir, nil, cliBin, "clean", "--yes", "--remove-docs")
 
-	// Server workspace should be gone
+	// Daemon workspace should be gone
 	req, _ := http.NewRequest(http.MethodDelete, baseURL+"/workspaces/"+url.PathEscape(wsID), nil)
 	resp, err := client.Do(req)
 	if err != nil {
-		t.Fatalf("server delete check failed: %v", err)
+		t.Fatalf("daemon delete check failed: %v", err)
 	}
 	if resp.StatusCode != http.StatusNotFound {
 		resp.Body.Close()

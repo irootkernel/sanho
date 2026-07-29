@@ -6,15 +6,15 @@ import (
 	"github.com/irootkernel/sanho/internal/domain/workspace"
 )
 
-// DocsStatus represents the synchronization status of local docs with the server.
+// DocsStatus represents the synchronization status of local docs with the daemon.
 type DocsStatus string
 
 const (
-	// DocsStatusUnknown indicates the status could not be determined (e.g., server unreachable).
+	// DocsStatusUnknown indicates the status could not be determined (e.g., daemon unreachable).
 	DocsStatusUnknown DocsStatus = "unknown"
-	// DocsStatusUpToDate indicates local docs are in sync with the server HEAD.
+	// DocsStatusUpToDate indicates local docs are in sync with the daemon HEAD.
 	DocsStatusUpToDate DocsStatus = "up_to_date"
-	// DocsStatusOutdated indicates local docs are behind the server HEAD.
+	// DocsStatusOutdated indicates local docs are behind the daemon HEAD.
 	DocsStatusOutdated DocsStatus = "outdated"
 )
 

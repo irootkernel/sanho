@@ -177,7 +177,7 @@ func TestStateHandler_LastReportedAtZeroTime(t *testing.T) {
 		t.Fatalf("status = %v, want %v", w.Code, http.StatusOK)
 	}
 
-	var resp dto.ServerStateResponse
+	var resp dto.DaemonStateResponse
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to unmarshal response: %v", err)
 	}
@@ -220,7 +220,7 @@ func TestStateHandler_LastReportedAtFormatsRFC3339(t *testing.T) {
 		t.Fatalf("status = %v, want %v", w.Code, http.StatusOK)
 	}
 
-	var resp dto.ServerStateResponse
+	var resp dto.DaemonStateResponse
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to unmarshal response: %v", err)
 	}

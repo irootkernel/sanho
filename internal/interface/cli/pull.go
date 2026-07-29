@@ -24,12 +24,12 @@ const pullTimeout = 60 * time.Second
 func newPullCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "pull",
-		Short: "Pull latest docs snapshot from server",
-		Long: `Pull the latest documentation snapshot from the sanho server
+		Short: "Pull latest docs snapshot from daemon",
+		Long: `Pull the latest documentation snapshot from the sanho daemon
 and apply it to the local docs directory.
 
 This command will:
-- Check the server for the latest docs version
+- Check the daemon for the latest docs version
 - Download the snapshot if outdated
 - Apply the snapshot to the local docs directory
 - Update the local docs hash
@@ -65,7 +65,7 @@ func runPullCommand(cmd *cobra.Command, force bool) error {
 	snapshotApplier := fs.NewSnapshotApplier()
 	output := newCLIPullOutput(cmd)
 
-	// Load config first to get server URL
+	// Load config first to get daemon socket path
 	config, err := configLoader.Load(cwd)
 	if err != nil {
 		cmd.PrintErrf("sanho pull: %v\n", err)
@@ -124,10 +124,10 @@ func runPullCommand(cmd *cobra.Command, force bool) error {
 		case errors.Is(pullErr, docsUsecase.ErrPullAlreadyUpToDate):
 			pullErr = nil
 		case errors.Is(pullErr, docsUsecase.ErrPullUnknownProject):
-			cmd.PrintErrf("sanho: project '%s' is not registered on server.\n", config.Project)
+			cmd.PrintErrf("sanho: project '%s' is not registered on daemon.\n", config.Project)
 			cmd.PrintErrf("sanho: run 'sanho init' or 'sanho project add' to register it.\n")
 		case errors.Is(pullErr, docsUsecase.ErrPullUnknownWorkspace):
-			cmd.PrintErrf("sanho: workspace '%s' is not registered on server.\n", config.WorkspaceID)
+			cmd.PrintErrf("sanho: workspace '%s' is not registered on daemon.\n", config.WorkspaceID)
 			cmd.PrintErrf("sanho: run 'sanho init' or 'sanho workspace register' to register it.\n")
 		default:
 			cmd.PrintErrf("sanho pull: %v\n", pullErr)

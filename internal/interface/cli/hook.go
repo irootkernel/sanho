@@ -44,7 +44,7 @@ func newPreCommitHookCmd() *cobra.Command {
 
 This hook will:
 - Check for docs changes
-- Push docs to server if changed
+- Push docs to daemon if changed
 - Handle outdated state with 3-way merge`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runPreCommitHook(cmd)

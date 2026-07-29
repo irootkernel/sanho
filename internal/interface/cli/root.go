@@ -11,7 +11,7 @@ import (
 
 // Exit codes following the roadmap's Phase 0 exit-code policy:
 // - 0: Success
-// - 1: User-fixable issues (environment, config, server/network errors)
+// - 1: User-fixable issues (environment, config, daemon/network errors)
 // - 2+: Unexpected internal bugs
 const (
 	ExitCodeSuccess       = 0

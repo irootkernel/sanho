@@ -14,7 +14,7 @@ func TestE2E_WorkspaceDeletionEnablesProjectDeletion(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	baseURL, client, _ := requireServer(t, ctx)
+	baseURL, client, _ := requireDaemon(t, ctx)
 
 	originPath, _ := createOriginRepo(t, map[string]string{
 		"docs/index.md": "# Workspace Flow\n",

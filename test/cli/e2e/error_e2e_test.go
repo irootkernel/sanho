@@ -11,7 +11,7 @@ import (
 func TestE2ECLI_StatusUnknownProject(t *testing.T) {
 	cliBinary := getCliBinary(t)
 	socketPath := getSocketPath(t)
-	ensureServerAvailable(t, socketPath)
+	ensureDaemonAvailable(t, socketPath)
 
 	workspaceDir := t.TempDir()
 	// minimal git to satisfy status conflict scan if needed
@@ -37,7 +37,7 @@ func TestE2ECLI_StatusUnknownProject(t *testing.T) {
 func TestE2ECLI_WorkspaceUnregisterUnknown(t *testing.T) {
 	cliBinary := getCliBinary(t)
 	socketPath := getSocketPath(t)
-	ensureServerAvailable(t, socketPath)
+	ensureDaemonAvailable(t, socketPath)
 
 	cmd := exec.Command(cliBinary, "workspace", "unregister",
 		"--socket", socketPath,
@@ -57,7 +57,7 @@ func TestE2ECLI_WorkspaceUnregisterUnknown(t *testing.T) {
 func TestE2ECLI_ProjectDeleteUnknown(t *testing.T) {
 	cliBinary := getCliBinary(t)
 	socketPath := getSocketPath(t)
-	ensureServerAvailable(t, socketPath)
+	ensureDaemonAvailable(t, socketPath)
 
 	cmd := exec.Command(cliBinary, "project", "delete",
 		"--socket", socketPath,

@@ -8,11 +8,11 @@ import (
 	"testing"
 )
 
-// TestE2ECLI_InitWorkflow verifies sanho init happy path against real server.
+// TestE2ECLI_InitWorkflow verifies sanho init happy path against real daemon.
 func TestE2ECLI_InitWorkflow(t *testing.T) {
 	cliBinary := getCliBinary(t)
 	socketPath := getSocketPath(t)
-	ensureServerAvailable(t, socketPath)
+	ensureDaemonAvailable(t, socketPath)
 
 	originPath, head := createOriginRepo(t, map[string]string{
 		"docs/index.md": "# init workflow\n",
@@ -53,7 +53,7 @@ func TestE2ECLI_InitWorkflow(t *testing.T) {
 		t.Fatalf("docs hash mismatch: got %s want %s", strings.TrimSpace(string(hashBytes)), head)
 	}
 
-	// Docs directory should have content from server snapshot
+	// Docs directory should have content from daemon snapshot
 	body, err := os.ReadFile(filepath.Join(workspaceDir, "docs", "docs", "index.md"))
 	if err != nil {
 		t.Fatalf("read docs/index.md: %v", err)
@@ -72,7 +72,7 @@ func TestE2ECLI_InitWorkflow(t *testing.T) {
 func TestE2ECLI_InitForce(t *testing.T) {
 	cliBinary := getCliBinary(t)
 	socketPath := getSocketPath(t)
-	ensureServerAvailable(t, socketPath)
+	ensureDaemonAvailable(t, socketPath)
 
 	originPath, head := createOriginRepo(t, map[string]string{
 		"docs/index.md": "# init force\n",

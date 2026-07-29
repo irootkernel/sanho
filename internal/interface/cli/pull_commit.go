@@ -22,7 +22,7 @@ func newPullCommitCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "pull-commit",
 		Short: "Merge remote docs into the local base while preserving dirty changes",
-		Long: `Create a docs-only commit from the latest server snapshot on the
+		Long: `Create a docs-only commit from the latest daemon snapshot on the
 latest acceptable main while preserving staged and unstaged changes as separate
 layers. Unpublished linear feature branches are rebased onto the system commit.
 
@@ -121,7 +121,7 @@ func runPullCommitCommand(cmd *cobra.Command, continueTransaction, abortTransact
 	}
 	remoteHash, err := httpClient.DocsHead(ctx, config.Project)
 	if err != nil {
-		return fmt.Errorf("read server docs version: %w", err)
+		return fmt.Errorf("read daemon docs version: %w", err)
 	}
 	hasPulledDocs, err := engine.hasPulledDocs(ctx, workDir)
 	if err != nil {

@@ -83,7 +83,7 @@ type PreCommitSnapshotApplier interface {
 	Apply(snapshot []byte, targetDir, docsDir string) error
 }
 
-// DocsPushRequest is the request for pushing docs to server.
+// DocsPushRequest is the request for pushing docs to daemon.
 type DocsPushRequest struct {
 	WorkspaceID  workspace.WorkspaceID
 	BaseDocsHash docs.CommitHash
@@ -91,7 +91,7 @@ type DocsPushRequest struct {
 	ActorEmail   string
 }
 
-// DocsPushResponse is the response from pushing docs to server.
+// DocsPushResponse is the response from pushing docs to daemon.
 type DocsPushResponse struct {
 	Ok              bool
 	Status          docs.DocsPushStatus
@@ -230,13 +230,13 @@ func (u *PreCommitUseCase) Execute(ctx context.Context, workDir string) error {
 	}
 
 	// Step 6: Build docs snapshot
-	u.output.Info("Docs changes detected. Syncing with server...")
+	u.output.Info("Docs changes detected. Syncing with daemon...")
 	snapshot, err := u.snapshotBuilder.Build(docsPath)
 	if err != nil {
 		return fmt.Errorf("failed to build docs snapshot: %w", err)
 	}
 
-	// Step 7: Push to server
+	// Step 7: Push to daemon
 	pushReq := DocsPushRequest{
 		WorkspaceID:  config.WorkspaceID,
 		BaseDocsHash: baseHash,
@@ -270,7 +270,7 @@ func (u *PreCommitUseCase) Execute(ctx context.Context, workDir string) error {
 			u.output.Error("Another workspace is currently updating docs. Please try again shortly.")
 			return ErrDocsRepoBusy
 		}
-		return fmt.Errorf("server error: %s", resp.Error)
+		return fmt.Errorf("daemon error: %s", resp.Error)
 	}
 
 	switch resp.Status {
@@ -291,7 +291,7 @@ func (u *PreCommitUseCase) Execute(ctx context.Context, workDir string) error {
 				return fmt.Errorf("failed to update docs hash: %w", err)
 			}
 		}
-		u.output.Info("Docs are already in sync with server.")
+		u.output.Info("Docs are already in sync with daemon.")
 		return nil
 
 	case docs.DocsPushStatusOutdated:

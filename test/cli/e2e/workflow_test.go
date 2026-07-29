@@ -21,12 +21,12 @@ func TestE2ESetup(t *testing.T) {
 		t.Skip("CLI binary not found")
 	}
 
-	// Verify TestMain configured either an isolated server or an explicit override.
+	// Verify TestMain configured either an isolated daemon or an explicit override.
 	socketPath := os.Getenv("SANHO_E2E_SOCKET")
 	if socketPath == "" {
 		t.Fatal("SANHO_E2E_SOCKET was not configured by the E2E test harness")
 	}
-	t.Logf("E2E test environment: CLI=%s, Server=%s", cliBinary, socketPath)
+	t.Logf("E2E test environment: CLI=%s, Daemon=%s", cliBinary, socketPath)
 }
 
 // TestE2EVersionCommand is a simple E2E test that verifies the CLI runs correctly.
@@ -45,8 +45,8 @@ func TestE2EVersionCommand(t *testing.T) {
 }
 
 // TODO: Add E2E tests for full workflows as features are implemented:
-// - TestE2EInitWorkflow: sanho init with real server
-// - TestE2EStatusWorkflow: sanho status with real server
+// - TestE2EInitWorkflow: sanho init with real daemon
+// - TestE2EStatusWorkflow: sanho status with real daemon
 // - TestE2EPreCommitOutdated: pre-commit hook with outdated docs
 // - TestE2EFixWorkflow: sanho fix after conflict resolution
 // - TestE2EPrePushBlocking: pre-push hook blocking push with pending fix
@@ -98,8 +98,8 @@ func getSocketPath(t *testing.T) string {
 	return path
 }
 
-// ensureServerAvailable checks connectivity to the daemon Unix socket.
-func ensureServerAvailable(t *testing.T, socketPath string) {
+// ensureDaemonAvailable checks connectivity to the daemon Unix socket.
+func ensureDaemonAvailable(t *testing.T, socketPath string) {
 	t.Helper()
 	conn, err := net.DialTimeout("unix", socketPath, 2*time.Second)
 	if err != nil {

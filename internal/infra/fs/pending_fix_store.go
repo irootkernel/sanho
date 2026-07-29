@@ -22,7 +22,7 @@ var (
 type PendingFixState struct {
 	// BaseHash is the docs hash that was used as the base for the merge.
 	BaseHash docs.CommitHash `json:"base_hash"`
-	// RemoteHash is the docs hash from the remote (server HEAD at merge time).
+	// RemoteHash is the docs hash from the remote (daemon HEAD at merge time).
 	RemoteHash docs.CommitHash `json:"remote_hash"`
 	// CreatedAt is the time when the pending fix state was created.
 	CreatedAt time.Time `json:"created_at"`

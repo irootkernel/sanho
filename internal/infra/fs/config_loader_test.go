@@ -17,7 +17,7 @@ func TestFileConfigLoader_Load(t *testing.T) {
 		wantConfig *client.WorkspaceConfig
 	}{
 		{
-			name: "valid config with all fields",
+			name: "v0.1.0 config with all fields remains valid",
 			configJSON: `{
 				"socket_path": "/tmp/sanhod.sock",
 				"workspace_id": "ws-123",

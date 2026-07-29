@@ -33,8 +33,8 @@ func TestCLIPullRequiresWorkspace(t *testing.T) {
 func TestCLIPullAlreadyUpToDate(t *testing.T) {
 	cliBinary := getCliBinary(t)
 
-	// Create a fake server
-	server := newUnixTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	// Create a fake daemon
+	daemon := newUnixTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.HasPrefix(r.URL.Path, "/docs/head"):
 			w.Header().Set("Content-Type", "application/json")
@@ -46,7 +46,7 @@ func TestCLIPullAlreadyUpToDate(t *testing.T) {
 			http.NotFound(w, r)
 		}
 	}))
-	defer server.Close()
+	defer daemon.Close()
 
 	// Create temp workspace
 	tempDir := t.TempDir()
@@ -67,7 +67,7 @@ func TestCLIPullAlreadyUpToDate(t *testing.T) {
 
 	// Create .sanho.json
 	config := map[string]interface{}{
-		"socket_path":      server.URL,
+		"socket_path":      daemon.SocketPath,
 		"workspace_id":     "test-workspace",
 		"project":          "test-project",
 		"actor_email":      "test@example.com",
@@ -80,7 +80,7 @@ func TestCLIPullAlreadyUpToDate(t *testing.T) {
 		t.Fatalf("Failed to create .sanho.json: %v", err)
 	}
 
-	// Create .sanho_docs_hash with same hash as server
+	// Create .sanho_docs_hash with same hash as daemon
 	if err := os.WriteFile(filepath.Join(tempDir, ".sanho_docs_hash"), []byte("abc123def456\n"), 0644); err != nil {
 		t.Fatalf("Failed to create .sanho_docs_hash: %v", err)
 	}
@@ -103,8 +103,8 @@ func TestCLIPullAlreadyUpToDate(t *testing.T) {
 func TestCLIPullPendingFixBlocks(t *testing.T) {
 	cliBinary := getCliBinary(t)
 
-	// Create a fake server
-	server := newUnixTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	// Create a fake daemon
+	daemon := newUnixTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.HasPrefix(r.URL.Path, "/docs/head"):
 			w.Header().Set("Content-Type", "application/json")
@@ -113,7 +113,7 @@ func TestCLIPullPendingFixBlocks(t *testing.T) {
 			http.NotFound(w, r)
 		}
 	}))
-	defer server.Close()
+	defer daemon.Close()
 
 	// Create temp workspace
 	tempDir := t.TempDir()
@@ -131,7 +131,7 @@ func TestCLIPullPendingFixBlocks(t *testing.T) {
 
 	// Create .sanho.json
 	config := map[string]interface{}{
-		"socket_path":      server.URL,
+		"socket_path":      daemon.SocketPath,
 		"workspace_id":     "test-workspace",
 		"project":          "test-project",
 		"actor_email":      "test@example.com",
@@ -178,8 +178,8 @@ func TestCLIPullPendingFixBlocks(t *testing.T) {
 func TestCLIPullUnknownProject(t *testing.T) {
 	cliBinary := getCliBinary(t)
 
-	// Fake server returns unknown_project for docs/head
-	server := newUnixTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	// Fake daemon returns unknown_project for docs/head
+	daemon := newUnixTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/docs/head") {
 			w.WriteHeader(http.StatusBadRequest)
 			json.NewEncoder(w).Encode(map[string]string{"error": "unknown_project"})
@@ -187,7 +187,7 @@ func TestCLIPullUnknownProject(t *testing.T) {
 		}
 		http.NotFound(w, r)
 	}))
-	defer server.Close()
+	defer daemon.Close()
 
 	tempDir := t.TempDir()
 
@@ -207,7 +207,7 @@ func TestCLIPullUnknownProject(t *testing.T) {
 
 	// Create .sanho.json
 	config := map[string]interface{}{
-		"socket_path":      server.URL,
+		"socket_path":      daemon.SocketPath,
 		"workspace_id":     "test-workspace",
 		"project":          "unknown-project",
 		"actor_email":      "test@example.com",
@@ -243,8 +243,8 @@ func TestCLIPullUnknownProject(t *testing.T) {
 func TestCLIPullUnknownWorkspace(t *testing.T) {
 	cliBinary := getCliBinary(t)
 
-	// Fake server returns unknown_workspace for docs/head
-	server := newUnixTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	// Fake daemon returns unknown_workspace for docs/head
+	daemon := newUnixTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/docs/head") {
 			w.WriteHeader(http.StatusBadRequest)
 			json.NewEncoder(w).Encode(map[string]string{"error": "unknown_workspace"})
@@ -252,7 +252,7 @@ func TestCLIPullUnknownWorkspace(t *testing.T) {
 		}
 		http.NotFound(w, r)
 	}))
-	defer server.Close()
+	defer daemon.Close()
 
 	tempDir := t.TempDir()
 
@@ -272,7 +272,7 @@ func TestCLIPullUnknownWorkspace(t *testing.T) {
 
 	// Create .sanho.json
 	config := map[string]interface{}{
-		"socket_path":      server.URL,
+		"socket_path":      daemon.SocketPath,
 		"workspace_id":     "test-workspace",
 		"project":          "test-project",
 		"actor_email":      "test@example.com",

@@ -11,8 +11,8 @@ import (
 	"github.com/irootkernel/sanho/internal/interface/http/dto"
 )
 
-// E2E: Prefer hitting a running server via SANHO_E2E_SOCKET; otherwise build & launch locally.
-func TestE2E_ServerProcess(t *testing.T) {
+// E2E: Prefer hitting a running daemon via SANHO_E2E_SOCKET; otherwise build & launch locally.
+func TestE2E_DaemonProcess(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
@@ -23,7 +23,7 @@ func TestE2E_ServerProcess(t *testing.T) {
 	projectName := uniqueName("test-project")
 	repoID := uniqueName("test-repo")
 
-	baseURL, client, _ := requireServer(t, ctx)
+	baseURL, client, _ := requireDaemon(t, ctx)
 
 	// Add project.
 	body, _ := json.Marshal(map[string]string{

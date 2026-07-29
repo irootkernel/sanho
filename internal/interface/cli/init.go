@@ -40,7 +40,7 @@ This command will:
 - Verify this is a Git repository
 - Register the project if not already registered
 - Register this workspace with the sanhod
-- Download the current docs snapshot from the server
+- Download the current docs snapshot from the daemon
 - Create .sanho.json configuration file
 - Create .sanho_docs_hash file
 - Add workspace metadata files to .gitignore
@@ -167,7 +167,7 @@ Prerequisites:
 				return err
 			}
 
-			// Create context for server interactions and Git hook installation
+			// Create context for daemon interactions and Git hook installation
 			ctx, cancel := createContext(LongTimeout)
 			defer cancel()
 
@@ -206,7 +206,7 @@ Prerequisites:
 			workspaceResp, err := httpClient.RegisterWorkspace(ctx, workspaceReq)
 			if err != nil {
 				if errors.Is(err, httpclient.ErrUnknownProject) {
-					return fmt.Errorf("project '%s' is not registered on server. Run 'sanho project add' first", projectName)
+					return fmt.Errorf("project '%s' is not registered on daemon. Run 'sanho project add' first", projectName)
 				}
 				return fmt.Errorf("failed to register workspace: %w", err)
 			}
@@ -221,7 +221,7 @@ Prerequisites:
 					return fmt.Errorf("failed to download docs snapshot: %w", err)
 				}
 
-				// Step 4: Apply snapshot, ensuring docs directory reflects the server state
+				// Step 4: Apply snapshot, ensuring docs directory reflects the daemon state
 				// When --force is used, always clear any existing docs to avoid stale content,
 				// regardless of whether the snapshot is empty or not.
 				if force {
@@ -243,7 +243,7 @@ Prerequisites:
 				}
 
 				if commitHash == "" {
-					return errors.New("server returned empty docs HEAD hash; init cannot proceed")
+					return errors.New("daemon returned empty docs HEAD hash; init cannot proceed")
 				}
 				docsBaseHash = docs.CommitHash(commitHash)
 			} else {
@@ -307,7 +307,7 @@ Prerequisites:
 				fmt.Println("sanho: 기존 docs 디렉토리를 그대로 사용하여 workspace 를 초기화했습니다.")
 				fmt.Printf("  workspace_id : %s\n", workspaceResp.WorkspaceID)
 				fmt.Printf("  docs_base    : %s\n", docsBaseHash)
-				fmt.Printf("  server_head  : %s\n", workspaceResp.CurrentDocsHead)
+				fmt.Printf("  daemon_head  : %s\n", workspaceResp.CurrentDocsHead)
 				fmt.Printf("  status       : %s\n", status)
 			} else {
 				fmt.Println("sanho: workspace initialized.")

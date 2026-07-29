@@ -11,7 +11,7 @@ import (
 	"github.com/irootkernel/sanho/internal/interface/http/dto"
 )
 
-// TestE2E_State tests the /state endpoint with real server and Git operations.
+// TestE2E_State tests the /state endpoint with real daemon and Git operations.
 // Per F5-Data requirement: "서버에서 /workspaces/register를 여러 번 호출한 뒤 /state 응답이 이를 반영하는지 확인"
 func TestE2E_State(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -24,7 +24,7 @@ func TestE2E_State(t *testing.T) {
 	projectName := uniqueName("state-test-project")
 	repoID := uniqueName("state-test-repo")
 
-	baseURL, client, _ := requireServer(t, ctx)
+	baseURL, client, _ := requireDaemon(t, ctx)
 
 	// Add project.
 	body, _ := json.Marshal(map[string]string{

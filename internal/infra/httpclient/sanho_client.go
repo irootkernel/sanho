@@ -28,24 +28,24 @@ const (
 
 // Error types for client operations.
 var (
-	// ErrUnknownProject is returned when the server responds with unknown_project.
-	ErrUnknownProject = errors.New("project not registered on server")
-	// ErrUnknownWorkspace is returned when the server responds with unknown_workspace.
-	ErrUnknownWorkspace = errors.New("workspace not registered on server")
+	// ErrUnknownProject is returned when the daemon responds with unknown_project.
+	ErrUnknownProject = errors.New("project not registered on daemon")
+	// ErrUnknownWorkspace is returned when the daemon responds with unknown_workspace.
+	ErrUnknownWorkspace = errors.New("workspace not registered on daemon")
 	// ErrWorkspaceProjectMismatch is returned when a workspace belongs to another project.
 	ErrWorkspaceProjectMismatch = errors.New("workspace belongs to another project")
-	// ErrUnknownDocsCommit is returned when the server responds with unknown_docs_commit.
+	// ErrUnknownDocsCommit is returned when the daemon responds with unknown_docs_commit.
 	ErrUnknownDocsCommit = errors.New("docs commit not found in history")
 	// ErrDocsRepoBusy is returned when the docs repo is being updated by another request.
 	ErrDocsRepoBusy = errors.New("docs repo is busy")
 	// ErrProjectHasWorkspaces is returned when trying to delete a project with workspaces.
 	ErrProjectHasWorkspaces = errors.New("project has registered workspaces")
-	// ErrEndpointNotFound is returned when the server does not expose an endpoint.
-	ErrEndpointNotFound = errors.New("server endpoint not found")
+	// ErrEndpointNotFound is returned when the daemon does not expose an endpoint.
+	ErrEndpointNotFound = errors.New("daemon endpoint not found")
 	// ErrDocsHashNotInCurrentHistory is returned when a workspace reports a non-mainline docs hash.
 	ErrDocsHashNotInCurrentHistory = errors.New("docs hash is not in current history")
-	// ErrServerError is returned for non-specific server errors.
-	ErrServerError = errors.New("server error")
+	// ErrDaemonError is returned for non-specific daemon errors.
+	ErrDaemonError = errors.New("daemon error")
 )
 
 // ---- Request/Response DTOs ----
@@ -95,14 +95,14 @@ type CreateProjectRequest struct {
 }
 
 // StateResponse is the response from GET /state.
-// Matches server's ServerStateResponse structure.
+// Matches daemon's DaemonStateResponse structure.
 type StateResponse struct {
 	DocsHeads  map[string]string  `json:"docs_heads"`
 	Workspaces []WorkspaceSummary `json:"workspaces"`
 }
 
 // WorkspaceSummary contains the summary of a registered workspace.
-// Matches server's WorkspaceSummary structure.
+// Matches daemon's WorkspaceSummary structure.
 type WorkspaceSummary struct {
 	WorkspaceID    string  `json:"workspace_id"`
 	Project        string  `json:"project"`
@@ -149,7 +149,7 @@ type SanhoClient interface {
 	// DocsHead retrieves the current HEAD commit hash for the given project.
 	DocsHead(ctx context.Context, project docs.ProjectName) (docs.CommitHash, error)
 
-	// RegisterWorkspace registers a new workspace with the server.
+	// RegisterWorkspace registers a new workspace with the daemon.
 	RegisterWorkspace(ctx context.Context, req RegisterWorkspaceRequest) (RegisterWorkspaceResponse, error)
 
 	// ReportWorkspaceDocsHash records the docs commit currently adopted by a workspace.
@@ -158,10 +158,10 @@ type SanhoClient interface {
 	// DocsSnapshot retrieves a snapshot of docs at the specified commit (empty for HEAD).
 	DocsSnapshot(ctx context.Context, project docs.ProjectName, commit docs.CommitHash) (docs.DocsSnapshot, docs.CommitHash, error)
 
-	// DocsPush pushes a docs snapshot to the server.
+	// DocsPush pushes a docs snapshot to the daemon.
 	DocsPush(ctx context.Context, req DocsPushRequest) (DocsPushResponse, error)
 
-	// GetState retrieves the server state (optionally filtered by project).
+	// GetState retrieves the daemon state (optionally filtered by project).
 	GetState(ctx context.Context, project *docs.ProjectName) (StateResponse, error)
 
 	// GetProjectStatus compares all project workspaces to the caller's local docs hash.
@@ -172,13 +172,13 @@ type SanhoClient interface {
 		docsHash docs.CommitHash,
 	) (ProjectStatusResponse, error)
 
-	// CreateOrUpdateProject creates or updates a project on the server.
+	// CreateOrUpdateProject creates or updates a project on the daemon.
 	CreateOrUpdateProject(ctx context.Context, req CreateProjectRequest) error
 
-	// DeleteProject deletes a project from the server.
+	// DeleteProject deletes a project from the daemon.
 	DeleteProject(ctx context.Context, project docs.ProjectName, force bool) error
 
-	// DeleteWorkspace deletes a workspace from the server.
+	// DeleteWorkspace deletes a workspace from the daemon.
 	DeleteWorkspace(ctx context.Context, workspaceID workspace.WorkspaceID) error
 }
 
@@ -573,9 +573,9 @@ func (c *HTTPClient) checkError(resp *http.Response) error {
 		case "docs_hash_not_in_current_history":
 			return ErrDocsHashNotInCurrentHistory
 		default:
-			return fmt.Errorf("%w: %s (status %d)", ErrServerError, errResp.Error, resp.StatusCode)
+			return fmt.Errorf("%w: %s (status %d)", ErrDaemonError, errResp.Error, resp.StatusCode)
 		}
 	}
 
-	return fmt.Errorf("%w: status %d, body: %s", ErrServerError, resp.StatusCode, string(body))
+	return fmt.Errorf("%w: status %d, body: %s", ErrDaemonError, resp.StatusCode, string(body))
 }

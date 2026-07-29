@@ -27,8 +27,8 @@ import (
 
 const testDaemonBaseURL = "http://sanho"
 
-// configuredSocketPath returns an explicitly configured E2E server. With no
-// override, tests must launch an isolated server instead of reusing a
+// configuredSocketPath returns an explicitly configured E2E daemon. With no
+// override, tests must launch an isolated daemon instead of reusing a
 // developer's daemon and persistent state.
 func configuredSocketPath() (string, bool) {
 	if path := strings.TrimSpace(os.Getenv("SANHO_E2E_SOCKET")); path != "" {
@@ -37,9 +37,9 @@ func configuredSocketPath() (string, bool) {
 	return "", false
 }
 
-// requireServer uses an explicit server override when present. Otherwise it
-// launches a server with a fresh runtime home and Unix socket.
-func requireServer(t *testing.T, ctx context.Context) (string, *http.Client, string) {
+// requireDaemon uses an explicit daemon override when present. Otherwise it
+// launches a daemon with a fresh runtime home and Unix socket.
+func requireDaemon(t *testing.T, ctx context.Context) (string, *http.Client, string) {
 	t.Helper()
 
 	socketPath, configured := configuredSocketPath()
@@ -53,26 +53,26 @@ func requireServer(t *testing.T, ctx context.Context) (string, *http.Client, str
 		return testDaemonBaseURL, unixHTTPClient(socketPath, 10*time.Second), socketPath
 	}
 
-	testDir, err := os.MkdirTemp("/tmp", "sanho-server-e2e-")
+	testDir, err := os.MkdirTemp("/tmp", "sanho-daemon-e2e-")
 	if err != nil {
 		t.Fatalf("create E2E runtime directory: %v", err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(testDir) })
 	runtimeHome := filepath.Join(testDir, "home")
 	socketPath = filepath.Join(testDir, "sanhod.sock")
-	serverBinary := strings.TrimSpace(os.Getenv("SANHO_DAEMON_BINARY"))
-	if serverBinary == "" {
-		serverBinary = filepath.Join(testDir, "sanhod")
-		build := exec.Command("go", "build", "-o", serverBinary, "./cmd/sanhod")
+	daemonBinary := strings.TrimSpace(os.Getenv("SANHO_DAEMON_BINARY"))
+	if daemonBinary == "" {
+		daemonBinary = filepath.Join(testDir, "sanhod")
+		build := exec.Command("go", "build", "-o", daemonBinary, "./cmd/sanhod")
 		build.Dir = repoRoot(t)
 		if output, buildErr := build.CombinedOutput(); buildErr != nil {
 			t.Fatalf("build sanhod for E2E: %v\noutput:\n%s", buildErr, output)
 		}
 	}
 
-	serverCtx, cancel := context.WithCancel(context.Background())
+	daemonCtx, cancel := context.WithCancel(context.Background())
 	var logs bytes.Buffer
-	cmd := exec.CommandContext(serverCtx, serverBinary)
+	cmd := exec.CommandContext(daemonCtx, daemonBinary)
 	cmd.Dir = repoRoot(t)
 	cmd.Env = append(os.Environ(),
 		"SANHO_HOME="+runtimeHome,
@@ -82,7 +82,7 @@ func requireServer(t *testing.T, ctx context.Context) (string, *http.Client, str
 	cmd.Stderr = &logs
 
 	var stopOnce sync.Once
-	stopServer := func() {
+	stopDaemon := func() {
 		stopOnce.Do(func() {
 			cancel()
 			if cmd.Process != nil {
@@ -93,10 +93,10 @@ func requireServer(t *testing.T, ctx context.Context) (string, *http.Client, str
 	}
 
 	if err := cmd.Start(); err != nil {
-		stopServer()
-		t.Fatalf("failed to start sanhod locally: %v\nserver logs:\n%s", err, logs.String())
+		stopDaemon()
+		t.Fatalf("failed to start sanhod locally: %v\ndaemon logs:\n%s", err, logs.String())
 	}
-	t.Cleanup(stopServer)
+	t.Cleanup(stopDaemon)
 
 	for {
 		if err := pingHealth(socketPath, 100*time.Millisecond); err == nil {
@@ -104,8 +104,8 @@ func requireServer(t *testing.T, ctx context.Context) (string, *http.Client, str
 		}
 		select {
 		case <-ctx.Done():
-			stopServer()
-			t.Fatalf("sanhod not healthy at %s after bootstrap: %v\nserver logs:\n%s", socketPath, ctx.Err(), logs.String())
+			stopDaemon()
+			t.Fatalf("sanhod not healthy at %s after bootstrap: %v\ndaemon logs:\n%s", socketPath, ctx.Err(), logs.String())
 		case <-time.After(25 * time.Millisecond):
 		}
 	}

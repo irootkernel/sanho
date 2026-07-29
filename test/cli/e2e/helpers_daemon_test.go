@@ -184,7 +184,7 @@ func deleteWorkspaceViaCLI(t *testing.T, cli, socketPath, workspaceID string) {
 		// Allow idempotent cleanup.
 		if strings.Contains(string(out), "workspace not found") ||
 			strings.Contains(string(out), "unknown_workspace") ||
-			strings.Contains(string(out), "not registered on the server") {
+			strings.Contains(string(out), "not registered on the daemon") {
 			return
 		}
 		t.Fatalf("workspace unregister failed: %v\nOutput:\n%s", err, string(out))
@@ -313,7 +313,7 @@ func createSnapshotTar(t *testing.T, files map[string]string) []byte {
 	return buf.Bytes()
 }
 
-// pushDocsViaHTTP pushes a snapshot to the server and returns new docs hash.
+// pushDocsViaHTTP pushes a snapshot to the daemon and returns new docs hash.
 func pushDocsViaHTTP(t *testing.T, socketPath, workspaceID, baseHash string, files map[string]string, actor string) string {
 	t.Helper()
 	snapshot := createSnapshotTar(t, files)

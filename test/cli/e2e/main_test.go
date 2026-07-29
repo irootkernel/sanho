@@ -19,18 +19,18 @@ func TestMain(m *testing.M) {
 		os.Exit(m.Run())
 	}
 
-	stopServer, err := startIsolatedServer()
+	stopDaemon, err := startIsolatedDaemon()
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "start isolated sanhod for CLI E2E: %v\n", err)
 		os.Exit(1)
 	}
 
 	code := m.Run()
-	stopServer()
+	stopDaemon()
 	os.Exit(code)
 }
 
-func startIsolatedServer() (func(), error) {
+func startIsolatedDaemon() (func(), error) {
 	tempDir, err := os.MkdirTemp("/tmp", "sanho-cli-e2e-")
 	if err != nil {
 		return nil, fmt.Errorf("create temp directory: %w", err)
@@ -39,20 +39,20 @@ func startIsolatedServer() (func(), error) {
 	cleanupTempDir := func() {
 		_ = os.RemoveAll(tempDir)
 	}
-	serverBinary := strings.TrimSpace(os.Getenv("SANHO_DAEMON_BINARY"))
-	if serverBinary == "" {
-		serverBinary = filepath.Join(tempDir, "sanhod")
-		build := exec.Command("go", "build", "-o", serverBinary, "./cmd/sanhod")
+	daemonBinary := strings.TrimSpace(os.Getenv("SANHO_DAEMON_BINARY"))
+	if daemonBinary == "" {
+		daemonBinary = filepath.Join(tempDir, "sanhod")
+		build := exec.Command("go", "build", "-o", daemonBinary, "./cmd/sanhod")
 		build.Dir = cliE2ERepoRoot()
 		if output, buildErr := build.CombinedOutput(); buildErr != nil {
 			cleanupTempDir()
-			return nil, fmt.Errorf("build server: %w\noutput:\n%s", buildErr, output)
+			return nil, fmt.Errorf("build daemon: %w\noutput:\n%s", buildErr, output)
 		}
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	var logs bytes.Buffer
-	cmd := exec.CommandContext(ctx, serverBinary)
+	cmd := exec.CommandContext(ctx, daemonBinary)
 	cmd.Dir = cliE2ERepoRoot()
 	cmd.Env = append(os.Environ(),
 		"SANHO_HOME="+filepath.Join(tempDir, "home"),
@@ -64,7 +64,7 @@ func startIsolatedServer() (func(), error) {
 	if err := cmd.Start(); err != nil {
 		cancel()
 		cleanupTempDir()
-		return nil, fmt.Errorf("start server: %w", err)
+		return nil, fmt.Errorf("start daemon: %w", err)
 	}
 
 	socketPath := filepath.Join(tempDir, "sanhod.sock")
@@ -84,7 +84,7 @@ func startIsolatedServer() (func(), error) {
 			cancel()
 			_ = cmd.Wait()
 			cleanupTempDir()
-			return nil, fmt.Errorf("wait for health at %s: %w\nserver logs:\n%s", socketPath, waitCtx.Err(), logs.String())
+			return nil, fmt.Errorf("wait for health at %s: %w\ndaemon logs:\n%s", socketPath, waitCtx.Err(), logs.String())
 		case <-time.After(25 * time.Millisecond):
 		}
 	}
@@ -92,7 +92,7 @@ func startIsolatedServer() (func(), error) {
 		cancel()
 		_ = cmd.Wait()
 		cleanupTempDir()
-		return nil, fmt.Errorf("configure server socket: %w", err)
+		return nil, fmt.Errorf("configure daemon socket: %w", err)
 	}
 
 	return func() {

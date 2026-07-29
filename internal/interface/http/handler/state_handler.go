@@ -60,7 +60,7 @@ func (h *StateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	resp := dto.ServerStateResponse{
+	resp := dto.DaemonStateResponse{
 		DocsHeads:  docsHeads,
 		Workspaces: workspaceSummaries,
 	}

@@ -116,7 +116,7 @@ If path is not specified, the current directory is used.`,
 			resp, err := httpClient.RegisterWorkspace(ctx, req)
 			if err != nil {
 				if errors.Is(err, httpclient.ErrUnknownProject) {
-					return fmt.Errorf("project '%s' is not registered on the server. Run 'sanho project add' first", projectName)
+					return fmt.Errorf("project '%s' is not registered on the daemon. Run 'sanho project add' first", projectName)
 				}
 				return fmt.Errorf("failed to register workspace: %w", err)
 			}
@@ -160,7 +160,7 @@ and other configuration files will remain.`,
 
 			// Confirmation prompt unless --yes is provided
 			if !yes {
-				fmt.Printf("Unregistering workspace '%s' from the server.\n", workspaceID)
+				fmt.Printf("Unregistering workspace '%s' from the daemon.\n", workspaceID)
 				fmt.Println("Local directories will not be deleted.")
 				confirmed, err := promptForConfirmation("Proceed? (y/N): ")
 				if err != nil {
@@ -179,7 +179,7 @@ and other configuration files will remain.`,
 
 			if err := httpClient.DeleteWorkspace(ctx, workspace.WorkspaceID(workspaceID)); err != nil {
 				if errors.Is(err, httpclient.ErrUnknownWorkspace) {
-					return fmt.Errorf("workspace '%s' is not registered on the server", workspaceID)
+					return fmt.Errorf("workspace '%s' is not registered on the daemon", workspaceID)
 				}
 				return fmt.Errorf("failed to unregister workspace: %w", err)
 			}

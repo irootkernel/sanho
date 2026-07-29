@@ -17,7 +17,7 @@ import (
 var (
 	// ErrNoPendingFix indicates no pending fix state exists.
 	ErrNoPendingFix = errors.New("no pending fix state")
-	// ErrFixHeadChanged indicates the server HEAD changed during fix.
+	// ErrFixHeadChanged indicates the daemon HEAD changed during fix.
 	ErrFixHeadChanged = errors.New("docs head changed during fix")
 	// ErrActorEmailRequired indicates actor email is required but not provided.
 	ErrActorEmailRequired = errors.New("actor email is required")
@@ -146,19 +146,19 @@ func (u *FixUseCase) Execute(ctx context.Context, workDir string) error {
 		return ErrConflictMarkerFound
 	}
 
-	// Step 5: Get server HEAD
-	u.output.Info("Checking server docs HEAD...")
-	serverHead, err := u.httpClient.DocsHead(ctx, config.Project)
+	// Step 5: Get daemon HEAD
+	u.output.Info("Checking daemon docs HEAD...")
+	daemonHead, err := u.httpClient.DocsHead(ctx, config.Project)
 	if err != nil {
-		return fmt.Errorf("failed to get server HEAD: %w", err)
+		return fmt.Errorf("failed to get daemon HEAD: %w", err)
 	}
 
-	// Step 6: Compare base hash with server HEAD
-	if string(baseHash) != string(serverHead) {
-		// Server HEAD changed during fix - clear pending fix and inform user
+	// Step 6: Compare base hash with daemon HEAD
+	if string(baseHash) != string(daemonHead) {
+		// Daemon HEAD changed during fix - clear pending fix and inform user
 		u.output.Warning("Docs HEAD changed during fix attempt.")
 		u.output.Warning(fmt.Sprintf("  local base: %s", baseHash))
-		u.output.Warning(fmt.Sprintf("  server HEAD: %s", serverHead))
+		u.output.Warning(fmt.Sprintf("  daemon HEAD: %s", daemonHead))
 		u.output.Warning("")
 		u.output.Warning("Clearing pending fix state. On your next commit, pre-commit will")
 		u.output.Warning("perform a fresh merge against the latest HEAD.")
@@ -202,7 +202,7 @@ func (u *FixUseCase) Execute(ctx context.Context, workDir string) error {
 		return ErrActorEmailRequired
 	}
 
-	u.output.Info("Pushing docs to server...")
+	u.output.Info("Pushing docs to daemon...")
 	pushReq := DocsPushRequest{
 		WorkspaceID:  config.WorkspaceID,
 		BaseDocsHash: baseHash,
@@ -239,7 +239,7 @@ func (u *FixUseCase) Execute(ctx context.Context, workDir string) error {
 			u.output.Error("Another workspace is currently updating docs. Please try again shortly.")
 			return ErrDocsRepoBusy
 		}
-		return fmt.Errorf("server error: %s", resp.Error)
+		return fmt.Errorf("daemon error: %s", resp.Error)
 	}
 
 	switch resp.Status {
@@ -271,7 +271,7 @@ func (u *FixUseCase) Execute(ctx context.Context, workDir string) error {
 
 	case docs.DocsPushStatusOutdated:
 		// This shouldn't happen if Step 6 passed, but handle it gracefully
-		u.output.Warning("Server HEAD changed. Clearing pending fix state.")
+		u.output.Warning("Daemon HEAD changed. Clearing pending fix state.")
 		if err := u.pendingFixStore.Remove(pendingFixPath); err != nil {
 			return fmt.Errorf("failed to remove pending fix state: %w", err)
 		}

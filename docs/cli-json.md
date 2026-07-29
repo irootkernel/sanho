@@ -38,9 +38,9 @@ sanho --socket /absolute/path/to/sanhod.sock state --all --json
   `not_in_workspace`
 - 로컬 상태: `invalid_workspace_config`, `docs_hash_not_found`,
   `docs_hash_read_failed`, `pending_fix_read_failed`
-- server 상태: `unknown_project`, `unknown_workspace`,
+- daemon 상태: `unknown_project`, `unknown_workspace`,
   `workspace_project_mismatch`, `unknown_docs_commit`,
-  `server_request_failed`
+  `daemon_request_failed`
 - 내부 실패: `internal_error`
 
 ## `version`
@@ -80,7 +80,7 @@ commit과 build date는 기존 사람용 `sanho version` 출력에서만 제공�
 
 작업공간 항목은 기존 사람용 표와 같은 repository 라벨, workspace ID,
 전체 docs hash, 현재 작업공간 및 HEAD와의 관계만 포함한다. 원본
-`local_path`, 전체 repository URL과 server 내부 식별자는 추가로 노출하지
+`local_path`, 전체 repository URL과 daemon 내부 식별자는 추가로 노출하지
 않는다.
 
 ## `state`

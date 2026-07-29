@@ -24,8 +24,8 @@ import (
 	"github.com/irootkernel/sanho/internal/usecase/workspace"
 )
 
-// This test spins up the HTTP server in-process to validate handler wiring.
-func TestIntegration_Server(t *testing.T) {
+// This test spins up the HTTP daemon in-process to validate handler wiring.
+func TestIntegration_Daemon(t *testing.T) {
 	// 1. Setup Environment
 	tempDir, err := os.MkdirTemp("", "sanho-integration-*")
 	if err != nil {
@@ -51,10 +51,10 @@ func TestIntegration_Server(t *testing.T) {
 	out := runCmd(t, originPath, "git", "rev-parse", "HEAD")
 	expectedHead := strings.TrimSpace(string(out))
 
-	// Server State Path
+	// Daemon State Path
 	statePath := filepath.Join(tempDir, "state.json")
 
-	// 2. Wire up Server
+	// 2. Wire up Daemon
 	stateRepo, err := state.NewFileStateRepository(statePath)
 	if err != nil {
 		t.Fatal(err)
@@ -168,7 +168,7 @@ func TestIntegration_Server(t *testing.T) {
 	runCmd(t, originPath, "git", "add", ".")
 	runCmd(t, originPath, "git", "commit", "-m", "Add docs")
 
-	// Manually sync server repos to pick up the new commit (since we don't have bg sync yet)
+	// Manually sync daemon repos to pick up the new commit (since we don't have bg sync yet)
 	if err := gitManager.Sync(context.Background(), stateRepo.ListDocsRepos()); err != nil {
 		t.Fatalf("failed to sync repos: %v", err)
 	}
@@ -203,7 +203,7 @@ func TestIntegration_Server(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to get state after docs hash report: %v", err)
 	}
-	var stateResp dto.ServerStateResponse
+	var stateResp dto.DaemonStateResponse
 	if err := json.NewDecoder(resp.Body).Decode(&stateResp); err != nil {
 		t.Fatal(err)
 	}

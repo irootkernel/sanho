@@ -79,7 +79,7 @@ func TestDocsPush_Integration(t *testing.T) {
 	// Get initial HEAD
 	initialHead := strings.TrimSpace(string(runGitCmdOutput(t, localPath, "rev-parse", "HEAD")))
 
-	// 4. Setup server
+	// 4. Setup daemon
 	statePath := filepath.Join(tempDir, "state.json")
 	stateRepo, err := state.NewFileStateRepository(statePath)
 	if err != nil {
@@ -173,12 +173,12 @@ func TestDocsPush_Integration(t *testing.T) {
 		}
 	})
 
-	// Get new HEAD after first push from server's clone
-	serverRepo, ok := stateRepo.GetDocsRepo("test-repo")
+	// Get new HEAD after first push from daemon's clone
+	daemonRepo, ok := stateRepo.GetDocsRepo("test-repo")
 	if !ok {
 		t.Fatal("Expected test-repo to be registered")
 	}
-	newHead := strings.TrimSpace(string(runGitCmdOutput(t, serverRepo.Path, "rev-parse", "HEAD")))
+	newHead := strings.TrimSpace(string(runGitCmdOutput(t, daemonRepo.Path, "rev-parse", "HEAD")))
 
 	// Test 2: Push identical content -> nochange
 	t.Run("Push identical content - NoChange", func(t *testing.T) {

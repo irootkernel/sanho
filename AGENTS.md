@@ -4,7 +4,7 @@
 - `cmd/sanhod` hosts the sanhod HTTP service; `cmd/sanho` is the CLI entrypoint.
 - Core logic sits in `internal/{config,domain,infra,interface,usecase}`; keep new packages domain-oriented.
 - Docs/roadmaps live in `docs/`; fixture docs repos for tests in `docs_repos/`; runtime artifacts in `data/` and `tmp/` (ignored); builds in `bin/`.
-- Tests: co-locate package unit tests as `*_test.go`; server integration in `test/integration`, server e2e in `test/e2e`; CLI integration/e2e in `test/cli/...`.
+- Tests: co-locate package unit tests as `*_test.go`; daemon integration in `test/integration`, daemon e2e in `test/e2e`; CLI integration/e2e in `test/cli/...`.
 
 ## Language Policy
 - Code, inline comments, and all CLI/HTTP interfaces stay in English.
@@ -13,7 +13,7 @@
 ## Build, Test, and Development Commands
 - Require Go 1.25+. Local daemon: `go run ./cmd/sanhod` (override `SANHO_HOME`, `SANHO_SOCKET`).
 - Build/install: `make daemon-build` → `bin/sanhod`, `make cli-build` → `bin/sanho`; `make install` installs both to Go's binary directory.
-- Server checks: `make daemon-test-prepare` (generate+fmt+vet), `make daemon-test-unit`, `make daemon-test-integration`, `make daemon-test-e2e` (isolated daemon by default; set `E2E_SOCKET` for an explicit server), or `make daemon-test` for all.
+- Daemon checks: `make daemon-test-prepare` (generate+fmt+vet), `make daemon-test-unit`, `make daemon-test-integration`, `make daemon-test-e2e` (isolated daemon by default; set `E2E_SOCKET` for an explicit daemon), or `make daemon-test` for all.
 - CLI checks: `make cli-test-prepare`, `make cli-test-unit`, `make cli-test-integration` (sets `SANHO_CLI_BINARY`), `make cli-test-e2e` (`SANHO_E2E_SOCKET`), or `make cli-test`.
 - Local daemon loop: `make daemon-run` builds and runs `bin/sanhod`.
 
@@ -24,7 +24,7 @@
 
 ## Testing Guidelines
 - Add unit tests near new code; move cross-adapter cases to `test/integration` and end-to-end flows to `test/e2e` or `test/cli/e2e`.
-- Set `SANHO_E2E_SOCKET` for non-default servers; point `SANHO_CLI_BINARY` at a fresh build for CLI suites.
+- Set `SANHO_E2E_SOCKET` for non-default daemons; point `SANHO_CLI_BINARY` at a fresh build for CLI suites.
 - Keep failing tests that capture expected behavior when fixing regressions; aim for coverage on new branches.
 
 ## Commit & Pull Request Guidelines

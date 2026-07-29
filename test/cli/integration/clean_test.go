@@ -14,7 +14,7 @@ func TestCLIClean_RemovesFilesAndHooks(t *testing.T) {
 	cliBinary := getCliBinary(t)
 
 	deleteCalls := 0
-	server := newUnixTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	daemon := newUnixTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/workspaces/") {
 			deleteCalls++
 			w.Header().Set("Content-Type", "application/json")
@@ -23,7 +23,7 @@ func TestCLIClean_RemovesFilesAndHooks(t *testing.T) {
 		}
 		w.WriteHeader(http.StatusNotFound)
 	}))
-	defer server.Close()
+	defer daemon.Close()
 
 	wsDir := t.TempDir()
 
@@ -40,7 +40,7 @@ func TestCLIClean_RemovesFilesAndHooks(t *testing.T) {
 
 	// Workspace files
 	config := `{
-  "socket_path": "` + server.URL + `",
+  "socket_path": "` + daemon.SocketPath + `",
   "workspace_id": "proj:` + wsDir + `",
   "project": "proj",
   "docs_dir": "docs",
@@ -97,20 +97,20 @@ func TestCLIClean_RemovesFilesAndHooks(t *testing.T) {
 	}
 }
 
-func TestCLIClean_OfflineSkipsServer(t *testing.T) {
+func TestCLIClean_OfflineSkipsDaemon(t *testing.T) {
 	cliBinary := getCliBinary(t)
 
-	server := newUnixTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Fatalf("server should not be called in offline mode")
+	daemon := newUnixTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatalf("daemon should not be called in offline mode")
 	}))
-	defer server.Close()
+	defer daemon.Close()
 
 	wsDir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(wsDir, ".git", "hooks"), 0755); err != nil {
 		t.Fatal(err)
 	}
 	cfg := `{
-  "socket_path": "` + server.URL + `",
+  "socket_path": "` + daemon.SocketPath + `",
   "workspace_id": "proj:` + wsDir + `",
   "project": "proj",
   "docs_dir": "docs",

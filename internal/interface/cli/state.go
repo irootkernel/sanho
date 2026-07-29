@@ -40,7 +40,7 @@ func newStateCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "state",
-		Short: "Query server state for registered projects and workspaces",
+		Short: "Query daemon state for registered projects and workspaces",
 		Long: `Query the sanhod for the current state of docs HEAD
 and registered workspaces.
 
@@ -73,7 +73,7 @@ func runStateCommand(cmd *cobra.Command, showAll bool, jsonOutput bool) error {
 		return withErrorCode("internal_error", err)
 	}
 
-	// Load config to get server URL and project
+	// Load config to get daemon socket path and project
 	configLoader := fs.NewFileConfigLoader()
 	config, err := configLoader.Load(cwd)
 
@@ -108,7 +108,7 @@ func runStateCommand(cmd *cobra.Command, showAll bool, jsonOutput bool) error {
 		return withErrorCode("invalid_socket_path", err)
 	}
 
-	// Get state from server
+	// Get state from daemon
 	var resp httpclient.StateResponse
 	if showAll {
 		resp, err = httpClient.GetState(ctx, nil)
@@ -119,15 +119,15 @@ func runStateCommand(cmd *cobra.Command, showAll bool, jsonOutput bool) error {
 	if err != nil {
 		if errors.Is(err, httpclient.ErrUnknownProject) {
 			if !jsonOutput {
-				cmd.PrintErrf("sanho state: project '%s' is not registered on server.\n", currentProject)
+				cmd.PrintErrf("sanho state: project '%s' is not registered on daemon.\n", currentProject)
 				cmd.PrintErrf("Please run 'sanho project add' to register the project.\n")
 			}
 			return withErrorCode("unknown_project", err)
 		}
 		if !jsonOutput {
-			cmd.PrintErrf("sanho state: failed to get state from server: %v\n", err)
+			cmd.PrintErrf("sanho state: failed to get state from daemon: %v\n", err)
 		}
-		return withErrorCode("server_request_failed", err)
+		return withErrorCode("daemon_request_failed", err)
 	}
 
 	// Output the state

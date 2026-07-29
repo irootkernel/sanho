@@ -45,7 +45,7 @@ func runPreCommitHook(cmd *cobra.Command) error {
 	snapshotApplier := fs.NewSnapshotApplier()
 	output := newCLIPreCommitOutput(cmd)
 
-	// Load config first to get server URL
+	// Load config first to get daemon socket path
 	config, err := configLoader.Load(cwd)
 	if err != nil {
 		cmd.PrintErrf("sanho hook pre-commit: %v\n", err)
@@ -107,7 +107,7 @@ func runPreCommitHook(cmd *cobra.Command) error {
 		}
 		remoteHash, err := rawHTTPClient.DocsHead(ctx, config.Project)
 		if err != nil {
-			return fmt.Errorf("sanho hook pre-commit: read server docs version: %w", err)
+			return fmt.Errorf("sanho hook pre-commit: read daemon docs version: %w", err)
 		}
 		hasPulledDocs, err := pullCommit.hasPulledDocs(ctx, cwd)
 		if err != nil {

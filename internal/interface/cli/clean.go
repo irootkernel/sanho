@@ -97,15 +97,15 @@ func newCleanCmd() *cobra.Command {
 				}
 				if err := client.DeleteWorkspace(ctx, config.WorkspaceID); err != nil {
 					if errors.Is(err, httpclient.ErrUnknownWorkspace) {
-						cmd.Println("sanho: workspace already removed on server (unknown_workspace). Continuing...")
+						cmd.Println("sanho: workspace already removed on daemon (unknown_workspace). Continuing...")
 					} else {
-						return fmt.Errorf("failed to delete workspace on server: %w", err)
+						return fmt.Errorf("failed to delete workspace on daemon: %w", err)
 					}
 				} else {
-					cmd.Println("sanho: workspace removed from server.")
+					cmd.Println("sanho: workspace removed from daemon.")
 				}
 			} else if offline && !dryRun {
-				cmd.Println("sanho: offline mode - skipping server workspace deletion.")
+				cmd.Println("sanho: offline mode - skipping daemon workspace deletion.")
 			}
 
 			removePath := func(p string, allowMissing bool) error {
@@ -168,7 +168,7 @@ func newCleanCmd() *cobra.Command {
 	}
 
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "Skip confirmation prompt")
-	cmd.Flags().BoolVar(&offline, "offline", false, "Skip server workspace deletion")
+	cmd.Flags().BoolVar(&offline, "offline", false, "Skip daemon workspace deletion")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Show actions without making changes")
 	cmd.Flags().BoolVar(&removeDocs, "remove-docs", false, "Remove docs directory as well")
 

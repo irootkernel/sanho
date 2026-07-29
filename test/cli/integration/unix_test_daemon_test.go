@@ -9,12 +9,12 @@ import (
 	"testing"
 )
 
-type unixTestServer struct {
-	URL    string
-	server *httptest.Server
+type unixTestDaemon struct {
+	SocketPath string
+	httpServer *httptest.Server
 }
 
-func newUnixTestServer(t *testing.T, handler http.Handler) *unixTestServer {
+func newUnixTestDaemon(t *testing.T, handler http.Handler) *unixTestDaemon {
 	t.Helper()
 	tempDir, err := os.MkdirTemp("/tmp", "sanho-cli-integration-")
 	if err != nil {
@@ -26,12 +26,12 @@ func newUnixTestServer(t *testing.T, handler http.Handler) *unixTestServer {
 	if err != nil {
 		t.Fatalf("listen on Unix socket: %v", err)
 	}
-	server := httptest.NewUnstartedServer(handler)
-	server.Listener = listener
-	server.Start()
-	return &unixTestServer{URL: socketPath, server: server}
+	httpServer := httptest.NewUnstartedServer(handler)
+	httpServer.Listener = listener
+	httpServer.Start()
+	return &unixTestDaemon{SocketPath: socketPath, httpServer: httpServer}
 }
 
-func (s *unixTestServer) Close() {
-	s.server.Close()
+func (s *unixTestDaemon) Close() {
+	s.httpServer.Close()
 }

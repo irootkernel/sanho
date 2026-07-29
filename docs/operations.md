@@ -142,7 +142,7 @@ make cli-test-e2e
 make install-test
 ```
 
-server와 CLI E2E는 기본적으로 임시 home과 Unix socket을 사용하는 독립
+daemon과 CLI E2E는 기본적으로 임시 home과 Unix socket을 사용하는 독립
 daemon을 띄운다. 실행 중인 별도 daemon을 대상으로 확인하려는 경우에만
 `E2E_SOCKET`에 절대 socket 경로를 명시한다.
 

@@ -10,11 +10,11 @@ import (
 	"time"
 )
 
-// TestE2ECLI_ProjectWorkspaceLifecycle covers project add, workspace register/unregister, and project delete via CLI against real server.
+// TestE2ECLI_ProjectWorkspaceLifecycle covers project add, workspace register/unregister, and project delete via CLI against real daemon.
 func TestE2ECLI_ProjectWorkspaceLifecycle(t *testing.T) {
 	cliBinary := getCliBinary(t)
 	socketPath := getSocketPath(t)
-	ensureServerAvailable(t, socketPath)
+	ensureDaemonAvailable(t, socketPath)
 
 	originPath, _ := createOriginRepo(t, map[string]string{
 		"docs/index.md": "# lifecycle\n",
@@ -36,7 +36,7 @@ func TestE2ECLI_ProjectWorkspaceLifecycle(t *testing.T) {
 		t.Fatalf("current head empty")
 	}
 
-	// Validate server state contains workspace
+	// Validate daemon state contains workspace
 	state := fetchStateViaHTTP(t, socketPath)
 	found := false
 	if wss, ok := state["workspaces"].([]interface{}); ok {
@@ -48,7 +48,7 @@ func TestE2ECLI_ProjectWorkspaceLifecycle(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Fatalf("workspace %s not found in server state", wsID)
+		t.Fatalf("workspace %s not found in daemon state", wsID)
 	}
 
 	// Workspace unregister
@@ -76,7 +76,7 @@ func TestE2ECLI_ProjectWorkspaceLifecycle(t *testing.T) {
 func TestE2ECLI_FixWorkflow(t *testing.T) {
 	cliBinary := getCliBinary(t)
 	socketPath := getSocketPath(t)
-	ensureServerAvailable(t, socketPath)
+	ensureDaemonAvailable(t, socketPath)
 
 	originPath, initialHead := createOriginRepo(t, map[string]string{
 		"docs/index.md": "# initial\n",
@@ -132,9 +132,9 @@ func TestE2ECLI_FixWorkflow(t *testing.T) {
 		t.Fatalf("docs hash not updated; still %s", newHash)
 	}
 
-	// Server head should match updated hash
-	serverHead := fetchHeadViaHTTP(t, socketPath, project)
-	if serverHead != newHash {
-		t.Fatalf("server head %s != local hash %s", serverHead, newHash)
+	// Daemon head should match updated hash
+	daemonHead := fetchHeadViaHTTP(t, socketPath, project)
+	if daemonHead != newHash {
+		t.Fatalf("daemon head %s != local hash %s", daemonHead, newHash)
 	}
 }

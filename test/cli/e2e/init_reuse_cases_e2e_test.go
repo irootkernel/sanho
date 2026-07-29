@@ -13,7 +13,7 @@ import (
 func TestE2ECLI_InitReuseWithExistingDocs(t *testing.T) {
 	cliBinary := getCliBinary(t)
 	socketPath := getSocketPath(t)
-	ensureServerAvailable(t, socketPath)
+	ensureDaemonAvailable(t, socketPath)
 
 	originPath, head := createOriginRepo(t, map[string]string{
 		"docs/index.md": "# reuse init\n",
@@ -60,6 +60,9 @@ func TestE2ECLI_InitReuseWithExistingDocs(t *testing.T) {
 	}
 	if !strings.Contains(string(out), "기존 docs 디렉토리를 그대로 사용하여 workspace 를 초기화했습니다.") {
 		t.Fatalf("expected reuse mode message in output, got:\n%s", string(out))
+	}
+	if !strings.Contains(string(out), "daemon_head  : "+head) {
+		t.Fatalf("reuse output missing daemon head:\n%s", string(out))
 	}
 
 	assertGitignoreHasEntries(t, wsDir, "# Sanho", ".sanho_docs_hash", ".sanho.json")

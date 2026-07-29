@@ -13,7 +13,7 @@ import (
 )
 
 func TestHTTPClient_DocsHead_Success(t *testing.T) {
-	server := newUnixTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	daemon := newUnixTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/docs/head" {
 			t.Errorf("expected path /docs/head, got %s", r.URL.Path)
 		}
@@ -24,9 +24,9 @@ func TestHTTPClient_DocsHead_Success(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"head": "abc123"})
 	}))
-	defer server.Close()
+	defer daemon.Close()
 
-	client := NewHTTPClient(server.URL)
+	client := NewHTTPClient(daemon.SocketPath)
 	head, err := client.DocsHead(context.Background(), "test-project")
 
 	if err != nil {
@@ -38,13 +38,13 @@ func TestHTTPClient_DocsHead_Success(t *testing.T) {
 }
 
 func TestHTTPClient_DocsHead_UnknownProject(t *testing.T) {
-	server := newUnixTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	daemon := newUnixTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 		json.NewEncoder(w).Encode(map[string]string{"error": "unknown_project"})
 	}))
-	defer server.Close()
+	defer daemon.Close()
 
-	client := NewHTTPClient(server.URL)
+	client := NewHTTPClient(daemon.SocketPath)
 	_, err := client.DocsHead(context.Background(), "unknown")
 
 	if err == nil {
@@ -56,7 +56,7 @@ func TestHTTPClient_DocsHead_UnknownProject(t *testing.T) {
 }
 
 func TestHTTPClient_RegisterWorkspace_Success(t *testing.T) {
-	server := newUnixTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	daemon := newUnixTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			t.Errorf("expected POST, got %s", r.Method)
 		}
@@ -76,9 +76,9 @@ func TestHTTPClient_RegisterWorkspace_Success(t *testing.T) {
 			CurrentDocsHead: "def456",
 		})
 	}))
-	defer server.Close()
+	defer daemon.Close()
 
-	client := NewHTTPClient(server.URL)
+	client := NewHTTPClient(daemon.SocketPath)
 	resp, err := client.RegisterWorkspace(context.Background(), RegisterWorkspaceRequest{
 		Project:    "sudal",
 		LocalPath:  "/path/to/workspace",
@@ -99,7 +99,7 @@ func TestHTTPClient_RegisterWorkspace_Success(t *testing.T) {
 
 func TestHTTPClient_DocsPush_RetryOnBusy(t *testing.T) {
 	attempts := 0
-	server := newUnixTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	daemon := newUnixTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		attempts++
 		if attempts < 3 {
 			w.WriteHeader(http.StatusConflict)
@@ -113,9 +113,9 @@ func TestHTTPClient_DocsPush_RetryOnBusy(t *testing.T) {
 			NewDocsHash: "new123",
 		})
 	}))
-	defer server.Close()
+	defer daemon.Close()
 
-	client := NewHTTPClient(server.URL, WithRetryDelay(10*time.Millisecond))
+	client := NewHTTPClient(daemon.SocketPath, WithRetryDelay(10*time.Millisecond))
 	resp, err := client.DocsPush(context.Background(), DocsPushRequest{
 		WorkspaceID:  "ws-123",
 		BaseDocsHash: "base123",
@@ -135,13 +135,13 @@ func TestHTTPClient_DocsPush_RetryOnBusy(t *testing.T) {
 }
 
 func TestHTTPClient_DocsPush_MaxRetriesExceeded(t *testing.T) {
-	server := newUnixTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	daemon := newUnixTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusConflict)
 		json.NewEncoder(w).Encode(map[string]string{"error": "docs_repo_busy"})
 	}))
-	defer server.Close()
+	defer daemon.Close()
 
-	client := NewHTTPClient(server.URL, WithMaxRetries(2), WithRetryDelay(10*time.Millisecond))
+	client := NewHTTPClient(daemon.SocketPath, WithMaxRetries(2), WithRetryDelay(10*time.Millisecond))
 	_, err := client.DocsPush(context.Background(), DocsPushRequest{
 		WorkspaceID:  "ws-123",
 		BaseDocsHash: "base123",
@@ -156,7 +156,7 @@ func TestHTTPClient_DocsPush_MaxRetriesExceeded(t *testing.T) {
 }
 
 func TestHTTPClient_DeleteProject_Success(t *testing.T) {
-	server := newUnixTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	daemon := newUnixTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodDelete {
 			t.Errorf("expected DELETE, got %s", r.Method)
 		}
@@ -165,9 +165,9 @@ func TestHTTPClient_DeleteProject_Success(t *testing.T) {
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}))
-	defer server.Close()
+	defer daemon.Close()
 
-	client := NewHTTPClient(server.URL)
+	client := NewHTTPClient(daemon.SocketPath)
 	err := client.DeleteProject(context.Background(), "test-project", false)
 
 	if err != nil {
@@ -176,13 +176,13 @@ func TestHTTPClient_DeleteProject_Success(t *testing.T) {
 }
 
 func TestHTTPClient_DeleteProject_HasWorkspaces(t *testing.T) {
-	server := newUnixTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	daemon := newUnixTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusConflict)
 		json.NewEncoder(w).Encode(map[string]string{"error": "project_has_workspaces"})
 	}))
-	defer server.Close()
+	defer daemon.Close()
 
-	client := NewHTTPClient(server.URL)
+	client := NewHTTPClient(daemon.SocketPath)
 	err := client.DeleteProject(context.Background(), "test-project", false)
 
 	if err == nil {
@@ -194,13 +194,13 @@ func TestHTTPClient_DeleteProject_HasWorkspaces(t *testing.T) {
 }
 
 func TestHTTPClient_DeleteWorkspace_UnknownWorkspace(t *testing.T) {
-	server := newUnixTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	daemon := newUnixTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 		json.NewEncoder(w).Encode(map[string]string{"error": "unknown_workspace"})
 	}))
-	defer server.Close()
+	defer daemon.Close()
 
-	client := NewHTTPClient(server.URL)
+	client := NewHTTPClient(daemon.SocketPath)
 	err := client.DeleteWorkspace(context.Background(), "unknown-ws")
 
 	if err == nil {
@@ -212,13 +212,13 @@ func TestHTTPClient_DeleteWorkspace_UnknownWorkspace(t *testing.T) {
 }
 
 func TestHTTPClient_DeleteWorkspace_WorkspaceNotFound(t *testing.T) {
-	server := newUnixTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	daemon := newUnixTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 		json.NewEncoder(w).Encode(map[string]string{"error": "workspace_not_found"})
 	}))
-	defer server.Close()
+	defer daemon.Close()
 
-	client := NewHTTPClient(server.URL)
+	client := NewHTTPClient(daemon.SocketPath)
 	err := client.DeleteWorkspace(context.Background(), "unknown-ws")
 
 	if err == nil {
@@ -230,7 +230,7 @@ func TestHTTPClient_DeleteWorkspace_WorkspaceNotFound(t *testing.T) {
 }
 
 func TestHTTPClient_GetState_Success(t *testing.T) {
-	server := newUnixTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	daemon := newUnixTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/state" {
 			t.Errorf("expected path /state, got %s", r.URL.Path)
 		}
@@ -250,9 +250,9 @@ func TestHTTPClient_GetState_Success(t *testing.T) {
 			},
 		})
 	}))
-	defer server.Close()
+	defer daemon.Close()
 
-	client := NewHTTPClient(server.URL)
+	client := NewHTTPClient(daemon.SocketPath)
 	resp, err := client.GetState(context.Background(), nil)
 
 	if err != nil {
@@ -267,7 +267,7 @@ func TestHTTPClient_GetState_Success(t *testing.T) {
 }
 
 func TestHTTPClientGetProjectStatus(t *testing.T) {
-	server := newUnixTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	daemon := newUnixTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/projects/test-project/status" {
 			t.Errorf("path = %q", r.URL.Path)
 		}
@@ -293,9 +293,9 @@ func TestHTTPClientGetProjectStatus(t *testing.T) {
 			}},
 		})
 	}))
-	defer server.Close()
+	defer daemon.Close()
 
-	client := NewHTTPClient(server.URL)
+	client := NewHTTPClient(daemon.SocketPath)
 	response, err := client.GetProjectStatus(context.Background(), "test-project", "ws-1", "base")
 	if err != nil {
 		t.Fatalf("GetProjectStatus() error = %v", err)
@@ -309,13 +309,13 @@ func TestHTTPClientGetProjectStatus(t *testing.T) {
 }
 
 func TestHTTPClientGetProjectStatusProjectMismatch(t *testing.T) {
-	server := newUnixTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	daemon := newUnixTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "workspace_project_mismatch"})
 	}))
-	defer server.Close()
+	defer daemon.Close()
 
-	client := NewHTTPClient(server.URL)
+	client := NewHTTPClient(daemon.SocketPath)
 	_, err := client.GetProjectStatus(context.Background(), "test-project", "ws-1", "base")
 	if !errors.Is(err, ErrWorkspaceProjectMismatch) {
 		t.Fatalf("GetProjectStatus() error = %v, want workspace project mismatch", err)
@@ -323,13 +323,13 @@ func TestHTTPClientGetProjectStatusProjectMismatch(t *testing.T) {
 }
 
 func TestHTTPClientGetProjectStatusEndpointNotFound(t *testing.T) {
-	server := newUnixTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	daemon := newUnixTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "not_found"})
 	}))
-	defer server.Close()
+	defer daemon.Close()
 
-	client := NewHTTPClient(server.URL)
+	client := NewHTTPClient(daemon.SocketPath)
 	_, err := client.GetProjectStatus(context.Background(), "test-project", "ws-1", "base")
 	if !errors.Is(err, ErrEndpointNotFound) {
 		t.Fatalf("GetProjectStatus() error = %v, want endpoint not found", err)
@@ -337,7 +337,7 @@ func TestHTTPClientGetProjectStatusEndpointNotFound(t *testing.T) {
 }
 
 func TestHTTPClientReportWorkspaceDocsHash(t *testing.T) {
-	server := newUnixTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	daemon := newUnixTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPut {
 			t.Fatalf("method=%s want PUT", r.Method)
 		}
@@ -353,9 +353,9 @@ func TestHTTPClientReportWorkspaceDocsHash(t *testing.T) {
 		}
 		_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 	}))
-	defer server.Close()
+	defer daemon.Close()
 
-	err := NewHTTPClient(server.URL).ReportWorkspaceDocsHash(
+	err := NewHTTPClient(daemon.SocketPath).ReportWorkspaceDocsHash(
 		context.Background(),
 		workspace.WorkspaceID("workspace/one"),
 		ReportWorkspaceDocsHashRequest{
@@ -369,13 +369,13 @@ func TestHTTPClientReportWorkspaceDocsHash(t *testing.T) {
 }
 
 func TestHTTPClientReportWorkspaceDocsHashRejectsDivergedCommit(t *testing.T) {
-	server := newUnixTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	daemon := newUnixTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusConflict)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "docs_hash_not_in_current_history"})
 	}))
-	defer server.Close()
+	defer daemon.Close()
 
-	err := NewHTTPClient(server.URL).ReportWorkspaceDocsHash(
+	err := NewHTTPClient(daemon.SocketPath).ReportWorkspaceDocsHash(
 		context.Background(),
 		"workspace-1",
 		ReportWorkspaceDocsHashRequest{DocsHash: "diverged", ActorEmail: "actor@example.com"},

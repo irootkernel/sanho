@@ -85,7 +85,7 @@ For example: git@github.com:org/my_docs.git -> docs_repo_id = "my_docs"`,
 
 			if err := httpClient.CreateOrUpdateProject(ctx, req); err != nil {
 				if errors.Is(err, httpclient.ErrUnknownProject) {
-					return fmt.Errorf("failed to create project: server returned unknown_project error")
+					return fmt.Errorf("failed to create project: daemon returned unknown_project error")
 				}
 				return fmt.Errorf("failed to create/update project: %w", err)
 			}
@@ -132,7 +132,7 @@ Use --force to delete a project even if it has registered workspaces.`,
 
 			// Confirmation prompt unless --yes is provided
 			if !yes {
-				fmt.Printf("You are about to delete project '%s' from the server.\n", projectName)
+				fmt.Printf("You are about to delete project '%s' from the daemon.\n", projectName)
 				fmt.Println("Registered workspaces will no longer function.")
 				confirmed, err := promptForConfirmation("Proceed? (y/N): ")
 				if err != nil {
@@ -151,7 +151,7 @@ Use --force to delete a project even if it has registered workspaces.`,
 
 			if err := httpClient.DeleteProject(ctx, docs.ProjectName(projectName), force); err != nil {
 				if errors.Is(err, httpclient.ErrUnknownProject) {
-					return fmt.Errorf("project '%s' does not exist on the server", projectName)
+					return fmt.Errorf("project '%s' does not exist on the daemon", projectName)
 				}
 				if errors.Is(err, httpclient.ErrProjectHasWorkspaces) {
 					return fmt.Errorf("project '%s' has registered workspaces. Use --force to delete anyway, or unregister workspaces first", projectName)
