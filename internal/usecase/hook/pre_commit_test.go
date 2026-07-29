@@ -1,10 +1,12 @@
 package hook
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -100,6 +102,7 @@ type fakeGitClient struct {
 	hasChangesErr error
 	mergeResult   MergeResult
 	mergeErr      error
+	mergeCalls    int
 }
 
 func (f *fakeGitClient) HasDocsChangeForCommit(ctx context.Context, repoPath, docsDir string) (bool, error) {
@@ -110,6 +113,7 @@ func (f *fakeGitClient) HasDocsChangeForCommit(ctx context.Context, repoPath, do
 }
 
 func (f *fakeGitClient) MergeFile(ctx context.Context, baseContent, localContent, remoteContent []byte) (MergeResult, error) {
+	f.mergeCalls++
 	if f.mergeErr != nil {
 		return MergeResult{}, f.mergeErr
 	}
@@ -406,6 +410,190 @@ func TestPreCommitUseCase_DocsRepoBusy(t *testing.T) {
 	err := uc.Execute(context.Background(), "/fake/dir")
 	if !errors.Is(err, ErrDocsRepoBusy) {
 		t.Errorf("Expected ErrDocsRepoBusy, got: %v", err)
+	}
+}
+
+func TestMergeDirectories_TrivialBinaryMergesBypassMerger(t *testing.T) {
+	binaryBase := []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 0x00, 'b'}
+	binaryLocal := []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 0x00, 'l'}
+	binaryRemote := []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 0x00, 'r'}
+	binaryShared := []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 0x00, 's'}
+
+	type fileState struct {
+		content []byte
+		mode    os.FileMode
+	}
+	tests := []struct {
+		name       string
+		base       fileState
+		local      fileState
+		remote     fileState
+		want       []byte
+		wantMode   os.FileMode
+		wantExists bool
+	}{
+		{
+			name:       "identical binary",
+			base:       fileState{content: binaryBase, mode: 0644},
+			local:      fileState{content: binaryBase, mode: 0644},
+			remote:     fileState{content: binaryBase, mode: 0644},
+			want:       binaryBase,
+			wantMode:   0644,
+			wantExists: true,
+		},
+		{
+			name:       "remote binary changed",
+			base:       fileState{content: binaryBase, mode: 0644},
+			local:      fileState{content: binaryBase, mode: 0644},
+			remote:     fileState{content: binaryRemote, mode: 0755},
+			want:       binaryRemote,
+			wantMode:   0755,
+			wantExists: true,
+		},
+		{
+			name:       "local binary changed",
+			base:       fileState{content: binaryBase, mode: 0644},
+			local:      fileState{content: binaryLocal, mode: 0755},
+			remote:     fileState{content: binaryBase, mode: 0644},
+			want:       binaryLocal,
+			wantMode:   0755,
+			wantExists: true,
+		},
+		{
+			name:       "both changed to same binary",
+			base:       fileState{content: binaryBase, mode: 0644},
+			local:      fileState{content: binaryShared, mode: 0755},
+			remote:     fileState{content: binaryShared, mode: 0755},
+			want:       binaryShared,
+			wantMode:   0755,
+			wantExists: true,
+		},
+		{
+			name:       "remote mode changed",
+			base:       fileState{content: binaryBase, mode: 0644},
+			local:      fileState{content: binaryBase, mode: 0644},
+			remote:     fileState{content: binaryBase, mode: 0755},
+			want:       binaryBase,
+			wantMode:   0755,
+			wantExists: true,
+		},
+		{
+			name:       "local mode changed",
+			base:       fileState{content: binaryBase, mode: 0644},
+			local:      fileState{content: binaryBase, mode: 0755},
+			remote:     fileState{content: binaryBase, mode: 0644},
+			want:       binaryBase,
+			wantMode:   0755,
+			wantExists: true,
+		},
+		{
+			name:       "remote deleted unchanged local",
+			base:       fileState{content: binaryBase, mode: 0644},
+			local:      fileState{content: binaryBase, mode: 0644},
+			wantExists: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			baseDir := t.TempDir()
+			localDir := t.TempDir()
+			remoteDir := t.TempDir()
+			relPath := filepath.Join("docs", "assets", "showcase.png")
+
+			writeState := func(root string, state fileState) {
+				t.Helper()
+				if state.content == nil {
+					return
+				}
+				path := filepath.Join(root, relPath)
+				if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(path, state.content, state.mode); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Chmod(path, state.mode); err != nil {
+					t.Fatal(err)
+				}
+			}
+			writeState(baseDir, tt.base)
+			writeState(localDir, tt.local)
+			writeState(remoteDir, tt.remote)
+
+			merger := &fakeGitClient{mergeErr: errors.New("merger must not be called")}
+			hasConflicts, conflictFiles, err := MergeDirectories(
+				context.Background(),
+				merger,
+				baseDir,
+				localDir,
+				remoteDir,
+			)
+			if err != nil {
+				t.Fatalf("MergeDirectories() error = %v", err)
+			}
+			if hasConflicts || len(conflictFiles) != 0 {
+				t.Fatalf("MergeDirectories() conflicts = %v, files = %v", hasConflicts, conflictFiles)
+			}
+			if merger.mergeCalls != 0 {
+				t.Fatalf("MergeFile() calls = %d, want 0", merger.mergeCalls)
+			}
+
+			localPath := filepath.Join(localDir, relPath)
+			got, err := os.ReadFile(localPath)
+			if !tt.wantExists {
+				if !os.IsNotExist(err) {
+					t.Fatalf("expected local file to be absent, read error = %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(got, tt.want) {
+				t.Fatalf("merged content = %v, want %v", got, tt.want)
+			}
+			info, err := os.Stat(localPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if info.Mode().Perm() != tt.wantMode {
+				t.Fatalf("merged mode = %v, want %v", info.Mode().Perm(), tt.wantMode)
+			}
+		})
+	}
+}
+
+func TestMergeDirectories_DivergentBinaryReturnsPathError(t *testing.T) {
+	baseDir := t.TempDir()
+	localDir := t.TempDir()
+	remoteDir := t.TempDir()
+	relPath := filepath.Join("docs", "assets", "showcase.png")
+
+	for root, content := range map[string][]byte{
+		baseDir:   {0x00, 'b'},
+		localDir:  {0x00, 'l'},
+		remoteDir: {0x00, 'r'},
+	} {
+		path := filepath.Join(root, relPath)
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, content, 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	merger := &fakeGitClient{mergeErr: errors.New("cannot merge binary files")}
+	_, _, err := MergeDirectories(context.Background(), merger, baseDir, localDir, remoteDir)
+	if err == nil {
+		t.Fatal("MergeDirectories() error = nil, want binary merge error")
+	}
+	if !strings.Contains(err.Error(), relPath) {
+		t.Fatalf("MergeDirectories() error = %q, want path %q", err, relPath)
+	}
+	if merger.mergeCalls != 1 {
+		t.Fatalf("MergeFile() calls = %d, want 1", merger.mergeCalls)
 	}
 }
 

@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"bytes"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -157,12 +158,15 @@ func TestE2ECLI_PullThenPullCommitPreservesRemoteAddedFile(t *testing.T) {
 	socketPath := getSocketPath(t)
 	ensureDaemonAvailable(t, socketPath)
 
+	binaryContent := string([]byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 0x00, 'p'})
 	docsOrigin, initialDocsHead := createOriginRepo(t, map[string]string{
-		"docs/index.md": "# initial docs\n",
+		"docs/index.md":            "# initial docs\n",
+		"docs/assets/showcase.png": binaryContent,
 	})
 	appOrigin, _ := createOriginRepo(t, map[string]string{
-		"docs/docs/index.md": "# initial docs\n",
-		"app.txt":            "application\n",
+		"docs/docs/index.md":            "# initial docs\n",
+		"docs/docs/assets/showcase.png": binaryContent,
+		"app.txt":                       "application\n",
 	})
 	appPublisher := filepath.Join(t.TempDir(), "publisher")
 	runCmd(t, "", "git", "clone", appOrigin, appPublisher)
@@ -194,8 +198,9 @@ func TestE2ECLI_PullThenPullCommitPreservesRemoteAddedFile(t *testing.T) {
 	writeDocsHash(t, workspaceDir, currentHead)
 
 	firstRemoteHead := pushDocsViaHTTP(t, socketPath, wsID, currentHead, map[string]string{
-		"docs/index.md":     "# first remote update\n",
-		"docs/preserved.md": "must survive\n",
+		"docs/index.md":            "# first remote update\n",
+		"docs/preserved.md":        "must survive\n",
+		"docs/assets/showcase.png": binaryContent,
 	}, "first-remote@example.com")
 
 	pull := exec.Command(cliBinary, "pull")
@@ -203,10 +208,18 @@ func TestE2ECLI_PullThenPullCommitPreservesRemoteAddedFile(t *testing.T) {
 	if output, err := pull.CombinedOutput(); err != nil {
 		t.Fatalf("pull failed: %v\nOutput:\n%s", err, output)
 	}
+	pulledBinary, err := os.ReadFile(filepath.Join(workspaceDir, "docs", "docs", "assets", "showcase.png"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(pulledBinary, []byte(binaryContent)) {
+		t.Fatalf("pull changed binary content: got %v want %v", pulledBinary, []byte(binaryContent))
+	}
 
 	secondRemoteHead := pushDocsViaHTTP(t, socketPath, wsID, firstRemoteHead, map[string]string{
-		"docs/index.md":     "# second remote update\n",
-		"docs/preserved.md": "must survive\n",
+		"docs/index.md":            "# second remote update\n",
+		"docs/preserved.md":        "must survive\n",
+		"docs/assets/showcase.png": binaryContent,
 	}, "second-remote@example.com")
 
 	pullCommit := exec.Command(cliBinary, "pull-commit")
@@ -223,6 +236,9 @@ func TestE2ECLI_PullThenPullCommitPreservesRemoteAddedFile(t *testing.T) {
 		":docs/docs/preserved.md",
 	))); got != "must survive" {
 		t.Fatalf("preserved file in index = %q", got)
+	}
+	if got := runCmd(t, workspaceDir, "git", "show", ":docs/docs/assets/showcase.png"); !bytes.Equal(got, []byte(binaryContent)) {
+		t.Fatalf("materialized index changed binary content: got %v want %v", got, []byte(binaryContent))
 	}
 	if staged := strings.TrimSpace(string(runCmd(
 		t,
@@ -243,6 +259,211 @@ func TestE2ECLI_PullThenPullCommitPreservesRemoteAddedFile(t *testing.T) {
 		"--format=%B",
 	))); !strings.Contains(got, "docs-version: "+secondRemoteHead) {
 		t.Fatalf("system commit does not record remote docs head:\n%s", got)
+	}
+}
+
+func TestE2ECLI_PullCommitPreservesUnchangedBinaryFile(t *testing.T) {
+	cliBinary := getCliBinary(t)
+	socketPath := getSocketPath(t)
+	ensureDaemonAvailable(t, socketPath)
+
+	binaryContent := string([]byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 0x00, 'b'})
+	docsOrigin, initialDocsHead := createOriginRepo(t, map[string]string{
+		"docs/index.md":            "# initial docs\n",
+		"docs/assets/showcase.png": binaryContent,
+	})
+	appOrigin, _ := createOriginRepo(t, map[string]string{
+		"docs/docs/index.md":            "# initial docs\n",
+		"docs/docs/assets/showcase.png": binaryContent,
+		"app.txt":                       "application\n",
+	})
+	appPublisher := filepath.Join(t.TempDir(), "publisher")
+	runCmd(t, "", "git", "clone", appOrigin, appPublisher)
+	setGitUser(t, appPublisher, "binary-publisher@example.com")
+	runCmd(
+		t,
+		appPublisher,
+		"git",
+		"commit",
+		"--amend",
+		"-m",
+		"Initial application",
+		"-m",
+		"docs-version: "+initialDocsHead,
+	)
+	runCmd(t, appPublisher, "git", "push", "--force", "origin", "HEAD:main")
+
+	workspaceDir := filepath.Join(t.TempDir(), "workspace")
+	runCmd(t, "", "git", "clone", appOrigin, workspaceDir)
+	setGitUser(t, workspaceDir, "binary-consumer@example.com")
+
+	project := "cli-pull-binary-" + strings.ReplaceAll(filepath.Base(docsOrigin), string(filepath.Separator), "_")
+	registerProjectViaCLI(t, cliBinary, socketPath, project, docsOrigin, workspaceDir)
+	wsID, currentHead := registerWorkspaceViaCLI(t, cliBinary, socketPath, project, workspaceDir)
+	if currentHead == "" {
+		currentHead = initialDocsHead
+	}
+	writeConfig(t, workspaceDir, socketPath, project, wsID, "binary-consumer@example.com")
+	writeDocsHash(t, workspaceDir, currentHead)
+	statusBefore := string(runCmd(t, workspaceDir, "git", "status", "--porcelain=v1"))
+
+	remoteHead := pushDocsViaHTTP(t, socketPath, wsID, currentHead, map[string]string{
+		"docs/index.md":            "# remote text update\n",
+		"docs/assets/showcase.png": binaryContent,
+	}, "binary-remote@example.com")
+	for name, got := range map[string][]byte{
+		"base":   runCmd(t, "", "git", "--git-dir", docsOrigin, "show", initialDocsHead+":docs/assets/showcase.png"),
+		"index":  runCmd(t, workspaceDir, "git", "show", ":docs/docs/assets/showcase.png"),
+		"remote": runCmd(t, "", "git", "--git-dir", docsOrigin, "show", remoteHead+":docs/assets/showcase.png"),
+	} {
+		if !bytes.Equal(got, []byte(binaryContent)) {
+			t.Fatalf("%s binary fixture = %v, want %v", name, got, []byte(binaryContent))
+		}
+	}
+
+	pullCommit := exec.Command(cliBinary, "pull-commit")
+	pullCommit.Dir = workspaceDir
+	if output, err := pullCommit.CombinedOutput(); err != nil {
+		t.Fatalf("pull-commit failed: %v\nOutput:\n%s", err, output)
+	}
+
+	if got := runCmd(t, workspaceDir, "git", "show", "HEAD:docs/docs/assets/showcase.png"); !bytes.Equal(got, []byte(binaryContent)) {
+		t.Fatalf("system commit changed binary content: got %v want %v", got, []byte(binaryContent))
+	}
+	if got := strings.TrimSpace(string(runCmd(t, workspaceDir, "git", "show", "-s", "--format=%s", "HEAD"))); got != "[SANHO] Update docs" {
+		t.Fatalf("system commit subject = %q", got)
+	}
+	hashBytes, err := os.ReadFile(filepath.Join(workspaceDir, ".sanho_docs_hash"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(string(hashBytes)); got != remoteHead {
+		t.Fatalf("docs hash = %s, want %s", got, remoteHead)
+	}
+	if status := string(runCmd(t, workspaceDir, "git", "status", "--porcelain=v1")); status != statusBefore {
+		t.Fatalf("workspace status changed:\ngot:\n%s\nwant:\n%s", status, statusBefore)
+	}
+
+	transactionDir := strings.TrimSpace(string(runCmd(t, workspaceDir, "git", "rev-parse", "--git-path", "sanho/pull-commit")))
+	if !filepath.IsAbs(transactionDir) {
+		transactionDir = filepath.Join(workspaceDir, transactionDir)
+	}
+	if _, err := os.Stat(filepath.Join(transactionDir, "state.json")); !os.IsNotExist(err) {
+		t.Fatalf("pull-commit transaction was not cleared: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(workspaceDir, ".sanho_pending_fix")); !os.IsNotExist(err) {
+		t.Fatalf("legacy pending fix file should not exist: %v", err)
+	}
+}
+
+func TestE2ECLI_PullCommitDivergentBinaryLeavesWorkspaceUnchanged(t *testing.T) {
+	cliBinary := getCliBinary(t)
+	socketPath := getSocketPath(t)
+	ensureDaemonAvailable(t, socketPath)
+
+	baseBinary := string([]byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 0x00, 'b'})
+	stagedBinary := []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 0x00, 's'}
+	workBinary := []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 0x00, 'w'}
+	remoteBinary := string([]byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 0x00, 'r'})
+
+	docsOrigin, initialDocsHead := createOriginRepo(t, map[string]string{
+		"docs/assets/showcase.png": baseBinary,
+	})
+	appOrigin, _ := createOriginRepo(t, map[string]string{
+		"docs/docs/assets/showcase.png": baseBinary,
+		"app.txt":                       "application\n",
+	})
+	appPublisher := filepath.Join(t.TempDir(), "publisher")
+	runCmd(t, "", "git", "clone", appOrigin, appPublisher)
+	setGitUser(t, appPublisher, "binary-conflict-publisher@example.com")
+	runCmd(
+		t,
+		appPublisher,
+		"git",
+		"commit",
+		"--amend",
+		"-m",
+		"Initial application",
+		"-m",
+		"docs-version: "+initialDocsHead,
+	)
+	runCmd(t, appPublisher, "git", "push", "--force", "origin", "HEAD:main")
+
+	workspaceDir := filepath.Join(t.TempDir(), "workspace")
+	runCmd(t, "", "git", "clone", appOrigin, workspaceDir)
+	setGitUser(t, workspaceDir, "binary-conflict-consumer@example.com")
+
+	project := "cli-pull-binary-conflict-" + strings.ReplaceAll(filepath.Base(docsOrigin), string(filepath.Separator), "_")
+	registerProjectViaCLI(t, cliBinary, socketPath, project, docsOrigin, workspaceDir)
+	wsID, currentHead := registerWorkspaceViaCLI(t, cliBinary, socketPath, project, workspaceDir)
+	if currentHead == "" {
+		currentHead = initialDocsHead
+	}
+	writeConfig(t, workspaceDir, socketPath, project, wsID, "binary-conflict-consumer@example.com")
+	writeDocsHash(t, workspaceDir, currentHead)
+
+	assetPath := filepath.Join(workspaceDir, "docs", "docs", "assets", "showcase.png")
+	if err := os.WriteFile(assetPath, stagedBinary, 0644); err != nil {
+		t.Fatal(err)
+	}
+	runCmd(t, workspaceDir, "git", "add", "docs/docs/assets/showcase.png")
+	if err := os.WriteFile(assetPath, workBinary, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	headBefore := strings.TrimSpace(string(runCmd(t, workspaceDir, "git", "rev-parse", "HEAD")))
+	statusBefore := string(runCmd(t, workspaceDir, "git", "status", "--porcelain=v1"))
+	indexBefore := runCmd(t, workspaceDir, "git", "show", ":docs/docs/assets/showcase.png")
+	workBefore, err := os.ReadFile(assetPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pushDocsViaHTTP(t, socketPath, wsID, currentHead, map[string]string{
+		"docs/assets/showcase.png": remoteBinary,
+	}, "binary-conflict-remote@example.com")
+
+	pullCommit := exec.Command(cliBinary, "pull-commit")
+	pullCommit.Dir = workspaceDir
+	output, err := pullCommit.CombinedOutput()
+	if err == nil {
+		t.Fatalf("pull-commit succeeded with divergent binary\nOutput:\n%s", output)
+	}
+	if !strings.Contains(string(output), "docs/assets/showcase.png") {
+		t.Fatalf("pull-commit error does not name binary path:\n%s", output)
+	}
+
+	if got := strings.TrimSpace(string(runCmd(t, workspaceDir, "git", "rev-parse", "HEAD"))); got != headBefore {
+		t.Fatalf("HEAD changed: got %s want %s", got, headBefore)
+	}
+	if got := string(runCmd(t, workspaceDir, "git", "status", "--porcelain=v1")); got != statusBefore {
+		t.Fatalf("workspace status changed:\ngot:\n%s\nwant:\n%s", got, statusBefore)
+	}
+	if got := runCmd(t, workspaceDir, "git", "show", ":docs/docs/assets/showcase.png"); !bytes.Equal(got, indexBefore) {
+		t.Fatalf("index binary changed: got %v want %v", got, indexBefore)
+	}
+	if got, err := os.ReadFile(assetPath); err != nil {
+		t.Fatal(err)
+	} else if !bytes.Equal(got, workBefore) {
+		t.Fatalf("working binary changed: got %v want %v", got, workBefore)
+	}
+	hashBytes, err := os.ReadFile(filepath.Join(workspaceDir, ".sanho_docs_hash"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(string(hashBytes)); got != currentHead {
+		t.Fatalf("docs hash changed: got %s want %s", got, currentHead)
+	}
+
+	transactionDir := strings.TrimSpace(string(runCmd(t, workspaceDir, "git", "rev-parse", "--git-path", "sanho/pull-commit")))
+	if !filepath.IsAbs(transactionDir) {
+		transactionDir = filepath.Join(workspaceDir, transactionDir)
+	}
+	if _, err := os.Stat(filepath.Join(transactionDir, "state.json")); !os.IsNotExist(err) {
+		t.Fatalf("pull-commit transaction should not exist: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(workspaceDir, ".sanho_pending_fix")); !os.IsNotExist(err) {
+		t.Fatalf("legacy pending fix file should not exist: %v", err)
 	}
 }
 

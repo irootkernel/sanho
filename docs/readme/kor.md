@@ -98,12 +98,21 @@ history를 바꾸지 않고 실패한다. 성공 시 현재 staged/unstaged 변�
 보존한 뒤 원래 commit을 중단한다. 같은 `git commit` 명령을 다시 실행하면
 보존한 staged 변경을 Git의 commit index에 복원해 원래 커밋을 계속한다.
 
-같은 위치를 함께 수정했다면 원격을 덮어쓰지 않고 충돌 상태로 멈춘다.
-파일을 해결하고 stage한 뒤 `sanho pull-commit --continue`를 실행한다.
-시스템 커밋이 만들어지기 전이라면 `sanho pull-commit --abort`로
-원래 staged/unstaged docs 상태를 복원할 수 있다. 시스템 커밋 제목은
-`.sanho.json`의 `docs_sync_commit_message`로 바꿀 수 있으며 기본값은
-`[SANHO] Update docs`다.
+같은 텍스트 파일을 함께 수정했다면 원격을 덮어쓰지 않고 충돌 상태로
+멈춘다. 파일을 해결하고 stage한 뒤 `sanho pull-commit --continue`를
+실행한다. 시스템 커밋이 만들어지기 전이라면 `sanho pull-commit --abort`로
+원래 staged/unstaged docs 상태를 복원할 수 있다.
+
+PNG나 PDF 같은 바이너리 파일도 base/local/remote 중 두 내용이 같아 결과가
+명확하면 자동으로 유지하거나 변경된 쪽을 채택한다. local과 remote가 base와
+서로 다르게 변경된 바이너리는 자동으로 선택하지 않고 파일 경로를 포함한
+오류로 중단한다. 이 오류는 `pull-commit` 트랜잭션을 만들기 전에 발생하므로
+`sanho fix`나 `sanho pull-commit --continue`를 사용하지 않는다. 중앙 문서와
+로컬 파일 중 유지할 내용을 결정해 두 파일을 일치시킨 뒤 `sanho pull-commit`을
+다시 실행한다.
+
+시스템 커밋 제목은 `.sanho.json`의 `docs_sync_commit_message`로 바꿀 수
+있으며 기본값은 `[SANHO] Update docs`다.
 
 `pull`과 pull-commit system commit은 CLI가 daemon에 docs hash를 직접
 보고하고, 일반 commit은 post-commit hook이 보고한다. 보고 실패는 pending

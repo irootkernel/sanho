@@ -451,42 +451,39 @@ func MergeDirectories(
 		localPath := filepath.Join(localDir, relPath)
 		remotePath := filepath.Join(remoteDir, relPath)
 
-		baseContent, baseExists, err := readFileIfExists(basePath)
+		baseState, err := readMergeFileState(basePath)
 		if err != nil {
 			return false, nil, fmt.Errorf("failed to read base %s: %w", relPath, err)
 		}
-		localContent, localExists, err := readFileIfExists(localPath)
+		localState, err := readMergeFileState(localPath)
 		if err != nil {
 			return false, nil, fmt.Errorf("failed to read local %s: %w", relPath, err)
 		}
-		remoteContent, remoteExists, err := readFileIfExists(remotePath)
+		remoteState, err := readMergeFileState(remotePath)
 		if err != nil {
 			return false, nil, fmt.Errorf("failed to read remote %s: %w", relPath, err)
 		}
 
-		// Remote deleted the file: drop it locally when we have no local change.
-		if baseExists && !remoteExists && (!localExists || bytes.Equal(localContent, baseContent)) {
-			if err := os.Remove(localPath); err != nil && !os.IsNotExist(err) {
-				return false, nil, fmt.Errorf("failed to remove %s: %w", relPath, err)
+		switch {
+		case mergeFileContentsEqual(localState, remoteState):
+			if localState.exists {
+				localState.mode = pickEqualContentMode(baseState, localState, remoteState)
+				if err := applyMergeFileState(localPath, localState); err != nil {
+					return false, nil, fmt.Errorf("failed to keep shared %s: %w", relPath, err)
+				}
 			}
+			continue
+		case mergeFileContentsEqual(localState, baseState):
+			if err := applyMergeFileState(localPath, remoteState); err != nil {
+				return false, nil, fmt.Errorf("failed to adopt remote %s: %w", relPath, err)
+			}
+			continue
+		case mergeFileContentsEqual(remoteState, baseState):
 			continue
 		}
 
-		// Local deleted: keep deletion when remote is unchanged, but surface
-		// a conflict when remote modified the file.
-		if baseExists && !localExists {
-			if !remoteExists || bytes.Equal(remoteContent, baseContent) {
-				if err := os.Remove(localPath); err != nil && !os.IsNotExist(err) {
-					return false, nil, fmt.Errorf("failed to remove %s: %w", relPath, err)
-				}
-				continue
-			}
-			// Remote changed while local deleted: force conflict even if git
-			// merge decides otherwise.
-		}
-
 		// Perform merge
-		result, err := merger.MergeFile(ctx, baseContent, localContent, remoteContent)
+		result, err := merger.MergeFile(ctx, baseState.content, localState.content, remoteState.content)
 		if err != nil {
 			return false, nil, fmt.Errorf("failed to merge %s: %w", relPath, err)
 		}
@@ -506,8 +503,10 @@ func MergeDirectories(
 			return false, nil, fmt.Errorf("failed to write %s: %w", relPath, err)
 		}
 
-		// If local deleted but remote changed, ensure we surface a conflict.
-		if baseExists && !localExists && remoteExists && !bytes.Equal(remoteContent, baseContent) {
+		// The unchanged-remote and both-deleted cases were handled by the
+		// trivial fast paths. Any remaining local deletion is a conflict.
+		if baseState.exists && !localState.exists && remoteState.exists &&
+			!bytes.Equal(remoteState.content, baseState.content) {
 			conflictTriggered = true
 		}
 
@@ -520,15 +519,68 @@ func MergeDirectories(
 	return hasConflicts, conflictFiles, nil
 }
 
-func readFileIfExists(path string) ([]byte, bool, error) {
+type mergeFileState struct {
+	content []byte
+	mode    os.FileMode
+	exists  bool
+}
+
+func readMergeFileState(path string) (mergeFileState, error) {
 	content, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, false, nil
+			return mergeFileState{}, nil
 		}
-		return nil, false, err
+		return mergeFileState{}, err
 	}
-	return content, true, nil
+	info, err := os.Stat(path)
+	if err != nil {
+		return mergeFileState{}, err
+	}
+	return mergeFileState{
+		content: content,
+		mode:    info.Mode().Perm(),
+		exists:  true,
+	}, nil
+}
+
+func mergeFileContentsEqual(left, right mergeFileState) bool {
+	if left.exists != right.exists {
+		return false
+	}
+	if !left.exists {
+		return true
+	}
+	return bytes.Equal(left.content, right.content)
+}
+
+func pickEqualContentMode(base, local, remote mergeFileState) os.FileMode {
+	switch {
+	case local.mode.Perm() == remote.mode.Perm():
+		return local.mode.Perm()
+	case base.exists && local.mode.Perm() == base.mode.Perm():
+		return remote.mode.Perm()
+	case base.exists && remote.mode.Perm() == base.mode.Perm():
+		return local.mode.Perm()
+	default:
+		return local.mode.Perm()
+	}
+}
+
+func applyMergeFileState(path string, state mergeFileState) error {
+	if !state.exists {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(path, state.content, state.mode.Perm()); err != nil {
+		return err
+	}
+	return os.Chmod(path, state.mode.Perm())
 }
 
 func pickFileMode(localPath, remotePath, basePath string) (os.FileMode, error) {

@@ -81,10 +81,17 @@ branch는 history를 바꾸지 않고 실패한다. 이 과정은 임시 clone�
 검증하고, 성공했을 때만 로컬 `main`과 현재 branch ref를 함께 갱신한다.
 원격 애플리케이션 저장소에는 자동 push하지 않는다.
 
-충돌이 있으면 파일을 해결하고 stage한 뒤
+텍스트 충돌이 있으면 파일을 해결하고 stage한 뒤
 `sanho pull-commit --continue`를 실행한다. 시스템 커밋 생성 전에는
 `sanho pull-commit --abort`로 원래 상태를 복원할 수 있다. 원격
 history를 강제 push로 덮어쓰지 않는다.
+
+바이너리는 base/local/remote 내용 비교만으로 결과가 명확한 경우 자동으로
+처리한다. local과 remote가 base와 서로 다르게 변경된 바이너리는 경로를
+포함한 오류로 중단하고 worktree, index, docs hash와 transaction 상태를
+변경하지 않는다. 이 경우 `sanho fix`나 `pull-commit --continue`가 아니라
+중앙 문서 또는 로컬 파일을 원하는 내용으로 일치시킨 뒤 `pull-commit`을
+다시 실행한다.
 
 `pull`, system commit, 일반 사용자 commit은 성공한 docs hash를 daemon에
 보고한다. 일반 commit은 `post-commit` hook이 보고하며, hook을 실행하지
