@@ -102,6 +102,18 @@ func TestPullCommitPreservesStagedAndUnstagedDocsLayers(t *testing.T) {
 		t.Fatal("sync commit was not recorded")
 	}
 	syncCommit := state.SyncCommit
+	publicationStore, err := engine.mainPublicationStore(ctx, repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	publication, exists, err := publicationStore.Load()
+	if err != nil || !exists {
+		t.Fatalf("publication state=%+v exists=%v err=%v", publication, exists, err)
+	}
+	if len(publication.Commits) != 1 || publication.Commits[0].Commit != syncCommit ||
+		publication.Commits[0].DocsHash != string(remoteHash) {
+		t.Fatalf("publication state=%+v", publication)
+	}
 
 	if got := runPullCommitTestGit(t, repo, "show", "HEAD:docs/remote.txt"); got != "remote update" {
 		t.Fatalf("system commit remote file = %q", got)
@@ -122,7 +134,7 @@ func TestPullCommitPreservesStagedAndUnstagedDocsLayers(t *testing.T) {
 	if err := store.Save(state); err != nil {
 		t.Fatal(err)
 	}
-	state, exists, err := engine.resume(ctx, repo, config)
+	state, exists, err = engine.resume(ctx, repo, config)
 	if !exists || !errors.Is(err, errPullCommitRetry) || state.SyncCommit != syncCommit {
 		t.Fatalf("recover sync commit state=%+v exists=%v err=%v", state, exists, err)
 	}
@@ -150,6 +162,14 @@ func TestPullCommitPreservesStagedAndUnstagedDocsLayers(t *testing.T) {
 	if err != nil || !exists || state.Phase != fs.PullCommitPhasePrepared {
 		t.Fatalf("second prepare resume state=%+v exists=%v err=%v", state, exists, err)
 	}
+	publication, exists, err = publicationStore.Load()
+	if err != nil || !exists || len(publication.Commits) != 2 {
+		t.Fatalf("publication state=%+v exists=%v err=%v", publication, exists, err)
+	}
+	if publication.Commits[1].Commit != state.SyncCommit ||
+		publication.Commits[1].DocsHash != string(secondRemoteHash) {
+		t.Fatalf("second publication=%+v", publication.Commits[1])
+	}
 	if got := runPullCommitTestGit(t, repo, "show", ":docs/staged.txt"); got != "local staged" {
 		t.Fatalf("staged layer = %q", got)
 	}
@@ -173,6 +193,9 @@ func TestPullCommitPreservesStagedAndUnstagedDocsLayers(t *testing.T) {
 	exists, err = engine.hasTransaction(ctx, repo)
 	if err != nil || exists {
 		t.Fatalf("stale prepared transaction was not cleared before push: exists=%v err=%v", exists, err)
+	}
+	if _, exists, err := publicationStore.Load(); err != nil || !exists {
+		t.Fatalf("publication state did not survive transaction completion: exists=%v err=%v", exists, err)
 	}
 	if got := runPullCommitTestGit(t, repo, "show", "HEAD:docs/staged.txt"); got != "local staged" {
 		t.Fatalf("user commit content = %q", got)

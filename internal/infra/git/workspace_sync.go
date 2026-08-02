@@ -71,6 +71,20 @@ func (s *WorkspaceSync) ResolveWorkspaceReportPath(ctx context.Context, repoPath
 	return filepath.Clean(path), nil
 }
 
+// ResolveMainPublicationPath returns repository-common private metadata so all
+// linked worktrees observe the same origin/main publication queue.
+func (s *WorkspaceSync) ResolveMainPublicationPath(ctx context.Context, repoPath string) (string, error) {
+	out, err := runWorkspaceGit(ctx, repoPath, nil, "rev-parse", "--git-common-dir")
+	if err != nil {
+		return "", err
+	}
+	gitCommonDir := strings.TrimSpace(string(out))
+	if !filepath.IsAbs(gitCommonDir) {
+		gitCommonDir = filepath.Join(repoPath, gitCommonDir)
+	}
+	return filepath.Clean(filepath.Join(gitCommonDir, "sanho", "main-publication.json")), nil
+}
+
 func (s *WorkspaceSync) Head(ctx context.Context, repoPath string) (string, error) {
 	out, err := runWorkspaceGit(ctx, repoPath, nil, "rev-parse", "--verify", "HEAD")
 	if err != nil {
@@ -89,6 +103,10 @@ func (s *WorkspaceSync) ResolveRef(ctx context.Context, repoPath, ref string) (s
 		return "", err
 	}
 	return strings.TrimSpace(string(out)), nil
+}
+
+func (s *WorkspaceSync) ResolveOptionalRef(ctx context.Context, repoPath, ref string) (string, bool, error) {
+	return resolveOptionalRef(ctx, repoPath, ref)
 }
 
 // SymbolicHead returns the full branch ref currently checked out.

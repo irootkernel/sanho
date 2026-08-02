@@ -78,6 +78,17 @@ func (e *pullCommitEngine) pulledDocsStore(ctx context.Context, workDir string) 
 	return fs.NewPulledDocsStore(dir), nil
 }
 
+func (e *pullCommitEngine) mainPublicationStore(
+	ctx context.Context,
+	workDir string,
+) (*fs.MainPublicationStore, error) {
+	path, err := e.workspaceSync.ResolveMainPublicationPath(ctx, workDir)
+	if err != nil {
+		return nil, fmt.Errorf("resolve main publication state path: %w", err)
+	}
+	return fs.NewMainPublicationStore(path), nil
+}
+
 func (e *pullCommitEngine) hasPulledDocs(ctx context.Context, workDir string) (bool, error) {
 	store, err := e.pulledDocsStore(ctx, workDir)
 	if err != nil {
@@ -585,6 +596,9 @@ func (e *pullCommitEngine) prepare(
 	store *fs.PullCommitStore,
 	state *fs.PullCommitState,
 ) error {
+	if err := e.ensureMainPublication(ctx, workDir, config, state); err != nil {
+		return err
+	}
 	if err := e.writeRemoteHash(workDir, config, state.RemoteHash); err != nil {
 		return err
 	}
@@ -619,6 +633,55 @@ func (e *pullCommitEngine) prepare(
 	}
 	state.Phase = fs.PullCommitPhasePrepared
 	return store.Save(*state)
+}
+
+func (e *pullCommitEngine) ensureMainPublication(
+	ctx context.Context,
+	workDir string,
+	config *client.WorkspaceConfig,
+	state *fs.PullCommitState,
+) error {
+	if state.SyncCommit == "" {
+		return errors.New("cannot track main publication without a sync commit")
+	}
+	parents, err := e.workspaceSync.CommitParents(ctx, workDir, state.SyncCommit)
+	if err != nil {
+		return fmt.Errorf("resolve docs sync parent for main publication: %w", err)
+	}
+	if len(parents) != 1 {
+		return fmt.Errorf("docs sync commit %s has %d parents, want 1", state.SyncCommit, len(parents))
+	}
+	valid, err := e.workspaceSync.IsDocsSyncCommit(
+		ctx,
+		workDir,
+		state.SyncCommit,
+		parents[0],
+		config.DocsSyncCommitMessage,
+		string(state.RemoteHash),
+	)
+	if err != nil {
+		return fmt.Errorf("validate docs sync commit for main publication: %w", err)
+	}
+	if !valid {
+		return fmt.Errorf("commit %s is not the expected docs sync commit", state.SyncCommit)
+	}
+	originMain, _, err := e.workspaceSync.ResolveOptionalRef(ctx, workDir, "refs/remotes/origin/main")
+	if err != nil {
+		return fmt.Errorf("resolve origin/main for publication tracking: %w", err)
+	}
+	publicationStore, err := e.mainPublicationStore(ctx, workDir)
+	if err != nil {
+		return err
+	}
+	if err := publicationStore.Ensure(originMain, fs.MainPublicationCommit{
+		Commit:   state.SyncCommit,
+		Parent:   parents[0],
+		DocsHash: string(state.RemoteHash),
+		Subject:  config.DocsSyncCommitMessage,
+	}); err != nil {
+		return fmt.Errorf("track main publication: %w", err)
+	}
+	return nil
 }
 
 func (e *pullCommitEngine) reportRemoteHash(
