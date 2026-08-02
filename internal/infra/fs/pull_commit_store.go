@@ -41,11 +41,20 @@ type PullCommitState struct {
 	CompletionHead   string              `json:"completion_head,omitempty"`
 	CompletionReason string              `json:"completion_reason,omitempty"`
 	Rewrites         []PullCommitRewrite `json:"rewrites,omitempty"`
+	Recovery         *PullCommitRecovery `json:"recovery,omitempty"`
 	BaseHash         docs.CommitHash     `json:"base_hash"`
 	RemoteHash       docs.CommitHash     `json:"remote_hash"`
 	Reported         bool                `json:"reported,omitempty"`
 	ConflictFiles    []string            `json:"conflict_files,omitempty"`
 	CreatedAt        time.Time           `json:"created_at"`
+}
+
+// PullCommitRecovery records the refs that protect Git state during recovery.
+type PullCommitRecovery struct {
+	HeadRef     string    `json:"head_ref"`
+	IndexRef    string    `json:"index_ref"`
+	WorktreeRef string    `json:"worktree_ref"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 // PullCommitRewrite records a Git post-rewrite old-to-new commit mapping.

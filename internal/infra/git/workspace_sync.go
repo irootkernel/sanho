@@ -118,6 +118,15 @@ func (s *WorkspaceSync) CommitTree(ctx context.Context, repoPath, commit string)
 	return strings.TrimSpace(string(out)), nil
 }
 
+// CommitParents returns the ordered parent list for commit.
+func (s *WorkspaceSync) CommitParents(ctx context.Context, repoPath, commit string) ([]string, error) {
+	out, err := runWorkspaceGit(ctx, repoPath, nil, "show", "-s", "--format=%P", commit)
+	if err != nil {
+		return nil, fmt.Errorf("resolve commit parents: %w", err)
+	}
+	return strings.Fields(string(out)), nil
+}
+
 func (s *WorkspaceSync) PathsDifferFromIndex(ctx context.Context, repoPath string, paths []string) (bool, error) {
 	for _, path := range paths {
 		commandArgs := []string{"-C", repoPath, "diff", "--quiet", "--", path}

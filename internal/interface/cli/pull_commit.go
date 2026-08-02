@@ -18,6 +18,7 @@ const pullCommitTimeout = 2 * time.Minute
 func newPullCommitCmd() *cobra.Command {
 	var continueTransaction bool
 	var abortTransaction bool
+	var recoverTransaction bool
 
 	cmd := &cobra.Command{
 		Use:   "pull-commit",
@@ -29,18 +30,25 @@ layers. Unpublished linear feature branches are rebased onto the system commit.
 This command is also executed automatically by the pre-commit hook when the
 central docs version changed.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if continueTransaction && abortTransaction {
-				return errors.New("--continue and --abort cannot be used together")
+			selected := 0
+			for _, enabled := range []bool{continueTransaction, abortTransaction, recoverTransaction} {
+				if enabled {
+					selected++
+				}
 			}
-			return runPullCommitCommand(cmd, continueTransaction, abortTransaction)
+			if selected > 1 {
+				return errors.New("--continue, --abort, and --recover cannot be used together")
+			}
+			return runPullCommitCommand(cmd, continueTransaction, abortTransaction, recoverTransaction)
 		},
 	}
 	cmd.Flags().BoolVar(&continueTransaction, "continue", false, "Continue after resolving and staging docs conflicts")
 	cmd.Flags().BoolVar(&abortTransaction, "abort", false, "Restore the original staged and unstaged docs state")
+	cmd.Flags().BoolVar(&recoverTransaction, "recover", false, "Safely reconcile an interrupted pull-commit transaction")
 	return cmd
 }
 
-func runPullCommitCommand(cmd *cobra.Command, continueTransaction, abortTransaction bool) error {
+func runPullCommitCommand(cmd *cobra.Command, continueTransaction, abortTransaction, recoverTransaction bool) error {
 	ctx, cancel := context.WithTimeout(context.Background(), pullCommitTimeout)
 	defer cancel()
 
@@ -58,8 +66,36 @@ func runPullCommitCommand(cmd *cobra.Command, continueTransaction, abortTransact
 		return fmt.Errorf("sanho pull-commit: %w", err)
 	}
 	engine := newPullCommitEngine(httpClient)
+	if recoverTransaction {
+		assessment, err := engine.recover(ctx, workDir, config)
+		if err != nil {
+			return fmt.Errorf("sanho pull-commit --recover: %w", err)
+		}
+		if !assessment.Exists {
+			cmd.Println("sanho: no active pull-commit transaction; nothing to recover.")
+			return nil
+		}
+		cmd.Printf(
+			"sanho: recovered %s pull-commit transaction; current Git state was preserved.\n",
+			assessment.Classification,
+		)
+		return nil
+	}
 
 	if abortTransaction {
+		assessment, assessErr := engine.assessTransaction(ctx, workDir)
+		if assessErr != nil {
+			return fmt.Errorf("sanho pull-commit --abort: %w", assessErr)
+		}
+		if assessment.Exists && (assessment.Classification == pullCommitCompleted ||
+			assessment.Classification == pullCommitRewritten ||
+			assessment.Classification == pullCommitRecoverableRewrite) {
+			if _, err := engine.recover(ctx, workDir, config); err != nil {
+				return fmt.Errorf("sanho pull-commit --abort: %w", err)
+			}
+			cmd.Println("sanho: completed transaction metadata was cleared; current Git state was preserved.")
+			return nil
+		}
 		if err := engine.abort(ctx, workDir, config); err != nil {
 			return fmt.Errorf("sanho pull-commit --abort: %w", err)
 		}
@@ -71,6 +107,19 @@ func runPullCommitCommand(cmd *cobra.Command, continueTransaction, abortTransact
 	}
 
 	if continueTransaction {
+		assessment, assessErr := engine.assessTransaction(ctx, workDir)
+		if assessErr != nil {
+			return fmt.Errorf("sanho pull-commit --continue: %w", assessErr)
+		}
+		if assessment.Exists && (assessment.Classification == pullCommitCompleted ||
+			assessment.Classification == pullCommitRewritten ||
+			assessment.Classification == pullCommitRecoverableRewrite) {
+			if _, err := engine.recover(ctx, workDir, config); err != nil {
+				return fmt.Errorf("sanho pull-commit --continue: %w", err)
+			}
+			cmd.Println("sanho: reconciled completed pull-commit transaction; current Git state was preserved.")
+			return nil
+		}
 		state, exists, err := engine.resume(ctx, workDir, config)
 		if !exists {
 			return errors.New("sanho pull-commit --continue: no transaction exists")

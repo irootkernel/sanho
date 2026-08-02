@@ -45,6 +45,7 @@ type pullCommitEngine struct {
 	snapshotApplier  *fs.SnapshotApplier
 	docsHashStore    *fs.FileDocsHashStore
 	conflictDetector *merge.FileConflictDetector
+	recoveryStep     func(string) error
 }
 
 func newPullCommitEngine(httpClient pullCommitHTTPClient) *pullCommitEngine {
