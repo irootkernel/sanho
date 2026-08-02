@@ -117,7 +117,7 @@ This hook will:
 // newPrePushHookCmd creates the pre-push hook command.
 func newPrePushHookCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "pre-push",
+		Use:   "pre-push [remote-name] [remote-location]",
 		Short: "Pre-push hook for conflict and pending fix check",
 		Long: `Invoked by Git before a push.
 
@@ -125,8 +125,9 @@ This hook will:
 - Check for conflict markers in docs
 - Check for pending fix state
 - Block push if issues are found`,
+		Args: cobra.MaximumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runPrePushHook(cmd)
+			return runPrePushHook(cmd, args)
 		},
 	}
 }

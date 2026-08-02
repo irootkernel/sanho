@@ -25,6 +25,29 @@ func TestHookInstaller_InstallAllHooksIncludesPostCommit(t *testing.T) {
 	}
 }
 
+func TestHookInstaller_InstallAllHooksMigratesPrePushArguments(t *testing.T) {
+	tempDir := t.TempDir()
+	hooksDir := filepath.Join(tempDir, ".git", "hooks")
+	if err := os.MkdirAll(hooksDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	hookPath := filepath.Join(hooksDir, "pre-push")
+	if err := os.WriteFile(hookPath, []byte("#!/bin/sh\nsanho hook pre-push\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := NewHookInstaller().InstallAllHooks(context.Background(), tempDir); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(hookPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	if strings.Count(text, "sanho hook pre-push") != 1 || !strings.Contains(text, `sanho hook pre-push "$@"`) {
+		t.Fatalf("pre-push hook was not migrated:\n%s", text)
+	}
+}
+
 func TestHookInstaller_RemoveHookLine(t *testing.T) {
 	tempDir := t.TempDir()
 	gitDir := filepath.Join(tempDir, ".git")

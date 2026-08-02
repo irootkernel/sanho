@@ -149,13 +149,16 @@ func newCleanCmd() *cobra.Command {
 					"post-checkout": "sanho hook post-checkout",
 					"post-merge":    "sanho hook post-merge",
 					"post-rewrite":  "sanho hook post-rewrite \"$@\"",
-					"pre-push":      "sanho hook pre-push",
+					"pre-push":      "sanho hook pre-push \"$@\"",
 					"commit-msg":    "sanho hook commit-msg \"$1\"",
 					"post-commit":   "sanho hook post-commit",
 				}
 				for hookName, line := range hookLines {
 					if err := cleaner.RemoveHookLine(cmd.Context(), cwd, hookName, line); err != nil {
 						return fmt.Errorf("failed to clean hook %s: %w", hookName, err)
+					}
+					if err := cleaner.RemoveHookLine(cmd.Context(), cwd, "pre-push", "sanho hook pre-push"); err != nil {
+						return fmt.Errorf("failed to clean legacy pre-push hook: %w", err)
 					}
 				}
 			} else {

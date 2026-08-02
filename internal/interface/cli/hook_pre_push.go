@@ -1,10 +1,12 @@
 package cli
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -15,10 +17,17 @@ import (
 )
 
 // prePushTimeout is the timeout for pre-push operations.
-const prePushTimeout = 30 * time.Second
+const prePushTimeout = 2 * time.Minute
+
+type prePushUpdate struct {
+	LocalRef  string
+	LocalOID  string
+	RemoteRef string
+	RemoteOID string
+}
 
 // runPrePushHook executes the pre-push hook logic.
-func runPrePushHook(cmd *cobra.Command) error {
+func runPrePushHook(cmd *cobra.Command, args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), prePushTimeout)
 	defer cancel()
 
@@ -90,7 +99,103 @@ func runPrePushHook(cmd *cobra.Command) error {
 		return err
 	}
 
+	updates, err := readPrePushUpdates(cmd)
+	if err != nil {
+		return fmt.Errorf("sanho hook pre-push: %w", err)
+	}
+	remoteName := ""
+	if len(args) > 0 {
+		remoteName = args[0]
+	}
+	if remoteName != "origin" || !hasNonDeleteBranchUpdate(updates) {
+		return nil
+	}
+	return publishMainBeforeTarget(ctx, cwd, updates, cmd)
+}
+
+func publishMainBeforeTarget(
+	ctx context.Context,
+	workDir string,
+	updates []prePushUpdate,
+	cmd *cobra.Command,
+) error {
+	publication, err := assessMainPublication(ctx, workDir, true)
+	if err != nil {
+		return fmt.Errorf("sanho hook pre-push: inspect main publication: %w", err)
+	}
+	if !publication.Exists {
+		return nil
+	}
+	if publication.Classification != mainPublicationPending {
+		cmd.PrintErrf("sanho: origin/main publication is %s: %s.\n", publication.Classification, publication.Reason)
+		return errors.New("origin/main publication is blocked")
+	}
+	if mainUpdate, ok := findRemoteMainUpdate(updates); ok {
+		if mainUpdate.LocalOID != publication.LocalMain || mainUpdate.LocalRef != "refs/heads/main" {
+			cmd.PrintErrln("sanho: pending main publication must update origin/main from the local main branch.")
+			return errors.New("origin/main push does not use the local main branch")
+		}
+		return nil
+	}
+
+	cmd.Printf("sanho: publishing local main %s to origin/main before the target branch.\n", shortHash(publication.LocalMain))
+	if err := pushLocalMain(ctx, workDir); err != nil {
+		cmd.PrintErrf("sanho: %v\n", err)
+		return errors.New("origin/main publication failed - target push blocked")
+	}
+	publication, err = assessMainPublication(ctx, workDir, true)
+	if err != nil {
+		return fmt.Errorf("sanho hook pre-push: verify main publication: %w", err)
+	}
+	if publication.Exists {
+		cmd.PrintErrf("sanho: origin/main publication remains %s: %s.\n", publication.Classification, publication.Reason)
+		return errors.New("origin/main publication was not verified - target push blocked")
+	}
+	cmd.Println("sanho: origin/main publication completed; continuing target push.")
 	return nil
+}
+
+func readPrePushUpdates(cmd *cobra.Command) ([]prePushUpdate, error) {
+	updates := make([]prePushUpdate, 0)
+	scanner := bufio.NewScanner(cmd.InOrStdin())
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) != 4 {
+			return nil, fmt.Errorf("invalid pre-push update line %q", scanner.Text())
+		}
+		updates = append(updates, prePushUpdate{
+			LocalRef:  fields[0],
+			LocalOID:  fields[1],
+			RemoteRef: fields[2],
+			RemoteOID: fields[3],
+		})
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("read pre-push updates: %w", err)
+	}
+	return updates, nil
+}
+
+func hasNonDeleteBranchUpdate(updates []prePushUpdate) bool {
+	for _, update := range updates {
+		if strings.HasPrefix(update.RemoteRef, "refs/heads/") && !isZeroObjectID(update.LocalOID) {
+			return true
+		}
+	}
+	return false
+}
+
+func findRemoteMainUpdate(updates []prePushUpdate) (prePushUpdate, bool) {
+	for _, update := range updates {
+		if update.RemoteRef == "refs/heads/main" && !isZeroObjectID(update.LocalOID) {
+			return update, true
+		}
+	}
+	return prePushUpdate{}, false
+}
+
+func isZeroObjectID(value string) bool {
+	return value != "" && strings.Trim(value, "0") == ""
 }
 
 // cliPrePushOutput implements hook.PrePushOutput for CLI.

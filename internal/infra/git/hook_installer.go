@@ -162,12 +162,17 @@ func (h *HookInstaller) InstallAllHooks(ctx context.Context, repoPath string) er
 		"post-checkout": "sanho hook post-checkout",
 		"post-merge":    "sanho hook post-merge",
 		"post-rewrite":  "sanho hook post-rewrite \"$@\"",
-		"pre-push":      "sanho hook pre-push",
+		"pre-push":      "sanho hook pre-push \"$@\"",
 		"commit-msg":    "sanho hook commit-msg \"$1\"",
 		"post-commit":   "sanho hook post-commit",
 	}
 
 	for hookName, line := range hooks {
+		if hookName == "pre-push" {
+			if err := h.RemoveHookLine(ctx, repoPath, hookName, "sanho hook pre-push"); err != nil {
+				return fmt.Errorf("failed to migrate %s hook: %w", hookName, err)
+			}
+		}
 		if err := h.InstallHook(ctx, repoPath, hookName, line); err != nil {
 			return fmt.Errorf("failed to install %s hook: %w", hookName, err)
 		}
