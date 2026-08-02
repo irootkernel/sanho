@@ -35,6 +35,10 @@ func assessMainPublication(
 	refreshOrigin bool,
 ) (mainPublicationAssessment, error) {
 	workspaceSync := infraGit.NewWorkspaceSync(fs.NewSnapshotBuilder(), fs.NewSnapshotApplier())
+	isRepository, err := workspaceSync.IsRepository(ctx, workDir)
+	if err != nil || !isRepository {
+		return mainPublicationAssessment{}, err
+	}
 	path, err := workspaceSync.ResolveMainPublicationPath(ctx, workDir)
 	if err != nil {
 		return mainPublicationAssessment{}, err
@@ -144,8 +148,21 @@ func assessMainPublication(
 		assessment.Reason = "local main has diverged from origin/main"
 		return assessment, nil
 	}
+	if state.LastError != "" {
+		assessment.Reason = "last publication attempt failed: " + state.LastError
+		return assessment, nil
+	}
 	assessment.Reason = "local main contains commits that are pending publication to origin/main"
 	return assessment, nil
+}
+
+func recordMainPublicationFailure(ctx context.Context, workDir string, failure error) error {
+	workspaceSync := infraGit.NewWorkspaceSync(fs.NewSnapshotBuilder(), fs.NewSnapshotApplier())
+	path, err := workspaceSync.ResolveMainPublicationPath(ctx, workDir)
+	if err != nil {
+		return err
+	}
+	return fs.NewMainPublicationStore(path).RecordFailure(failure.Error())
 }
 
 func fetchOriginMain(ctx context.Context, workDir string) error {

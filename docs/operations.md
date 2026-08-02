@@ -79,7 +79,26 @@ staged/unstaged 변경을 보존한 뒤 commit을 한 번 중단한다. 같은
 자동 rebase한다. upstream이나 같은 이름의 원격 branch가 있는 published
 branch는 history를 바꾸지 않고 실패한다. 이 과정은 임시 clone에서 먼저
 검증하고, 성공했을 때만 로컬 `main`과 현재 branch ref를 함께 갱신한다.
-원격 애플리케이션 저장소에는 자동 push하지 않는다.
+system commit은 `origin/main` 도달 여부를 확인할 때까지 게시 대기 상태로
+기록한다.
+
+`git push origin main`은 로컬 `main` 전체를 원래 push로 게시한다. 다른
+origin branch를 push하면 pre-push가 먼저 로컬 `main` 전체를
+`origin/main`에 fast-forward push한다. main 게시를 확인한 뒤에만 원래
+target push를 계속한다. 로컬 main에 일반 commit이 섞여 있어도 main에 둔
+게시 의도를 우선해 함께 게시한다. 원격 main이 먼저 변경됐거나 권한,
+branch protection, network 문제로 main push가 실패하면 target push도
+차단한다. force push나 별도 `sanho push` 명령은 사용하지 않고 같은
+`git push`를 재시도한다.
+
+게시 대기 상태에서 main과 다른 branch를 한 push로 함께 갱신하면 remote의
+부분 성공 여부를 통제할 수 없으므로 차단한다. 이 경우 `origin/main`을 먼저
+push한 뒤 나머지 ref push를 다시 실행한다.
+
+main 선행 게시만 성공하고 target push가 실패한 경우 게시 대기 상태는 이미
+정리된다. 다음 재시도는 target만 push한다. direct main push의 성공 여부는
+hook이 사후 관찰할 수 없으므로 다음 `sanho status` 또는 origin branch
+push가 `origin/main`을 fetch해 상태를 멱등하게 정리한다.
 
 텍스트 충돌이 있으면 파일을 해결하고 stage한 뒤
 `sanho pull-commit --continue`를 실행한다. 시스템 커밋 생성 전에는
@@ -97,6 +116,9 @@ transaction을 삭제하지 않는다.
 pre-push는 transaction 디렉터리의 존재만으로 판단하지 않는다. 논리적으로
 완료된 stale state는 멱등하게 정리하지만 `pending`, `ambiguous`, `corrupt`
 상태는 계속 차단하고 `status`와 같은 안전한 다음 명령을 출력한다.
+기존 workspace의 pre-push hook이 remote 인자를 전달하지 않으면 게시 대기
+상태를 임의 remote에 적용하지 않는다. Sanho가 hook을 제자리에서 갱신하고
+현재 push를 중단하므로 같은 push를 한 번 다시 실행한다.
 
 바이너리는 base/local/remote 내용 비교만으로 결과가 명확한 경우 자동으로
 처리한다. local과 remote가 base와 서로 다르게 변경된 바이너리는 경로를

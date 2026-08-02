@@ -113,7 +113,15 @@ or branch checkout when the resulting docs tree matches a reachable
 `sanho pull-commit --recover` classifies the transaction and creates recovery
 refs before clearing only state that can be proven complete. `sanho status`
 shows the active phase and exact safe next command, and pre-push continues to
-block ambiguous or incomplete transactions.
+block ambiguous or incomplete transactions. A generated docs sync commit stays
+pending for application-repository publication. On `git push origin main`, the
+original push publishes the complete local main history. On another origin
+branch push, pre-push first fast-forwards the complete local main branch to
+`origin/main`, then allows the requested branch push. Main rejection or
+divergence blocks the target push without force-pushing; retry the same
+`git push` after resolving the cause. On the first pending publication from an
+older workspace hook, Sanho upgrades the hook in place and asks for the same
+push once more.
 Run `sanho <command> --help` for the complete interface.
 Machine-readable output for query commands is documented in
 [CLI JSON output](docs/cli-json.md).

@@ -62,6 +62,13 @@ func newStatusCmd() *cobra.Command {
 			if err != nil {
 				return withErrorCode("pull_commit_state_failed", fmt.Errorf("failed to inspect pull-commit state: %w", err))
 			}
+			mainPublication, err := assessMainPublication(ctx, cwd, true)
+			if err != nil {
+				return withErrorCode(
+					"main_publication_state_failed",
+					fmt.Errorf("failed to inspect main publication state: %w", err),
+				)
+			}
 
 			// Step 2: Load .sanho_docs_hash
 			hashStore := fs.NewFileDocsHashStore()
@@ -215,6 +222,7 @@ func newStatusCmd() *cobra.Command {
 					conflictFiles,
 					comparisonAvailable,
 					pullCommit,
+					mainPublication,
 				)
 				if err := writeJSON(cmd.OutOrStdout(), output); err != nil {
 					return withErrorCode("internal_error", errors.Join(ErrInternal, err))
@@ -240,6 +248,13 @@ func newStatusCmd() *cobra.Command {
 				cmd.Printf("  recovery     : %s\n", pullCommit.NextCommand)
 			} else {
 				cmd.Println("  pull_commit  : none")
+			}
+			if mainPublication.Exists {
+				cmd.Printf("  main_publish : %s\n", mainPublication.Classification)
+				cmd.Printf("  publish head : %s\n", shortHash(mainPublication.LocalMain))
+				cmd.Printf("  publish note : %s\n", mainPublication.Reason)
+			} else {
+				cmd.Println("  main_publish : none")
 			}
 			if daemonError == nil {
 				cmd.Println()

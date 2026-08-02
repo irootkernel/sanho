@@ -38,7 +38,7 @@ sanho --socket /absolute/path/to/sanhod.sock state --all --json
   `not_in_workspace`
 - 로컬 상태: `invalid_workspace_config`, `docs_hash_not_found`,
   `docs_hash_read_failed`, `pending_fix_read_failed`,
-  `pull_commit_state_failed`
+  `pull_commit_state_failed`, `main_publication_state_failed`
 - daemon 상태: `unknown_project`, `unknown_workspace`,
   `workspace_project_mismatch`, `unknown_docs_commit`,
   `daemon_request_failed`
@@ -68,6 +68,7 @@ commit과 build date는 기존 사람용 `sanho version` 출력에서만 제공�
   "docs_relation": {"status": "behind", "ahead": 0, "behind": 2},
   "pending_fix": {"exists": false, "created_at": null},
   "pull_commit": {"exists": false},
+  "main_publication": {"pending": false, "sync_commits": []},
   "conflicts": {"scan_status": "complete", "files": []},
   "workspace_comparisons_available": true,
   "workspaces": []
@@ -85,6 +86,13 @@ commit과 build date는 기존 사람용 `sanho version` 출력에서만 제공�
 checkpoint가 기록된 경우 `backup_head_ref`도 포함한다. 분류는 `pending`,
 `completed`, `rewritten`, `recoverable_rewrite`, `ambiguous`, `corrupt` 중
 하나이며, 자동화는 `next_command`를 사용자에게 그대로 제시할 수 있다.
+
+게시 대기 상태가 있으면 `main_publication.pending`은 `true`이고
+`classification`, `reason`, `base_commit`, `local_main`, `remote_main`,
+`sync_commits`를 제공한다. 분류는 `pending`, `blocked`, `corrupt` 중 하나다.
+direct main push 뒤 로컬 상태가 잠시 남아 있어도 `status`가
+`origin/main`을 갱신해 기록된 system commit의 도달을 확인한 뒤 정리한다.
+게시 대기 상태가 없으면 `pending`은 `false`, `sync_commits`는 `[]`다.
 
 작업공간 항목은 기존 사람용 표와 같은 repository 라벨, workspace ID,
 전체 docs hash, 현재 작업공간 및 HEAD와의 관계만 포함한다. 원본

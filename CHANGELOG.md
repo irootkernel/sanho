@@ -4,6 +4,11 @@
 
 ### Added
 
+- Origin branch pushes publish pending docs system commits through the existing
+  Git pre-push hook: direct main pushes keep their full history, while other
+  branches publish the full local main branch first.
+- `sanho status` and `sanho status --json` report pending, blocked, or corrupt
+  application main publication state.
 - `sanho pull-commit --recover` preserves backup refs for HEAD, the index, and
   the worktree before reconciling an interrupted transaction.
 - `sanho status` and `sanho status --json` report active pull-commit phase,
@@ -11,6 +16,8 @@
 
 ### Fixed
 
+- Main publication is fast-forward only, survives target-branch push failures,
+  and retries through the same `git push` without force-pushing.
 - `git commit --amend` and repeated amend operations now reconcile prepared
   pull-commit transactions through Git's `post-rewrite` mappings.
 - Post-commit retry, post-rewrite, recovery, and stale-state cleanup are

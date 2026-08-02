@@ -17,9 +17,20 @@ type statusJSONOutput struct {
 	DocsRelation                  httpclient.CommitRelation `json:"docs_relation"`
 	PendingFix                    statusJSONPendingFix      `json:"pending_fix"`
 	PullCommit                    statusJSONPullCommit      `json:"pull_commit"`
+	MainPublication               statusJSONMainPublication `json:"main_publication"`
 	Conflicts                     statusJSONConflicts       `json:"conflicts"`
 	WorkspaceComparisonsAvailable bool                      `json:"workspace_comparisons_available"`
 	Workspaces                    []statusJSONWorkspace     `json:"workspaces"`
+}
+
+type statusJSONMainPublication struct {
+	Pending        bool     `json:"pending"`
+	Classification string   `json:"classification,omitempty"`
+	Reason         string   `json:"reason,omitempty"`
+	BaseCommit     string   `json:"base_commit,omitempty"`
+	LocalMain      string   `json:"local_main,omitempty"`
+	RemoteMain     string   `json:"remote_main,omitempty"`
+	SyncCommits    []string `json:"sync_commits"`
 }
 
 type statusJSONPullCommit struct {
@@ -62,6 +73,7 @@ func buildStatusJSONOutput(
 	conflictFiles []string,
 	comparisonAvailable bool,
 	pullCommit pullCommitAssessment,
+	mainPublication mainPublicationAssessment,
 ) statusJSONOutput {
 	var pendingFixCreatedAt *string
 	if hasPendingFix {
@@ -86,7 +98,8 @@ func buildStatusJSONOutput(
 			Exists:    hasPendingFix,
 			CreatedAt: pendingFixCreatedAt,
 		},
-		PullCommit: buildStatusJSONPullCommit(pullCommit),
+		PullCommit:      buildStatusJSONPullCommit(pullCommit),
+		MainPublication: buildStatusJSONMainPublication(mainPublication),
 		Conflicts: statusJSONConflicts{
 			ScanStatus: conflictScanStatus,
 			Files:      files,
@@ -103,6 +116,25 @@ func buildStatusJSONOutput(
 			RelativeToCurrent: row.RelativeToReference,
 			RelativeToHead:    row.RelativeToHead,
 		})
+	}
+	return output
+}
+
+func buildStatusJSONMainPublication(assessment mainPublicationAssessment) statusJSONMainPublication {
+	output := statusJSONMainPublication{
+		Pending:     assessment.Exists,
+		SyncCommits: make([]string, 0),
+	}
+	if !assessment.Exists {
+		return output
+	}
+	output.Classification = string(assessment.Classification)
+	output.Reason = assessment.Reason
+	output.BaseCommit = assessment.State.BaseCommit
+	output.LocalMain = assessment.LocalMain
+	output.RemoteMain = assessment.RemoteMain
+	for _, commit := range assessment.State.Commits {
+		output.SyncCommits = append(output.SyncCommits, commit.Commit)
 	}
 	return output
 }

@@ -44,6 +44,13 @@ func TestMainPublicationStoreEnsureIsDurableAndIdempotent(t *testing.T) {
 	if state.CreatedAt.IsZero() || state.UpdatedAt.IsZero() {
 		t.Fatalf("timestamps=%+v", state)
 	}
+	if err := store.RecordFailure("protected branch"); err != nil {
+		t.Fatal(err)
+	}
+	state, exists, err = store.Load()
+	if err != nil || !exists || state.LastError != "protected branch" || state.LastAttemptAt == nil {
+		t.Fatalf("failure state=%+v exists=%v err=%v", state, exists, err)
+	}
 	info, err := os.Stat(path)
 	if err != nil {
 		t.Fatal(err)

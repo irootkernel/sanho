@@ -120,6 +120,31 @@ func TestReadPrePushUpdates(t *testing.T) {
 	}
 }
 
+func TestPublishMainBeforeTargetRejectsMixedMainAndFeaturePush(t *testing.T) {
+	repo, _, _ := setupMainPublicationRepository(t)
+	mainHead := runMainPublicationTestGit(t, repo, "rev-parse", "refs/heads/main")
+	command := &cobra.Command{}
+	output := new(bytes.Buffer)
+	command.SetErr(output)
+	err := publishMainBeforeTarget(context.Background(), repo, []prePushUpdate{
+		{
+			LocalRef:  "refs/heads/main",
+			LocalOID:  mainHead,
+			RemoteRef: "refs/heads/main",
+			RemoteOID: runMainPublicationTestGit(t, repo, "rev-parse", "refs/remotes/origin/main"),
+		},
+		{
+			LocalRef:  "refs/heads/feature",
+			LocalOID:  mainHead,
+			RemoteRef: "refs/heads/feature",
+			RemoteOID: strings.Repeat("0", 40),
+		},
+	}, command)
+	if err == nil || !strings.Contains(output.String(), "Push origin/main first") {
+		t.Fatalf("error=%v output=%q", err, output.String())
+	}
+}
+
 func setupMainPublicationRepository(t *testing.T) (string, string, string) {
 	t.Helper()
 	root := t.TempDir()

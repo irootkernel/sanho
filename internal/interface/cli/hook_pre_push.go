@@ -13,6 +13,7 @@ import (
 
 	"github.com/irootkernel/sanho/internal/domain/merge"
 	"github.com/irootkernel/sanho/internal/infra/fs"
+	infraGit "github.com/irootkernel/sanho/internal/infra/git"
 	"github.com/irootkernel/sanho/internal/usecase/hook"
 )
 
@@ -107,7 +108,25 @@ func runPrePushHook(cmd *cobra.Command, args []string) error {
 	if len(args) > 0 {
 		remoteName = args[0]
 	}
-	if remoteName != "origin" || !hasNonDeleteBranchUpdate(updates) {
+	if !hasNonDeleteBranchUpdate(updates) {
+		return nil
+	}
+	if remoteName == "" {
+		publication, assessErr := assessMainPublication(ctx, cwd, false)
+		if assessErr != nil {
+			return fmt.Errorf("sanho hook pre-push: inspect legacy hook publication state: %w", assessErr)
+		}
+		if publication.Exists {
+			if installErr := infraGit.NewHookInstaller().InstallAllHooks(ctx, cwd); installErr != nil {
+				return fmt.Errorf("sanho hook pre-push: upgrade legacy hook: %w", installErr)
+			}
+			cmd.PrintErrln("sanho: upgraded the installed pre-push hook to forward remote arguments.")
+			cmd.PrintErrln("Retry the same git push.")
+			return errors.New("pre-push hook upgrade required")
+		}
+		return nil
+	}
+	if remoteName != "origin" {
 		return nil
 	}
 	return publishMainBeforeTarget(ctx, cwd, updates, cmd)
@@ -135,11 +154,19 @@ func publishMainBeforeTarget(
 			cmd.PrintErrln("sanho: pending main publication must update origin/main from the local main branch.")
 			return errors.New("origin/main push does not use the local main branch")
 		}
+		if countBranchUpdates(updates) > 1 {
+			cmd.PrintErrln("sanho: pending main publication cannot share one push with other branch updates.")
+			cmd.PrintErrln("Push origin/main first, then retry the remaining refs.")
+			return errors.New("origin/main must be published separately")
+		}
 		return nil
 	}
 
 	cmd.Printf("sanho: publishing local main %s to origin/main before the target branch.\n", shortHash(publication.LocalMain))
 	if err := pushLocalMain(ctx, workDir); err != nil {
+		if recordErr := recordMainPublicationFailure(ctx, workDir, err); recordErr != nil {
+			err = errors.Join(err, fmt.Errorf("record publication failure: %w", recordErr))
+		}
 		cmd.PrintErrf("sanho: %v\n", err)
 		return errors.New("origin/main publication failed - target push blocked")
 	}
@@ -177,12 +204,27 @@ func readPrePushUpdates(cmd *cobra.Command) ([]prePushUpdate, error) {
 }
 
 func hasNonDeleteBranchUpdate(updates []prePushUpdate) bool {
+	return countNonDeleteBranchUpdates(updates) > 0
+}
+
+func countNonDeleteBranchUpdates(updates []prePushUpdate) int {
+	count := 0
 	for _, update := range updates {
 		if strings.HasPrefix(update.RemoteRef, "refs/heads/") && !isZeroObjectID(update.LocalOID) {
-			return true
+			count++
 		}
 	}
-	return false
+	return count
+}
+
+func countBranchUpdates(updates []prePushUpdate) int {
+	count := 0
+	for _, update := range updates {
+		if strings.HasPrefix(update.RemoteRef, "refs/heads/") {
+			count++
+		}
+	}
+	return count
 }
 
 func findRemoteMainUpdate(updates []prePushUpdate) (prePushUpdate, bool) {

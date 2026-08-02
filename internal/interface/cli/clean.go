@@ -58,6 +58,17 @@ func newCleanCmd() *cobra.Command {
 			if hasPendingReport {
 				return errors.New("cannot clean while a workspace docs-hash report is pending; restore daemon access and retry a guarded command first")
 			}
+			mainPublication, err := assessMainPublication(cmd.Context(), cwd, true)
+			if err != nil {
+				return fmt.Errorf("failed to check main publication state: %w", err)
+			}
+			if mainPublication.Exists {
+				return fmt.Errorf(
+					"cannot clean while origin/main publication is %s: %s; run 'git push origin main' or another origin branch push first",
+					mainPublication.Classification,
+					mainPublication.Reason,
+				)
+			}
 
 			configPath := filepath.Join(cwd, fs.ConfigFileName)
 			docsHashPath := filepath.Join(cwd, config.DocsHashFile)

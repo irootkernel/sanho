@@ -30,6 +30,24 @@ application repo
 - docs origin의 commit history가 문서 내용의 최종 기록이다.
 - daemon state는 프로젝트 매핑과 각 작업공간의 기준 commit을 저장한다.
 
+## 애플리케이션 main 게시 계약
+
+CLI가 만든 docs system commit은 Git common directory 아래의 private
+metadata에 기록한다. linked worktree도 같은 게시 대기 상태를 공유한다.
+상태에는 Sanho가 만든 commit OID, parent, docs hash와 제목을 저장하며,
+pre-push는 commit graph와 trailer를 다시 검증한다. 제목 prefix만으로 사용자
+commit을 system commit으로 분류하지 않는다.
+
+origin branch push에 `origin/main` update가 포함되면 원래 push가 로컬 main
+전체를 게시한다. 포함되지 않으면 CLI가 먼저 `refs/heads/main`을
+`refs/heads/main`으로 push하고, 성공 및 원격 도달을 확인한 뒤 target push를
+계속한다. 이 선행 push도 설치된 pre-push hook을 실행하지만 remote main
+update 분기로 들어가므로 재귀 push를 만들지 않는다.
+
+모든 main update는 fast-forward여야 한다. 원격 경합이나 branch protection
+실패는 target push까지 차단하며 force push로 복구하지 않는다. 다른 remote,
+tag-only push와 ref 삭제는 origin main 게시를 유발하지 않는다.
+
 ## 동시성 계약
 
 하나의 daemon 프로세스에서 모든 Git 작업은 `docs_repo_id`별 coordinator를

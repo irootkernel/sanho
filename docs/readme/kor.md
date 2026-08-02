@@ -101,6 +101,19 @@ history를 바꾸지 않고 실패한다. 성공 시 현재 staged/unstaged 변�
 commit 매핑을 읽어 준비된 commit의 rewrite를 확인하고 트랜잭션을 종료한다.
 연속 amend와 같은 hook 재실행도 같은 결과를 내도록 멱등 처리한다.
 
+생성한 system commit은 애플리케이션 저장소의 `origin/main`에서 확인될
+때까지 Git private metadata에 게시 대기 상태로 남는다. `git push origin
+main`은 로컬 `main`의 system commit과 사용자 commit을 원래 push 한 번으로
+게시한다. 다른 origin branch를 push하면 pre-push가 먼저 로컬 `main` 전체를
+`origin/main`에 fast-forward push한 뒤 요청한 branch push를 계속한다. main
+게시가 거부되거나 원격과 갈라졌다면 target push도 중단하며 force push하지
+않는다. 원인을 해결한 뒤 같은 `git push`를 다시 실행하면 된다.
+
+기존 workspace의 hook이 Git remote 인자를 전달하지 않으면 첫 게시 시도에서
+Sanho가 hook을 제자리에서 갱신하고 같은 push를 한 번 다시 요청한다. 별도
+`sanho push`나 재초기화 명령은 없다. `origin`이 아닌 remote와 tag-only 또는
+ref 삭제 push는 `origin/main`을 자동으로 변경하지 않는다.
+
 같은 텍스트 파일을 함께 수정했다면 원격을 덮어쓰지 않고 충돌 상태로
 멈춘다. 파일을 해결하고 stage한 뒤 `sanho pull-commit --continue`를
 실행한다. 시스템 커밋이 만들어지기 전이라면 `sanho pull-commit --abort`로

@@ -144,6 +144,7 @@ func TestBuildStatusJSONOutputUsesStableMachineFields(t *testing.T) {
 		[]string{"z.md", "a.md"},
 		true,
 		pullCommitAssessment{},
+		mainPublicationAssessment{},
 	)
 
 	data, err := json.Marshal(output)
@@ -164,6 +165,10 @@ func TestBuildStatusJSONOutputUsesStableMachineFields(t *testing.T) {
 	if pullCommit["exists"] != false {
 		t.Fatalf("pull_commit = %#v", pullCommit)
 	}
+	mainPublication := decoded["main_publication"].(map[string]any)
+	if mainPublication["pending"] != false || len(mainPublication["sync_commits"].([]any)) != 0 {
+		t.Fatalf("main_publication = %#v", mainPublication)
+	}
 	workspaces := decoded["workspaces"].([]any)
 	workspace := workspaces[0].(map[string]any)
 	if workspace["repository"] != "current" || workspace["docs_hash"] != "full-current-hash" {
@@ -173,6 +178,28 @@ func TestBuildStatusJSONOutputUsesStableMachineFields(t *testing.T) {
 	files := conflicts["files"].([]any)
 	if files[0] != "a.md" || files[1] != "z.md" {
 		t.Fatalf("conflict files = %#v", files)
+	}
+}
+
+func TestBuildStatusJSONMainPublicationIncludesPendingCommits(t *testing.T) {
+	output := buildStatusJSONMainPublication(mainPublicationAssessment{
+		Exists:         true,
+		Classification: mainPublicationBlocked,
+		Reason:         "local main has diverged from origin/main",
+		LocalMain:      "local-main",
+		RemoteMain:     "remote-main",
+		State: fs.MainPublicationState{
+			BaseCommit: "base-main",
+			Commits: []fs.MainPublicationCommit{
+				{Commit: "sync-1"},
+				{Commit: "sync-2"},
+			},
+		},
+	})
+	if !output.Pending || output.Classification != "blocked" || output.BaseCommit != "base-main" ||
+		output.LocalMain != "local-main" || output.RemoteMain != "remote-main" ||
+		len(output.SyncCommits) != 2 || output.SyncCommits[1] != "sync-2" {
+		t.Fatalf("main_publication=%+v", output)
 	}
 }
 

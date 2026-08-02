@@ -22,11 +22,13 @@ type MainPublicationCommit struct {
 // MainPublicationState records system docs commits that have not yet been
 // confirmed reachable from origin/main.
 type MainPublicationState struct {
-	Version    int                     `json:"version"`
-	BaseCommit string                  `json:"base_commit,omitempty"`
-	Commits    []MainPublicationCommit `json:"commits"`
-	CreatedAt  time.Time               `json:"created_at"`
-	UpdatedAt  time.Time               `json:"updated_at"`
+	Version       int                     `json:"version"`
+	BaseCommit    string                  `json:"base_commit,omitempty"`
+	Commits       []MainPublicationCommit `json:"commits"`
+	LastError     string                  `json:"last_error,omitempty"`
+	LastAttemptAt *time.Time              `json:"last_attempt_at,omitempty"`
+	CreatedAt     time.Time               `json:"created_at"`
+	UpdatedAt     time.Time               `json:"updated_at"`
 }
 
 type MainPublicationStore struct {
@@ -100,6 +102,21 @@ func (s *MainPublicationStore) Save(state MainPublicationState) error {
 		return fmt.Errorf("write main publication state: %w", err)
 	}
 	return nil
+}
+
+func (s *MainPublicationStore) RecordFailure(message string) error {
+	state, exists, err := s.Load()
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return fmt.Errorf("cannot record main publication failure without pending state")
+	}
+	now := time.Now().UTC()
+	state.LastError = message
+	state.LastAttemptAt = &now
+	state.UpdatedAt = now
+	return s.Save(state)
 }
 
 func (s *MainPublicationStore) Remove() error {
