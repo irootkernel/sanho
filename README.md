@@ -109,7 +109,11 @@ private Git metadata, and the next commit materializes it through the same
 deletions. `pull-commit` exposes that operation proactively. HEAD-moving hooks
 reconcile `.sanho_docs_hash` and daemon workspace state after merge, rewrite,
 or branch checkout when the resulting docs tree matches a reachable
-`docs-version` commit.
+`docs-version` commit. If a commit or rewrite hook is interrupted,
+`sanho pull-commit --recover` classifies the transaction and creates recovery
+refs before clearing only state that can be proven complete. `sanho status`
+shows the active phase and exact safe next command, and pre-push continues to
+block ambiguous or incomplete transactions.
 Run `sanho <command> --help` for the complete interface.
 Machine-readable output for query commands is documented in
 [CLI JSON output](docs/cli-json.md).

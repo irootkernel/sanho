@@ -86,6 +86,18 @@ branch는 history를 바꾸지 않고 실패한다. 이 과정은 임시 clone�
 `sanho pull-commit --abort`로 원래 상태를 복원할 수 있다. 원격
 history를 강제 push로 덮어쓰지 않는다.
 
+`git commit --amend`는 준비된 commit을 sibling commit으로 바꾸므로 단순한
+ancestor 검사만으로 완료 여부를 판단하지 않는다. `post-rewrite`가 stdin의
+old/new 매핑과 준비 당시 index tree를 검증한다. hook이 중단된 경우
+`sanho pull-commit --recover`가 commit graph, parent/tree와 rewrite 기록을
+검사한다. 복구 전에는 현재 HEAD, index, worktree를
+`refs/sanho/recovery/<transaction-id>/`에 보존하며, 완료를 증명할 수 없으면
+transaction을 삭제하지 않는다.
+
+pre-push는 transaction 디렉터리의 존재만으로 판단하지 않는다. 논리적으로
+완료된 stale state는 멱등하게 정리하지만 `pending`, `ambiguous`, `corrupt`
+상태는 계속 차단하고 `status`와 같은 안전한 다음 명령을 출력한다.
+
 바이너리는 base/local/remote 내용 비교만으로 결과가 명확한 경우 자동으로
 처리한다. local과 remote가 base와 서로 다르게 변경된 바이너리는 경로를
 포함한 오류로 중단하고 worktree, index, docs hash와 transaction 상태를

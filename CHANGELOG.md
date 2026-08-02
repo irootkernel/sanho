@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `sanho pull-commit --recover` preserves backup refs for HEAD, the index, and
+  the worktree before reconciling an interrupted transaction.
+- `sanho status` and `sanho status --json` report active pull-commit phase,
+  classification, and the exact safe next command.
+
+### Fixed
+
+- `git commit --amend` and repeated amend operations now reconcile prepared
+  pull-commit transactions through Git's `post-rewrite` mappings.
+- Post-commit retry, post-rewrite, recovery, and stale-state cleanup are
+  idempotent, while ambiguous transactions continue to block pushes.
+
 ## v0.1.2 - 2026-07-29
 
 ### Fixed

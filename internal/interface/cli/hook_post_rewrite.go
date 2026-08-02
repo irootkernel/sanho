@@ -164,14 +164,8 @@ func (e *pullCommitEngine) reconcileAfterRewrite(
 			return false, fmt.Errorf("amended commit tree %s does not match prepared index tree %s", tree, state.PreparedTree)
 		}
 	}
-	state.Version = 3
-	state.Phase = fs.PullCommitPhaseCompleted
-	state.CompletionHead = head
-	state.CompletionReason = "post-rewrite-amend"
-	if err := store.Save(state); err != nil {
-		return false, err
-	}
-	return true, store.Remove()
+	assessment := pullCommitAssessment{State: state, Exists: true, Head: head}
+	return true, e.completeTransaction(ctx, workDir, assessment, "post-rewrite-amend")
 }
 
 func appendPullCommitRewrite(

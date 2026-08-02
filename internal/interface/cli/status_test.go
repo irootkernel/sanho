@@ -9,6 +9,7 @@ import (
 
 	"github.com/irootkernel/sanho/internal/domain/client"
 	"github.com/irootkernel/sanho/internal/domain/docs"
+	"github.com/irootkernel/sanho/internal/infra/fs"
 	"github.com/irootkernel/sanho/internal/infra/httpclient"
 	"github.com/spf13/cobra"
 )
@@ -142,6 +143,7 @@ func TestBuildStatusJSONOutputUsesStableMachineFields(t *testing.T) {
 		"complete",
 		[]string{"z.md", "a.md"},
 		true,
+		pullCommitAssessment{},
 	)
 
 	data, err := json.Marshal(output)
@@ -158,6 +160,10 @@ func TestBuildStatusJSONOutputUsesStableMachineFields(t *testing.T) {
 	if _, ok := decoded["local_path"]; ok {
 		t.Fatalf("status JSON exposed local_path: %#v", decoded)
 	}
+	pullCommit := decoded["pull_commit"].(map[string]any)
+	if pullCommit["exists"] != false {
+		t.Fatalf("pull_commit = %#v", pullCommit)
+	}
 	workspaces := decoded["workspaces"].([]any)
 	workspace := workspaces[0].(map[string]any)
 	if workspace["repository"] != "current" || workspace["docs_hash"] != "full-current-hash" {
@@ -167,5 +173,27 @@ func TestBuildStatusJSONOutputUsesStableMachineFields(t *testing.T) {
 	files := conflicts["files"].([]any)
 	if files[0] != "a.md" || files[1] != "z.md" {
 		t.Fatalf("conflict files = %#v", files)
+	}
+}
+
+func TestBuildStatusJSONPullCommitIncludesRecoveryAction(t *testing.T) {
+	output := buildStatusJSONPullCommit(pullCommitAssessment{
+		Exists:         true,
+		Classification: pullCommitAmbiguous,
+		Reason:         "history rewrite is not proven",
+		NextCommand:    "sanho pull-commit --recover",
+		Head:           "current-head",
+		State: fs.PullCommitState{
+			Phase:        fs.PullCommitPhasePrepared,
+			PreparedHead: "prepared-head",
+			Recovery: &fs.PullCommitRecovery{
+				HeadRef: "refs/sanho/recovery/transaction/head",
+			},
+		},
+	})
+	if !output.Exists || output.Classification != "ambiguous" ||
+		output.NextCommand != "sanho pull-commit --recover" ||
+		output.BackupHeadRef != "refs/sanho/recovery/transaction/head" {
+		t.Fatalf("pull_commit=%+v", output)
 	}
 }

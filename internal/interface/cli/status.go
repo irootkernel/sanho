@@ -58,6 +58,10 @@ func newStatusCmd() *cobra.Command {
 				}
 				return withErrorCode("invalid_workspace_config", fmt.Errorf("failed to load config: %w", err))
 			}
+			pullCommit, err := newPullCommitEngine(nil).assessTransaction(ctx, cwd)
+			if err != nil {
+				return withErrorCode("pull_commit_state_failed", fmt.Errorf("failed to inspect pull-commit state: %w", err))
+			}
 
 			// Step 2: Load .sanho_docs_hash
 			hashStore := fs.NewFileDocsHashStore()
@@ -210,6 +214,7 @@ func newStatusCmd() *cobra.Command {
 					conflictScanStatus,
 					conflictFiles,
 					comparisonAvailable,
+					pullCommit,
 				)
 				if err := writeJSON(cmd.OutOrStdout(), output); err != nil {
 					return withErrorCode("internal_error", errors.Join(ErrInternal, err))
@@ -229,6 +234,12 @@ func newStatusCmd() *cobra.Command {
 				cmd.Println("  pending_fix   : yes")
 			} else {
 				cmd.Println("  pending_fix   : no")
+			}
+			if pullCommit.Exists {
+				cmd.Printf("  pull_commit  : %s (%s)\n", pullCommit.Classification, pullCommit.State.Phase)
+				cmd.Printf("  recovery     : %s\n", pullCommit.NextCommand)
+			} else {
+				cmd.Println("  pull_commit  : none")
 			}
 			if daemonError == nil {
 				cmd.Println()

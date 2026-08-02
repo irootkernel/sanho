@@ -234,16 +234,37 @@ func TestPullCommitPreparedTransactionReconcilesAmendRewrite(t *testing.T) {
 	if err := engine.clearAfterCommit(ctx, repo); err != nil {
 		t.Fatal(err)
 	}
+	interrupted := errors.New("post-rewrite interrupted after completion record")
+	engine.recoveryStep = func(step string) error {
+		if step == "completion-recorded" {
+			return interrupted
+		}
+		return nil
+	}
 	if completed, err := engine.reconcileAfterRewrite(
 		ctx,
 		repo,
 		&client.WorkspaceConfig{DocsSyncCommitMessage: client.DefaultDocsSyncCommitMessage},
 		"amend",
 		[]gitRewriteMapping{{Old: preparedHead, New: amendedHead}},
-	); err != nil {
-		t.Fatal(err)
+	); !errors.Is(err, interrupted) {
+		t.Fatalf("interrupted reconcile error=%v", err)
 	} else if !completed {
 		t.Fatal("amend rewrite was not recognized as completed")
+	}
+	state, exists, err := store.Load()
+	if err != nil || !exists || state.Phase != fs.PullCommitPhaseCompleted {
+		t.Fatalf("interrupted state=%+v exists=%v err=%v", state, exists, err)
+	}
+	engine.recoveryStep = nil
+	if completed, err := engine.reconcileAfterRewrite(
+		ctx,
+		repo,
+		&client.WorkspaceConfig{DocsSyncCommitMessage: client.DefaultDocsSyncCommitMessage},
+		"amend",
+		[]gitRewriteMapping{{Old: preparedHead, New: amendedHead}},
+	); err != nil || !completed {
+		t.Fatalf("repeated reconcile completed=%v err=%v", completed, err)
 	}
 	if exists, err := store.Exists(); err != nil {
 		t.Fatal(err)

@@ -37,7 +37,8 @@ sanho --socket /absolute/path/to/sanhod.sock state --all --json
 - 입력·실행 위치: `invalid_arguments`, `invalid_socket_path`,
   `not_in_workspace`
 - 로컬 상태: `invalid_workspace_config`, `docs_hash_not_found`,
-  `docs_hash_read_failed`, `pending_fix_read_failed`
+  `docs_hash_read_failed`, `pending_fix_read_failed`,
+  `pull_commit_state_failed`
 - daemon 상태: `unknown_project`, `unknown_workspace`,
   `workspace_project_mismatch`, `unknown_docs_commit`,
   `daemon_request_failed`
@@ -66,6 +67,7 @@ commit과 build date는 기존 사람용 `sanho version` 출력에서만 제공�
   "status": "outdated",
   "docs_relation": {"status": "behind", "ahead": 0, "behind": 2},
   "pending_fix": {"exists": false, "created_at": null},
+  "pull_commit": {"exists": false},
   "conflicts": {"scan_status": "complete", "files": []},
   "workspace_comparisons_available": true,
   "workspaces": []
@@ -77,6 +79,12 @@ commit과 build date는 기존 사람용 `sanho version` 출력에서만 제공�
 제공한다. 구버전 daemon이 작업공간 비교 endpoint를 제공하지 않으면
 `workspace_comparisons_available`은 `false`, `workspaces`는 `[]`가 된다.
 충돌 검색을 완료하지 못하면 `conflicts.scan_status`가 `unavailable`이 된다.
+
+진행 중인 transaction이 있으면 `pull_commit`은 `phase`, `classification`,
+`reason`, `current_head`, `prepared_head`, `next_command`를 제공한다. 복구
+checkpoint가 기록된 경우 `backup_head_ref`도 포함한다. 분류는 `pending`,
+`completed`, `rewritten`, `recoverable_rewrite`, `ambiguous`, `corrupt` 중
+하나이며, 자동화는 `next_command`를 사용자에게 그대로 제시할 수 있다.
 
 작업공간 항목은 기존 사람용 표와 같은 repository 라벨, workspace ID,
 전체 docs hash, 현재 작업공간 및 HEAD와의 관계만 포함한다. 원본

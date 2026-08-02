@@ -137,33 +137,14 @@ func (e *pullCommitEngine) hasTransaction(ctx context.Context, workDir string) (
 	if !isRepository {
 		return false, nil
 	}
-	store, err := e.store(ctx, workDir)
-	if err != nil {
-		return false, err
+	assessment, err := e.assessTransaction(ctx, workDir)
+	if err != nil || !assessment.Exists {
+		return assessment.Exists, err
 	}
-	state, exists, err := store.Load()
-	if err != nil || !exists {
-		return exists, err
-	}
-	if state.Phase != fs.PullCommitPhasePrepared {
+	if assessment.Classification != pullCommitCompleted && assessment.Classification != pullCommitRewritten {
 		return true, nil
 	}
-	head, err := e.workspaceSync.Head(ctx, workDir)
-	if err != nil {
-		return true, err
-	}
-	preparedHead := pullCommitPreparedHead(state)
-	if head == preparedHead {
-		return true, nil
-	}
-	completed, err := e.workspaceSync.IsAncestor(ctx, workDir, preparedHead, head)
-	if err != nil {
-		return true, err
-	}
-	if !completed {
-		return true, nil
-	}
-	if err := store.Remove(); err != nil {
+	if err := e.completeTransaction(ctx, workDir, assessment, "automatic-reconciliation"); err != nil {
 		return true, err
 	}
 	return false, nil
@@ -529,9 +510,9 @@ func (e *pullCommitEngine) resume(
 			}
 			return state, true, fmt.Errorf("HEAD changed after docs sync; expected descendant of %s, got %s", preparedHead, head)
 		}
-		if err := e.prepare(ctx, workDir, config, store, &state); err != nil {
-			return state, true, err
-		}
+		// Prepared is a durable boundary. Reapplying it would overwrite a newer
+		// docs hash reported by a successful pre-commit when a later hook (for
+		// example commit-msg) rejected the commit.
 		return state, true, nil
 
 	case fs.PullCommitPhaseSyncCommitted:
@@ -739,33 +720,14 @@ func (e *pullCommitEngine) abort(ctx context.Context, workDir string, config *cl
 }
 
 func (e *pullCommitEngine) clearAfterCommit(ctx context.Context, workDir string) error {
-	store, err := e.store(ctx, workDir)
-	if err != nil {
+	assessment, err := e.assessTransaction(ctx, workDir)
+	if err != nil || !assessment.Exists {
 		return err
 	}
-	state, exists, err := store.Load()
-	if err != nil || !exists {
-		return err
-	}
-	if state.Phase != fs.PullCommitPhasePrepared {
+	if assessment.Classification != pullCommitCompleted && assessment.Classification != pullCommitRewritten {
 		return nil
 	}
-	head, err := e.workspaceSync.Head(ctx, workDir)
-	if err != nil {
-		return err
-	}
-	preparedHead := pullCommitPreparedHead(state)
-	if head == preparedHead {
-		return nil
-	}
-	completed, err := e.workspaceSync.IsAncestor(ctx, workDir, preparedHead, head)
-	if err != nil {
-		return err
-	}
-	if !completed {
-		return nil
-	}
-	return store.Remove()
+	return e.completeTransaction(ctx, workDir, assessment, "post-commit")
 }
 
 func pullCommitPreparedHead(state fs.PullCommitState) string {

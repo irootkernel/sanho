@@ -192,3 +192,43 @@ func TestPullCommitRecoveryResumesAfterEveryMetadataMutation(t *testing.T) {
 		})
 	}
 }
+
+func TestPullCommitGuardClearsLogicallyCompletedStaleState(t *testing.T) {
+	ctx := context.Background()
+	repo := t.TempDir()
+	runPullCommitTestGit(t, repo, "init", "--initial-branch=main")
+	runPullCommitTestGit(t, repo, "config", "user.email", "test@example.com")
+	runPullCommitTestGit(t, repo, "config", "user.name", "Test User")
+	writePullCommitTestFile(t, repo, "base.txt", "base\n")
+	runPullCommitTestGit(t, repo, "add", "base.txt")
+	runPullCommitTestGit(t, repo, "commit", "--no-verify", "-m", "prepared")
+	preparedHead := runPullCommitTestGit(t, repo, "rev-parse", "HEAD")
+	writePullCommitTestFile(t, repo, "feature.txt", "feature\n")
+	runPullCommitTestGit(t, repo, "add", "feature.txt")
+	runPullCommitTestGit(t, repo, "commit", "--no-verify", "-m", "feature")
+
+	engine := newPullCommitEngine(nil)
+	store, err := engine.store(ctx, repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Save(fs.PullCommitState{
+		Version:      3,
+		Phase:        fs.PullCommitPhasePrepared,
+		OriginalHead: preparedHead,
+		SyncCommit:   preparedHead,
+		PreparedHead: preparedHead,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	active, err := engine.hasTransaction(ctx, repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if active {
+		t.Fatal("logically completed transaction remained active")
+	}
+	if exists, err := store.Exists(); err != nil || exists {
+		t.Fatalf("transaction exists=%v err=%v", exists, err)
+	}
+}

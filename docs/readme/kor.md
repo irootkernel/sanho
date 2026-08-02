@@ -97,11 +97,22 @@ branch, merge commit이 있는 branch, 갈라진 local/remote `main`은 자동�
 history를 바꾸지 않고 실패한다. 성공 시 현재 staged/unstaged 변경을
 보존한 뒤 원래 commit을 중단한다. 같은 `git commit` 명령을 다시 실행하면
 보존한 staged 변경을 Git의 commit index에 복원해 원래 커밋을 계속한다.
+원래 명령이 `git commit --amend`라면 `post-rewrite` hook이 Git의 old/new
+commit 매핑을 읽어 준비된 commit의 rewrite를 확인하고 트랜잭션을 종료한다.
+연속 amend와 같은 hook 재실행도 같은 결과를 내도록 멱등 처리한다.
 
 같은 텍스트 파일을 함께 수정했다면 원격을 덮어쓰지 않고 충돌 상태로
 멈춘다. 파일을 해결하고 stage한 뒤 `sanho pull-commit --continue`를
 실행한다. 시스템 커밋이 만들어지기 전이라면 `sanho pull-commit --abort`로
 원래 staged/unstaged docs 상태를 복원할 수 있다.
+
+commit 또는 rewrite hook이 중단되어 transaction이 남았다면
+`sanho status`에서 `pull_commit` 분류와 안전한 다음 명령을 확인한다.
+완료된 rewrite가 ancestry만으로 확인되지 않으면
+`sanho pull-commit --recover`를 실행한다. 이 명령은 먼저
+`refs/sanho/recovery/<transaction-id>/` 아래에 현재 HEAD, index, worktree를
+보존한 뒤 완료가 증명된 transaction만 정리한다. 판단이 불명확하거나 Git
+object가 손상된 경우 state와 backup ref를 유지하고 push를 계속 차단한다.
 
 PNG나 PDF 같은 바이너리 파일도 base/local/remote 중 두 내용이 같아 결과가
 명확하면 자동으로 유지하거나 변경된 쪽을 채택한다. local과 remote가 base와

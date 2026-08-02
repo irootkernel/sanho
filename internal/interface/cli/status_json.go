@@ -16,9 +16,21 @@ type statusJSONOutput struct {
 	Status                        client.DocsStatus         `json:"status"`
 	DocsRelation                  httpclient.CommitRelation `json:"docs_relation"`
 	PendingFix                    statusJSONPendingFix      `json:"pending_fix"`
+	PullCommit                    statusJSONPullCommit      `json:"pull_commit"`
 	Conflicts                     statusJSONConflicts       `json:"conflicts"`
 	WorkspaceComparisonsAvailable bool                      `json:"workspace_comparisons_available"`
 	Workspaces                    []statusJSONWorkspace     `json:"workspaces"`
+}
+
+type statusJSONPullCommit struct {
+	Exists         bool   `json:"exists"`
+	Phase          string `json:"phase,omitempty"`
+	Classification string `json:"classification,omitempty"`
+	Reason         string `json:"reason,omitempty"`
+	CurrentHead    string `json:"current_head,omitempty"`
+	PreparedHead   string `json:"prepared_head,omitempty"`
+	NextCommand    string `json:"next_command,omitempty"`
+	BackupHeadRef  string `json:"backup_head_ref,omitempty"`
 }
 
 type statusJSONPendingFix struct {
@@ -49,6 +61,7 @@ func buildStatusJSONOutput(
 	conflictScanStatus string,
 	conflictFiles []string,
 	comparisonAvailable bool,
+	pullCommit pullCommitAssessment,
 ) statusJSONOutput {
 	var pendingFixCreatedAt *string
 	if hasPendingFix {
@@ -73,6 +86,7 @@ func buildStatusJSONOutput(
 			Exists:    hasPendingFix,
 			CreatedAt: pendingFixCreatedAt,
 		},
+		PullCommit: buildStatusJSONPullCommit(pullCommit),
 		Conflicts: statusJSONConflicts{
 			ScanStatus: conflictScanStatus,
 			Files:      files,
@@ -89,6 +103,23 @@ func buildStatusJSONOutput(
 			RelativeToCurrent: row.RelativeToReference,
 			RelativeToHead:    row.RelativeToHead,
 		})
+	}
+	return output
+}
+
+func buildStatusJSONPullCommit(assessment pullCommitAssessment) statusJSONPullCommit {
+	output := statusJSONPullCommit{Exists: assessment.Exists}
+	if !assessment.Exists {
+		return output
+	}
+	output.Phase = assessment.State.Phase
+	output.Classification = string(assessment.Classification)
+	output.Reason = assessment.Reason
+	output.CurrentHead = assessment.Head
+	output.PreparedHead = pullCommitPreparedHead(assessment.State)
+	output.NextCommand = assessment.NextCommand
+	if assessment.State.Recovery != nil {
+		output.BackupHeadRef = assessment.State.Recovery.HeadRef
 	}
 	return output
 }

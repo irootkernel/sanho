@@ -35,13 +35,18 @@ func runPrePushHook(cmd *cobra.Command) error {
 	if err := retryPendingWorkspaceReport(ctx, cwd, config); err != nil {
 		return fmt.Errorf("sanho hook pre-push: %w", err)
 	}
-	hasPullCommit, err := newPullCommitEngine(nil).hasTransaction(ctx, cwd)
+	pullCommit := newPullCommitEngine(nil)
+	hasPullCommit, err := pullCommit.hasTransaction(ctx, cwd)
 	if err != nil {
 		return fmt.Errorf("sanho hook pre-push: check pull-commit state: %w", err)
 	}
 	if hasPullCommit {
-		cmd.PrintErrln("sanho: an incomplete pull-commit transaction exists.")
-		cmd.PrintErrln("Complete the pending commit or resolve it with 'sanho pull-commit --continue'.")
+		assessment, assessErr := pullCommit.assessTransaction(ctx, cwd)
+		if assessErr != nil {
+			return fmt.Errorf("sanho hook pre-push: classify pull-commit state: %w", assessErr)
+		}
+		cmd.PrintErrf("sanho: pull-commit transaction is %s: %s.\n", assessment.Classification, assessment.Reason)
+		cmd.PrintErrf("Safe next step: %s\n", assessment.NextCommand)
 		cmd.PrintErrln("Push is blocked so the docs base commit cannot be published alone.")
 		return errors.New("pull-commit transaction exists - push blocked")
 	}

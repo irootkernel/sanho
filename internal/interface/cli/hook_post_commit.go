@@ -34,6 +34,17 @@ func runPostCommitHook(cmd *cobra.Command) error {
 	if err := engine.clearAfterCommit(ctx, workDir); err != nil {
 		cmd.PrintErrf("sanho hook post-commit: failed to clear pull-commit state: %v\n", err)
 	}
+	assessment, assessErr := engine.assessTransaction(ctx, workDir)
+	if assessErr != nil {
+		cmd.PrintErrf("sanho hook post-commit: failed to classify pull-commit state: %v\n", assessErr)
+	} else if assessment.Exists {
+		cmd.PrintErrf(
+			"sanho hook post-commit: pull-commit remains %s: %s. Safe next step: %s\n",
+			assessment.Classification,
+			assessment.Reason,
+			assessment.NextCommand,
+		)
+	}
 	hash, err := fs.NewFileDocsHashStore().Read(filepath.Join(workDir, config.DocsHashFile))
 	if err != nil {
 		cmd.PrintErrf("sanho hook post-commit: failed to read docs hash: %v\n", err)

@@ -34,6 +34,10 @@ func (e *pullCommitEngine) assessTransaction(
 	ctx context.Context,
 	workDir string,
 ) (pullCommitAssessment, error) {
+	isRepository, err := e.workspaceSync.IsRepository(ctx, workDir)
+	if err != nil || !isRepository {
+		return pullCommitAssessment{}, err
+	}
 	store, err := e.store(ctx, workDir)
 	if err != nil {
 		return pullCommitAssessment{}, err
@@ -215,6 +219,30 @@ func (e *pullCommitEngine) recover(
 	default:
 		return assessment, fmt.Errorf("unknown pull-commit classification %q", assessment.Classification)
 	}
+}
+
+func (e *pullCommitEngine) completeTransaction(
+	ctx context.Context,
+	workDir string,
+	assessment pullCommitAssessment,
+	reason string,
+) error {
+	store, err := e.store(ctx, workDir)
+	if err != nil {
+		return err
+	}
+	state := assessment.State
+	state.Version = 3
+	state.Phase = fs.PullCommitPhaseCompleted
+	state.CompletionHead = assessment.Head
+	state.CompletionReason = reason
+	if err := store.Save(state); err != nil {
+		return err
+	}
+	if err := e.runRecoveryStep("completion-recorded"); err != nil {
+		return err
+	}
+	return store.Remove()
 }
 
 func (e *pullCommitEngine) runRecoveryStep(step string) error {
