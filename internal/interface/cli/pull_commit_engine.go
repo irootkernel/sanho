@@ -3,6 +3,8 @@ package cli
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -188,6 +190,14 @@ func (e *pullCommitEngine) start(
 	if err != nil {
 		return fs.PullCommitState{}, fmt.Errorf("resolve current HEAD: %w", err)
 	}
+	branchRef, err := e.workspaceSync.SymbolicHead(ctx, workDir)
+	if err != nil {
+		return fs.PullCommitState{}, err
+	}
+	transactionID, err := newPullCommitTransactionID()
+	if err != nil {
+		return fs.PullCommitState{}, err
+	}
 	baseSnapshot, _, err := e.httpClient.DocsSnapshot(ctx, config.Project, baseHash)
 	if err != nil {
 		return fs.PullCommitState{}, fmt.Errorf("download base docs snapshot: %w", err)
@@ -266,8 +276,10 @@ func (e *pullCommitEngine) start(
 	}
 
 	state := fs.PullCommitState{
-		Version:       2,
+		Version:       3,
 		Phase:         fs.PullCommitPhaseReady,
+		TransactionID: transactionID,
+		BranchRef:     branchRef,
 		OriginalHead:  head,
 		BaseHash:      baseHash,
 		RemoteHash:    remoteHash,
@@ -605,6 +617,18 @@ func (e *pullCommitEngine) prepare(
 	if err := e.workspaceSync.StageDocsSnapshot(ctx, workDir, config.DocsDir, mergedIndex); err != nil {
 		return err
 	}
+	preparedTree, err := e.workspaceSync.WriteTree(ctx, workDir)
+	if err != nil {
+		return err
+	}
+	state.Version = 3
+	state.PreparedTree = preparedTree
+	if state.BranchRef == "" {
+		state.BranchRef, err = e.workspaceSync.SymbolicHead(ctx, workDir)
+		if err != nil {
+			return err
+		}
+	}
 	if err := e.workspaceSync.ApplyWorktreeDocsSnapshot(workDir, config.DocsDir, mergedWork); err != nil {
 		return err
 	}
@@ -748,6 +772,14 @@ func pullCommitPreparedHead(state fs.PullCommitState) string {
 		return state.PreparedHead
 	}
 	return state.SyncCommit
+}
+
+func newPullCommitTransactionID() (string, error) {
+	var value [16]byte
+	if _, err := rand.Read(value[:]); err != nil {
+		return "", fmt.Errorf("create pull-commit transaction id: %w", err)
+	}
+	return hex.EncodeToString(value[:]), nil
 }
 
 func (e *pullCommitEngine) mergeSnapshots(

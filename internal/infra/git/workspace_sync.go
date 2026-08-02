@@ -2,6 +2,7 @@ package git
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -86,6 +87,33 @@ func (s *WorkspaceSync) ResolveRef(ctx context.Context, repoPath, ref string) (s
 	out, err := runWorkspaceGit(ctx, repoPath, nil, "rev-parse", "--verify", ref+"^{commit}")
 	if err != nil {
 		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// SymbolicHead returns the full branch ref currently checked out.
+func (s *WorkspaceSync) SymbolicHead(ctx context.Context, repoPath string) (string, error) {
+	out, err := runWorkspaceGit(ctx, repoPath, nil, "symbolic-ref", "-q", "HEAD")
+	if err != nil {
+		return "", errors.New("detached HEAD is not supported for pull-commit")
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// WriteTree returns the tree represented by the current Git index.
+func (s *WorkspaceSync) WriteTree(ctx context.Context, repoPath string) (string, error) {
+	out, err := runWorkspaceGit(ctx, repoPath, nil, "write-tree")
+	if err != nil {
+		return "", fmt.Errorf("write index tree: %w", err)
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// CommitTree returns the root tree of commit.
+func (s *WorkspaceSync) CommitTree(ctx context.Context, repoPath, commit string) (string, error) {
+	out, err := runWorkspaceGit(ctx, repoPath, nil, "rev-parse", "--verify", commit+"^{tree}")
+	if err != nil {
+		return "", fmt.Errorf("resolve commit tree: %w", err)
 	}
 	return strings.TrimSpace(string(out)), nil
 }

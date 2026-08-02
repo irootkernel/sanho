@@ -182,6 +182,76 @@ func TestPullCommitPreservesStagedAndUnstagedDocsLayers(t *testing.T) {
 	}
 }
 
+func TestPullCommitPreparedTransactionReconcilesAmendRewrite(t *testing.T) {
+	ctx := context.Background()
+	repo := t.TempDir()
+	runPullCommitTestGit(t, repo, "init", "--initial-branch=main")
+	runPullCommitTestGit(t, repo, "config", "user.email", "test@example.com")
+	runPullCommitTestGit(t, repo, "config", "user.name", "Test User")
+	runPullCommitTestGit(t, repo, "config", "commit.gpgsign", "false")
+
+	writePullCommitTestFile(t, repo, "docs/readme.md", "synced\n")
+	runPullCommitTestGit(t, repo, "add", "docs/readme.md")
+	runPullCommitTestGit(t, repo, "commit", "--no-verify", "-m", "[SANHO] Update docs")
+	syncCommit := runPullCommitTestGit(t, repo, "rev-parse", "HEAD")
+
+	writePullCommitTestFile(t, repo, "feature.txt", "prepared\n")
+	runPullCommitTestGit(t, repo, "add", "feature.txt")
+	runPullCommitTestGit(t, repo, "commit", "--no-verify", "-m", "prepared feature")
+	preparedHead := runPullCommitTestGit(t, repo, "rev-parse", "HEAD")
+
+	writePullCommitTestFile(t, repo, "feature.txt", "amended\n")
+	runPullCommitTestGit(t, repo, "add", "feature.txt")
+	engine := newPullCommitEngine(nil)
+	store, err := engine.store(ctx, repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Save(fs.PullCommitState{
+		Version:      2,
+		Phase:        fs.PullCommitPhasePrepared,
+		OriginalHead: preparedHead,
+		SyncCommit:   syncCommit,
+		PreparedHead: preparedHead,
+		BaseHash:     "base-docs",
+		RemoteHash:   "remote-docs",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	runPullCommitTestGit(t, repo, "commit", "--amend", "--no-verify", "-m", "amended feature")
+	amendedHead := runPullCommitTestGit(t, repo, "rev-parse", "HEAD")
+	if preparedHead == amendedHead {
+		t.Fatal("amend did not rewrite HEAD")
+	}
+	if got := runPullCommitTestGit(t, repo, "rev-parse", preparedHead+"^"); got != syncCommit {
+		t.Fatalf("prepared parent=%s want %s", got, syncCommit)
+	}
+	if got := runPullCommitTestGit(t, repo, "rev-parse", amendedHead+"^"); got != syncCommit {
+		t.Fatalf("amended parent=%s want %s", got, syncCommit)
+	}
+
+	if err := engine.clearAfterCommit(ctx, repo); err != nil {
+		t.Fatal(err)
+	}
+	if completed, err := engine.reconcileAfterRewrite(
+		ctx,
+		repo,
+		&client.WorkspaceConfig{DocsSyncCommitMessage: client.DefaultDocsSyncCommitMessage},
+		"amend",
+		[]gitRewriteMapping{{Old: preparedHead, New: amendedHead}},
+	); err != nil {
+		t.Fatal(err)
+	} else if !completed {
+		t.Fatal("amend rewrite was not recognized as completed")
+	}
+	if exists, err := store.Exists(); err != nil {
+		t.Fatal(err)
+	} else if exists {
+		t.Fatal("amended prepared transaction remained active")
+	}
+}
+
 func TestPullCommitConflictBlocksUntilResolvedAndStaged(t *testing.T) {
 	ctx := context.Background()
 	repo := t.TempDir()

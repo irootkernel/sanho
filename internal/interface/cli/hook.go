@@ -109,7 +109,7 @@ This hook will:
 - Always exit with code 0 to not block Git operations`,
 		Args: cobra.ArbitraryArgs, // Git may pass multiple args (rewrite-command, mapping-file, etc.)
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runHookStatus(cmd, "post-rewrite", true)
+			return runPostRewriteHook(cmd, args)
 		},
 	}
 }

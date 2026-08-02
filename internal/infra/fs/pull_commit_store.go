@@ -16,6 +16,7 @@ const (
 	PullCommitPhaseConflict      = "conflict"
 	PullCommitPhaseSyncCommitted = "sync_committed"
 	PullCommitPhasePrepared      = "prepared"
+	PullCommitPhaseCompleted     = "completed"
 )
 
 const (
@@ -29,16 +30,29 @@ const (
 
 // PullCommitState records a resumable local docs base synchronization.
 type PullCommitState struct {
-	Version       int             `json:"version"`
-	Phase         string          `json:"phase"`
-	OriginalHead  string          `json:"original_head"`
-	SyncCommit    string          `json:"sync_commit,omitempty"`
-	PreparedHead  string          `json:"prepared_head,omitempty"`
-	BaseHash      docs.CommitHash `json:"base_hash"`
-	RemoteHash    docs.CommitHash `json:"remote_hash"`
-	Reported      bool            `json:"reported,omitempty"`
-	ConflictFiles []string        `json:"conflict_files,omitempty"`
-	CreatedAt     time.Time       `json:"created_at"`
+	Version          int                 `json:"version"`
+	Phase            string              `json:"phase"`
+	TransactionID    string              `json:"transaction_id,omitempty"`
+	BranchRef        string              `json:"branch_ref,omitempty"`
+	OriginalHead     string              `json:"original_head"`
+	SyncCommit       string              `json:"sync_commit,omitempty"`
+	PreparedHead     string              `json:"prepared_head,omitempty"`
+	PreparedTree     string              `json:"prepared_tree,omitempty"`
+	CompletionHead   string              `json:"completion_head,omitempty"`
+	CompletionReason string              `json:"completion_reason,omitempty"`
+	Rewrites         []PullCommitRewrite `json:"rewrites,omitempty"`
+	BaseHash         docs.CommitHash     `json:"base_hash"`
+	RemoteHash       docs.CommitHash     `json:"remote_hash"`
+	Reported         bool                `json:"reported,omitempty"`
+	ConflictFiles    []string            `json:"conflict_files,omitempty"`
+	CreatedAt        time.Time           `json:"created_at"`
+}
+
+// PullCommitRewrite records a Git post-rewrite old-to-new commit mapping.
+type PullCommitRewrite struct {
+	Command string `json:"command"`
+	Old     string `json:"old"`
+	New     string `json:"new"`
 }
 
 // PullCommitStore persists transaction state beneath Git's private metadata.
@@ -74,7 +88,7 @@ func (s *PullCommitStore) Load() (PullCommitState, bool, error) {
 	if err := json.Unmarshal(data, &state); err != nil {
 		return PullCommitState{}, false, fmt.Errorf("parse pull-commit state: %w", err)
 	}
-	if state.Version != 1 && state.Version != 2 {
+	if state.Version != 1 && state.Version != 2 && state.Version != 3 {
 		return PullCommitState{}, false, fmt.Errorf("unsupported pull-commit state version: %d", state.Version)
 	}
 	return state, true, nil
