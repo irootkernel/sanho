@@ -111,6 +111,10 @@ hook은 Sanho 변경을 건너뛰지만 pre-push는 원격 게시를 계속 차�
 건드리지 않고 pull-commit 기록, docs hash와 workspace 보고만 새 HEAD에
 맞춘다. pipe나 다른 파일에서 주입한 mapping, 비어 있거나 유효하지 않은
 mapping에는 이 예외를 적용하지 않는다.
+대규모 rebase의 mapping도 commit별 Git process가 아니라 두 번의 batch
+검사로 검증하며 reconciliation에는 별도의 30초 제한을 적용한다. 실패 시
+Git rebase는 완료되더라도 Sanho metadata는 보존되므로 `sanho status --json`과
+`sanho pull-commit --recover`로 상태를 확인한다.
 
 Git commit 시 중앙 docs가 갱신된 상태라면 pre-commit hook이
 `pull-commit` 흐름을 자동으로 실행한다. 첫 시도에서는 `origin/main`을

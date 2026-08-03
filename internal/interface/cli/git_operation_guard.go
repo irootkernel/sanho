@@ -276,6 +276,7 @@ func validatePostRewriteMappings(
 		return "", fmt.Errorf("resolve rewritten HEAD: %w", err)
 	}
 	checked := make(map[string]struct{}, len(mappings))
+	candidates := make([]string, 0, len(mappings))
 	for _, mapping := range mappings {
 		if mapping.New == head {
 			continue
@@ -284,13 +285,14 @@ func validatePostRewriteMappings(
 			continue
 		}
 		checked[mapping.New] = struct{}{}
-		reachable, err := syncer.IsAncestor(ctx, workDir, mapping.New, head)
-		if err != nil {
-			return "", fmt.Errorf("validate rewritten commit reachability: %w", err)
-		}
-		if !reachable {
-			return "", fmt.Errorf("rewritten commit %s is not reachable from HEAD %s", mapping.New, head)
-		}
+		candidates = append(candidates, mapping.New)
+	}
+	unreachable, err := syncer.UnreachableCommits(ctx, workDir, candidates, head)
+	if err != nil {
+		return "", fmt.Errorf("validate rewritten commit reachability: %w", err)
+	}
+	if len(unreachable) > 0 {
+		return "", fmt.Errorf("rewritten commit %s is not reachable from HEAD %s", unreachable[0], head)
 	}
 	return head, nil
 }

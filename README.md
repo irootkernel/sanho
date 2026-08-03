@@ -109,7 +109,9 @@ private Git metadata, and the next commit materializes it through the same
 deletions. `pull-commit` exposes that operation proactively. HEAD-moving hooks
 reconcile `.sanho_docs_hash` and daemon workspace state after merge, rewrite,
 or branch checkout when the resulting docs tree matches a reachable
-`docs-version` commit. If a commit or rewrite hook is interrupted,
+`docs-version` commit. Large rebase mapping sets use batched object and
+reachability checks under a dedicated reconciliation timeout instead of one
+Git process per rewritten commit. If a commit or rewrite hook is interrupted,
 `sanho pull-commit --recover` classifies the transaction and creates recovery
 refs before clearing only state that can be proven complete. `sanho status`
 shows the active phase and exact safe next command, and pre-push continues to

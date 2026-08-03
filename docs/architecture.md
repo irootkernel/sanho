@@ -53,11 +53,18 @@ detector는 metadata를 제거하지 않으며 사용자가 Git 명령으로 의
 file이고 offset 0에서 시작했음을 확인한다. 동시에 두 backend가 있으면
 실패한다. 이어서 old/new 값이 repository object format의 full OID이고 모두
 commit이며, 모든 새 commit이 현재 HEAD에서 도달 가능할 때 비공개 permit을
-발급한다. permit은
+발급한다. object 존재 여부와 commit type은 `cat-file --batch-check` 한 번으로
+검사하고, 중복을 제거한 새 commit 전체의 HEAD 도달 가능성은
+`rev-list --no-walk=unsorted --stdin` 한 번으로 검사한다. mapping 개수만큼
+Git subprocess를 만들지 않는다. 이 검증과 reconciliation에는 30초 제한을
+적용하고, 뒤이은 읽기 전용 hook status는 별도의 10초 제한을 사용한다.
+permit은
 pull-commit rewrite 기록, docs hash와 workspace 보고처럼 Sanho metadata를
 reconciliation하는 경로에서만 사용한다. refs, HEAD, index, worktree와 recovery
 ref를 변경하는 `WorkspaceSync` mutator에는 전달하지 않는다. mapping이 없거나
-검증되지 않으면 일반 active operation과 동일하게 아무것도 변경하지 않는다.
+검증되지 않거나 제한 시간이 지나면 일반 active operation과 동일하게 Sanho
+metadata를 변경하지 않는다. hook은 원래 Git operation을 실패시키지 않고
+경고 후 성공한다.
 
 `sanho status`의 main publication 판정은 `ls-remote`에 해당하는 읽기 전용
 조회로 remote main을 확인한다. remote-tracking ref 갱신과 완료 metadata

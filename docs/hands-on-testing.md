@@ -252,6 +252,37 @@ service 등록 명령과 책임 경계는 [배포 규칙](deployment.md)을 따�
 `--quit`과 `--abort`의 결과를 같은 것으로 취급하거나 operation metadata를
 직접 삭제해 성공시키면 이 시나리오는 FAIL이다.
 
+## H12. 대규모 post-rewrite reconciliation
+
+이 시나리오는 대규모 실제 rebase가 hook 제한 시간 때문에 Sanho metadata만
+남기는 회귀를 검사한다. daemon 연결·미연결 경우를 분리된 폐기 가능한
+복사본에서 수행한다.
+
+1. application clone에 docs-version이 다른 `main`과 unpublished feature
+   branch를 만든다. feature에는 실제 파일 변경 commit 하나와 빈 commit을
+   포함해 최소 1,000개 commit을 만들고 prepared transaction의 HEAD, index
+   tree, docs hash와 workspace report checksum을 기록한다.
+2. `git --version`, `git rev-parse --show-object-format`, 시작 시각과
+   `git rev-parse --git-path rebase-merge/rewritten-list` 결과를 기록한 뒤
+   기본 merge backend로 `git rebase main`을 실행한다.
+3. 종료 시간과 hook 출력을 기록한다. `signal: killed`,
+   `context deadline exceeded`, `Sanho mutation was skipped`가 없어야 하며
+   rewrite 수가 실제 mapping 수와 일치해야 한다.
+4. prepared head가 mapping의 새 HEAD로 바뀌고 docs hash와 daemon workspace
+   hash가 새 docs-version과 일치하는지 확인한다. hook이 rebase 결과 외에
+   refs, index와 worktree를 추가로 바꾸지 않았는지 checksum으로 확인한다.
+5. daemon을 중지한 복사본에서 같은 검사를 반복한다. rebase는 성공하고 같은
+   docs hash의 pending workspace report가 남아야 한다.
+6. 별도 복사본에서 `git rebase --apply main`을 실행하고 active backend가
+   `rebase-apply/rewritten`이었음을 기록한다. merge backend와 동일한 metadata
+   및 Git 상태 조건을 만족해야 한다.
+7. 각 복사본에서 `sanho status --json`을 기록한다. 정상 reconciliation 뒤
+   pending·ambiguous·corrupt transaction이 없어야 하며 임시 clone과 daemon을
+   정리한다.
+
+mapping 수를 줄여 통과시키거나 timeout 뒤 transaction 또는 rebase metadata를
+수동 삭제하면 이 시나리오는 FAIL이다.
+
 ## 릴리스 판정
 
 다음 조건을 모두 만족해야 hands-on 관점에서 릴리스 가능으로 판정한다.

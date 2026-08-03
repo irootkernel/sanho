@@ -197,6 +197,40 @@ func (s *WorkspaceSync) IsAncestor(ctx context.Context, repoPath, ancestor, desc
 	return false, fmt.Errorf("check commit ancestry: %w", err)
 }
 
+// UnreachableCommits returns commits that are not reachable from head. Git
+// evaluates the complete set in one rev-list process so the cost does not grow
+// with one process per rewritten commit.
+func (s *WorkspaceSync) UnreachableCommits(
+	ctx context.Context,
+	repoPath string,
+	commits []string,
+	head string,
+) ([]string, error) {
+	if len(commits) == 0 {
+		return nil, nil
+	}
+	var input strings.Builder
+	for _, commit := range commits {
+		input.WriteString(commit)
+		input.WriteByte('\n')
+	}
+	input.WriteByte('^')
+	input.WriteString(head)
+	input.WriteByte('\n')
+
+	cmd := exec.CommandContext(ctx, "git", "-C", repoPath, "rev-list", "--no-walk=unsorted", "--stdin")
+	cmd.Env = os.Environ()
+	cmd.Stdin = strings.NewReader(input.String())
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("check commit reachability: %w\n%s", err, strings.TrimSpace(string(out)))
+	}
+	if strings.TrimSpace(string(out)) == "" {
+		return nil, nil
+	}
+	return strings.Fields(string(out)), nil
+}
+
 func (s *WorkspaceSync) IsDocsSyncCommit(
 	ctx context.Context,
 	repoPath, commit, expectedParent, subject, docsHash string,

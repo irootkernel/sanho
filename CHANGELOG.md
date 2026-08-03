@@ -20,6 +20,9 @@
 - A successful rebase `post-rewrite` now validates Git's old/new commit
   mappings and reconciles only Sanho transaction and workspace metadata even
   though Git has not removed its rebase marker yet.
+- Large `post-rewrite` mapping sets now validate commit reachability in one
+  batched Git process under a dedicated reconciliation timeout, avoiding
+  timeouts caused by one ancestry process per rewritten commit.
 - Status inspection no longer refreshes the application workspace's
   remote-tracking refs or removes its main publication metadata. The daemon may
   still refresh its managed canonical docs clone while answering project status.

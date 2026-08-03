@@ -138,6 +138,11 @@ pull-commit/main-publication state를 변경하지 않는다. daemon은 canonica
 상태를 계산하기 위해 자신이 관리하는 docs clone을 fetch·checkout·reset할 수
 있다.
 
+대규모 rebase의 post-rewrite 검증이 제한 시간을 넘겨도 `git_operation`과
+`pull_commit`의 필드, classification 및 transaction version은 바뀌지 않는다.
+hook은 Git operation을 막지 않고 경고하지만 검증되지 않은 Sanho metadata는
+갱신하지 않으므로 기존 `pull_commit.next_command`에 따라 복구한다.
+
 작업공간 항목은 기존 사람용 표와 같은 repository 라벨, workspace ID,
 전체 docs hash, 현재 작업공간 및 HEAD와의 관계만 포함한다. 원본
 `local_path`, 전체 repository URL과 daemon 내부 식별자는 추가로 노출하지

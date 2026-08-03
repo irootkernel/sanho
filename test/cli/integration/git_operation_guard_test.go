@@ -123,7 +123,7 @@ func testCLIPostRewriteReportsSuccessfulRebaseToDaemon(t *testing.T, backend str
 	}
 }
 
-func TestCLIPostRewriteReconcilesSuccessfulRebase(t *testing.T) {
+func TestCLIPostRewriteReconcilesLargeSuccessfulRebase(t *testing.T) {
 	cliBinary := getCliBinary(t)
 	root := t.TempDir()
 	repo := filepath.Join(root, "repo")
@@ -139,6 +139,9 @@ func TestCLIPostRewriteReconcilesSuccessfulRebase(t *testing.T) {
 	writeRecoveryFile(t, repo, "feature.txt", "feature\n")
 	runRecoveryGit(t, repo, "add", "feature.txt")
 	runRecoveryGit(t, repo, "commit", "-m", "feature")
+	for i := 1; i < 1000; i++ {
+		runRecoveryGit(t, repo, "commit", "--allow-empty", "-m", fmt.Sprintf("feature %04d", i))
+	}
 	preparedHead := runRecoveryGit(t, repo, "rev-parse", "HEAD")
 	preparedTree := runRecoveryGit(t, repo, "rev-parse", "HEAD^{tree}")
 	runRecoveryGit(t, repo, "switch", "main")
@@ -211,8 +214,10 @@ func TestCLIPostRewriteReconcilesSuccessfulRebase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rebase failed: %v\n%s", err, output)
 	}
-	if strings.Contains(string(output), "Sanho mutation was skipped") {
-		t.Fatalf("successful rebase was treated as paused:\n%s", output)
+	for _, unexpected := range []string{"Sanho mutation was skipped", "signal: killed", "context deadline exceeded"} {
+		if strings.Contains(string(output), unexpected) {
+			t.Fatalf("successful rebase output contains %q:\n%s", unexpected, output)
+		}
 	}
 	newHead := runRecoveryGit(t, repo, "rev-parse", "HEAD")
 	if newHead == preparedHead {
@@ -227,12 +232,19 @@ func TestCLIPostRewriteReconcilesSuccessfulRebase(t *testing.T) {
 		t.Fatalf("transaction state=%#v", state)
 	}
 	rewrites := state["rewrites"].([]any)
-	if len(rewrites) != 1 {
-		t.Fatalf("rewrites=%#v want one", rewrites)
+	if len(rewrites) != 1000 {
+		t.Fatalf("rewrite count=%d want 1000", len(rewrites))
 	}
-	rewrite := rewrites[0].(map[string]any)
-	if rewrite["command"] != "rebase" || rewrite["old"] != preparedHead || rewrite["new"] != newHead {
-		t.Fatalf("rewrite=%#v", rewrite)
+	preparedRewriteFound := false
+	for _, value := range rewrites {
+		rewrite := value.(map[string]any)
+		if rewrite["command"] == "rebase" && rewrite["old"] == preparedHead && rewrite["new"] == newHead {
+			preparedRewriteFound = true
+			break
+		}
+	}
+	if !preparedRewriteFound {
+		t.Fatalf("prepared rewrite %s -> %s was not recorded", preparedHead, newHead)
 	}
 
 	reportPath := runRecoveryGit(t, repo, "rev-parse", "--git-path", "sanho/workspace-report.json")
@@ -257,8 +269,8 @@ func TestCLIPostRewriteReconcilesSuccessfulRebase(t *testing.T) {
 		t.Fatalf("repeat post-rewrite failed: %v\n%s", err, repeatOutput)
 	}
 	state = readGuardJSON(t, statePath)
-	if got := len(state["rewrites"].([]any)); got != 1 {
-		t.Fatalf("repeated rewrite count=%d want 1", got)
+	if got := len(state["rewrites"].([]any)); got != 1000 {
+		t.Fatalf("repeated rewrite count=%d want 1000", got)
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -20,8 +21,12 @@ type gitRewriteMapping struct {
 	New string
 }
 
+// postRewriteReconciliationTimeout allows large rewrite mapping sets to be
+// validated without extending the separate short status request budget.
+const postRewriteReconciliationTimeout = 30 * time.Second
+
 func runPostRewriteHook(cmd *cobra.Command, args []string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), hookStatusTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), postRewriteReconciliationTimeout)
 	defer cancel()
 
 	command := ""
