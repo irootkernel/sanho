@@ -220,11 +220,15 @@ service 등록 명령과 책임 경계는 [배포 규칙](deployment.md)을 따�
 3. `HEAD == origin/main`, 빈 `git status --porcelain`과 동시에 `git status`가
    rebase 진행 중임을 보고하는지 확인한다.
 4. `sanho status`와 `sanho status --json`을 두 번씩 실행한다. 두 결과의
-   `git_operation`이 동일하고 refs, index, worktree, rebase metadata와 Sanho
-   private state checksum이 바뀌지 않았는지 확인한다.
-5. `pull`, `pull-commit`의 모든 mode, `fix`, 실제 `clean`과 pre-push가
+   `git_operation`이 동일하고 application workspace의 refs, index, worktree,
+   rebase metadata와 workspace-local pull-commit/main-publication state
+   checksum이 바뀌지 않았는지 확인한다. daemon의 managed docs clone은 project
+   status 조회 중 canonical remote를 기준으로 refresh될 수 있으므로 이
+   checksum 대상에 포함하지 않는다.
+5. `init`, `pull`, `pull-commit`의 모든 mode, `fix`, 실제 `clean`과 pre-push가
    operation 및 복구 후보를 설명하며 실패하는지 확인한다. 각 명령 전후의
-   local/remote refs와 checksum이 같아야 한다.
+   local/remote refs와 checksum이 같아야 한다. `clean --dry-run`은 같은
+   상태에서 성공하되 application workspace를 변경하지 않아야 한다.
 6. lifecycle hook은 경고 후 성공하되 commit message, transaction과 daemon
    state를 바꾸지 않고, pre-push만 계속 실패하는지 확인한다.
 7. 별도 복사본에서 conflict가 있는 rebase, merge, cherry-pick, revert와

@@ -17,8 +17,9 @@
   never automatically aborted, quit, or deleted by Sanho.
 - Commit lifecycle hooks skip Sanho-owned mutations while Git recovery is in
   progress, while pre-push continues to block remote publication.
-- Status inspection no longer refreshes remote-tracking refs or removes main
-  publication metadata.
+- Status inspection no longer refreshes the application workspace's
+  remote-tracking refs or removes its main publication metadata. The daemon may
+  still refresh its managed canonical docs clone while answering project status.
 
 ### Compatibility
 

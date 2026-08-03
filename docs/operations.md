@@ -73,10 +73,12 @@ rebase, merge, cherry-pick, revert, bisect, `git am` 또는 sequencer metadata�
 - `pull-commit`과 `--continue`, `--abort`, `--recover`
 - pre-push와 main 선행 게시
 
-`sanho status`와 `sanho status --json`, `clean --dry-run`은 읽기 전용으로
-계속 사용할 수 있다. 상태 출력의 `git_operation`에서 감지된 종류, 차단
-이유와 후보 명령을 확인한다. 항상 다음 명령으로 실제 Git 상태를 먼저
-읽는다.
+`sanho status`와 `sanho status --json`, `clean --dry-run`은 현재 application
+workspace에 대해 읽기 전용으로 계속 사용할 수 있다. daemon은 project
+status를 계산하기 위해 자신이 관리하는 canonical docs clone을 refresh할 수
+있지만 application workspace의 refs, index, worktree나 operation metadata는
+변경하지 않는다. 상태 출력의 `git_operation`에서 감지된 종류, 차단 이유와
+후보 명령을 확인한다. 항상 다음 명령으로 실제 Git 상태를 먼저 읽는다.
 
 ```bash
 git status
@@ -105,11 +107,11 @@ Sanho는 어떤 경우에도 사용자 operation을 자동 abort/quit하거나 m
 보고하고 `git status` 외의 정리 명령을 추측하지 않는다.
 
 Git의 continue 과정에서 실행되는 `pre-commit`, `commit-msg`, `post-commit`,
-`post-rewrite`, post-checkout/status hook은 Sanho의 index/worktree/ref 변경과
-daemon 게시를 건너뛰고 경고 후 성공한다. 사용자 Git 복구가 끝난 뒤 다음
-정상 hook 또는 명시적인 Sanho 명령이 필요한 reconciliation을 수행한다.
-pre-push는 복구에 필요하지 않고 원격 변경을 일으키므로 active operation
-동안 계속 실패한다.
+`post-rewrite`, `post-checkout`, `post-merge` hook은 Sanho의
+index/worktree/ref 변경과 daemon 게시를 건너뛰고 경고 후 성공한다. 사용자
+Git 복구가 끝난 뒤 다음 정상 hook 또는 명시적인 Sanho 명령이 필요한
+reconciliation을 수행한다. pre-push는 복구에 필요하지 않고 원격 변경을
+일으키므로 active operation 동안 계속 실패한다.
 
 ### `docs_repo_busy`
 

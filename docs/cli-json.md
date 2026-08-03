@@ -132,8 +132,11 @@ metadata는 다음 정상 guarded workflow가 멱등하게 정리한다.
 `bisect`, `sequencer`, `multiple` 중 하나다. active operation은 항상
 `classification: "blocked"`다. 명령 배열은 자동 실행 지시가 아니라 사용자가
 `git status`를 확인한 뒤 선택할 후보이며, Sanho는 operation metadata를
-자동으로 변경하지 않는다. status 반복 실행은 refs, remote-tracking refs,
-index, worktree, operation metadata와 Sanho private state를 변경하지 않는다.
+자동으로 변경하지 않는다. status 반복 실행은 application workspace의 refs,
+remote-tracking refs, index, worktree, operation metadata와 workspace-local
+pull-commit/main-publication state를 변경하지 않는다. daemon은 canonical docs
+상태를 계산하기 위해 자신이 관리하는 docs clone을 fetch·checkout·reset할 수
+있다.
 
 작업공간 항목은 기존 사람용 표와 같은 repository 라벨, workspace ID,
 전체 docs hash, 현재 작업공간 및 HEAD와의 관계만 포함한다. 원본
