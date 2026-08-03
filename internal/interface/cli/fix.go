@@ -65,6 +65,9 @@ func runFixCommand(cmd *cobra.Command) error {
 		cmd.PrintErrf("sanho configuration is broken or missing (.sanho.json / .sanho_docs_hash).\n")
 		return err
 	}
+	if err := requireWorkspaceMutationSafe(ctx, cwd); err != nil {
+		return wrapGitOperationGuard("sanho fix", err)
+	}
 
 	rawHTTPClient, err := newDaemonClient(config.SocketPath)
 	if err != nil {

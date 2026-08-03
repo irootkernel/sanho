@@ -35,6 +35,9 @@ func reportWorkspaceDocsHash(
 	config *client.WorkspaceConfig,
 	hash docs.CommitHash,
 ) error {
+	if err := requireWorkspaceMutationSafe(ctx, workDir); err != nil {
+		return err
+	}
 	store, err := workspaceReportStore(ctx, workDir)
 	if err != nil {
 		return err
@@ -63,6 +66,9 @@ func retryPendingWorkspaceReport(
 	workDir string,
 	config *client.WorkspaceConfig,
 ) error {
+	if err := requireWorkspaceMutationSafe(ctx, workDir); err != nil {
+		return err
+	}
 	store, err := workspaceReportStore(ctx, workDir)
 	if err != nil {
 		return err

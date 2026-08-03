@@ -261,6 +261,12 @@ func TestDetector_DetectOperationUsesLinkedWorktreeGitDir(t *testing.T) {
 	if mainOperation.Active {
 		t.Fatalf("main worktree operation = %+v, want clear", mainOperation)
 	}
+	syncer := NewWorkspaceSync(nil, nil)
+	err = syncer.ResetIndexDocsToHead(context.Background(), linked, "docs")
+	var blocked *GitOperationBlockedError
+	if !errors.As(err, &blocked) || blocked.Operation.Type != OperationRebase {
+		t.Fatalf("linked worktree mutation error = %v, want rebase block", err)
+	}
 	gitFile, err := os.Stat(filepath.Join(linked, ".git"))
 	if err != nil {
 		t.Fatal(err)

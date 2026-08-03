@@ -24,6 +24,9 @@ func (s *WorkspaceSync) CreateRecoveryCheckpoint(
 	ctx context.Context,
 	repoPath, transactionID string,
 ) (RecoveryCheckpoint, error) {
+	if err := requireWorkspaceMutationSafe(ctx, repoPath); err != nil {
+		return RecoveryCheckpoint{}, err
+	}
 	if !validRecoveryTransactionID(transactionID) {
 		return RecoveryCheckpoint{}, errors.New("invalid recovery transaction id")
 	}

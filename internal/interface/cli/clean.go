@@ -37,6 +37,11 @@ func newCleanCmd() *cobra.Command {
 				return fmt.Errorf("failed to load .sanho.json: %w", err)
 			}
 			config.ApplyDefaults()
+			if !dryRun {
+				if err := requireWorkspaceMutationSafe(cmd.Context(), cwd); err != nil {
+					return wrapGitOperationGuard("sanho clean", err)
+				}
+			}
 			hasPullCommit, err := newPullCommitEngine(nil).hasTransaction(cmd.Context(), cwd, config.DocsDir)
 			if err != nil {
 				return fmt.Errorf("failed to check pull-commit state: %w", err)
@@ -60,6 +65,7 @@ func newCleanCmd() *cobra.Command {
 			}
 			mainPublication, err := assessMainPublication(cmd.Context(), cwd, mainPublicationAssessmentOptions{
 				RefreshOrigin: true,
+				ReadOnly:      dryRun,
 			})
 			if err != nil {
 				return fmt.Errorf("failed to check main publication state: %w", err)

@@ -34,6 +34,9 @@ func runPreCommitHook(cmd *cobra.Command) error {
 		cmd.PrintErrf("sanho hook pre-commit: failed to get current directory: %v\n", err)
 		return err
 	}
+	if skipMutationHookDuringGitOperation(ctx, cwd, "pre-commit", cmd) {
+		return nil
+	}
 
 	// Create dependencies
 	configLoader := fs.NewFileConfigLoader()

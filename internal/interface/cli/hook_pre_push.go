@@ -42,6 +42,9 @@ func runPrePushHook(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("sanho hook pre-push: load configuration: %w", err)
 	}
+	if err := requireWorkspaceMutationSafe(ctx, cwd); err != nil {
+		return wrapGitOperationGuard("sanho hook pre-push", err)
+	}
 	if err := retryPendingWorkspaceReport(ctx, cwd, config); err != nil {
 		return fmt.Errorf("sanho hook pre-push: %w", err)
 	}

@@ -156,6 +156,13 @@ func (d *Detector) RequireNoOperation(ctx context.Context, repoPath string) erro
 	return nil
 }
 
+func requireWorkspaceMutationSafe(ctx context.Context, repoPath string) error {
+	if err := NewDetector().RequireNoOperation(ctx, repoPath); err != nil {
+		return fmt.Errorf("refuse unsafe workspace mutation: %w", err)
+	}
+	return nil
+}
+
 func detectSequencerType(ctx context.Context, repoPath string) (OperationType, error) {
 	path, err := resolveGitPath(ctx, repoPath, "sequencer/todo")
 	if err != nil {

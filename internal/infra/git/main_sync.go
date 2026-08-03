@@ -34,6 +34,9 @@ func (s *WorkspaceSync) CreateMainBasedDocsSyncCommit(
 	snapshot []byte,
 	subject, docsHash string,
 ) (MainSyncResult, error) {
+	if err := requireWorkspaceMutationSafe(ctx, repoPath); err != nil {
+		return MainSyncResult{}, err
+	}
 	branchRef, err := symbolicHead(ctx, repoPath)
 	if err != nil {
 		return MainSyncResult{}, err

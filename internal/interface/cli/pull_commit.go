@@ -61,6 +61,9 @@ func runPullCommitCommand(cmd *cobra.Command, continueTransaction, abortTransact
 	if err != nil {
 		return fmt.Errorf("sanho pull-commit: %w", err)
 	}
+	if err := requireWorkspaceMutationSafe(ctx, workDir); err != nil {
+		return wrapGitOperationGuard("sanho pull-commit", err)
+	}
 	httpClient, err := newDaemonClient(config.SocketPath)
 	if err != nil {
 		return fmt.Errorf("sanho pull-commit: %w", err)

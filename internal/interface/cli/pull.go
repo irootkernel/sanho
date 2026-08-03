@@ -73,6 +73,9 @@ func runPullCommand(cmd *cobra.Command, force bool) error {
 		cmd.PrintErrf("Run 'sanho init' first to initialize.\n")
 		return err
 	}
+	if err := requireWorkspaceMutationSafe(ctx, cwd); err != nil {
+		return wrapGitOperationGuard("sanho pull", err)
+	}
 
 	rawHTTPClient, err := newDaemonClient(config.SocketPath)
 	if err != nil {

@@ -38,6 +38,9 @@ func runPostRewriteHook(cmd *cobra.Command, args []string) error {
 		cmd.PrintErrf("sanho post-rewrite: warning: failed to get current directory: %v\n", err)
 		return nil
 	}
+	if skipMutationHookDuringGitOperation(ctx, workDir, "post-rewrite", cmd) {
+		return nil
+	}
 	config, err := fs.NewFileConfigLoader().Load(workDir)
 	if err != nil {
 		if !errors.Is(err, fs.ErrConfigNotFound) {
@@ -83,6 +86,9 @@ func (e *pullCommitEngine) reconcileAfterRewrite(
 	command string,
 	mappings []gitRewriteMapping,
 ) (bool, error) {
+	if err := requireWorkspaceMutationSafe(ctx, workDir); err != nil {
+		return false, err
+	}
 	store, err := e.store(ctx, workDir)
 	if err != nil {
 		return false, err

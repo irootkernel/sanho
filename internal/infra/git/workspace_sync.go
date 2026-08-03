@@ -247,6 +247,9 @@ func (s *WorkspaceSync) BuildIndexDocsSnapshot(ctx context.Context, repoPath, do
 // StageDocsSnapshot replaces only docsDir in the index selected by
 // GIT_INDEX_FILE while leaving the real working tree untouched.
 func (s *WorkspaceSync) StageDocsSnapshot(ctx context.Context, repoPath, docsDir string, snapshot []byte) error {
+	if err := requireWorkspaceMutationSafe(ctx, repoPath); err != nil {
+		return err
+	}
 	tempDir, err := os.MkdirTemp("", "sanho-stage-docs-*")
 	if err != nil {
 		return fmt.Errorf("create staging worktree: %w", err)
@@ -278,6 +281,9 @@ func (s *WorkspaceSync) StageDocsSnapshot(ctx context.Context, repoPath, docsDir
 }
 
 func (s *WorkspaceSync) ResetIndexDocsToHead(ctx context.Context, repoPath, docsDir string) error {
+	if err := requireWorkspaceMutationSafe(ctx, repoPath); err != nil {
+		return err
+	}
 	if _, err := runWorkspaceGit(
 		ctx,
 		repoPath,
@@ -301,6 +307,9 @@ func (s *WorkspaceSync) CreateDocsSyncCommit(
 	snapshot []byte,
 	subject, docsHash string,
 ) (string, error) {
+	if err := requireWorkspaceMutationSafe(ctx, repoPath); err != nil {
+		return "", err
+	}
 	oldHead, err := s.Head(ctx, repoPath)
 	if err != nil {
 		return "", fmt.Errorf("resolve HEAD: %w", err)
@@ -399,7 +408,14 @@ func zeroObjectID(ctx context.Context, repoPath string) (string, error) {
 }
 
 // ApplyWorktreeDocsSnapshot atomically replaces docsDir in the real worktree.
-func (s *WorkspaceSync) ApplyWorktreeDocsSnapshot(repoPath, docsDir string, snapshot []byte) error {
+func (s *WorkspaceSync) ApplyWorktreeDocsSnapshot(
+	ctx context.Context,
+	repoPath, docsDir string,
+	snapshot []byte,
+) error {
+	if err := requireWorkspaceMutationSafe(ctx, repoPath); err != nil {
+		return err
+	}
 	docsPath := filepath.Join(repoPath, docsDir)
 	parent := filepath.Dir(docsPath)
 	tempDir, err := os.MkdirTemp(parent, ".sanho-worktree-*")

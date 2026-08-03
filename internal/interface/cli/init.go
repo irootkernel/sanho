@@ -56,6 +56,13 @@ Prerequisites:
 			if err != nil {
 				return err
 			}
+			detector := git.NewDetector()
+			if !detector.HasGitDir(cwd) {
+				return errors.New("current directory is not a Git repository. Run 'git init' first")
+			}
+			if err := requireWorkspaceMutationSafe(cmd.Context(), cwd); err != nil {
+				return wrapGitOperationGuard("sanho init", err)
+			}
 
 			resolvedSocketPath, err := resolveSocketPath("")
 			if err != nil {
@@ -73,12 +80,6 @@ Prerequisites:
 					return errors.New("project name is required")
 				}
 				projectName = input
-			}
-
-			// Check if this is a Git repository first (needed for prompts below)
-			detector := git.NewDetector()
-			if !detector.HasGitDir(cwd) {
-				return errors.New("current directory is not a Git repository. Run 'git init' first")
 			}
 
 			// Get current repo's origin URL for context (short-lived timeout)

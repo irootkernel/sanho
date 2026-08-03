@@ -39,6 +39,11 @@ func assessMainPublication(
 	workDir string,
 	options mainPublicationAssessmentOptions,
 ) (mainPublicationAssessment, error) {
+	if !options.ReadOnly {
+		if err := requireWorkspaceMutationSafe(ctx, workDir); err != nil {
+			return mainPublicationAssessment{}, err
+		}
+	}
 	workspaceSync := infraGit.NewWorkspaceSync(fs.NewSnapshotBuilder(), fs.NewSnapshotApplier())
 	isRepository, err := workspaceSync.IsRepository(ctx, workDir)
 	if err != nil || !isRepository {
@@ -212,6 +217,9 @@ func readRemoteMain(ctx context.Context, workDir string) (string, bool, error) {
 }
 
 func recordMainPublicationFailure(ctx context.Context, workDir string, failure error) error {
+	if err := requireWorkspaceMutationSafe(ctx, workDir); err != nil {
+		return err
+	}
 	workspaceSync := infraGit.NewWorkspaceSync(fs.NewSnapshotBuilder(), fs.NewSnapshotApplier())
 	path, err := workspaceSync.ResolveMainPublicationPath(ctx, workDir)
 	if err != nil {
@@ -221,6 +229,9 @@ func recordMainPublicationFailure(ctx context.Context, workDir string, failure e
 }
 
 func fetchOriginMain(ctx context.Context, workDir string) error {
+	if err := requireWorkspaceMutationSafe(ctx, workDir); err != nil {
+		return err
+	}
 	if err := runMainPublicationGit(ctx, workDir, "remote", "get-url", "origin"); err != nil {
 		return fmt.Errorf("origin remote is unavailable: %w", err)
 	}
@@ -231,6 +242,9 @@ func fetchOriginMain(ctx context.Context, workDir string) error {
 }
 
 func pushLocalMain(ctx context.Context, workDir string) error {
+	if err := requireWorkspaceMutationSafe(ctx, workDir); err != nil {
+		return err
+	}
 	if err := runMainPublicationGit(
 		ctx,
 		workDir,

@@ -23,6 +23,9 @@ func reconcileWorkspaceDocsFromHEAD(
 	if err != nil || !isRepository {
 		return false, err
 	}
+	if err := requireWorkspaceMutationSafe(ctx, workDir); err != nil {
+		return false, err
+	}
 	head, err := syncer.Head(ctx, workDir)
 	if err != nil {
 		return false, err

@@ -417,7 +417,7 @@ func TestPulledDocsBaselineTreatsAdoptedWorktreeAsClean(t *testing.T) {
 		"readme.md":    "new\n",
 		"preserved.md": "remote file\n",
 	})
-	if err := engine.workspaceSync.ApplyWorktreeDocsSnapshot(repo, "docs", adopted); err != nil {
+	if err := engine.workspaceSync.ApplyWorktreeDocsSnapshot(context.Background(), repo, "docs", adopted); err != nil {
 		t.Fatal(err)
 	}
 	if err := recordPulledDocsBaseline(

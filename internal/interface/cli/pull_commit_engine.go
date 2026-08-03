@@ -167,6 +167,9 @@ func (e *pullCommitEngine) start(
 	config *client.WorkspaceConfig,
 	baseHash, remoteHash docs.CommitHash,
 ) (fs.PullCommitState, error) {
+	if err := requireWorkspaceMutationSafe(ctx, workDir); err != nil {
+		return fs.PullCommitState{}, err
+	}
 	store, err := e.store(ctx, workDir)
 	if err != nil {
 		return fs.PullCommitState{}, err
@@ -283,7 +286,7 @@ func (e *pullCommitEngine) start(
 		_ = store.Remove()
 		return fs.PullCommitState{}, err
 	}
-	if err := e.workspaceSync.ApplyWorktreeDocsSnapshot(workDir, config.DocsDir, mergedWork); err != nil {
+	if err := e.workspaceSync.ApplyWorktreeDocsSnapshot(ctx, workDir, config.DocsDir, mergedWork); err != nil {
 		return state, err
 	}
 	if len(conflictFiles) > 0 {
@@ -302,6 +305,9 @@ func (e *pullCommitEngine) restartAfterOutdated(
 	config *client.WorkspaceConfig,
 	baseHash, remoteHash docs.CommitHash,
 ) (fs.PullCommitState, error) {
+	if err := requireWorkspaceMutationSafe(ctx, workDir); err != nil {
+		return fs.PullCommitState{}, err
+	}
 	store, err := e.store(ctx, workDir)
 	if err != nil {
 		return fs.PullCommitState{}, err
@@ -375,6 +381,9 @@ func (e *pullCommitEngine) resume(
 	workDir string,
 	config *client.WorkspaceConfig,
 ) (fs.PullCommitState, bool, error) {
+	if err := requireWorkspaceMutationSafe(ctx, workDir); err != nil {
+		return fs.PullCommitState{}, false, err
+	}
 	store, err := e.store(ctx, workDir)
 	if err != nil {
 		return fs.PullCommitState{}, false, err
@@ -500,7 +509,7 @@ func (e *pullCommitEngine) resume(
 		if err != nil {
 			return state, true, err
 		}
-		if err := e.workspaceSync.ApplyWorktreeDocsSnapshot(workDir, config.DocsDir, mergedWork); err != nil {
+		if err := e.workspaceSync.ApplyWorktreeDocsSnapshot(ctx, workDir, config.DocsDir, mergedWork); err != nil {
 			return state, true, err
 		}
 		created, err := e.createSyncCommit(ctx, workDir, config, store, state)
@@ -596,6 +605,9 @@ func (e *pullCommitEngine) prepare(
 	store *fs.PullCommitStore,
 	state *fs.PullCommitState,
 ) error {
+	if err := requireWorkspaceMutationSafe(ctx, workDir); err != nil {
+		return err
+	}
 	if err := e.ensureMainPublication(ctx, workDir, config, state); err != nil {
 		return err
 	}
@@ -625,7 +637,7 @@ func (e *pullCommitEngine) prepare(
 			return err
 		}
 	}
-	if err := e.workspaceSync.ApplyWorktreeDocsSnapshot(workDir, config.DocsDir, mergedWork); err != nil {
+	if err := e.workspaceSync.ApplyWorktreeDocsSnapshot(ctx, workDir, config.DocsDir, mergedWork); err != nil {
 		return err
 	}
 	if err := e.reportRemoteHash(ctx, config, store, state); err != nil {
@@ -726,6 +738,9 @@ func (e *pullCommitEngine) writeRemoteHash(
 }
 
 func (e *pullCommitEngine) finishManual(ctx context.Context, workDir string, config *client.WorkspaceConfig) error {
+	if err := requireWorkspaceMutationSafe(ctx, workDir); err != nil {
+		return err
+	}
 	store, err := e.store(ctx, workDir)
 	if err != nil {
 		return err
@@ -747,6 +762,9 @@ func (e *pullCommitEngine) finishManual(ctx context.Context, workDir string, con
 }
 
 func (e *pullCommitEngine) abort(ctx context.Context, workDir string, config *client.WorkspaceConfig) error {
+	if err := requireWorkspaceMutationSafe(ctx, workDir); err != nil {
+		return err
+	}
 	store, err := e.store(ctx, workDir)
 	if err != nil {
 		return err
@@ -776,13 +794,16 @@ func (e *pullCommitEngine) abort(ctx context.Context, workDir string, config *cl
 	if err := e.workspaceSync.StageDocsSnapshot(ctx, workDir, config.DocsDir, indexSnapshot); err != nil {
 		return err
 	}
-	if err := e.workspaceSync.ApplyWorktreeDocsSnapshot(workDir, config.DocsDir, workSnapshot); err != nil {
+	if err := e.workspaceSync.ApplyWorktreeDocsSnapshot(ctx, workDir, config.DocsDir, workSnapshot); err != nil {
 		return err
 	}
 	return store.Remove()
 }
 
 func (e *pullCommitEngine) clearAfterCommit(ctx context.Context, workDir, docsDir string) error {
+	if err := requireWorkspaceMutationSafe(ctx, workDir); err != nil {
+		return err
+	}
 	assessment, err := e.assessTransaction(ctx, workDir, docsDir)
 	if err != nil || !assessment.Exists {
 		return err

@@ -33,6 +33,9 @@ func runCommitMsgHook(cmd *cobra.Command, args []string) error {
 		cmd.PrintErrf("sanho hook commit-msg: failed to get current directory: %v\n", err)
 		return nil // Don't block commit
 	}
+	if skipMutationHookDuringGitOperation(ctx, cwd, "commit-msg", cmd) {
+		return nil
+	}
 
 	// Create dependencies
 	configLoader := fs.NewFileConfigLoader()

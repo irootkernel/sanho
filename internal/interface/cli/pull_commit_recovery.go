@@ -181,6 +181,9 @@ func (e *pullCommitEngine) recover(
 	workDir string,
 	config *client.WorkspaceConfig,
 ) (pullCommitAssessment, error) {
+	if err := requireWorkspaceMutationSafe(ctx, workDir); err != nil {
+		return pullCommitAssessment{}, err
+	}
 	assessment, err := e.assessTransaction(ctx, workDir, config.DocsDir)
 	if err != nil {
 		return assessment, err
@@ -263,6 +266,9 @@ func (e *pullCommitEngine) completeTransaction(
 	assessment pullCommitAssessment,
 	reason string,
 ) error {
+	if err := requireWorkspaceMutationSafe(ctx, workDir); err != nil {
+		return err
+	}
 	store, err := e.store(ctx, workDir)
 	if err != nil {
 		return err

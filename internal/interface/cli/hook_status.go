@@ -33,6 +33,9 @@ func runHookStatus(cmd *cobra.Command, hookName string, reconcile bool) error {
 		cmd.PrintErrf("sanho %s: warning: failed to get current directory: %v\n", hookName, err)
 		return nil // Always exit 0
 	}
+	if skipMutationHookDuringGitOperation(ctx, cwd, hookName, cmd) {
+		return nil
+	}
 
 	// Step 1: Load .sanho.json
 	configLoader := fs.NewFileConfigLoader()
