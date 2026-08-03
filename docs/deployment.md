@@ -12,8 +12,8 @@ package, 자동 service installer는 배포하지 않는다.
 release 설치는 재현 가능하도록 버전을 명시한다.
 
 ```bash
-go install github.com/irootkernel/sanho/cmd/sanho@v0.1.2
-go install github.com/irootkernel/sanho/cmd/sanhod@v0.1.2
+go install github.com/irootkernel/sanho/cmd/sanho@v0.1.3
+go install github.com/irootkernel/sanho/cmd/sanhod@v0.1.3
 sanho version
 sanhod --version
 ```
@@ -159,8 +159,8 @@ HTTP 요청을 기다린 뒤 종료하고 자신이 만든 socket만 제거한�
 5. daemon을 다시 시작하고 health와 `sanho state --all`을 확인한다.
 
 ```bash
-go install github.com/irootkernel/sanho/cmd/sanho@v0.1.2
-go install github.com/irootkernel/sanho/cmd/sanhod@v0.1.2
+go install github.com/irootkernel/sanho/cmd/sanho@v0.1.3
+go install github.com/irootkernel/sanho/cmd/sanhod@v0.1.3
 ```
 
 CLI와 daemon의 release 버전을 섞어 운영하지 않는다. rollback도 daemon을

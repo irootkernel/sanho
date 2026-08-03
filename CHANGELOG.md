@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.1.3 - 2026-08-03
 
 ### Added
 
@@ -30,6 +30,15 @@
   pull-commit transactions through Git's `post-rewrite` mappings.
 - Post-commit retry, post-rewrite, recovery, and stale-state cleanup are
   idempotent, while ambiguous transactions continue to block pushes.
+
+### Compatibility
+
+- Existing workspace configuration, daemon state, CLI/HTTP/JSON contracts, and
+  version 3 pull-commit transactions remain compatible without reinitializing
+  workspaces.
+- Version 1 and 2 pull-commit transactions require their recorded merged-index
+  snapshot for safe sibling-rewrite recovery; unverifiable state remains
+  preserved and push-blocking.
 
 ## v0.1.2 - 2026-07-29
 
