@@ -206,6 +206,40 @@ artifact 삭제·손상은 실패 시나리오를 만드는 단계에서만 수�
 
 service 등록 명령과 책임 경계는 [배포 규칙](deployment.md)을 따른다.
 
+## H11. clean stale Git operation 차단과 linked worktree 격리
+
+이 시나리오는 ref와 worktree가 정상이더라도 operation metadata만 남은 실제
+장애를 재현한다. 반드시 폐기 가능한 repository에서 수행한다.
+
+1. bare origin과 application clone을 만들고 두 개 이상의 commit을 main에
+   push한다. 시작 `HEAD`, `origin/main`, index tree와 worktree checksum을
+   기록한다.
+2. interactive rebase를 중간 `exec false` 또는 승인된 중단점에서 멈춘 뒤
+   `git reset --hard refs/heads/main`으로 HEAD와 worktree만 main에 맞춘다.
+   이 reset은 rebase metadata를 제거하지 않는다는 점을 확인한다.
+3. `HEAD == origin/main`, 빈 `git status --porcelain`과 동시에 `git status`가
+   rebase 진행 중임을 보고하는지 확인한다.
+4. `sanho status`와 `sanho status --json`을 두 번씩 실행한다. 두 결과의
+   `git_operation`이 동일하고 refs, index, worktree, rebase metadata와 Sanho
+   private state checksum이 바뀌지 않았는지 확인한다.
+5. `pull`, `pull-commit`의 모든 mode, `fix`, 실제 `clean`과 pre-push가
+   operation 및 복구 후보를 설명하며 실패하는지 확인한다. 각 명령 전후의
+   local/remote refs와 checksum이 같아야 한다.
+6. lifecycle hook은 경고 후 성공하되 commit message, transaction과 daemon
+   state를 바꾸지 않고, pre-push만 계속 실패하는지 확인한다.
+7. 별도 복사본에서 conflict가 있는 rebase, merge, cherry-pick, revert와
+   bisect를 만들어 정확한 type이 보고되는지 확인한다.
+8. `git worktree add`로 linked worktree를 만들고 한 worktree에만 operation을
+   시작한다. 해당 worktree의 Sanho mutation만 차단되고 다른 worktree는
+   operation이 없는 것으로 보고되는지 확인한다. linked worktree의 `.git`이
+   파일인 상태도 함께 기록한다.
+9. 사용자 의도에 맞게 continue, abort 또는 quit한 뒤 Sanho 명령을 다시
+   실행해 기존 pull-commit recovery와 main publication이 정상 동작하는지
+   확인한다.
+
+`--quit`과 `--abort`의 결과를 같은 것으로 취급하거나 operation metadata를
+직접 삭제해 성공시키면 이 시나리오는 FAIL이다.
+
 ## 릴리스 판정
 
 다음 조건을 모두 만족해야 hands-on 관점에서 릴리스 가능으로 판정한다.

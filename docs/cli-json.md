@@ -38,7 +38,8 @@ sanho --socket /absolute/path/to/sanhod.sock state --all --json
   `not_in_workspace`
 - 로컬 상태: `invalid_workspace_config`, `docs_hash_not_found`,
   `docs_hash_read_failed`, `pending_fix_read_failed`,
-  `pull_commit_state_failed`, `main_publication_state_failed`
+  `pull_commit_state_failed`, `main_publication_state_failed`,
+  `git_operation_detection_failed`
 - daemon 상태: `unknown_project`, `unknown_workspace`,
   `workspace_project_mismatch`, `unknown_docs_commit`,
   `daemon_request_failed`
@@ -69,6 +70,13 @@ commit과 build date는 기존 사람용 `sanho version` 출력에서만 제공�
   "pending_fix": {"exists": false, "created_at": null},
   "pull_commit": {"exists": false},
   "main_publication": {"pending": false, "sync_commits": []},
+  "git_operation": {
+    "active": false,
+    "type": "none",
+    "classification": "clear",
+    "reason": "",
+    "next_commands": []
+  },
   "conflicts": {"scan_status": "complete", "files": []},
   "workspace_comparisons_available": true,
   "workspaces": []
@@ -95,8 +103,37 @@ recovery ref를 유지한다. JSON 필드와 classification 값은 변경되지 
 `classification`, `reason`, `base_commit`, `local_main`, `remote_main`,
 `sync_commits`를 제공한다. 분류는 `pending`, `blocked`, `corrupt` 중 하나다.
 direct main push 뒤 로컬 상태가 잠시 남아 있어도 `status`가
-`origin/main`을 갱신해 기록된 system commit의 도달을 확인한 뒤 정리한다.
+remote의 `refs/heads/main`을 읽기 전용으로 확인한다. status는 로컬
+`origin/main` ref나 publication metadata를 갱신·삭제하지 않는다. remote에
+도달한 system commit은 status 출력에서 `pending: false`로 보이며, private
+metadata는 다음 정상 guarded workflow가 멱등하게 정리한다.
 게시 대기 상태가 없으면 `pending`은 `false`, `sync_commits`는 `[]`다.
+
+`git_operation`은 항상 존재한다. operation metadata가 없으면 위 예제처럼
+`active: false`, `type: "none"`, `classification: "clear"`이며 명령 배열은
+`[]`다. rebase가 감지된 예는 다음과 같다.
+
+```json
+{
+  "active": true,
+  "type": "rebase",
+  "classification": "blocked",
+  "reason": "Git rebase operation metadata is present; Sanho workspace mutations are blocked",
+  "next_commands": [
+    "git status",
+    "git rebase --continue",
+    "git rebase --abort",
+    "git rebase --quit"
+  ]
+}
+```
+
+공개 `type`은 `none`, `rebase`, `am`, `merge`, `cherry_pick`, `revert`,
+`bisect`, `sequencer`, `multiple` 중 하나다. active operation은 항상
+`classification: "blocked"`다. 명령 배열은 자동 실행 지시가 아니라 사용자가
+`git status`를 확인한 뒤 선택할 후보이며, Sanho는 operation metadata를
+자동으로 변경하지 않는다. status 반복 실행은 refs, remote-tracking refs,
+index, worktree, operation metadata와 Sanho private state를 변경하지 않는다.
 
 작업공간 항목은 기존 사람용 표와 같은 repository 라벨, workspace ID,
 전체 docs hash, 현재 작업공간 및 HEAD와의 관계만 포함한다. 원본

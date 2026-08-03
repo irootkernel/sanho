@@ -30,6 +30,32 @@ application repo
 - docs origin의 commit history가 문서 내용의 최종 기록이다.
 - daemon state는 프로젝트 매핑과 각 작업공간의 기준 commit을 저장한다.
 
+## 작업공간 Git operation 안전 경계
+
+작업공간의 refs, HEAD, index 또는 worktree를 변경하는 흐름은 세 단계로
+보호한다.
+
+1. 중앙 detector가 `git rev-parse --git-path`로 worktree별 rebase, merge,
+   cherry-pick, revert, bisect, mail apply와 sequencer metadata를 읽는다.
+2. CLI workflow preflight가 daemon 보고나 transaction 변경보다 먼저 active
+   operation을 차단한다.
+3. `WorkspaceSync`의 실제 ref/index/worktree mutator와 recovery checkpoint가
+   실행 직전에 같은 조건을 다시 확인한다.
+
+일반 `git status --porcelain`과 ref 일치 여부는 operation metadata를 나타내지
+않으므로 변경 가능성 판정에 사용하지 않는다. marker가 진행 중 작업인지
+stale state인지 Sanho가 추측할 수 없으므로 둘 다 동일하게 차단한다.
+detector는 metadata를 제거하지 않으며 사용자가 Git 명령으로 의도를 결정한다.
+
+`sanho status`의 main publication 판정은 `ls-remote`에 해당하는 읽기 전용
+조회로 remote main을 확인한다. remote-tracking ref 갱신과 완료 metadata
+정리는 pre-push 같은 guarded workflow에만 남긴다.
+
+pull-commit의 feature rebase는 사용자 worktree가 안전하다는 preflight를
+통과한 뒤 임시 shared clone에서 실행한다. 임시 clone의 controlled rebase를
+사용자 operation으로 오인하지 않으며, 성공 결과만 원래 작업공간의 refs와
+prepared layer에 반영한다.
+
 ## 애플리케이션 main 게시 계약
 
 CLI가 만든 docs system commit은 Git common directory 아래의 private

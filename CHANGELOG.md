@@ -1,5 +1,34 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `sanho status` and `sanho status --json` now expose worktree-aware Git
+  operation state, classification, and operation-specific recovery choices.
+
+### Fixed
+
+- Workspace mutations now fail closed while a user-owned rebase, merge,
+  cherry-pick, revert, bisect, mail apply, or sequencer operation is active or
+  stale, even when HEAD matches origin/main and the index and worktree are
+  clean.
+- Git operation metadata is resolved through Git for linked worktrees and is
+  never automatically aborted, quit, or deleted by Sanho.
+- Commit lifecycle hooks skip Sanho-owned mutations while Git recovery is in
+  progress, while pre-push continues to block remote publication.
+- Status inspection no longer refreshes remote-tracking refs or removes main
+  publication metadata.
+
+### Compatibility
+
+- Existing workspace configuration, daemon APIs, pull-commit transactions,
+  main publication state, and JSON fields remain compatible. The
+  `git_operation` status object is additive.
+- A Git operation must be completed, aborted, or quit before explicit Sanho
+  mutation commands and pre-push can proceed. No workspace reinitialization is
+  required.
+
 ## v0.1.3 - 2026-08-03
 
 ### Added

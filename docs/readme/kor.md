@@ -90,6 +90,23 @@ commit graph를 기준으로 한다. 새 상태 endpoint가 없는 구버전 dae
 `--force`를 사용해야 한다. 설정만 제거하려면 `sanho clean`을 사용하고,
 docs 디렉터리까지 지우려면 `--remove-docs`를 별도로 지정한다.
 
+작업공간에 rebase, merge, cherry-pick, revert, bisect, `git am` 또는 다른
+sequencer operation이 남아 있으면 Sanho 변경 명령은 실패한다. HEAD와
+`origin/main`이 같고 worktree가 깨끗해도 operation metadata가 있으면 안전한
+상태로 간주하지 않는다. 먼저 다음 명령으로 상태를 확인한다.
+
+```bash
+git status
+sanho status
+sanho status --json
+```
+
+Sanho가 출력하는 continue/abort/quit 후보 중 사용자 의도에 맞는 Git 명령을
+선택한다. rebase의 `--abort`는 시작 전 상태를 복원하고 `--quit`은 현재
+HEAD, index와 worktree를 유지한다. Sanho는 operation을 자동 종료하거나
+`.git/rebase-*`, sequencer metadata를 삭제하지 않는다. Git 복구 중 lifecycle
+hook은 Sanho 변경을 건너뛰지만 pre-push는 원격 게시를 계속 차단한다.
+
 Git commit 시 중앙 docs가 갱신된 상태라면 pre-commit hook이
 `pull-commit` 흐름을 자동으로 실행한다. 첫 시도에서는 `origin/main`을
 fetch하고, 원격 docs만 담은 `[SANHO] Update docs` 커밋을 최신 `main` 위에

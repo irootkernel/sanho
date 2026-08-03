@@ -58,6 +58,59 @@ sanho --socket /absolute/path/to/sanhod.sock state --all
 
 ## 장애 대응
 
+### 진행 중이거나 stale인 Git operation
+
+Sanho는 refs와 worktree의 겉보기 상태만으로 변경 가능 여부를 판단하지 않는다.
+`HEAD == origin/main`이고 `git status --porcelain`이 비어 있어도 Git의
+rebase, merge, cherry-pick, revert, bisect, `git am` 또는 sequencer metadata가
+남아 있으면 작업공간 변경을 차단한다. `.git`이 디렉터리인지 파일인지
+추측하지 않고 `git rev-parse --git-path`로 현재 worktree의 metadata 경로를
+해석하므로 linked worktree의 상태도 서로 섞이지 않는다.
+
+다음 명령은 operation을 먼저 정리할 때까지 실패한다.
+
+- `init`, `pull`, `fix`, 실제 `clean`
+- `pull-commit`과 `--continue`, `--abort`, `--recover`
+- pre-push와 main 선행 게시
+
+`sanho status`와 `sanho status --json`, `clean --dry-run`은 읽기 전용으로
+계속 사용할 수 있다. 상태 출력의 `git_operation`에서 감지된 종류, 차단
+이유와 후보 명령을 확인한다. 항상 다음 명령으로 실제 Git 상태를 먼저
+읽는다.
+
+```bash
+git status
+```
+
+rebase라면 의도에 따라 다음 중 하나를 선택한다.
+
+```bash
+git rebase --continue
+git rebase --abort
+git rebase --quit
+```
+
+`--abort`는 rebase 시작 전 branch 위치와 상태를 복원한다. `--quit`은 현재
+HEAD, index와 worktree를 유지한 채 rebase metadata만 종료한다. 따라서
+`--quit`을 일괄적인 stale-state 정리 명령으로 사용하지 않는다. merge,
+cherry-pick, revert와 `git am`도 `git status`를 확인한 뒤 해당 명령의
+`--continue`, `--abort`, 필요 시 `--quit`을 선택한다. bisect는
+`git bisect log`로 기록을 확인하고 계속 판정하거나 `git bisect reset`으로
+종료한다.
+
+Sanho는 어떤 경우에도 사용자 operation을 자동 abort/quit하거나 metadata를
+삭제하지 않는다. `.git/rebase-*`, `.git/sequencer` 같은 경로를 손으로
+삭제해서도 안 된다. detector가 여러 operation marker를 발견하면
+`multiple`, 종류를 안전하게 판별할 수 없는 sequencer는 `sequencer`로
+보고하고 `git status` 외의 정리 명령을 추측하지 않는다.
+
+Git의 continue 과정에서 실행되는 `pre-commit`, `commit-msg`, `post-commit`,
+`post-rewrite`, post-checkout/status hook은 Sanho의 index/worktree/ref 변경과
+daemon 게시를 건너뛰고 경고 후 성공한다. 사용자 Git 복구가 끝난 뒤 다음
+정상 hook 또는 명시적인 Sanho 명령이 필요한 reconciliation을 수행한다.
+pre-push는 복구에 필요하지 않고 원격 변경을 일으키므로 active operation
+동안 계속 실패한다.
+
 ### `docs_repo_busy`
 
 같은 docs repo에서 다른 sync, read, push, delete가 진행 중이다. 진행 중인
