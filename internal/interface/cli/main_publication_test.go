@@ -145,6 +145,30 @@ func TestPublishMainBeforeTargetRejectsMixedMainAndFeaturePush(t *testing.T) {
 	}
 }
 
+func TestAssessMainPublicationReadOnlyDoesNotRefreshRefOrClearState(t *testing.T) {
+	repo, _, syncCommit := setupMainPublicationRepository(t)
+	parent := runMainPublicationTestGit(t, repo, "rev-parse", syncCommit+"^")
+	runMainPublicationTestGit(t, repo, "push", "origin", "refs/heads/main:refs/heads/main")
+	runMainPublicationTestGit(t, repo, "update-ref", "refs/remotes/origin/main", parent)
+
+	assessment, err := assessMainPublication(context.Background(), repo, mainPublicationAssessmentOptions{
+		RefreshOrigin: true,
+		ReadOnly:      true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if assessment.Exists {
+		t.Fatalf("assessment=%+v, want published", assessment)
+	}
+	if got := runMainPublicationTestGit(t, repo, "rev-parse", "refs/remotes/origin/main"); got != parent {
+		t.Fatalf("origin/main tracking ref=%s want unchanged %s", got, parent)
+	}
+	if _, exists, err := mainPublicationTestStore(t, repo).Load(); err != nil || !exists {
+		t.Fatalf("read-only assessment changed publication state: exists=%v err=%v", exists, err)
+	}
+}
+
 func setupMainPublicationRepository(t *testing.T) (string, string, string) {
 	t.Helper()
 	root := t.TempDir()

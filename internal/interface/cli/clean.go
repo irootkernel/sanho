@@ -58,7 +58,9 @@ func newCleanCmd() *cobra.Command {
 			if hasPendingReport {
 				return errors.New("cannot clean while a workspace docs-hash report is pending; restore daemon access and retry a guarded command first")
 			}
-			mainPublication, err := assessMainPublication(cmd.Context(), cwd, true)
+			mainPublication, err := assessMainPublication(cmd.Context(), cwd, mainPublicationAssessmentOptions{
+				RefreshOrigin: true,
+			})
 			if err != nil {
 				return fmt.Errorf("failed to check main publication state: %w", err)
 			}

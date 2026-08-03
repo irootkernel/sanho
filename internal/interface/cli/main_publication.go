@@ -29,10 +29,15 @@ type mainPublicationAssessment struct {
 	RemoteMain     string
 }
 
+type mainPublicationAssessmentOptions struct {
+	RefreshOrigin bool
+	ReadOnly      bool
+}
+
 func assessMainPublication(
 	ctx context.Context,
 	workDir string,
-	refreshOrigin bool,
+	options mainPublicationAssessmentOptions,
 ) (mainPublicationAssessment, error) {
 	workspaceSync := infraGit.NewWorkspaceSync(fs.NewSnapshotBuilder(), fs.NewSnapshotApplier())
 	isRepository, err := workspaceSync.IsRepository(ctx, workDir)
@@ -103,16 +108,31 @@ func assessMainPublication(
 		}
 	}
 
-	if refreshOrigin {
-		if err := fetchOriginMain(ctx, workDir); err != nil {
+	var remoteMain string
+	var remoteExists bool
+	if options.RefreshOrigin && options.ReadOnly {
+		remoteMain, remoteExists, err = readRemoteMain(ctx, workDir)
+		if err != nil {
 			assessment.Classification = mainPublicationBlocked
 			assessment.Reason = err.Error()
 			return assessment, nil
 		}
-	}
-	remoteMain, remoteExists, err := workspaceSync.ResolveOptionalRef(ctx, workDir, "refs/remotes/origin/main")
-	if err != nil {
-		return assessment, err
+	} else {
+		if options.RefreshOrigin {
+			if err := fetchOriginMain(ctx, workDir); err != nil {
+				assessment.Classification = mainPublicationBlocked
+				assessment.Reason = err.Error()
+				return assessment, nil
+			}
+		}
+		remoteMain, remoteExists, err = workspaceSync.ResolveOptionalRef(
+			ctx,
+			workDir,
+			"refs/remotes/origin/main",
+		)
+		if err != nil {
+			return assessment, err
+		}
 	}
 	if !remoteExists {
 		assessment.Classification = mainPublicationBlocked
@@ -133,8 +153,10 @@ func assessMainPublication(
 		}
 	}
 	if allPublished {
-		if err := store.Remove(); err != nil {
-			return assessment, err
+		if !options.ReadOnly {
+			if err := store.Remove(); err != nil {
+				return assessment, err
+			}
 		}
 		return mainPublicationAssessment{}, nil
 	}
@@ -154,6 +176,39 @@ func assessMainPublication(
 	}
 	assessment.Reason = "local main contains commits that are pending publication to origin/main"
 	return assessment, nil
+}
+
+func readRemoteMain(ctx context.Context, workDir string) (string, bool, error) {
+	if err := runMainPublicationGit(ctx, workDir, "remote", "get-url", "origin"); err != nil {
+		return "", false, fmt.Errorf("origin remote is unavailable: %w", err)
+	}
+	cmd := exec.CommandContext(
+		ctx,
+		"git",
+		"-C",
+		workDir,
+		"ls-remote",
+		"--exit-code",
+		"origin",
+		"refs/heads/main",
+	)
+	cmd.Env = os.Environ()
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 2 {
+			return "", false, nil
+		}
+		message := strings.TrimSpace(string(out))
+		if message != "" {
+			err = errors.Join(err, errors.New(message))
+		}
+		return "", false, fmt.Errorf("read origin/main: %w", err)
+	}
+	fields := strings.Fields(string(out))
+	if len(fields) < 2 || fields[1] != "refs/heads/main" {
+		return "", false, errors.New("read origin/main: unexpected ls-remote output")
+	}
+	return fields[0], true, nil
 }
 
 func recordMainPublicationFailure(ctx context.Context, workDir string, failure error) error {

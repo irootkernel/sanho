@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/irootkernel/sanho/internal/domain/client"
+	infraGit "github.com/irootkernel/sanho/internal/infra/git"
 	"github.com/irootkernel/sanho/internal/infra/httpclient"
 )
 
@@ -18,9 +19,18 @@ type statusJSONOutput struct {
 	PendingFix                    statusJSONPendingFix      `json:"pending_fix"`
 	PullCommit                    statusJSONPullCommit      `json:"pull_commit"`
 	MainPublication               statusJSONMainPublication `json:"main_publication"`
+	GitOperation                  statusJSONGitOperation    `json:"git_operation"`
 	Conflicts                     statusJSONConflicts       `json:"conflicts"`
 	WorkspaceComparisonsAvailable bool                      `json:"workspace_comparisons_available"`
 	Workspaces                    []statusJSONWorkspace     `json:"workspaces"`
+}
+
+type statusJSONGitOperation struct {
+	Active         bool     `json:"active"`
+	Type           string   `json:"type"`
+	Classification string   `json:"classification"`
+	Reason         string   `json:"reason"`
+	NextCommands   []string `json:"next_commands"`
 }
 
 type statusJSONMainPublication struct {
@@ -74,6 +84,7 @@ func buildStatusJSONOutput(
 	comparisonAvailable bool,
 	pullCommit pullCommitAssessment,
 	mainPublication mainPublicationAssessment,
+	gitOperation infraGit.GitOperation,
 ) statusJSONOutput {
 	var pendingFixCreatedAt *string
 	if hasPendingFix {
@@ -100,6 +111,7 @@ func buildStatusJSONOutput(
 		},
 		PullCommit:      buildStatusJSONPullCommit(pullCommit),
 		MainPublication: buildStatusJSONMainPublication(mainPublication),
+		GitOperation:    buildStatusJSONGitOperation(gitOperation),
 		Conflicts: statusJSONConflicts{
 			ScanStatus: conflictScanStatus,
 			Files:      files,
@@ -118,6 +130,20 @@ func buildStatusJSONOutput(
 		})
 	}
 	return output
+}
+
+func buildStatusJSONGitOperation(operation infraGit.GitOperation) statusJSONGitOperation {
+	commands := append([]string(nil), operation.NextCommands...)
+	if commands == nil {
+		commands = make([]string, 0)
+	}
+	return statusJSONGitOperation{
+		Active:         operation.Active,
+		Type:           string(operation.Type),
+		Classification: string(operation.Classification),
+		Reason:         operation.Reason,
+		NextCommands:   commands,
+	}
 }
 
 func buildStatusJSONMainPublication(assessment mainPublicationAssessment) statusJSONMainPublication {

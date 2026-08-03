@@ -10,6 +10,7 @@ import (
 	"github.com/irootkernel/sanho/internal/domain/client"
 	"github.com/irootkernel/sanho/internal/domain/docs"
 	"github.com/irootkernel/sanho/internal/infra/fs"
+	infraGit "github.com/irootkernel/sanho/internal/infra/git"
 	"github.com/irootkernel/sanho/internal/infra/httpclient"
 	"github.com/spf13/cobra"
 )
@@ -145,6 +146,11 @@ func TestBuildStatusJSONOutputUsesStableMachineFields(t *testing.T) {
 		true,
 		pullCommitAssessment{},
 		mainPublicationAssessment{},
+		infraGit.GitOperation{
+			Type:           infraGit.OperationNone,
+			Classification: infraGit.OperationClear,
+			NextCommands:   make([]string, 0),
+		},
 	)
 
 	data, err := json.Marshal(output)
@@ -169,6 +175,11 @@ func TestBuildStatusJSONOutputUsesStableMachineFields(t *testing.T) {
 	if mainPublication["pending"] != false || len(mainPublication["sync_commits"].([]any)) != 0 {
 		t.Fatalf("main_publication = %#v", mainPublication)
 	}
+	gitOperation := decoded["git_operation"].(map[string]any)
+	if gitOperation["active"] != false || gitOperation["type"] != "none" ||
+		gitOperation["classification"] != "clear" || len(gitOperation["next_commands"].([]any)) != 0 {
+		t.Fatalf("git_operation = %#v", gitOperation)
+	}
 	workspaces := decoded["workspaces"].([]any)
 	workspace := workspaces[0].(map[string]any)
 	if workspace["repository"] != "current" || workspace["docs_hash"] != "full-current-hash" {
@@ -178,6 +189,51 @@ func TestBuildStatusJSONOutputUsesStableMachineFields(t *testing.T) {
 	files := conflicts["files"].([]any)
 	if files[0] != "a.md" || files[1] != "z.md" {
 		t.Fatalf("conflict files = %#v", files)
+	}
+}
+
+func TestBuildStatusJSONGitOperationIncludesRecoveryChoices(t *testing.T) {
+	output := buildStatusJSONGitOperation(infraGit.GitOperation{
+		Active:         true,
+		Type:           infraGit.OperationRebase,
+		Classification: infraGit.OperationBlocked,
+		Reason:         "Git rebase operation metadata is present",
+		NextCommands: []string{
+			"git status",
+			"git rebase --continue",
+			"git rebase --abort",
+			"git rebase --quit",
+		},
+	})
+	if !output.Active || output.Type != "rebase" || output.Classification != "blocked" ||
+		len(output.NextCommands) != 4 || output.NextCommands[0] != "git status" {
+		t.Fatalf("git_operation=%+v", output)
+	}
+}
+
+func TestPrintStatusGitOperationExplainsRebaseRecovery(t *testing.T) {
+	command := &cobra.Command{}
+	output := new(bytes.Buffer)
+	command.SetOut(output)
+	printStatusGitOperation(command, infraGit.GitOperation{
+		Active:         true,
+		Type:           infraGit.OperationRebase,
+		Classification: infraGit.OperationBlocked,
+		Reason:         "Git rebase operation metadata is present",
+		NextCommands:   []string{"git status", "git rebase --abort", "git rebase --quit"},
+	})
+	text := output.String()
+	for _, value := range []string{
+		"git_operation: rebase (blocked)",
+		"git status",
+		"git rebase --abort",
+		"git rebase --quit",
+		"--abort restores the pre-rebase state",
+		"--quit keeps the current HEAD",
+	} {
+		if !strings.Contains(text, value) {
+			t.Fatalf("status output missing %q:\n%s", value, text)
+		}
 	}
 }
 

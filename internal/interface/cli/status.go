@@ -18,6 +18,7 @@ import (
 	"github.com/irootkernel/sanho/internal/domain/docs"
 	"github.com/irootkernel/sanho/internal/domain/merge"
 	"github.com/irootkernel/sanho/internal/infra/fs"
+	infraGit "github.com/irootkernel/sanho/internal/infra/git"
 	"github.com/irootkernel/sanho/internal/infra/httpclient"
 )
 
@@ -62,7 +63,25 @@ func newStatusCmd() *cobra.Command {
 			if err != nil {
 				return withErrorCode("pull_commit_state_failed", fmt.Errorf("failed to inspect pull-commit state: %w", err))
 			}
-			mainPublication, err := assessMainPublication(ctx, cwd, true)
+			gitOperation := infraGit.GitOperation{
+				Type:           infraGit.OperationNone,
+				Classification: infraGit.OperationClear,
+				NextCommands:   make([]string, 0),
+			}
+			gitDetector := infraGit.NewDetector()
+			if gitDetector.HasGitDir(cwd) {
+				gitOperation, err = gitDetector.DetectOperation(ctx, cwd)
+				if err != nil {
+					return withErrorCode(
+						"git_operation_detection_failed",
+						fmt.Errorf("failed to inspect Git operation state: %w", err),
+					)
+				}
+			}
+			mainPublication, err := assessMainPublication(ctx, cwd, mainPublicationAssessmentOptions{
+				RefreshOrigin: true,
+				ReadOnly:      true,
+			})
 			if err != nil {
 				return withErrorCode(
 					"main_publication_state_failed",
@@ -223,6 +242,7 @@ func newStatusCmd() *cobra.Command {
 					comparisonAvailable,
 					pullCommit,
 					mainPublication,
+					gitOperation,
 				)
 				if err := writeJSON(cmd.OutOrStdout(), output); err != nil {
 					return withErrorCode("internal_error", errors.Join(ErrInternal, err))
@@ -256,6 +276,7 @@ func newStatusCmd() *cobra.Command {
 			} else {
 				cmd.Println("  main_publish : none")
 			}
+			printStatusGitOperation(cmd, gitOperation)
 			if daemonError == nil {
 				cmd.Println()
 				if comparisonAvailable {
@@ -301,6 +322,22 @@ func newStatusCmd() *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Print machine-readable JSON")
 	return cmd
+}
+
+func printStatusGitOperation(cmd *cobra.Command, operation infraGit.GitOperation) {
+	if !operation.Active {
+		cmd.Println("  git_operation: none")
+		return
+	}
+	cmd.Printf("  git_operation: %s (%s)\n", operation.Type, operation.Classification)
+	cmd.Printf("  git_reason   : %s\n", operation.Reason)
+	cmd.Println("  git_recovery :")
+	for _, command := range operation.NextCommands {
+		cmd.Printf("    - %s\n", command)
+	}
+	if operation.Type == infraGit.OperationRebase {
+		cmd.Println("  git_note     : --abort restores the pre-rebase state; --quit keeps the current HEAD and working state.")
+	}
 }
 
 func formatCommitRelation(relation httpclient.CommitRelation) string {

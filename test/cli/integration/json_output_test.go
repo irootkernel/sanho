@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -125,6 +126,27 @@ func TestCLIStatusJSON(t *testing.T) {
 
 	workspaceDir := t.TempDir()
 	setupSanhoConfig(t, workspaceDir, daemon.SocketPath)
+	if output, err := exec.Command("git", "-C", workspaceDir, "init", "--initial-branch=main").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, output)
+	}
+	gitPathOutput, err := exec.Command(
+		"git",
+		"-C",
+		workspaceDir,
+		"rev-parse",
+		"--git-path",
+		"rebase-merge",
+	).CombinedOutput()
+	if err != nil {
+		t.Fatalf("resolve rebase path: %v\n%s", err, gitPathOutput)
+	}
+	rebasePath := strings.TrimSpace(string(gitPathOutput))
+	if !filepath.IsAbs(rebasePath) {
+		rebasePath = filepath.Join(workspaceDir, rebasePath)
+	}
+	if err := os.MkdirAll(rebasePath, 0755); err != nil {
+		t.Fatal(err)
+	}
 	cmd := exec.Command(getCliBinary(t), "status", "--json")
 	cmd.Dir = workspaceDir
 	output, err := cmd.Output()
@@ -148,6 +170,27 @@ func TestCLIStatusJSON(t *testing.T) {
 	}
 	if _, ok := workspace["local_path"]; ok {
 		t.Fatalf("status JSON exposed local_path: %#v", workspace)
+	}
+	gitOperation := got["git_operation"].(map[string]any)
+	if gitOperation["active"] != true || gitOperation["type"] != "rebase" ||
+		gitOperation["classification"] != "blocked" {
+		t.Fatalf("git_operation = %#v", gitOperation)
+	}
+	commands := gitOperation["next_commands"].([]any)
+	if len(commands) != 4 || commands[0] != "git status" || commands[3] != "git rebase --quit" {
+		t.Fatalf("next_commands = %#v", commands)
+	}
+	second := exec.Command(getCliBinary(t), "status", "--json")
+	second.Dir = workspaceDir
+	secondOutput, err := second.Output()
+	if err != nil {
+		t.Fatalf("repeated status --json failed: %v", err)
+	}
+	if !bytes.Equal(output, secondOutput) {
+		t.Fatalf("repeated status output changed:\nfirst=%s\nsecond=%s", output, secondOutput)
+	}
+	if info, err := os.Stat(rebasePath); err != nil || !info.IsDir() {
+		t.Fatalf("status changed rebase metadata: info=%v err=%v", info, err)
 	}
 }
 

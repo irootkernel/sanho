@@ -112,7 +112,7 @@ func runPrePushHook(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 	if remoteName == "" {
-		publication, assessErr := assessMainPublication(ctx, cwd, false)
+		publication, assessErr := assessMainPublication(ctx, cwd, mainPublicationAssessmentOptions{})
 		if assessErr != nil {
 			return fmt.Errorf("sanho hook pre-push: inspect legacy hook publication state: %w", assessErr)
 		}
@@ -127,7 +127,7 @@ func runPrePushHook(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 	if remoteName != "origin" {
-		publication, assessErr := assessMainPublication(ctx, cwd, false)
+		publication, assessErr := assessMainPublication(ctx, cwd, mainPublicationAssessmentOptions{})
 		if assessErr != nil {
 			return fmt.Errorf("sanho hook pre-push: inspect non-origin publication state: %w", assessErr)
 		}
@@ -151,7 +151,7 @@ func publishMainBeforeTarget(
 	updates []prePushUpdate,
 	cmd *cobra.Command,
 ) error {
-	publication, err := assessMainPublication(ctx, workDir, true)
+	publication, err := assessMainPublication(ctx, workDir, mainPublicationAssessmentOptions{RefreshOrigin: true})
 	if err != nil {
 		return fmt.Errorf("sanho hook pre-push: inspect main publication: %w", err)
 	}
@@ -183,7 +183,7 @@ func publishMainBeforeTarget(
 		cmd.PrintErrf("sanho: %v\n", err)
 		return errors.New("origin/main publication failed - target push blocked")
 	}
-	publication, err = assessMainPublication(ctx, workDir, true)
+	publication, err = assessMainPublication(ctx, workDir, mainPublicationAssessmentOptions{RefreshOrigin: true})
 	if err != nil {
 		return fmt.Errorf("sanho hook pre-push: verify main publication: %w", err)
 	}
