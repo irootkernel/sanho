@@ -48,6 +48,22 @@ update 분기로 들어가므로 재귀 push를 만들지 않는다.
 실패는 target push까지 차단하며 force push로 복구하지 않는다. 다른 remote,
 tag-only push와 ref 삭제는 origin main 게시를 유발하지 않는다.
 
+## pull-commit rewrite 복구 계약
+
+버전 3 트랜잭션은 준비 당시 branch, index tree와 `post-rewrite`의 old/new
+commit 매핑으로 amend 결과를 검증한다. 이전 버전 1·2 트랜잭션에는 이
+metadata가 없으므로 sibling commit의 parent가 같다는 사실만으로 완료를
+판정하지 않는다. Sanho는 `merged-index.tar.gz`에 저장된 준비 당시 docs와
+현재 HEAD의 docs tree를 파일 내용, Git 실행 비트, 디렉터리 및 symbolic link
+구조 기준으로 비교한다. gzip timestamp, tar owner처럼 commit 내용과 무관한
+archive metadata는 비교에서 제외한다.
+
+legacy snapshot이 없거나 손상됐으면 `corrupt`, 현재 HEAD의 docs가 다르면
+`ambiguous`로 분류한다. 두 경우 모두 transaction과 recovery ref를 보존하고
+push를 차단한다. snapshot과 일치하는 docs amend 또는 docs를 바꾸지 않은
+amend만 `recoverable_rewrite`로 정리할 수 있다. 이 검증은 legacy 상태에만
+추가되며 버전 3의 tree·rewrite 판정과 CLI/JSON schema는 바뀌지 않는다.
+
 ## 동시성 계약
 
 하나의 daemon 프로세스에서 모든 Git 작업은 `docs_repo_id`별 coordinator를

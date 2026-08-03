@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/irootkernel/sanho/internal/infra/fs"
 )
 
 func TestCLIPullCommitContinueAndAbortAfterValidRewritePreserveGitState(t *testing.T) {
@@ -64,6 +66,17 @@ func TestCLIPullCommitContinueAndAbortAfterValidRewritePreserveGitState(t *testi
 				t.Fatal(err)
 			}
 			if err := os.WriteFile(filepath.Join(stateDir, "state.json"), stateData, 0600); err != nil {
+				t.Fatal(err)
+			}
+			mergedIndex, err := fs.NewSnapshotBuilder().Build(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(
+				filepath.Join(stateDir, fs.PullCommitMergedIndexSnapshot),
+				mergedIndex,
+				0600,
+			); err != nil {
 				t.Fatal(err)
 			}
 

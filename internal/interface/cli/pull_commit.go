@@ -83,7 +83,7 @@ func runPullCommitCommand(cmd *cobra.Command, continueTransaction, abortTransact
 	}
 
 	if abortTransaction {
-		assessment, assessErr := engine.assessTransaction(ctx, workDir)
+		assessment, assessErr := engine.assessTransaction(ctx, workDir, config.DocsDir)
 		if assessErr != nil {
 			return fmt.Errorf("sanho pull-commit --abort: %w", assessErr)
 		}
@@ -107,7 +107,7 @@ func runPullCommitCommand(cmd *cobra.Command, continueTransaction, abortTransact
 	}
 
 	if continueTransaction {
-		assessment, assessErr := engine.assessTransaction(ctx, workDir)
+		assessment, assessErr := engine.assessTransaction(ctx, workDir, config.DocsDir)
 		if assessErr != nil {
 			return fmt.Errorf("sanho pull-commit --continue: %w", assessErr)
 		}
@@ -138,7 +138,7 @@ func runPullCommitCommand(cmd *cobra.Command, continueTransaction, abortTransact
 		return nil
 	}
 
-	hasTransaction, err := engine.hasTransaction(ctx, workDir)
+	hasTransaction, err := engine.hasTransaction(ctx, workDir, config.DocsDir)
 	if err != nil {
 		return err
 	}

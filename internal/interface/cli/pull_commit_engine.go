@@ -140,7 +140,7 @@ func (e *pullCommitEngine) pulledDocsHaveLocalChanges(
 	return !indexEqual || !workEqual, nil
 }
 
-func (e *pullCommitEngine) hasTransaction(ctx context.Context, workDir string) (bool, error) {
+func (e *pullCommitEngine) hasTransaction(ctx context.Context, workDir, docsDir string) (bool, error) {
 	isRepository, err := e.workspaceSync.IsRepository(ctx, workDir)
 	if err != nil {
 		return false, err
@@ -148,7 +148,7 @@ func (e *pullCommitEngine) hasTransaction(ctx context.Context, workDir string) (
 	if !isRepository {
 		return false, nil
 	}
-	assessment, err := e.assessTransaction(ctx, workDir)
+	assessment, err := e.assessTransaction(ctx, workDir, docsDir)
 	if err != nil || !assessment.Exists {
 		return assessment.Exists, err
 	}
@@ -782,8 +782,8 @@ func (e *pullCommitEngine) abort(ctx context.Context, workDir string, config *cl
 	return store.Remove()
 }
 
-func (e *pullCommitEngine) clearAfterCommit(ctx context.Context, workDir string) error {
-	assessment, err := e.assessTransaction(ctx, workDir)
+func (e *pullCommitEngine) clearAfterCommit(ctx context.Context, workDir, docsDir string) error {
+	assessment, err := e.assessTransaction(ctx, workDir, docsDir)
 	if err != nil || !assessment.Exists {
 		return err
 	}

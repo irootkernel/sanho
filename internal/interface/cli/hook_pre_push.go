@@ -46,12 +46,12 @@ func runPrePushHook(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("sanho hook pre-push: %w", err)
 	}
 	pullCommit := newPullCommitEngine(nil)
-	hasPullCommit, err := pullCommit.hasTransaction(ctx, cwd)
+	hasPullCommit, err := pullCommit.hasTransaction(ctx, cwd, config.DocsDir)
 	if err != nil {
 		return fmt.Errorf("sanho hook pre-push: check pull-commit state: %w", err)
 	}
 	if hasPullCommit {
-		assessment, assessErr := pullCommit.assessTransaction(ctx, cwd)
+		assessment, assessErr := pullCommit.assessTransaction(ctx, cwd, config.DocsDir)
 		if assessErr != nil {
 			return fmt.Errorf("sanho hook pre-push: classify pull-commit state: %w", assessErr)
 		}

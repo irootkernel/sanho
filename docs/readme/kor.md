@@ -127,6 +127,13 @@ commit 또는 rewrite hook이 중단되어 transaction이 남았다면
 보존한 뒤 완료가 증명된 transaction만 정리한다. 판단이 불명확하거나 Git
 object가 손상된 경우 state와 backup ref를 유지하고 push를 계속 차단한다.
 
+버전 1·2에서 남은 transaction은 amend 전후 commit의 parent가 같다는
+이유만으로 정리하지 않는다. 저장된 merged index snapshot과 현재 HEAD의
+docs 내용·실행 비트·symbolic link 구조가 일치해야 한다. snapshot이 없거나
+깨졌으면 `corrupt`, docs가 달라졌으면 `ambiguous`로 남는다. 두 경우 모두
+`.git/sanho`를 수동 삭제하지 말고 `sanho status`가 안내하는 복구 명령과
+`refs/sanho/recovery/<transaction-id>/`의 backup ref를 사용한다.
+
 PNG나 PDF 같은 바이너리 파일도 base/local/remote 중 두 내용이 같아 결과가
 명확하면 자동으로 유지하거나 변경된 쪽을 채택한다. local과 remote가 base와
 서로 다르게 변경된 바이너리는 자동으로 선택하지 않고 파일 경로를 포함한

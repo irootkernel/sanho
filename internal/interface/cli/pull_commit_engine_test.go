@@ -190,7 +190,7 @@ func TestPullCommitPreservesStagedAndUnstagedDocsLayers(t *testing.T) {
 	}
 
 	runPullCommitTestGit(t, repo, "commit", "--no-verify", "-m", "user change")
-	exists, err = engine.hasTransaction(ctx, repo)
+	exists, err = engine.hasTransaction(ctx, repo, "docs")
 	if err != nil || exists {
 		t.Fatalf("stale prepared transaction was not cleared before push: exists=%v err=%v", exists, err)
 	}
@@ -254,7 +254,7 @@ func TestPullCommitPreparedTransactionReconcilesAmendRewrite(t *testing.T) {
 		t.Fatalf("amended parent=%s want %s", got, syncCommit)
 	}
 
-	if err := engine.clearAfterCommit(ctx, repo); err != nil {
+	if err := engine.clearAfterCommit(ctx, repo, "docs"); err != nil {
 		t.Fatal(err)
 	}
 	interrupted := errors.New("post-rewrite interrupted after completion record")

@@ -113,6 +113,16 @@ old/new 매핑과 준비 당시 index tree를 검증한다. hook이 중단된 �
 `refs/sanho/recovery/<transaction-id>/`에 보존하며, 완료를 증명할 수 없으면
 transaction을 삭제하지 않는다.
 
+버전 1·2의 legacy transaction은 준비 당시 tree와 rewrite mapping이 없다.
+따라서 같은 parent를 가진 sibling commit이어도 저장된 `merged-index.tar.gz`와
+현재 HEAD의 docs tree가 내용과 Git file mode, symbolic link 구조까지
+일치할 때만 `recoverable_rewrite`로 처리한다. snapshot 누락·손상은
+`corrupt`, docs 불일치는 `ambiguous`다. 이때 `.git/sanho`를 직접 삭제하거나
+backup ref를 제거하지 말고 `sanho status`의 `reason`과 `next_command`를
+기록한 뒤 보존된 `refs/sanho/recovery/<transaction-id>/`에서 필요한 Git
+상태를 확인한다. 원래 의도를 확인할 수 없다면 자동 정리하거나 push하지
+않는다.
+
 pre-push는 transaction 디렉터리의 존재만으로 판단하지 않는다. 논리적으로
 완료된 stale state는 멱등하게 정리하지만 `pending`, `ambiguous`, `corrupt`
 상태는 계속 차단하고 `status`와 같은 안전한 다음 명령을 출력한다.

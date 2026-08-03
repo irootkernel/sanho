@@ -50,6 +50,12 @@ func TestPullCommitRecoverLegacySiblingRewritePreservesGitState(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	if err := store.WriteArtifact(
+		fs.PullCommitMergedIndexSnapshot,
+		buildPullCommitTestSnapshot(t, map[string]string{"readme.md": "synced\n"}),
+	); err != nil {
+		t.Fatal(err)
+	}
 
 	headBefore := runPullCommitTestGit(t, repo, "rev-parse", "HEAD")
 	indexBefore := runPullCommitTestGit(t, repo, "write-tree")
@@ -89,6 +95,173 @@ func TestPullCommitRecoverLegacySiblingRewritePreservesGitState(t *testing.T) {
 	}
 	if repeated.Exists || repeated.Classification != pullCommitCompleted {
 		t.Fatalf("repeated recovery=%+v", repeated)
+	}
+}
+
+func TestPullCommitRecoverLegacySiblingRewriteAcceptsStoredDocsAmend(t *testing.T) {
+	ctx := context.Background()
+	repo := t.TempDir()
+	runPullCommitTestGit(t, repo, "init", "--initial-branch=main")
+	runPullCommitTestGit(t, repo, "config", "user.email", "test@example.com")
+	runPullCommitTestGit(t, repo, "config", "user.name", "Test User")
+
+	writePullCommitTestFile(t, repo, "docs/readme.md", "synced\n")
+	runPullCommitTestGit(t, repo, "add", "docs/readme.md")
+	runPullCommitTestGit(t, repo, "commit", "--no-verify", "-m", "sync")
+	syncCommit := runPullCommitTestGit(t, repo, "rev-parse", "HEAD")
+	writePullCommitTestFile(t, repo, "feature.txt", "prepared\n")
+	runPullCommitTestGit(t, repo, "add", "feature.txt")
+	runPullCommitTestGit(t, repo, "commit", "--no-verify", "-m", "prepared")
+	preparedHead := runPullCommitTestGit(t, repo, "rev-parse", "HEAD")
+	writePullCommitTestFile(t, repo, "docs/readme.md", "amended docs\n")
+	runPullCommitTestGit(t, repo, "add", "docs/readme.md")
+	runPullCommitTestGit(t, repo, "commit", "--amend", "--no-verify", "-m", "amended")
+
+	engine := newPullCommitEngine(nil)
+	store, err := engine.store(ctx, repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Save(fs.PullCommitState{
+		Version:      2,
+		Phase:        fs.PullCommitPhasePrepared,
+		OriginalHead: preparedHead,
+		SyncCommit:   syncCommit,
+		PreparedHead: preparedHead,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.WriteArtifact(
+		fs.PullCommitMergedIndexSnapshot,
+		buildPullCommitTestSnapshot(t, map[string]string{"readme.md": "amended docs\n"}),
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	assessment, err := engine.recover(ctx, repo, &client.WorkspaceConfig{DocsDir: "docs"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if assessment.Classification != pullCommitRecoverableRewrite {
+		t.Fatalf("classification=%s reason=%s", assessment.Classification, assessment.Reason)
+	}
+}
+
+func TestPullCommitRecoverLegacySiblingRewriteRejectsChangedDocs(t *testing.T) {
+	ctx := context.Background()
+	repo := t.TempDir()
+	runPullCommitTestGit(t, repo, "init", "--initial-branch=main")
+	runPullCommitTestGit(t, repo, "config", "user.email", "test@example.com")
+	runPullCommitTestGit(t, repo, "config", "user.name", "Test User")
+
+	writePullCommitTestFile(t, repo, "docs/readme.md", "synced\n")
+	runPullCommitTestGit(t, repo, "add", "docs/readme.md")
+	runPullCommitTestGit(t, repo, "commit", "--no-verify", "-m", "sync")
+	syncCommit := runPullCommitTestGit(t, repo, "rev-parse", "HEAD")
+	writePullCommitTestFile(t, repo, "feature.txt", "prepared\n")
+	runPullCommitTestGit(t, repo, "add", "feature.txt")
+	runPullCommitTestGit(t, repo, "commit", "--no-verify", "-m", "prepared")
+	preparedHead := runPullCommitTestGit(t, repo, "rev-parse", "HEAD")
+	writePullCommitTestFile(t, repo, "docs/readme.md", "tampered\n")
+	runPullCommitTestGit(t, repo, "add", "docs/readme.md")
+	runPullCommitTestGit(t, repo, "commit", "--amend", "--no-verify", "-m", "tampered")
+
+	engine := newPullCommitEngine(nil)
+	store, err := engine.store(ctx, repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Save(fs.PullCommitState{
+		Version:      2,
+		Phase:        fs.PullCommitPhasePrepared,
+		OriginalHead: preparedHead,
+		SyncCommit:   syncCommit,
+		PreparedHead: preparedHead,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.WriteArtifact(
+		fs.PullCommitMergedIndexSnapshot,
+		buildPullCommitTestSnapshot(t, map[string]string{"readme.md": "synced\n"}),
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	assessment, err := engine.recover(ctx, repo, &client.WorkspaceConfig{DocsDir: "docs"})
+	if err == nil || !strings.Contains(err.Error(), "transaction is ambiguous") {
+		t.Fatalf("recover assessment=%+v err=%v", assessment, err)
+	}
+	if assessment.Classification != pullCommitAmbiguous {
+		t.Fatalf("classification=%s reason=%s", assessment.Classification, assessment.Reason)
+	}
+	if exists, storeErr := store.Exists(); storeErr != nil || !exists {
+		t.Fatalf("transaction exists=%v err=%v", exists, storeErr)
+	}
+	preserved, exists, loadErr := store.Load()
+	if loadErr != nil || !exists || preserved.Recovery == nil {
+		t.Fatalf("recovery refs were not recorded: state=%+v exists=%v err=%v", preserved, exists, loadErr)
+	}
+}
+
+func TestPullCommitRecoverLegacySiblingRewriteRejectsMissingOrCorruptSnapshot(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		artifact   []byte
+		write      bool
+		wantReason string
+	}{
+		{name: "missing", wantReason: "merged index snapshot"},
+		{name: "corrupt", artifact: []byte("not a snapshot"), write: true, wantReason: "merged index snapshot"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			repo := t.TempDir()
+			runPullCommitTestGit(t, repo, "init", "--initial-branch=main")
+			runPullCommitTestGit(t, repo, "config", "user.email", "test@example.com")
+			runPullCommitTestGit(t, repo, "config", "user.name", "Test User")
+			writePullCommitTestFile(t, repo, "docs/readme.md", "synced\n")
+			runPullCommitTestGit(t, repo, "add", "docs/readme.md")
+			runPullCommitTestGit(t, repo, "commit", "--no-verify", "-m", "sync")
+			syncCommit := runPullCommitTestGit(t, repo, "rev-parse", "HEAD")
+			writePullCommitTestFile(t, repo, "feature.txt", "prepared\n")
+			runPullCommitTestGit(t, repo, "add", "feature.txt")
+			runPullCommitTestGit(t, repo, "commit", "--no-verify", "-m", "prepared")
+			preparedHead := runPullCommitTestGit(t, repo, "rev-parse", "HEAD")
+			writePullCommitTestFile(t, repo, "feature.txt", "amended\n")
+			runPullCommitTestGit(t, repo, "add", "feature.txt")
+			runPullCommitTestGit(t, repo, "commit", "--amend", "--no-verify", "-m", "amended")
+
+			engine := newPullCommitEngine(nil)
+			store, err := engine.store(ctx, repo)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := store.Save(fs.PullCommitState{
+				Version:      2,
+				Phase:        fs.PullCommitPhasePrepared,
+				OriginalHead: preparedHead,
+				SyncCommit:   syncCommit,
+				PreparedHead: preparedHead,
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if tc.write {
+				if err := store.WriteArtifact(fs.PullCommitMergedIndexSnapshot, tc.artifact); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			assessment, err := engine.recover(ctx, repo, &client.WorkspaceConfig{DocsDir: "docs"})
+			if err == nil || !strings.Contains(assessment.Reason, tc.wantReason) {
+				t.Fatalf("recover assessment=%+v err=%v", assessment, err)
+			}
+			if assessment.Classification != pullCommitCorrupt {
+				t.Fatalf("classification=%s reason=%s", assessment.Classification, assessment.Reason)
+			}
+			if exists, storeErr := store.Exists(); storeErr != nil || !exists {
+				t.Fatalf("transaction exists=%v err=%v", exists, storeErr)
+			}
+		})
 	}
 }
 
@@ -171,6 +344,12 @@ func TestPullCommitRecoveryResumesAfterEveryMetadataMutation(t *testing.T) {
 			}); err != nil {
 				t.Fatal(err)
 			}
+			if err := store.WriteArtifact(
+				fs.PullCommitMergedIndexSnapshot,
+				buildPullCommitTestSnapshot(t, map[string]string{}),
+			); err != nil {
+				t.Fatal(err)
+			}
 
 			interrupted := errors.New("injected recovery interruption")
 			engine.recoveryStep = func(current string) error {
@@ -179,11 +358,11 @@ func TestPullCommitRecoveryResumesAfterEveryMetadataMutation(t *testing.T) {
 				}
 				return nil
 			}
-			if _, err := engine.recover(ctx, repo, &client.WorkspaceConfig{}); !errors.Is(err, interrupted) {
+			if _, err := engine.recover(ctx, repo, &client.WorkspaceConfig{DocsDir: "docs"}); !errors.Is(err, interrupted) {
 				t.Fatalf("first recovery error=%v", err)
 			}
 			engine.recoveryStep = nil
-			if _, err := engine.recover(ctx, repo, &client.WorkspaceConfig{}); err != nil {
+			if _, err := engine.recover(ctx, repo, &client.WorkspaceConfig{DocsDir: "docs"}); err != nil {
 				t.Fatalf("resumed recovery: %v", err)
 			}
 			if exists, err := store.Exists(); err != nil || exists {
@@ -221,7 +400,7 @@ func TestPullCommitGuardClearsLogicallyCompletedStaleState(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	active, err := engine.hasTransaction(ctx, repo)
+	active, err := engine.hasTransaction(ctx, repo, "docs")
 	if err != nil {
 		t.Fatal(err)
 	}

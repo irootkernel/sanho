@@ -58,7 +58,7 @@ func newStatusCmd() *cobra.Command {
 				}
 				return withErrorCode("invalid_workspace_config", fmt.Errorf("failed to load config: %w", err))
 			}
-			pullCommit, err := newPullCommitEngine(nil).assessTransaction(ctx, cwd)
+			pullCommit, err := newPullCommitEngine(nil).assessTransaction(ctx, cwd, config.DocsDir)
 			if err != nil {
 				return withErrorCode("pull_commit_state_failed", fmt.Errorf("failed to inspect pull-commit state: %w", err))
 			}

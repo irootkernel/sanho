@@ -145,6 +145,28 @@ func (s *WorkspaceSync) CommitParents(ctx context.Context, repoPath, commit stri
 	return strings.Fields(string(out)), nil
 }
 
+// ArchiveCommitDocs creates a gzip-compressed tar archive of docsDir as stored
+// in commit. Archive paths retain the docsDir prefix.
+func (s *WorkspaceSync) ArchiveCommitDocs(ctx context.Context, repoPath, commit, docsDir string) ([]byte, error) {
+	paths, err := runWorkspaceGit(ctx, repoPath, nil, "ls-tree", "-z", "--name-only", commit, "--", docsDir)
+	if err != nil {
+		return nil, fmt.Errorf("inspect commit docs: %w", err)
+	}
+	if len(paths) == 0 {
+		emptyDir, err := os.MkdirTemp("", "sanho-empty-docs-*")
+		if err != nil {
+			return nil, fmt.Errorf("create empty docs snapshot directory: %w", err)
+		}
+		defer func() { _ = os.RemoveAll(emptyDir) }()
+		return s.builder.Build(emptyDir)
+	}
+	out, err := runWorkspaceGit(ctx, repoPath, nil, "archive", "--format=tar.gz", commit, "--", docsDir)
+	if err != nil {
+		return nil, fmt.Errorf("archive commit docs: %w", err)
+	}
+	return out, nil
+}
+
 func (s *WorkspaceSync) PathsDifferFromIndex(ctx context.Context, repoPath string, paths []string) (bool, error) {
 	for _, path := range paths {
 		commandArgs := []string{"-C", repoPath, "diff", "--quiet", "--", path}

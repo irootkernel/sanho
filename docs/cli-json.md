@@ -86,6 +86,10 @@ commit과 build date는 기존 사람용 `sanho version` 출력에서만 제공�
 checkpoint가 기록된 경우 `backup_head_ref`도 포함한다. 분류는 `pending`,
 `completed`, `rewritten`, `recoverable_rewrite`, `ambiguous`, `corrupt` 중
 하나이며, 자동화는 `next_command`를 사용자에게 그대로 제시할 수 있다.
+버전 1·2의 sibling rewrite는 저장된 merged index snapshot과 현재 commit의
+docs tree까지 일치해야 `recoverable_rewrite`가 된다. snapshot 누락·손상은
+`corrupt`, docs 불일치는 `ambiguous`이며 두 분류 모두 transaction과
+recovery ref를 유지한다. JSON 필드와 classification 값은 변경되지 않는다.
 
 게시 대기 상태가 있으면 `main_publication.pending`은 `true`이고
 `classification`, `reason`, `base_commit`, `local_main`, `remote_main`,

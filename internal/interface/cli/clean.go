@@ -37,7 +37,7 @@ func newCleanCmd() *cobra.Command {
 				return fmt.Errorf("failed to load .sanho.json: %w", err)
 			}
 			config.ApplyDefaults()
-			hasPullCommit, err := newPullCommitEngine(nil).hasTransaction(cmd.Context(), cwd)
+			hasPullCommit, err := newPullCommitEngine(nil).hasTransaction(cmd.Context(), cwd, config.DocsDir)
 			if err != nil {
 				return fmt.Errorf("failed to check pull-commit state: %w", err)
 			}

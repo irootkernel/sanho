@@ -16,6 +16,9 @@
 
 ### Fixed
 
+- Legacy version 1 and 2 pull-commit recovery now validates the recorded merged
+  docs snapshot before clearing a sibling rewrite, preserving ambiguous or
+  corrupt transactions and their recovery refs.
 - Main publication is fast-forward only, survives target-branch push failures,
   and retries through the same `git push` without force-pushing.
 - `git commit --amend` and repeated amend operations now reconcile prepared

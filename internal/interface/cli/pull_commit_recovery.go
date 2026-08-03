@@ -32,7 +32,7 @@ type pullCommitAssessment struct {
 
 func (e *pullCommitEngine) assessTransaction(
 	ctx context.Context,
-	workDir string,
+	workDir, docsDir string,
 ) (pullCommitAssessment, error) {
 	isRepository, err := e.workspaceSync.IsRepository(ctx, workDir)
 	if err != nil || !isRepository {
@@ -129,8 +129,17 @@ func (e *pullCommitEngine) assessTransaction(
 	preparedParents, preparedErr := e.workspaceSync.CommitParents(ctx, workDir, preparedHead)
 	headParents, headErr := e.workspaceSync.CommitParents(ctx, workDir, head)
 	if preparedErr == nil && headErr == nil && slices.Equal(preparedParents, headParents) {
+		if state.Version <= 2 {
+			classification, reason := e.assessLegacyRewriteDocs(ctx, workDir, docsDir, store, head)
+			if classification != pullCommitRecoverableRewrite {
+				assessment.Classification = classification
+				assessment.Reason = reason
+				assessment.NextCommand = "sanho pull-commit --recover"
+				return assessment, nil
+			}
+		}
 		assessment.Classification = pullCommitRecoverableRewrite
-		assessment.Reason = "current HEAD is a sibling rewrite of the prepared commit"
+		assessment.Reason = "current HEAD is a sibling rewrite with the recorded docs snapshot"
 		assessment.NextCommand = "sanho pull-commit --recover"
 		return assessment, nil
 	}
@@ -140,12 +149,39 @@ func (e *pullCommitEngine) assessTransaction(
 	return assessment, nil
 }
 
+func (e *pullCommitEngine) assessLegacyRewriteDocs(
+	ctx context.Context,
+	workDir, docsDir string,
+	store *fs.PullCommitStore,
+	head string,
+) (pullCommitClassification, string) {
+	if docsDir == "" {
+		return pullCommitCorrupt, "legacy rewrite validation requires the workspace docs directory"
+	}
+	expected, err := store.ReadArtifact(fs.PullCommitMergedIndexSnapshot)
+	if err != nil {
+		return pullCommitCorrupt, fmt.Sprintf("legacy merged index snapshot is unavailable: %v", err)
+	}
+	committed, err := e.workspaceSync.ArchiveCommitDocs(ctx, workDir, head, docsDir)
+	if err != nil {
+		return pullCommitCorrupt, fmt.Sprintf("current commit docs snapshot is unavailable: %v", err)
+	}
+	equal, err := fs.SnapshotsSemanticallyEqual(expected, "", committed, docsDir)
+	if err != nil {
+		return pullCommitCorrupt, fmt.Sprintf("legacy merged index snapshot is invalid: %v", err)
+	}
+	if !equal {
+		return pullCommitAmbiguous, "current HEAD docs differ from the legacy merged index snapshot"
+	}
+	return pullCommitRecoverableRewrite, ""
+}
+
 func (e *pullCommitEngine) recover(
 	ctx context.Context,
 	workDir string,
-	_ *client.WorkspaceConfig,
+	config *client.WorkspaceConfig,
 ) (pullCommitAssessment, error) {
-	assessment, err := e.assessTransaction(ctx, workDir)
+	assessment, err := e.assessTransaction(ctx, workDir, config.DocsDir)
 	if err != nil {
 		return assessment, err
 	}

@@ -31,10 +31,10 @@ func runPostCommitHook(cmd *cobra.Command) error {
 		return nil
 	}
 	engine := newPullCommitEngine(httpClient)
-	if err := engine.clearAfterCommit(ctx, workDir); err != nil {
+	if err := engine.clearAfterCommit(ctx, workDir, config.DocsDir); err != nil {
 		cmd.PrintErrf("sanho hook post-commit: failed to clear pull-commit state: %v\n", err)
 	}
-	assessment, assessErr := engine.assessTransaction(ctx, workDir)
+	assessment, assessErr := engine.assessTransaction(ctx, workDir, config.DocsDir)
 	if assessErr != nil {
 		cmd.PrintErrf("sanho hook post-commit: failed to classify pull-commit state: %v\n", assessErr)
 	} else if assessment.Exists {
