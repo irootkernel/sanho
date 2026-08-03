@@ -231,8 +231,9 @@ service 등록 명령과 책임 경계는 [배포 규칙](deployment.md)을 따�
    상태에서 성공하되 application workspace를 변경하지 않아야 한다.
 6. paused/stale operation에서 lifecycle hook은 경고 후 성공하되 commit
    message, transaction과 daemon state를 바꾸지 않고, pre-push만 계속
-   실패하는지 확인한다. empty·malformed·HEAD에서 도달할 수 없는 mapping을
-   넣은 수동 `post-rewrite rebase`도 같은 결과여야 한다.
+   실패하는지 확인한다. empty·malformed·HEAD에서 도달할 수 없는 mapping뿐
+   아니라, 유효하고 도달 가능한 full OID mapping을 pipe나 다른 regular
+   file로 넣은 수동 `post-rewrite rebase`도 같은 결과여야 한다.
 7. 별도 복사본에서 conflict가 있는 rebase, merge, cherry-pick, revert와
    bisect를 만들어 정확한 type이 보고되는지 확인한다.
 8. `git worktree add`로 linked worktree를 만들고 한 worktree에만 operation을

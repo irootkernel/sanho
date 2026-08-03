@@ -28,17 +28,19 @@ func runPostRewriteHook(cmd *cobra.Command, args []string) error {
 	if len(args) > 0 {
 		command = args[0]
 	}
-	mappings, err := readGitRewriteMappings(cmd.InOrStdin())
-	if err != nil {
-		cmd.PrintErrf("sanho post-rewrite: warning: failed to read rewrite mappings: %v\n", err)
-		return nil
-	}
 	workDir, err := os.Getwd()
 	if err != nil {
 		cmd.PrintErrf("sanho post-rewrite: warning: failed to get current directory: %v\n", err)
 		return nil
 	}
-	permit, operation, err := inspectPostRewriteMutation(ctx, workDir, command, mappings)
+	rewriteInput := cmd.InOrStdin()
+	source := captureGitRewriteSource(rewriteInput)
+	mappings, err := readGitRewriteMappings(rewriteInput)
+	if err != nil {
+		cmd.PrintErrf("sanho post-rewrite: warning: failed to read rewrite mappings: %v\n", err)
+		return nil
+	}
+	permit, operation, err := inspectPostRewriteMutation(ctx, workDir, command, mappings, source)
 	if err != nil {
 		cmd.PrintErrf(
 			"sanho post-rewrite: warning: rewrite evidence could not be validated; Sanho mutation was skipped: %v\n",
@@ -81,7 +83,7 @@ func readGitRewriteMappings(reader io.Reader) ([]gitRewriteMapping, error) {
 	mappings := make([]gitRewriteMapping, 0)
 	for scanner.Scan() {
 		fields := strings.Fields(scanner.Text())
-		if len(fields) < 2 {
+		if len(fields) != 2 {
 			return nil, fmt.Errorf("invalid rewrite mapping %q", scanner.Text())
 		}
 		mappings = append(mappings, gitRewriteMapping{Old: fields[0], New: fields[1]})

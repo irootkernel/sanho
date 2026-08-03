@@ -15,6 +15,15 @@ import (
 )
 
 func TestCLIPostRewriteReportsSuccessfulRebaseToDaemon(t *testing.T) {
+	for _, backend := range []string{"merge", "apply"} {
+		t.Run(backend, func(t *testing.T) {
+			testCLIPostRewriteReportsSuccessfulRebaseToDaemon(t, backend)
+		})
+	}
+}
+
+func testCLIPostRewriteReportsSuccessfulRebaseToDaemon(t *testing.T, backend string) {
+	t.Helper()
 	cliBinary := getCliBinary(t)
 	reported := make(chan string, 1)
 	daemon := newUnixTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -85,7 +94,12 @@ func TestCLIPostRewriteReportsSuccessfulRebaseToDaemon(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rebase := exec.Command("git", "-C", repo, "rebase", "main")
+	rebaseArgs := []string{"-C", repo, "rebase"}
+	if backend == "apply" {
+		rebaseArgs = append(rebaseArgs, "--apply")
+	}
+	rebaseArgs = append(rebaseArgs, "main")
+	rebase := exec.Command("git", rebaseArgs...)
 	if output, err := rebase.CombinedOutput(); err != nil {
 		t.Fatalf("rebase failed: %v\n%s", err, output)
 	}
@@ -322,6 +336,11 @@ func TestCLILifecycleHooksSkipMutationDuringGitOperation(t *testing.T) {
 		{name: "commit-msg", args: []string{"hook", "commit-msg", messagePath}},
 		{name: "post-commit", args: []string{"hook", "post-commit"}},
 		{name: "post-rewrite", args: []string{"hook", "post-rewrite", "rebase"}},
+		{
+			name:  "post-rewrite forged reachable mapping",
+			args:  []string{"hook", "post-rewrite", "rebase"},
+			stdin: before.head + " " + before.head + "\n",
+		},
 		{name: "post-checkout", args: []string{"hook", "post-checkout"}},
 		{name: "post-merge", args: []string{"hook", "post-merge", "0"}},
 	}
@@ -336,6 +355,10 @@ func TestCLILifecycleHooksSkipMutationDuringGitOperation(t *testing.T) {
 			}
 			if !strings.Contains(string(output), "Sanho mutation was skipped") {
 				t.Fatalf("hook did not explain skip:\n%s", output)
+			}
+			if test.name == "post-rewrite forged reachable mapping" &&
+				!strings.Contains(string(output), "inspect rewrite input offset") {
+				t.Fatalf("hook did not reject forged input provenance:\n%s", output)
 			}
 			if after := captureCLIGitOperationState(t, repo); after != before {
 				t.Fatalf("repository changed\nbefore: %+v\nafter:  %+v", before, after)

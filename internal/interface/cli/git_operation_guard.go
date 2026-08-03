@@ -2,8 +2,11 @@ package cli
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -17,6 +20,33 @@ type workspaceMutationPermit struct {
 	verifiedRebasePostRewrite bool
 	workDir                   string
 	rewrittenHead             string
+}
+
+type gitRewriteSource struct {
+	file          *os.File
+	initialInfo   os.FileInfo
+	initialOffset int64
+	captureErr    error
+}
+
+func captureGitRewriteSource(reader io.Reader) gitRewriteSource {
+	file, ok := reader.(*os.File)
+	if !ok {
+		return gitRewriteSource{captureErr: errors.New("rewrite input is not a file descriptor")}
+	}
+	info, err := file.Stat()
+	if err != nil {
+		return gitRewriteSource{file: file, captureErr: fmt.Errorf("inspect rewrite input: %w", err)}
+	}
+	offset, err := file.Seek(0, io.SeekCurrent)
+	if err != nil {
+		return gitRewriteSource{
+			file:        file,
+			initialInfo: info,
+			captureErr:  fmt.Errorf("inspect rewrite input offset: %w", err),
+		}
+	}
+	return gitRewriteSource{file: file, initialInfo: info, initialOffset: offset}
 }
 
 func requireWorkspaceMutationSafe(ctx context.Context, workDir string) error {
@@ -65,6 +95,7 @@ func inspectPostRewriteMutation(
 	ctx context.Context,
 	workDir, command string,
 	mappings []gitRewriteMapping,
+	source gitRewriteSource,
 ) (workspaceMutationPermit, infraGit.GitOperation, error) {
 	detector := infraGit.NewDetector()
 	clear := infraGit.GitOperation{
@@ -85,6 +116,9 @@ func inspectPostRewriteMutation(
 	if operation.Type != infraGit.OperationRebase || command != "rebase" || len(mappings) == 0 {
 		return workspaceMutationPermit{}, operation, nil
 	}
+	if err := validateGitOwnedRewriteSource(ctx, workDir, source); err != nil {
+		return workspaceMutationPermit{}, operation, err
+	}
 	rewrittenHead, err := validatePostRewriteMappings(ctx, workDir, mappings)
 	if err != nil {
 		return workspaceMutationPermit{}, operation, err
@@ -96,15 +130,116 @@ func inspectPostRewriteMutation(
 	}, operation, nil
 }
 
+func validateGitOwnedRewriteSource(
+	ctx context.Context,
+	workDir string,
+	source gitRewriteSource,
+) error {
+	if source.captureErr != nil {
+		return source.captureErr
+	}
+	if source.file == nil || source.initialInfo == nil {
+		return errors.New("rewrite input file evidence is unavailable")
+	}
+	if !source.initialInfo.Mode().IsRegular() {
+		return errors.New("rewrite input is not a regular Git metadata file")
+	}
+	if source.initialOffset != 0 {
+		return fmt.Errorf("rewrite input did not start at offset zero: %d", source.initialOffset)
+	}
+
+	mergeDir, err := resolvePostRewriteGitPath(ctx, workDir, "rebase-merge")
+	if err != nil {
+		return err
+	}
+	applyDir, err := resolvePostRewriteGitPath(ctx, workDir, "rebase-apply")
+	if err != nil {
+		return err
+	}
+	mergeActive, err := directoryExists(mergeDir)
+	if err != nil {
+		return fmt.Errorf("inspect merge rebase metadata: %w", err)
+	}
+	applyActive, err := directoryExists(applyDir)
+	if err != nil {
+		return fmt.Errorf("inspect apply rebase metadata: %w", err)
+	}
+	if mergeActive == applyActive {
+		return errors.New("exactly one Git rebase backend must be active")
+	}
+
+	rewrittenPath := filepath.Join(mergeDir, "rewritten-list")
+	if applyActive {
+		rewrittenPath = filepath.Join(applyDir, "rewritten")
+	}
+	expectedInfo, err := os.Lstat(rewrittenPath)
+	if err != nil {
+		return fmt.Errorf("inspect Git-owned rewrite input: %w", err)
+	}
+	if !expectedInfo.Mode().IsRegular() || !os.SameFile(source.initialInfo, expectedInfo) {
+		return errors.New("rewrite input is not the active Git backend's rewritten file")
+	}
+
+	finalInputInfo, err := source.file.Stat()
+	if err != nil {
+		return fmt.Errorf("reinspect rewrite input: %w", err)
+	}
+	finalExpectedInfo, err := os.Lstat(rewrittenPath)
+	if err != nil {
+		return fmt.Errorf("reinspect Git-owned rewrite input: %w", err)
+	}
+	if !os.SameFile(source.initialInfo, finalInputInfo) ||
+		!os.SameFile(finalInputInfo, finalExpectedInfo) ||
+		finalInputInfo.Size() != source.initialInfo.Size() {
+		return errors.New("git-owned rewrite input changed during validation")
+	}
+	return nil
+}
+
+func resolvePostRewriteGitPath(ctx context.Context, workDir, name string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", "-C", workDir, "rev-parse", "--git-path", name)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("resolve Git path %s: %w\n%s", name, err, strings.TrimSpace(string(out)))
+	}
+	resolved := strings.TrimSpace(string(out))
+	if !filepath.IsAbs(resolved) {
+		resolved = filepath.Join(workDir, resolved)
+	}
+	return filepath.Clean(resolved), nil
+}
+
+func directoryExists(path string) (bool, error) {
+	info, err := os.Lstat(path)
+	if err == nil {
+		if !info.IsDir() {
+			return false, fmt.Errorf("%s is not a directory", path)
+		}
+		return true, nil
+	}
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	return false, err
+}
+
 func validatePostRewriteMappings(
 	ctx context.Context,
 	workDir string,
 	mappings []gitRewriteMapping,
 ) (string, error) {
+	objectFormat, err := gitObjectFormat(ctx, workDir)
+	if err != nil {
+		return "", err
+	}
+	objectIDLength := 40
+	if objectFormat == "sha256" {
+		objectIDLength = 64
+	}
 	var input strings.Builder
 	for _, mapping := range mappings {
-		if mapping.Old == "" || mapping.New == "" {
-			return "", errors.New("rewrite mapping contains an empty object name")
+		if !isFullObjectID(mapping.Old, objectIDLength) || !isFullObjectID(mapping.New, objectIDLength) {
+			return "", fmt.Errorf("rewrite mapping must contain full %s object IDs", objectFormat)
 		}
 		input.WriteString(mapping.Old)
 		input.WriteByte('\n')
@@ -158,6 +293,27 @@ func validatePostRewriteMappings(
 		}
 	}
 	return head, nil
+}
+
+func gitObjectFormat(ctx context.Context, workDir string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", "-C", workDir, "rev-parse", "--show-object-format")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("resolve Git object format: %w\n%s", err, strings.TrimSpace(string(out)))
+	}
+	format := strings.TrimSpace(string(out))
+	if format != "sha1" && format != "sha256" {
+		return "", fmt.Errorf("unsupported Git object format %q", format)
+	}
+	return format, nil
+}
+
+func isFullObjectID(value string, length int) bool {
+	if len(value) != length || value != strings.ToLower(value) {
+		return false
+	}
+	_, err := hex.DecodeString(value)
+	return err == nil
 }
 
 type workspaceMutationBlockedError struct {

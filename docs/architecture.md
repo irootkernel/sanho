@@ -48,8 +48,12 @@ stale state인지 Sanho가 추측할 수 없으므로 둘 다 동일하게 차�
 detector는 metadata를 제거하지 않으며 사용자가 Git 명령으로 의도를 결정한다.
 
 성공한 rebase의 `post-rewrite`는 Git이 rebase metadata를 제거하기 전에
-호출된다. 이 hook에 한해 old/new commit mapping이 모두 유효하고 모든 새
-commit이 현재 HEAD에서 도달 가능할 때 비공개 permit을 발급한다. permit은
+호출된다. 이 hook에 한해 stdin이 active backend의 Git 소유 rewrite 파일
+(`rebase-merge/rewritten-list` 또는 `rebase-apply/rewritten`)과 같은 regular
+file이고 offset 0에서 시작했음을 확인한다. 동시에 두 backend가 있으면
+실패한다. 이어서 old/new 값이 repository object format의 full OID이고 모두
+commit이며, 모든 새 commit이 현재 HEAD에서 도달 가능할 때 비공개 permit을
+발급한다. permit은
 pull-commit rewrite 기록, docs hash와 workspace 보고처럼 Sanho metadata를
 reconciliation하는 경로에서만 사용한다. refs, HEAD, index, worktree와 recovery
 ref를 변경하는 `WorkspaceSync` mutator에는 전달하지 않는다. mapping이 없거나

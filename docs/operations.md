@@ -109,8 +109,9 @@ Sanho는 어떤 경우에도 사용자 operation을 자동 abort/quit하거나 m
 Git의 continue 과정에서 실행되는 `pre-commit`, `commit-msg`, `post-commit`,
 `post-checkout`, `post-merge` hook은 Sanho의 index/worktree/ref 변경과 daemon
 게시를 건너뛰고 경고 후 성공한다. `post-rewrite rebase`는 Git이 성공한 rebase
-뒤 제공한 old/new commit mapping이 모두 유효하고 모든 새 commit이 현재
-HEAD에서 도달 가능할 때만 예외다. 이때 pull-commit mapping, docs hash와
+뒤 active backend의 Git 소유 rewrite 파일을 stdin offset 0부터 전달하고,
+그 파일의 old/new 값이 full commit OID이며 모든 새 commit이 현재 HEAD에서
+도달 가능할 때만 예외다. 이때 pull-commit mapping, docs hash와
 workspace 보고만 reconciliation하며 Git refs, index, worktree와 operation
 metadata는 변경하지 않는다. mapping이 비었거나 검증에 실패하면 다른 hook과
 같이 무변경으로 종료한다. pre-push는 복구에 필요하지 않고 원격 변경을
@@ -171,8 +172,9 @@ branch push도 허용된다. tag-only push와 ref 삭제는 이 규칙의 영향
 history를 강제 push로 덮어쓰지 않는다.
 
 `git commit --amend`는 준비된 commit을 sibling commit으로 바꾸므로 단순한
-ancestor 검사만으로 완료 여부를 판단하지 않는다. `post-rewrite`가 stdin의
-old/new 매핑과 준비 당시 index tree를 검증한다. hook이 중단된 경우
+ancestor 검사만으로 완료 여부를 판단하지 않는다. rebase 중 `post-rewrite`는
+Git 소유 rewrite 파일이라는 stdin 출처, old/new 매핑과 준비 당시 index tree를
+검증한다. hook이 중단된 경우
 `sanho pull-commit --recover`가 commit graph, parent/tree와 rewrite 기록을
 검사한다. 복구 전에는 현재 HEAD, index, worktree를
 `refs/sanho/recovery/<transaction-id>/`에 보존하며, 완료를 증명할 수 없으면

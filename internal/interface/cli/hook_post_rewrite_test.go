@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,13 +27,18 @@ func TestInspectPostRewriteMutationAllowsVerifiedActiveRebase(t *testing.T) {
 	runPullCommitTestGit(t, repo, "commit", "--allow-empty", "--no-verify", "-m", "future")
 	futureCommit := runPullCommitTestGit(t, repo, "rev-parse", "HEAD")
 	runPullCommitTestGit(t, repo, "reset", "--hard", newCommit)
-	makePostRewriteGitPath(t, repo, "rebase-merge", true, "")
-
 	mappings := []gitRewriteMapping{
 		{Old: oldCommitOne, New: newCommit},
 		{Old: oldCommitTwo, New: newCommit},
 	}
-	permit, operation, err := inspectPostRewriteMutation(ctx, repo, "rebase", mappings)
+	sourceFile := openPostRewriteSource(t, repo, "merge", mappings)
+	permit, operation, err := inspectPostRewriteMutation(
+		ctx,
+		repo,
+		"rebase",
+		mappings,
+		captureGitRewriteSource(sourceFile),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,13 +71,19 @@ func TestInspectPostRewriteMutationUsesLinkedWorktreeOperation(t *testing.T) {
 	runPullCommitTestGit(t, mainRepo, "worktree", "add", "-b", "linked", linked)
 	runPullCommitTestGit(t, linked, "commit", "--allow-empty", "--no-verify", "-m", "rewritten")
 	rewritten := runPullCommitTestGit(t, linked, "rev-parse", "HEAD")
-	makePostRewriteGitPath(t, linked, "rebase-merge", true, "")
+	sourceFile := openPostRewriteSource(
+		t,
+		linked,
+		"merge",
+		[]gitRewriteMapping{{Old: base, New: rewritten}},
+	)
 
 	permit, operation, err := inspectPostRewriteMutation(
 		ctx,
 		linked,
 		"rebase",
 		[]gitRewriteMapping{{Old: base, New: rewritten}},
+		captureGitRewriteSource(sourceFile),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -88,6 +100,7 @@ func TestInspectPostRewriteMutationUsesLinkedWorktreeOperation(t *testing.T) {
 		mainRepo,
 		"rebase",
 		[]gitRewriteMapping{{Old: base, New: rewritten}},
+		gitRewriteSource{},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -111,7 +124,12 @@ func TestInspectPostRewriteMutationRejectsUnverifiedEvidence(t *testing.T) {
 	runPullCommitTestGit(t, repo, "switch", "main")
 	runPullCommitTestGit(t, repo, "commit", "--allow-empty", "--no-verify", "-m", "head")
 	head := runPullCommitTestGit(t, repo, "rev-parse", "HEAD")
-	makePostRewriteGitPath(t, repo, "rebase-merge", true, "")
+	sourceFile := openPostRewriteSource(
+		t,
+		repo,
+		"merge",
+		[]gitRewriteMapping{{Old: base, New: head}},
+	)
 
 	tests := []struct {
 		name     string
@@ -121,12 +139,19 @@ func TestInspectPostRewriteMutationRejectsUnverifiedEvidence(t *testing.T) {
 	}{
 		{name: "empty mappings", command: "rebase"},
 		{name: "wrong command", command: "amend", mappings: []gitRewriteMapping{{Old: base, New: head}}},
+		{name: "abbreviated commit", command: "rebase", mappings: []gitRewriteMapping{{Old: base, New: head[:12]}}, wantErr: true},
 		{name: "missing commit", command: "rebase", mappings: []gitRewriteMapping{{Old: base, New: strings.Repeat("f", 40)}}, wantErr: true},
 		{name: "unreachable commit", command: "rebase", mappings: []gitRewriteMapping{{Old: base, New: unreachable}}, wantErr: true},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			permit, operation, err := inspectPostRewriteMutation(ctx, repo, test.command, test.mappings)
+			permit, operation, err := inspectPostRewriteMutation(
+				ctx,
+				repo,
+				test.command,
+				test.mappings,
+				captureGitRewriteSource(sourceFile),
+			)
 			if (err != nil) != test.wantErr {
 				t.Fatalf("error=%v wantErr=%v", err, test.wantErr)
 			}
@@ -135,6 +160,125 @@ func TestInspectPostRewriteMutationRejectsUnverifiedEvidence(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestInspectPostRewriteMutationRejectsNonGitOwnedSources(t *testing.T) {
+	ctx := context.Background()
+	repo := t.TempDir()
+	runPullCommitTestGit(t, repo, "init", "--initial-branch=main")
+	runPullCommitTestGit(t, repo, "config", "user.email", "test@example.com")
+	runPullCommitTestGit(t, repo, "config", "user.name", "Test User")
+	runPullCommitTestGit(t, repo, "commit", "--allow-empty", "--no-verify", "-m", "base")
+	head := runPullCommitTestGit(t, repo, "rev-parse", "HEAD")
+	mappings := []gitRewriteMapping{{Old: head, New: head}}
+	gitSource := openPostRewriteSource(t, repo, "merge", mappings)
+
+	otherPath := filepath.Join(t.TempDir(), "rewritten-list")
+	if err := os.WriteFile(otherPath, []byte(head+" "+head+"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	other, err := os.Open(otherPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := other.Close(); err != nil {
+			t.Errorf("close unrelated rewrite input: %v", err)
+		}
+	})
+
+	if _, _, err := inspectPostRewriteMutation(
+		ctx, repo, "rebase", mappings, captureGitRewriteSource(strings.NewReader("forged")),
+	); err == nil {
+		t.Fatal("pipe-like rewrite input was accepted")
+	}
+	if _, _, err := inspectPostRewriteMutation(
+		ctx, repo, "rebase", mappings, captureGitRewriteSource(other),
+	); err == nil {
+		t.Fatal("unrelated regular file was accepted")
+	}
+	if _, err := gitSource.Seek(1, 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := inspectPostRewriteMutation(
+		ctx, repo, "rebase", mappings, captureGitRewriteSource(gitSource),
+	); err == nil {
+		t.Fatal("Git-owned rewrite input with a nonzero offset was accepted")
+	}
+}
+
+func TestInspectPostRewriteMutationRequiresExactlyOneRebaseBackend(t *testing.T) {
+	ctx := context.Background()
+	repo := t.TempDir()
+	runPullCommitTestGit(t, repo, "init", "--initial-branch=main")
+	runPullCommitTestGit(t, repo, "config", "user.email", "test@example.com")
+	runPullCommitTestGit(t, repo, "config", "user.name", "Test User")
+	runPullCommitTestGit(t, repo, "commit", "--allow-empty", "--no-verify", "-m", "base")
+	head := runPullCommitTestGit(t, repo, "rev-parse", "HEAD")
+	mappings := []gitRewriteMapping{{Old: head, New: head}}
+	mergeSource := openPostRewriteSource(t, repo, "merge", mappings)
+	openPostRewriteSource(t, repo, "apply", mappings)
+
+	if _, _, err := inspectPostRewriteMutation(
+		ctx, repo, "rebase", mappings, captureGitRewriteSource(mergeSource),
+	); err == nil {
+		t.Fatal("simultaneous rebase backends were accepted")
+	}
+}
+
+func TestInspectPostRewriteMutationAllowsApplyBackendSource(t *testing.T) {
+	ctx := context.Background()
+	repo := t.TempDir()
+	runPullCommitTestGit(t, repo, "init", "--initial-branch=main")
+	runPullCommitTestGit(t, repo, "config", "user.email", "test@example.com")
+	runPullCommitTestGit(t, repo, "config", "user.name", "Test User")
+	runPullCommitTestGit(t, repo, "commit", "--allow-empty", "--no-verify", "-m", "base")
+	head := runPullCommitTestGit(t, repo, "rev-parse", "HEAD")
+	mappings := []gitRewriteMapping{{Old: head, New: head}}
+	sourceFile := openPostRewriteSource(t, repo, "apply", mappings)
+
+	permit, operation, err := inspectPostRewriteMutation(
+		ctx, repo, "rebase", mappings, captureGitRewriteSource(sourceFile),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !permit.verifiedRebasePostRewrite || operation.Type != "rebase" {
+		t.Fatalf("permit=%+v operation=%+v", permit, operation)
+	}
+}
+
+func openPostRewriteSource(
+	t *testing.T,
+	repo, backend string,
+	mappings []gitRewriteMapping,
+) *os.File {
+	t.Helper()
+	directory := "rebase-" + backend
+	filename := "rewritten-list"
+	if backend == "apply" {
+		filename = "rewritten"
+	}
+	makePostRewriteGitPath(t, repo, directory, true, "")
+	var content strings.Builder
+	for _, mapping := range mappings {
+		fmt.Fprintf(&content, "%s %s\n", mapping.Old, mapping.New)
+	}
+	makePostRewriteGitPath(t, repo, filepath.Join(directory, filename), false, content.String())
+	path := runPullCommitTestGit(t, repo, "rev-parse", "--git-path", filepath.Join(directory, filename))
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(repo, path)
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := file.Close(); err != nil {
+			t.Errorf("close Git rewrite input: %v", err)
+		}
+	})
+	return file
 }
 
 func makePostRewriteGitPath(t *testing.T, repo, name string, directory bool, content string) {
@@ -159,7 +303,7 @@ func makePostRewriteGitPath(t *testing.T, repo, name string, directory bool, con
 
 func TestReadGitRewriteMappings(t *testing.T) {
 	mappings, err := readGitRewriteMappings(strings.NewReader(
-		"aaaaaaaa bbbbbbbb\ncccccccc dddddddd extra\n",
+		"aaaaaaaa bbbbbbbb\ncccccccc dddddddd\n",
 	))
 	if err != nil {
 		t.Fatal(err)
@@ -176,8 +320,10 @@ func TestReadGitRewriteMappings(t *testing.T) {
 }
 
 func TestReadGitRewriteMappingsRejectsMalformedInput(t *testing.T) {
-	if _, err := readGitRewriteMappings(strings.NewReader("only-one-field\n")); err == nil {
-		t.Fatal("malformed rewrite mapping was accepted")
+	for _, input := range []string{"only-one-field\n", "one two extra\n"} {
+		if _, err := readGitRewriteMappings(strings.NewReader(input)); err == nil {
+			t.Fatalf("malformed rewrite mapping %q was accepted", input)
+		}
 	}
 }
 
