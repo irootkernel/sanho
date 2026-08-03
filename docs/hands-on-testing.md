@@ -264,10 +264,15 @@ service 등록 명령과 책임 경계는 [배포 규칙](deployment.md)을 따�
    tree, docs hash와 workspace report checksum을 기록한다.
 2. `git --version`, `git rev-parse --show-object-format`, 시작 시각과
    `git rev-parse --git-path rebase-merge/rewritten-list` 결과를 기록한 뒤
-   기본 merge backend로 `git rebase main`을 실행한다.
+   hook에서 호출하는 `git`만 감싸는 wrapper를 준비한다. wrapper는 인자를
+   trace 파일에 기록하고 `rev-parse --verify *^{tree}` 호출에만 40ms 지연을
+   추가한 뒤 실제 Git을 실행한다. 이 wrapper를 hook의 `PATH` 앞에 둔 상태로
+   기본 merge backend의 `git rebase main`을 실행한다.
 3. 종료 시간과 hook 출력을 기록한다. `signal: killed`,
    `context deadline exceeded`, `Sanho mutation was skipped`가 없어야 하며
-   rewrite 수가 실제 mapping 수와 일치해야 한다.
+   rewrite 수가 실제 mapping 수와 일치해야 한다. trace에는
+   `cat-file --batch-check`와 `rev-list --no-walk=unsorted --stdin`이 각각
+   한 번만 있어야 하고 `rev-parse --verify *^{tree}`는 없어야 한다.
 4. prepared head가 mapping의 새 HEAD로 바뀌고 docs hash와 daemon workspace
    hash가 새 docs-version과 일치하는지 확인한다. hook이 rebase 결과 외에
    refs, index와 worktree를 추가로 바꾸지 않았는지 checksum으로 확인한다.
@@ -280,8 +285,9 @@ service 등록 명령과 책임 경계는 [배포 규칙](deployment.md)을 따�
    pending·ambiguous·corrupt transaction이 없어야 하며 임시 clone과 daemon을
    정리한다.
 
-mapping 수를 줄여 통과시키거나 timeout 뒤 transaction 또는 rebase metadata를
-수동 삭제하면 이 시나리오는 FAIL이다.
+mapping 수나 지연을 줄여 통과시키거나, wrapper를 application의 일반 Git
+명령 전체에 적용해 결과를 오염시키거나, timeout 뒤 transaction 또는 rebase
+metadata를 수동 삭제하면 이 시나리오는 FAIL이다.
 
 ## H13. post-rewrite 형식 전방 호환성과 위조 차단
 

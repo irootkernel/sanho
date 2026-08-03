@@ -174,7 +174,30 @@ func TestCLIPostRewriteReconcilesLargeSuccessfulRebase(t *testing.T) {
 	if err := os.MkdirAll(hooksDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	hook := fmt.Sprintf("#!/bin/sh\nexec %q hook post-rewrite \"$@\"\n", cliBinary)
+	realGit, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracePath := filepath.Join(root, "post-rewrite-git.trace")
+	wrapperDir := filepath.Join(root, "git-wrapper")
+	if err := os.MkdirAll(wrapperDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	wrapper := fmt.Sprintf(
+		"#!/bin/sh\nprintf '%%s\\n' \"$*\" >> %q\n"+
+			"case \"$*\" in *\"rev-parse --verify\"*'^{tree}'*) sleep 0.04 ;; esac\n"+
+			"exec %q \"$@\"\n",
+		tracePath,
+		realGit,
+	)
+	if err := os.WriteFile(filepath.Join(wrapperDir, "git"), []byte(wrapper), 0755); err != nil {
+		t.Fatal(err)
+	}
+	hook := fmt.Sprintf(
+		"#!/bin/sh\nPATH=%q:\"$PATH\" exec %q hook post-rewrite \"$@\"\n",
+		wrapperDir,
+		cliBinary,
+	)
 	if err := os.WriteFile(filepath.Join(hooksDir, "post-rewrite"), []byte(hook), 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -245,6 +268,18 @@ func TestCLIPostRewriteReconcilesLargeSuccessfulRebase(t *testing.T) {
 	}
 	if !preparedRewriteFound {
 		t.Fatalf("prepared rewrite %s -> %s was not recorded", preparedHead, newHead)
+	}
+	trace := string(readGuardFile(t, tracePath))
+	if got := strings.Count(trace, "cat-file --batch-check="); got != 1 {
+		t.Fatalf("batch object validation count=%d want 1\n%s", got, trace)
+	}
+	if got := strings.Count(trace, "rev-list --no-walk=unsorted --stdin"); got != 1 {
+		t.Fatalf("batch reachability validation count=%d want 1\n%s", got, trace)
+	}
+	for _, line := range strings.Split(trace, "\n") {
+		if strings.Contains(line, "rev-parse --verify") && strings.Contains(line, "^{tree}") {
+			t.Fatalf("mapping reconciliation performed a per-commit tree lookup: %s", line)
+		}
 	}
 
 	reportPath := runRecoveryGit(t, repo, "rev-parse", "--git-path", "sanho/workspace-report.json")

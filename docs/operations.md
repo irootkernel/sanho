@@ -119,9 +119,12 @@ metadata는 변경하지 않는다. mapping이 비었거나 검증에 실패하�
 일으키므로 active operation 동안 계속 실패한다.
 
 commit 수가 많은 rebase도 object 검사는 한 번의 `cat-file --batch-check`,
-도달 가능성 검사는 한 번의 `rev-list`로 처리한다. post-rewrite 검증과
-reconciliation은 30초 안에 끝나야 하며 status 조회의 10초 제한과 분리돼
-있다. 제한 시간을 넘기거나 `signal: killed`, `context deadline exceeded`가
+도달 가능성 검사는 한 번의 `rev-list`로 처리한다. 검증 permit은 worktree,
+검증 당시 HEAD, rewrite command와 전체 mapping에 결속되며 reconciliation은
+mapping별 `rev-parse <oid>^{tree}`를 실행하지 않는다. amend도 같은 객체·도달
+가능성 검증을 거친다. post-rewrite 검증과 reconciliation은 30초 안에 끝나야
+하며 status 조회의 10초 제한과 분리돼 있다. 제한 시간을 넘기거나
+`signal: killed`, `context deadline exceeded`가
 출력되면 Git rebase 결과를 되돌리거나 같은 rebase를 즉시 반복하지 않는다.
 먼저 `sanho status --json`에서 transaction과 현재 HEAD를 기록하고, 남은
 prepared transaction은 안내된 `sanho pull-commit --recover`로 판정한다.

@@ -114,8 +114,11 @@ refs·index·worktree는 건드리지 않고 pull-commit 기록, docs hash와 wo
 뒤에 optional extra-info가 있으면 호환성을 위해 opaque 값으로 무시하지만
 source 신뢰나 commit 검증에는 사용하지 않는다.
 
-대규모 rebase의 mapping도 commit별 Git process가 아니라 두 번의 batch
-검사로 검증하며 reconciliation에는 별도의 30초 제한을 적용한다. 실패 시
+대규모 rebase의 mapping도 commit별 Git process가 아니라 object와 도달 가능성
+각 한 번씩의 batch 검사로 검증한다. 검증 결과는 worktree, 검증 당시 HEAD,
+rewrite command와 순서가 보존된 전체 mapping에 결속한 비공개 permit으로
+reconciliation에 전달하므로 commit tree를 mapping별로 다시 조회하지 않는다.
+reconciliation에는 별도의 30초 제한을 적용한다. 실패 시
 Git rebase는 완료되더라도 Sanho metadata는 보존되므로 `sanho status --json`과
 `sanho pull-commit --recover`로 상태를 확인한다.
 

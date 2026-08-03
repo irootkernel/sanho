@@ -17,9 +17,12 @@ import (
 )
 
 type workspaceMutationPermit struct {
-	verifiedRebasePostRewrite bool
-	workDir                   string
-	rewrittenHead             string
+	verifiedRebasePostRewrite   bool
+	verifiedPostRewriteMappings bool
+	workDir                     string
+	rewrittenHead               string
+	rewriteCommand              string
+	rewriteMappings             []gitRewriteMapping
 }
 
 type gitRewriteSource struct {
@@ -111,7 +114,11 @@ func inspectPostRewriteMutation(
 		return workspaceMutationPermit{}, clear, err
 	}
 	if !operation.Active {
-		return workspaceMutationPermit{}, operation, nil
+		if len(mappings) == 0 {
+			return workspaceMutationPermit{}, operation, nil
+		}
+		permit, err := validatePostRewritePermit(ctx, workDir, command, mappings)
+		return permit, operation, err
 	}
 	if operation.Type != infraGit.OperationRebase || command != "rebase" || len(mappings) == 0 {
 		return workspaceMutationPermit{}, operation, nil
@@ -119,15 +126,48 @@ func inspectPostRewriteMutation(
 	if err := validateGitOwnedRewriteSource(ctx, workDir, source); err != nil {
 		return workspaceMutationPermit{}, operation, err
 	}
-	rewrittenHead, err := validatePostRewriteMappings(ctx, workDir, mappings)
+	permit, err := validatePostRewritePermit(ctx, workDir, command, mappings)
 	if err != nil {
 		return workspaceMutationPermit{}, operation, err
 	}
+	permit.verifiedRebasePostRewrite = true
+	return permit, operation, nil
+}
+
+func validatePostRewritePermit(
+	ctx context.Context,
+	workDir, command string,
+	mappings []gitRewriteMapping,
+) (workspaceMutationPermit, error) {
+	rewrittenHead, err := validatePostRewriteMappings(ctx, workDir, mappings)
+	if err != nil {
+		return workspaceMutationPermit{}, err
+	}
 	return workspaceMutationPermit{
-		verifiedRebasePostRewrite: true,
-		workDir:                   workDir,
-		rewrittenHead:             rewrittenHead,
-	}, operation, nil
+		verifiedPostRewriteMappings: true,
+		workDir:                     workDir,
+		rewrittenHead:               rewrittenHead,
+		rewriteCommand:              command,
+		rewriteMappings:             append([]gitRewriteMapping(nil), mappings...),
+	}, nil
+}
+
+func (p workspaceMutationPermit) validatesPostRewrite(
+	workDir, command string,
+	mappings []gitRewriteMapping,
+) bool {
+	if !p.verifiedPostRewriteMappings ||
+		filepath.Clean(p.workDir) != filepath.Clean(workDir) ||
+		p.rewriteCommand != command ||
+		len(p.rewriteMappings) != len(mappings) {
+		return false
+	}
+	for index := range mappings {
+		if p.rewriteMappings[index] != mappings[index] {
+			return false
+		}
+	}
+	return true
 }
 
 func validateGitOwnedRewriteSource(

@@ -58,7 +58,15 @@ old/new 값이 repository object format의 full OID이고 모두 commit이며, �
 발급한다. object 존재 여부와 commit type은 `cat-file --batch-check` 한 번으로
 검사하고, 중복을 제거한 새 commit 전체의 HEAD 도달 가능성은
 `rev-list --no-walk=unsorted --stdin` 한 번으로 검사한다. mapping 개수만큼
-Git subprocess를 만들지 않는다. 이 검증과 reconciliation에는 30초 제한을
+Git subprocess를 만들지 않는다. permit은 worktree 경로, 검증 당시 HEAD,
+rewrite command와 순서가 보존된 전체 mapping 복사본을 함께 보관한다.
+reconciliation 직전에 네 값이 모두 동일한지 확인하며, 하나라도 달라졌으면
+transaction을 읽거나 저장하기 전에 실패한다. 따라서 mapping loop에서는 객체나 commit tree를
+다시 조회하지 않고 검증된 mapping을 메모리에서 기록하며, 기존 rewrite는
+set으로 색인해 전체 mapping 수에 선형으로 처리한다. amend처럼 active Git
+operation이 없는 `post-rewrite`도 같은 batch 검증을 거쳐야 한다.
+
+이 검증과 reconciliation에는 30초 제한을
 적용하고, 뒤이은 읽기 전용 hook status는 별도의 10초 제한을 사용한다.
 permit은
 pull-commit rewrite 기록, docs hash와 workspace 보고처럼 Sanho metadata를

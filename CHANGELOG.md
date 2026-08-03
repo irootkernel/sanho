@@ -23,6 +23,10 @@
 - Large `post-rewrite` mapping sets now validate commit reachability in one
   batched Git process under a dedicated reconciliation timeout, avoiding
   timeouts caused by one ancestry process per rewritten commit.
+- Post-rewrite reconciliation now consumes a worktree-, HEAD-, command-, and
+  mapping-bound validation permit instead of resolving every rewritten commit
+  tree in a separate Git process. Inactive amend rewrites receive the same
+  batched object and reachability validation.
 - `post-rewrite` mapping lines now accept optional trailing Git metadata while
   continuing to validate the first two full commit IDs and trusted input
   provenance.

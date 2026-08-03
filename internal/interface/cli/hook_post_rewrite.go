@@ -106,13 +106,17 @@ func (e *pullCommitEngine) reconcileAfterRewrite(
 	command string,
 	mappings []gitRewriteMapping,
 ) (bool, error) {
+	permit, err := validatePostRewritePermit(ctx, workDir, command, mappings)
+	if err != nil {
+		return false, err
+	}
 	return e.reconcileAfterRewriteWithPermit(
 		ctx,
 		workDir,
 		config,
 		command,
 		mappings,
-		workspaceMutationPermit{},
+		permit,
 	)
 }
 
@@ -124,8 +128,18 @@ func (e *pullCommitEngine) reconcileAfterRewriteWithPermit(
 	mappings []gitRewriteMapping,
 	permit workspaceMutationPermit,
 ) (bool, error) {
+	if !permit.validatesPostRewrite(workDir, command, mappings) {
+		return false, errors.New("post-rewrite mappings were not validated for this workspace")
+	}
 	if err := requireWorkspaceMutationSafeWithPermit(ctx, workDir, permit); err != nil {
 		return false, err
+	}
+	head, err := e.workspaceSync.Head(ctx, workDir)
+	if err != nil {
+		return false, fmt.Errorf("revalidate rewritten HEAD: %w", err)
+	}
+	if head != permit.rewrittenHead {
+		return false, fmt.Errorf("rewritten HEAD changed after mapping validation: got %s, want %s", head, permit.rewrittenHead)
 	}
 	store, err := e.store(ctx, workDir)
 	if err != nil {
@@ -144,15 +158,20 @@ func (e *pullCommitEngine) reconcileAfterRewriteWithPermit(
 
 	originalPrepared := pullCommitPreparedHead(state)
 	preparedMapped := false
+	knownRewrites := make(map[fs.PullCommitRewrite]struct{}, len(state.Rewrites)+len(mappings))
+	for _, rewrite := range state.Rewrites {
+		knownRewrites[rewrite] = struct{}{}
+	}
 	for _, mapping := range mappings {
-		if _, err := e.workspaceSync.CommitTree(ctx, workDir, mapping.New); err != nil {
-			return false, fmt.Errorf("invalid rewritten commit %s: %w", mapping.New, err)
-		}
-		state.Rewrites = appendPullCommitRewrite(state.Rewrites, fs.PullCommitRewrite{
+		rewrite := fs.PullCommitRewrite{
 			Command: command,
 			Old:     mapping.Old,
 			New:     mapping.New,
-		})
+		}
+		if _, exists := knownRewrites[rewrite]; !exists {
+			state.Rewrites = append(state.Rewrites, rewrite)
+			knownRewrites[rewrite] = struct{}{}
+		}
 		if state.SyncCommit == mapping.Old && state.SyncCommit != originalPrepared {
 			valid, err := e.workspaceSync.IsDocsSyncCommit(
 				ctx,
@@ -179,7 +198,7 @@ func (e *pullCommitEngine) reconcileAfterRewriteWithPermit(
 	if command != "amend" || !preparedMapped {
 		return false, store.Save(state)
 	}
-	head, err := e.workspaceSync.Head(ctx, workDir)
+	head, err = e.workspaceSync.Head(ctx, workDir)
 	if err != nil {
 		return false, err
 	}
@@ -210,16 +229,4 @@ func (e *pullCommitEngine) reconcileAfterRewriteWithPermit(
 	}
 	assessment := pullCommitAssessment{State: state, Exists: true, Head: head}
 	return true, e.completeTransaction(ctx, workDir, assessment, "post-rewrite-amend")
-}
-
-func appendPullCommitRewrite(
-	rewrites []fs.PullCommitRewrite,
-	rewrite fs.PullCommitRewrite,
-) []fs.PullCommitRewrite {
-	for _, existing := range rewrites {
-		if existing == rewrite {
-			return rewrites
-		}
-	}
-	return append(rewrites, rewrite)
 }

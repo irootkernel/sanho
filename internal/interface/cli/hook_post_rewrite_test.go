@@ -102,11 +102,90 @@ func TestInspectPostRewriteMutationUsesLinkedWorktreeOperation(t *testing.T) {
 		[]gitRewriteMapping{{Old: base, New: rewritten}},
 		gitRewriteSource{},
 	)
+	if err == nil || !strings.Contains(err.Error(), "is not reachable from HEAD") {
+		t.Fatalf("inactive worktree error=%v", err)
+	}
+	if mainPermit.verifiedPostRewriteMappings || mainOperation.Active {
+		t.Fatalf("main permit=%+v operation=%+v", mainPermit, mainOperation)
+	}
+}
+
+func TestInspectPostRewriteMutationValidatesInactiveAmendMappings(t *testing.T) {
+	ctx := context.Background()
+	repo := t.TempDir()
+	runPullCommitTestGit(t, repo, "init", "--initial-branch=main")
+	runPullCommitTestGit(t, repo, "config", "user.email", "test@example.com")
+	runPullCommitTestGit(t, repo, "config", "user.name", "Test User")
+	runPullCommitTestGit(t, repo, "commit", "--allow-empty", "--no-verify", "-m", "old")
+	oldCommit := runPullCommitTestGit(t, repo, "rev-parse", "HEAD")
+	runPullCommitTestGit(t, repo, "commit", "--allow-empty", "--no-verify", "-m", "amended")
+	newCommit := runPullCommitTestGit(t, repo, "rev-parse", "HEAD")
+	runPullCommitTestGit(t, repo, "switch", "-c", "unreachable", oldCommit)
+	runPullCommitTestGit(t, repo, "commit", "--allow-empty", "--no-verify", "-m", "unreachable")
+	unreachable := runPullCommitTestGit(t, repo, "rev-parse", "HEAD")
+	runPullCommitTestGit(t, repo, "switch", "main")
+	blob := runPullCommitTestGit(t, repo, "hash-object", "-w", "--stdin")
+
+	validMappings := []gitRewriteMapping{{Old: oldCommit, New: newCommit}}
+	permit, operation, err := inspectPostRewriteMutation(
+		ctx, repo, "amend", validMappings, gitRewriteSource{},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if mainPermit.verifiedRebasePostRewrite || mainOperation.Active {
-		t.Fatalf("main permit=%+v operation=%+v", mainPermit, mainOperation)
+	if operation.Active || permit.verifiedRebasePostRewrite ||
+		!permit.validatesPostRewrite(repo, "amend", validMappings) {
+		t.Fatalf("permit=%+v operation=%+v", permit, operation)
+	}
+
+	tests := []struct {
+		name string
+		new  string
+	}{
+		{name: "abbreviated", new: newCommit[:12]},
+		{name: "missing", new: strings.Repeat("f", 40)},
+		{name: "blob", new: blob},
+		{name: "unreachable", new: unreachable},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if _, _, err := inspectPostRewriteMutation(
+				ctx,
+				repo,
+				"amend",
+				[]gitRewriteMapping{{Old: oldCommit, New: test.new}},
+				gitRewriteSource{},
+			); err == nil {
+				t.Fatal("invalid inactive amend mapping was accepted")
+			}
+		})
+	}
+}
+
+func TestPostRewritePermitIsBoundToExactMappings(t *testing.T) {
+	mappings := []gitRewriteMapping{
+		{Old: "old-one", New: "new-one"},
+		{Old: "old-two", New: "new-two"},
+	}
+	permit := workspaceMutationPermit{
+		verifiedPostRewriteMappings: true,
+		workDir:                     "/workspace",
+		rewriteCommand:              "rebase",
+		rewriteMappings:             append([]gitRewriteMapping(nil), mappings...),
+	}
+	if !permit.validatesPostRewrite("/workspace", "rebase", mappings) {
+		t.Fatal("permit rejected its validated mappings")
+	}
+	changed := append([]gitRewriteMapping(nil), mappings...)
+	changed[1].New = "different"
+	if permit.validatesPostRewrite("/workspace", "rebase", changed) {
+		t.Fatal("permit accepted different mappings")
+	}
+	if permit.validatesPostRewrite("/other", "rebase", mappings) {
+		t.Fatal("permit accepted a different workspace")
+	}
+	if permit.validatesPostRewrite("/workspace", "amend", mappings) {
+		t.Fatal("permit accepted a different rewrite command")
 	}
 }
 
