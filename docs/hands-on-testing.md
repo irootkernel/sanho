@@ -229,8 +229,10 @@ service 등록 명령과 책임 경계는 [배포 규칙](deployment.md)을 따�
    operation 및 복구 후보를 설명하며 실패하는지 확인한다. 각 명령 전후의
    local/remote refs와 checksum이 같아야 한다. `clean --dry-run`은 같은
    상태에서 성공하되 application workspace를 변경하지 않아야 한다.
-6. lifecycle hook은 경고 후 성공하되 commit message, transaction과 daemon
-   state를 바꾸지 않고, pre-push만 계속 실패하는지 확인한다.
+6. paused/stale operation에서 lifecycle hook은 경고 후 성공하되 commit
+   message, transaction과 daemon state를 바꾸지 않고, pre-push만 계속
+   실패하는지 확인한다. empty·malformed·HEAD에서 도달할 수 없는 mapping을
+   넣은 수동 `post-rewrite rebase`도 같은 결과여야 한다.
 7. 별도 복사본에서 conflict가 있는 rebase, merge, cherry-pick, revert와
    bisect를 만들어 정확한 type이 보고되는지 확인한다.
 8. `git worktree add`로 linked worktree를 만들고 한 worktree에만 operation을
@@ -240,6 +242,11 @@ service 등록 명령과 책임 경계는 [배포 규칙](deployment.md)을 따�
 9. 사용자 의도에 맞게 continue, abort 또는 quit한 뒤 Sanho 명령을 다시
    실행해 기존 pull-commit recovery와 main publication이 정상 동작하는지
    확인한다.
+10. 별도 복사본에서 docs-version이 다른 main 위로 실제 rebase를 성공시킨다.
+    Git이 제공한 mapping으로 prepared head와 rewrite 기록, docs hash와 daemon
+    workspace hash가 새 HEAD에 맞춰지고 refs, index, worktree는 hook 때문에
+    추가로 바뀌지 않는지 확인한다. daemon이 없으면 같은 docs hash의 pending
+    workspace report가 남아야 한다.
 
 `--quit`과 `--abort`의 결과를 같은 것으로 취급하거나 operation metadata를
 직접 삭제해 성공시키면 이 시나리오는 FAIL이다.

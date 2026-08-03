@@ -38,7 +38,19 @@ func runPostRewriteHook(cmd *cobra.Command, args []string) error {
 		cmd.PrintErrf("sanho post-rewrite: warning: failed to get current directory: %v\n", err)
 		return nil
 	}
-	if skipMutationHookDuringGitOperation(ctx, workDir, "post-rewrite", cmd) {
+	permit, operation, err := inspectPostRewriteMutation(ctx, workDir, command, mappings)
+	if err != nil {
+		cmd.PrintErrf(
+			"sanho post-rewrite: warning: rewrite evidence could not be validated; Sanho mutation was skipped: %v\n",
+			err,
+		)
+		if operation.Active {
+			printMutationHookSkip(cmd, "post-rewrite", operation)
+		}
+		return nil
+	}
+	if operation.Active && !permit.verifiedRebasePostRewrite {
+		printMutationHookSkip(cmd, "post-rewrite", operation)
 		return nil
 	}
 	config, err := fs.NewFileConfigLoader().Load(workDir)
@@ -48,19 +60,20 @@ func runPostRewriteHook(cmd *cobra.Command, args []string) error {
 		}
 		return nil
 	}
-	completed, err := newPullCommitEngine(nil).reconcileAfterRewrite(
+	completed, err := newPullCommitEngine(nil).reconcileAfterRewriteWithPermit(
 		ctx,
 		workDir,
 		config,
 		command,
 		mappings,
+		permit,
 	)
 	if err != nil {
 		cmd.PrintErrf("sanho post-rewrite: warning: pull-commit reconciliation skipped: %v\n", err)
 	} else if completed {
 		cmd.Println("sanho post-rewrite: reconciled completed pull-commit transaction.")
 	}
-	return runHookStatus(cmd, "post-rewrite", true)
+	return runHookStatusWithPermit(cmd, "post-rewrite", true, permit)
 }
 
 func readGitRewriteMappings(reader io.Reader) ([]gitRewriteMapping, error) {
@@ -86,7 +99,25 @@ func (e *pullCommitEngine) reconcileAfterRewrite(
 	command string,
 	mappings []gitRewriteMapping,
 ) (bool, error) {
-	if err := requireWorkspaceMutationSafe(ctx, workDir); err != nil {
+	return e.reconcileAfterRewriteWithPermit(
+		ctx,
+		workDir,
+		config,
+		command,
+		mappings,
+		workspaceMutationPermit{},
+	)
+}
+
+func (e *pullCommitEngine) reconcileAfterRewriteWithPermit(
+	ctx context.Context,
+	workDir string,
+	config *client.WorkspaceConfig,
+	command string,
+	mappings []gitRewriteMapping,
+	permit workspaceMutationPermit,
+) (bool, error) {
+	if err := requireWorkspaceMutationSafeWithPermit(ctx, workDir, permit); err != nil {
 		return false, err
 	}
 	store, err := e.store(ctx, workDir)

@@ -24,6 +24,15 @@ const hookStatusTimeout = 10 * time.Second
 // It always returns nil to not block Git operations.
 // Errors and status are printed to output, but never cause exit code != 0.
 func runHookStatus(cmd *cobra.Command, hookName string, reconcile bool) error {
+	return runHookStatusWithPermit(cmd, hookName, reconcile, workspaceMutationPermit{})
+}
+
+func runHookStatusWithPermit(
+	cmd *cobra.Command,
+	hookName string,
+	reconcile bool,
+	permit workspaceMutationPermit,
+) error {
 	ctx, cancel := context.WithTimeout(context.Background(), hookStatusTimeout)
 	defer cancel()
 
@@ -33,8 +42,15 @@ func runHookStatus(cmd *cobra.Command, hookName string, reconcile bool) error {
 		cmd.PrintErrf("sanho %s: warning: failed to get current directory: %v\n", hookName, err)
 		return nil // Always exit 0
 	}
-	if skipMutationHookDuringGitOperation(ctx, cwd, hookName, cmd) {
-		return nil
+	if permit.verifiedRebasePostRewrite {
+		if err := requireWorkspaceMutationSafeWithPermit(ctx, cwd, permit); err != nil {
+			cmd.PrintErrf("sanho %s: warning: verified rewrite permit was rejected: %v\n", hookName, err)
+			return nil
+		}
+	} else {
+		if skipMutationHookDuringGitOperation(ctx, cwd, hookName, cmd) {
+			return nil
+		}
 	}
 
 	// Step 1: Load .sanho.json
@@ -49,7 +65,7 @@ func runHookStatus(cmd *cobra.Command, hookName string, reconcile bool) error {
 		return nil // Always exit 0
 	}
 	if reconcile {
-		if _, err := reconcileWorkspaceDocsFromHEAD(ctx, cwd, config); err != nil {
+		if _, err := reconcileWorkspaceDocsFromHEADWithPermit(ctx, cwd, config, permit); err != nil {
 			cmd.PrintErrf("sanho %s: warning: failed to reconcile docs hash from HEAD: %v\n", hookName, err)
 		}
 	}

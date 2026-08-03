@@ -35,7 +35,23 @@ func reportWorkspaceDocsHash(
 	config *client.WorkspaceConfig,
 	hash docs.CommitHash,
 ) error {
-	if err := requireWorkspaceMutationSafe(ctx, workDir); err != nil {
+	return reportWorkspaceDocsHashWithPermit(
+		ctx,
+		workDir,
+		config,
+		hash,
+		workspaceMutationPermit{},
+	)
+}
+
+func reportWorkspaceDocsHashWithPermit(
+	ctx context.Context,
+	workDir string,
+	config *client.WorkspaceConfig,
+	hash docs.CommitHash,
+	permit workspaceMutationPermit,
+) error {
+	if err := requireWorkspaceMutationSafeWithPermit(ctx, workDir, permit); err != nil {
 		return err
 	}
 	store, err := workspaceReportStore(ctx, workDir)

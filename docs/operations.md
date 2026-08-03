@@ -107,10 +107,13 @@ Sanho는 어떤 경우에도 사용자 operation을 자동 abort/quit하거나 m
 보고하고 `git status` 외의 정리 명령을 추측하지 않는다.
 
 Git의 continue 과정에서 실행되는 `pre-commit`, `commit-msg`, `post-commit`,
-`post-rewrite`, `post-checkout`, `post-merge` hook은 Sanho의
-index/worktree/ref 변경과 daemon 게시를 건너뛰고 경고 후 성공한다. 사용자
-Git 복구가 끝난 뒤 다음 정상 hook 또는 명시적인 Sanho 명령이 필요한
-reconciliation을 수행한다. pre-push는 복구에 필요하지 않고 원격 변경을
+`post-checkout`, `post-merge` hook은 Sanho의 index/worktree/ref 변경과 daemon
+게시를 건너뛰고 경고 후 성공한다. `post-rewrite rebase`는 Git이 성공한 rebase
+뒤 제공한 old/new commit mapping이 모두 유효하고 모든 새 commit이 현재
+HEAD에서 도달 가능할 때만 예외다. 이때 pull-commit mapping, docs hash와
+workspace 보고만 reconciliation하며 Git refs, index, worktree와 operation
+metadata는 변경하지 않는다. mapping이 비었거나 검증에 실패하면 다른 hook과
+같이 무변경으로 종료한다. pre-push는 복구에 필요하지 않고 원격 변경을
 일으키므로 active operation 동안 계속 실패한다.
 
 ### `docs_repo_busy`

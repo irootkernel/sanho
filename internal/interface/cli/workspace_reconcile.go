@@ -11,10 +11,11 @@ import (
 	infraGit "github.com/irootkernel/sanho/internal/infra/git"
 )
 
-func reconcileWorkspaceDocsFromHEAD(
+func reconcileWorkspaceDocsFromHEADWithPermit(
 	ctx context.Context,
 	workDir string,
 	config *client.WorkspaceConfig,
+	permit workspaceMutationPermit,
 ) (bool, error) {
 	config.ApplyDefaults()
 	gitClient := infraGit.NewClient()
@@ -23,7 +24,7 @@ func reconcileWorkspaceDocsFromHEAD(
 	if err != nil || !isRepository {
 		return false, err
 	}
-	if err := requireWorkspaceMutationSafe(ctx, workDir); err != nil {
+	if err := requireWorkspaceMutationSafeWithPermit(ctx, workDir, permit); err != nil {
 		return false, err
 	}
 	head, err := syncer.Head(ctx, workDir)
@@ -82,7 +83,7 @@ func reconcileWorkspaceDocsFromHEAD(
 	if err := fs.NewFileDocsHashStore().Write(hashPath, version.DocsHash); err != nil {
 		return false, fmt.Errorf("update docs hash from HEAD: %w", err)
 	}
-	if err := reportWorkspaceDocsHash(ctx, workDir, config, version.DocsHash); err != nil {
+	if err := reportWorkspaceDocsHashWithPermit(ctx, workDir, config, version.DocsHash, permit); err != nil {
 		return true, err
 	}
 	if hasPulledDocs {

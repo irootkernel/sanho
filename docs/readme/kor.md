@@ -105,7 +105,11 @@ Sanho가 출력하는 continue/abort/quit 후보 중 사용자 의도에 맞는 
 선택한다. rebase의 `--abort`는 시작 전 상태를 복원하고 `--quit`은 현재
 HEAD, index와 worktree를 유지한다. Sanho는 operation을 자동 종료하거나
 `.git/rebase-*`, sequencer metadata를 삭제하지 않는다. Git 복구 중 lifecycle
-hook은 Sanho 변경을 건너뛰지만 pre-push는 원격 게시를 계속 차단한다.
+hook은 Sanho 변경을 건너뛰지만 pre-push는 원격 게시를 계속 차단한다. 단,
+성공한 rebase가 호출한 `post-rewrite`의 old/new mapping을 검증할 수 있으면 Git
+refs·index·worktree는 건드리지 않고 pull-commit 기록, docs hash와 workspace
+보고만 새 HEAD에 맞춘다. mapping이 없거나 유효하지 않으면 이 예외를 적용하지
+않는다.
 
 Git commit 시 중앙 docs가 갱신된 상태라면 pre-commit hook이
 `pull-commit` 흐름을 자동으로 실행한다. 첫 시도에서는 `origin/main`을

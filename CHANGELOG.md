@@ -17,6 +17,9 @@
   never automatically aborted, quit, or deleted by Sanho.
 - Commit lifecycle hooks skip Sanho-owned mutations while Git recovery is in
   progress, while pre-push continues to block remote publication.
+- A successful rebase `post-rewrite` now validates Git's old/new commit
+  mappings and reconciles only Sanho transaction and workspace metadata even
+  though Git has not removed its rebase marker yet.
 - Status inspection no longer refreshes the application workspace's
   remote-tracking refs or removes its main publication metadata. The daemon may
   still refresh its managed canonical docs clone while answering project status.
