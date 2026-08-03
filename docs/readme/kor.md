@@ -83,6 +83,8 @@ commit graph를 기준으로 한다. 새 상태 endpoint가 없는 구버전 dae
 [CLI JSON 출력](../cli-json.md)에 정리되어 있다.
 설치, launchd/systemd 등록, 업그레이드와 제거 규칙은
 [배포 규칙](../deployment.md)에 정리되어 있다.
+실제 remote와 service를 사용하는 릴리스 전 검증은
+[hands-on 테스트](../hands-on-testing.md)를 따른다.
 
 로컬 docs 변경이 있을 때 `sanho pull`로 덮어쓰려면 명시적으로
 `--force`를 사용해야 한다. 설정만 제거하려면 `sanho clean`을 사용하고,
@@ -111,8 +113,11 @@ main`은 로컬 `main`의 system commit과 사용자 commit을 원래 push 한 �
 
 기존 workspace의 hook이 Git remote 인자를 전달하지 않으면 첫 게시 시도에서
 Sanho가 hook을 제자리에서 갱신하고 같은 push를 한 번 다시 요청한다. 별도
-`sanho push`나 재초기화 명령은 없다. `origin`이 아닌 remote와 tag-only 또는
-ref 삭제 push는 `origin/main`을 자동으로 변경하지 않는다.
+`sanho push`나 재초기화 명령은 없다. 게시 대기 중 `origin`이 아닌 remote,
+alias 또는 직접 URL로 branch를 push하면 우회 게시를 막기 위해 중단한다.
+먼저 `git push origin main`을 완료한 뒤 원래 push를 다시 실행한다. 게시
+대기가 없으면 다른 remote push를 허용하며 tag-only와 ref 삭제는 영향을
+받지 않는다.
 
 같은 텍스트 파일을 함께 수정했다면 원격을 덮어쓰지 않고 충돌 상태로
 멈춘다. 파일을 해결하고 stage한 뒤 `sanho pull-commit --continue`를

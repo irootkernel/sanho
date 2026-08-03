@@ -4,6 +4,8 @@
 
 ### Added
 
+- A hands-on release checklist now covers real remotes, branch rules, legacy
+  recovery, linked worktrees, network failures, and service upgrades.
 - Origin branch pushes publish pending docs system commits through the existing
   Git pre-push hook: direct main pushes keep their full history, while other
   branches publish the full local main branch first.
@@ -16,6 +18,9 @@
 
 ### Fixed
 
+- Pending main publication now blocks branch pushes through alias remotes and
+  direct URLs until origin/main is published, while leaving tags and deletions
+  unaffected.
 - Legacy version 1 and 2 pull-commit recovery now validates the recorded merged
   docs snapshot before clearing a sibling rewrite, preserving ambiguous or
   corrupt transactions and their recovery refs.

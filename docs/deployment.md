@@ -1,5 +1,8 @@
 # Sanho 배포 규칙
 
+실제 사용자 service의 재시작·업그레이드 검증은 이 문서의 책임 경계를
+유지하면서 [hands-on 테스트](hands-on-testing.md)의 H10 시나리오를 따른다.
+
 ## 지원 범위
 
 Sanho는 macOS와 Linux에서 사용자 단위로 설치하고 실행한다. 실행 파일은

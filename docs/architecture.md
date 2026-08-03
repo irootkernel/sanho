@@ -45,8 +45,12 @@ origin branch push에 `origin/main` update가 포함되면 원래 push가 로컬
 update 분기로 들어가므로 재귀 push를 만들지 않는다.
 
 모든 main update는 fast-forward여야 한다. 원격 경합이나 branch protection
-실패는 target push까지 차단하며 force push로 복구하지 않는다. 다른 remote,
-tag-only push와 ref 삭제는 origin main 게시를 유발하지 않는다.
+실패는 target push까지 차단하며 force push로 복구하지 않는다. 게시 대기
+상태에서 다른 이름의 remote, alias 또는 직접 URL로 branch를 push하면
+origin/main 선행 게시를 우회할 수 있으므로 해당 push를 차단한다. 이 remote로
+main을 자동 게시하지 않으며 사용자가 `git push origin main`을 완료한 뒤
+재시도해야 한다. 게시 대기 상태가 없으면 다른 remote의 branch push를
+허용한다. tag-only push와 ref 삭제는 이 차단 대상이 아니다.
 
 ## pull-commit rewrite 복구 계약
 

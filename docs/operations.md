@@ -100,6 +100,13 @@ main 선행 게시만 성공하고 target push가 실패한 경우 게시 대기
 hook이 사후 관찰할 수 없으므로 다음 `sanho status` 또는 origin branch
 push가 `origin/main`을 fetch해 상태를 멱등하게 정리한다.
 
+게시 대기 상태에서 `origin`이 아닌 remote 이름, 같은 URL을 가리키는 alias,
+또는 remote URL을 직접 지정해 branch를 push하면 Sanho는 이를 자동 게시
+대상으로 해석하지 않고 차단한다. 먼저 `git push origin main`을 실행한 뒤
+원래 push를 재시도한다. 게시 대기 상태가 해소되면 다른 remote와 직접 URL의
+branch push도 허용된다. tag-only push와 ref 삭제는 이 규칙의 영향을 받지
+않는다.
+
 텍스트 충돌이 있으면 파일을 해결하고 stage한 뒤
 `sanho pull-commit --continue`를 실행한다. 시스템 커밋 생성 전에는
 `sanho pull-commit --abort`로 원래 상태를 복원할 수 있다. 원격
@@ -129,6 +136,9 @@ pre-push는 transaction 디렉터리의 존재만으로 판단하지 않는다. 
 기존 workspace의 pre-push hook이 remote 인자를 전달하지 않으면 게시 대기
 상태를 임의 remote에 적용하지 않는다. Sanho가 hook을 제자리에서 갱신하고
 현재 push를 중단하므로 같은 push를 한 번 다시 실행한다.
+
+실제 remote, branch rule, 인증과 service manager를 포함한 릴리스 검증은
+[hands-on 테스트](hands-on-testing.md)의 공통 증거 양식과 시나리오를 따른다.
 
 바이너리는 base/local/remote 내용 비교만으로 결과가 명확한 경우 자동으로
 처리한다. local과 remote가 base와 서로 다르게 변경된 바이너리는 경로를

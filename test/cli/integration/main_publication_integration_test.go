@@ -157,6 +157,90 @@ func TestPrePushUpgradesLegacyHookBeforePublication(t *testing.T) {
 	assertMainPublicationIntegrationState(t, fixture.Repo, false)
 }
 
+func TestPrePushBlocksNonOriginBranchPushUntilMainIsPublished(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		target func(t *testing.T, fixture mainPublicationIntegrationFixture) string
+	}{
+		{
+			name: "alias remote",
+			target: func(t *testing.T, fixture mainPublicationIntegrationFixture) string {
+				runMainPublicationIntegrationGitOrFatal(t, fixture.Repo, "remote", "add", "backup", fixture.Remote)
+				return "backup"
+			},
+		},
+		{
+			name: "direct URL",
+			target: func(_ *testing.T, fixture mainPublicationIntegrationFixture) string {
+				return fixture.Remote
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fixture := setupMainPublicationIntegration(t)
+			target := tc.target(t, fixture)
+			remoteMainBefore := mainPublicationIntegrationRemoteRef(t, fixture.Remote, "refs/heads/main")
+
+			output, err := runMainPublicationIntegrationGit(fixture.Repo, "push", target, "feature")
+			if err == nil || !strings.Contains(output, "pending origin/main publication") ||
+				!strings.Contains(output, "git push origin main") {
+				t.Fatalf("non-origin push err=%v output=%q", err, output)
+			}
+			if got := mainPublicationIntegrationRemoteRef(t, fixture.Remote, "refs/heads/main"); got != remoteMainBefore {
+				t.Fatalf("origin/main changed: %s -> %s", remoteMainBefore, got)
+			}
+			if mainPublicationIntegrationRefExists(t, fixture.Remote, "refs/heads/feature") {
+				t.Fatal("feature ref was created while main publication was pending")
+			}
+			assertMainPublicationIntegrationState(t, fixture.Repo, true)
+
+			mainOutput, mainErr := runMainPublicationIntegrationGit(fixture.Repo, "push", "origin", "main")
+			if mainErr != nil {
+				t.Fatalf("publish origin/main: %v\n%s", mainErr, mainOutput)
+			}
+			output, err = runMainPublicationIntegrationGit(fixture.Repo, "push", target, "feature")
+			if err != nil {
+				t.Fatalf("push after publication state cleared: %v\n%s", err, output)
+			}
+			if got := mainPublicationIntegrationRemoteRef(t, fixture.Remote, "refs/heads/feature"); got != fixture.FeatureHead {
+				t.Fatalf("feature=%s want %s", got, fixture.FeatureHead)
+			}
+		})
+	}
+}
+
+func TestPrePushLeavesTagAndDeletionPushesUnaffectedWhileMainIsPending(t *testing.T) {
+	fixture := setupMainPublicationIntegration(t)
+	runMainPublicationIntegrationGitOrFatal(t, fixture.Repo, "remote", "add", "backup", fixture.Remote)
+	runMainPublicationIntegrationGitOrFatal(t, fixture.Repo, "tag", "pending-tag", fixture.FeatureHead)
+
+	output, err := runMainPublicationIntegrationGit(fixture.Repo, "push", "backup", "refs/tags/pending-tag")
+	if err != nil {
+		t.Fatalf("tag push: %v\n%s", err, output)
+	}
+	if !mainPublicationIntegrationRefExists(t, fixture.Remote, "refs/tags/pending-tag") {
+		t.Fatal("tag was not published")
+	}
+	assertMainPublicationIntegrationState(t, fixture.Repo, true)
+
+	runMainPublicationIntegrationGitOrFatal(
+		t,
+		fixture.Repo,
+		"--git-dir="+fixture.Remote,
+		"update-ref",
+		"refs/heads/delete-me",
+		fixture.FeatureHead,
+	)
+	output, err = runMainPublicationIntegrationGit(fixture.Repo, "push", "backup", ":delete-me")
+	if err != nil {
+		t.Fatalf("deletion push: %v\n%s", err, output)
+	}
+	if mainPublicationIntegrationRefExists(t, fixture.Remote, "refs/heads/delete-me") {
+		t.Fatal("branch deletion was blocked")
+	}
+	assertMainPublicationIntegrationState(t, fixture.Repo, true)
+}
+
 func TestCleanBlocksPendingMainPublication(t *testing.T) {
 	fixture := setupMainPublicationIntegration(t)
 	cmd := exec.Command(getCliBinary(t), "clean", "--yes", "--offline")

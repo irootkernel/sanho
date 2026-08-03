@@ -121,10 +121,14 @@ branch push, pre-push first fast-forwards the complete local main branch to
 divergence blocks the target push without force-pushing; retry the same
 `git push` after resolving the cause. On the first pending publication from an
 older workspace hook, Sanho upgrades the hook in place and asks for the same
-push once more.
+push once more. While main publication is pending, branch pushes through an
+alias remote or direct URL are blocked until `git push origin main` succeeds;
+tag-only pushes and deletions are unaffected.
 Run `sanho <command> --help` for the complete interface.
 Machine-readable output for query commands is documented in
 [CLI JSON output](docs/cli-json.md).
+Release checks that require real remotes, branch rules, or service managers are
+documented in the [hands-on test checklist](docs/hands-on-testing.md).
 
 ## Validation
 

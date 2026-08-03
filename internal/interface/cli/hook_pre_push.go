@@ -127,6 +127,19 @@ func runPrePushHook(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 	if remoteName != "origin" {
+		publication, assessErr := assessMainPublication(ctx, cwd, false)
+		if assessErr != nil {
+			return fmt.Errorf("sanho hook pre-push: inspect non-origin publication state: %w", assessErr)
+		}
+		if publication.Exists {
+			cmd.PrintErrf(
+				"sanho: pending origin/main publication is %s: %s.\n",
+				publication.Classification,
+				publication.Reason,
+			)
+			cmd.PrintErrln("Run 'git push origin main' before pushing branches to another remote or direct URL.")
+			return errors.New("origin/main must be published before a non-origin branch push")
+		}
 		return nil
 	}
 	return publishMainBeforeTarget(ctx, cwd, updates, cmd)
