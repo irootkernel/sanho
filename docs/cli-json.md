@@ -142,6 +142,9 @@ pull-commit/main-publication state를 변경하지 않는다. daemon은 canonica
 `pull_commit`의 필드, classification 및 transaction version은 바뀌지 않는다.
 hook은 Git operation을 막지 않고 경고하지만 검증되지 않은 Sanho metadata는
 갱신하지 않으므로 기존 `pull_commit.next_command`에 따라 복구한다.
+post-rewrite line의 old/new 뒤에 optional extra-info가 추가돼도 이 JSON
+schema와 transaction version에는 변화가 없다. extra-info는 JSON에 노출하거나
+저장하지 않는다.
 
 작업공간 항목은 기존 사람용 표와 같은 repository 라벨, workspace ID,
 전체 docs hash, 현재 작업공간 및 HEAD와의 관계만 포함한다. 원본

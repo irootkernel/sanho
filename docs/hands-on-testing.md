@@ -283,6 +283,39 @@ service 등록 명령과 책임 경계는 [배포 규칙](deployment.md)을 따�
 mapping 수를 줄여 통과시키거나 timeout 뒤 transaction 또는 rebase metadata를
 수동 삭제하면 이 시나리오는 FAIL이다.
 
+## H13. post-rewrite 형식 전방 호환성과 위조 차단
+
+이 시나리오는 Git이 old/new OID 뒤에 optional extra-info를 추가하는 경우와
+내용만 복제한 위조 input을 구분하는지 확인한다. 실제 복구 절차가 아니라
+폐기 가능한 fixture에서만 active backend 파일을 조작한다.
+
+1. prepared transaction이 있는 feature branch에서 여러 commit의 rebase를
+   `--exec false`로 중단한다. `git status`로 paused rebase를 확인하고 active
+   backend의 `rewritten-list` 또는 `rewritten` 절대 경로를
+   `git rev-parse --git-path`로 구한다.
+2. 원본 rewrite 파일, HEAD, refs, index tree, worktree, transaction, docs hash와
+   workspace report checksum을 기록한다. 원본 파일은 fixture 밖에 증거용으로
+   복사하되 positive 입력에는 복사본을 사용하지 않는다.
+3. active backend 파일의 각 non-empty line에 `future metadata remains opaque`
+   를 덧붙인다. `sanho hook post-rewrite rebase < "$rewrite_file"`을 실행해
+   evidence validation 경고 없이 첫 두 OID의 mapping만 기록되는지 확인한다.
+   extra-info 자체는 transaction이나 JSON에 저장되면 안 된다.
+4. hook 전후 refs, index와 worktree checksum이 같고, 검증된 mapping에 해당하는
+   Sanho transaction·docs hash·workspace report만 바뀌었는지 확인한다.
+5. 같은 내용을 `printf` pipe와 복사한 regular file에서 각각 전달한다. 두
+   경우 모두 provenance 경고 후 Sanho metadata가 바뀌지 않아야 하며 hook은
+   Git을 막지 않도록 종료 코드 0을 반환해야 한다.
+6. active backend 파일을 매번 원본에서 복원한 뒤 한 필드 line, 짧거나 대문자인
+   OID, 존재하지 않는 OID, blob OID, HEAD에서 도달 불가능한 commit OID를
+   차례로 넣는다. 각 경우 경고, 종료 코드 0과 모든 Sanho/Git checksum 불변을
+   확인한다.
+7. fixture의 원본 파일을 복원하고 사용자 의도에 따라 rebase를 abort 또는
+   continue한다. 종료 후 `sanho status --json`을 기록하고 임시 저장소를
+   삭제한다.
+
+extra-info를 permit 근거로 사용하거나 pipe·복사 파일을 허용하거나 malformed
+첫 두 필드에서 일부 metadata를 갱신하면 이 시나리오는 FAIL이다.
+
 ## 릴리스 판정
 
 다음 조건을 모두 만족해야 hands-on 관점에서 릴리스 가능으로 판정한다.

@@ -23,6 +23,9 @@
 - Large `post-rewrite` mapping sets now validate commit reachability in one
   batched Git process under a dedicated reconciliation timeout, avoiding
   timeouts caused by one ancestry process per rewritten commit.
+- `post-rewrite` mapping lines now accept optional trailing Git metadata while
+  continuing to validate the first two full commit IDs and trusted input
+  provenance.
 - Status inspection no longer refreshes the application workspace's
   remote-tracking refs or removes its main publication metadata. The daemon may
   still refresh its managed canonical docs clone while answering project status.

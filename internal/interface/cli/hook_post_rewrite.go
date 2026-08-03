@@ -88,7 +88,7 @@ func readGitRewriteMappings(reader io.Reader) ([]gitRewriteMapping, error) {
 	mappings := make([]gitRewriteMapping, 0)
 	for scanner.Scan() {
 		fields := strings.Fields(scanner.Text())
-		if len(fields) != 2 {
+		if len(fields) < 2 {
 			return nil, fmt.Errorf("invalid rewrite mapping %q", scanner.Text())
 		}
 		mappings = append(mappings, gitRewriteMapping{Old: fields[0], New: fields[1]})

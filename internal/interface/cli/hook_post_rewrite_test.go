@@ -254,17 +254,22 @@ func openPostRewriteSource(
 	mappings []gitRewriteMapping,
 ) *os.File {
 	t.Helper()
+	var content strings.Builder
+	for _, mapping := range mappings {
+		fmt.Fprintf(&content, "%s %s\n", mapping.Old, mapping.New)
+	}
+	return openRawPostRewriteSource(t, repo, backend, content.String())
+}
+
+func openRawPostRewriteSource(t *testing.T, repo, backend, content string) *os.File {
+	t.Helper()
 	directory := "rebase-" + backend
 	filename := "rewritten-list"
 	if backend == "apply" {
 		filename = "rewritten"
 	}
 	makePostRewriteGitPath(t, repo, directory, true, "")
-	var content strings.Builder
-	for _, mapping := range mappings {
-		fmt.Fprintf(&content, "%s %s\n", mapping.Old, mapping.New)
-	}
-	makePostRewriteGitPath(t, repo, filepath.Join(directory, filename), false, content.String())
+	makePostRewriteGitPath(t, repo, filepath.Join(directory, filename), false, content)
 	path := runPullCommitTestGit(t, repo, "rev-parse", "--git-path", filepath.Join(directory, filename))
 	if !filepath.IsAbs(path) {
 		path = filepath.Join(repo, path)
@@ -303,7 +308,7 @@ func makePostRewriteGitPath(t *testing.T, repo, name string, directory bool, con
 
 func TestReadGitRewriteMappings(t *testing.T) {
 	mappings, err := readGitRewriteMappings(strings.NewReader(
-		"aaaaaaaa bbbbbbbb\ncccccccc dddddddd\n",
+		"aaaaaaaa bbbbbbbb\ncccccccc dddddddd future metadata is opaque\n",
 	))
 	if err != nil {
 		t.Fatal(err)
@@ -320,10 +325,38 @@ func TestReadGitRewriteMappings(t *testing.T) {
 }
 
 func TestReadGitRewriteMappingsRejectsMalformedInput(t *testing.T) {
-	for _, input := range []string{"only-one-field\n", "one two extra\n"} {
+	for _, input := range []string{"only-one-field\n", "\n"} {
 		if _, err := readGitRewriteMappings(strings.NewReader(input)); err == nil {
 			t.Fatalf("malformed rewrite mapping %q was accepted", input)
 		}
+	}
+}
+
+func TestInspectPostRewriteMutationAllowsOptionalExtraInfo(t *testing.T) {
+	ctx := context.Background()
+	repo := t.TempDir()
+	runPullCommitTestGit(t, repo, "init", "--initial-branch=main")
+	runPullCommitTestGit(t, repo, "config", "user.email", "test@example.com")
+	runPullCommitTestGit(t, repo, "config", "user.name", "Test User")
+	runPullCommitTestGit(t, repo, "commit", "--allow-empty", "--no-verify", "-m", "base")
+	head := runPullCommitTestGit(t, repo, "rev-parse", "HEAD")
+	sourceFile := openRawPostRewriteSource(
+		t,
+		repo,
+		"merge",
+		head+" "+head+" future metadata remains opaque\n",
+	)
+	source := captureGitRewriteSource(sourceFile)
+	mappings, err := readGitRewriteMappings(sourceFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	permit, operation, err := inspectPostRewriteMutation(ctx, repo, "rebase", mappings, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !permit.verifiedRebasePostRewrite || !operation.Active {
+		t.Fatalf("permit=%+v operation=%+v", permit, operation)
 	}
 }
 

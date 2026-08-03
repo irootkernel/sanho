@@ -110,8 +110,9 @@ Git의 continue 과정에서 실행되는 `pre-commit`, `commit-msg`, `post-comm
 `post-checkout`, `post-merge` hook은 Sanho의 index/worktree/ref 변경과 daemon
 게시를 건너뛰고 경고 후 성공한다. `post-rewrite rebase`는 Git이 성공한 rebase
 뒤 active backend의 Git 소유 rewrite 파일을 stdin offset 0부터 전달하고,
-그 파일의 old/new 값이 full commit OID이며 모든 새 commit이 현재 HEAD에서
-도달 가능할 때만 예외다. 이때 pull-commit mapping, docs hash와
+각 line의 첫 두 old/new 값이 full commit OID이며 모든 새 commit이 현재
+HEAD에서 도달 가능할 때만 예외다. Git이 뒤에 optional extra-info를 제공하면
+opaque 값으로 무시한다. 이때 pull-commit mapping, docs hash와
 workspace 보고만 reconciliation하며 Git refs, index, worktree와 operation
 metadata는 변경하지 않는다. mapping이 비었거나 검증에 실패하면 다른 hook과
 같이 무변경으로 종료한다. pre-push는 복구에 필요하지 않고 원격 변경을
@@ -126,6 +127,10 @@ reconciliation은 30초 안에 끝나야 하며 status 조회의 10초 제한과
 prepared transaction은 안내된 `sanho pull-commit --recover`로 판정한다.
 이 실패 경로에서는 transaction, docs hash와 workspace report를 임의로
 정리하지 않는다.
+
+extra-info가 추가돼도 공개 상태나 복구 명령은 달라지지 않는다. 반대로 첫 두
+필드가 없거나 full OID가 아니면 mapping 전체를 거부한다. 내용이 동일해도
+pipe나 복사 파일은 Git 소유 rewrite 파일이 아니므로 허용하지 않는다.
 
 ### `docs_repo_busy`
 

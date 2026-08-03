@@ -351,7 +351,7 @@ func TestCLILifecycleHooksSkipMutationDuringGitOperation(t *testing.T) {
 		{
 			name:  "post-rewrite forged reachable mapping",
 			args:  []string{"hook", "post-rewrite", "rebase"},
-			stdin: before.head + " " + before.head + "\n",
+			stdin: before.head + " " + before.head + " forged extra info\n",
 		},
 		{name: "post-checkout", args: []string{"hook", "post-checkout"}},
 		{name: "post-merge", args: []string{"hook", "post-merge", "0"}},
@@ -389,6 +389,49 @@ func TestCLILifecycleHooksSkipMutationDuringGitOperation(t *testing.T) {
 	message, err := os.ReadFile(messagePath)
 	if err != nil || string(message) != "subject\n" {
 		t.Fatalf("commit message changed: %q err=%v", message, err)
+	}
+}
+
+func TestCLIPostRewriteAcceptsOptionalExtraInfoFromGitOwnedSource(t *testing.T) {
+	cliBinary := getCliBinary(t)
+	repo := setupCleanStaleRebaseWorkspace(t)
+	head := runRecoveryGit(t, repo, "rev-parse", "HEAD")
+	rewritePath := runRecoveryGit(t, repo, "rev-parse", "--git-path", "rebase-merge/rewritten-list")
+	if !filepath.IsAbs(rewritePath) {
+		rewritePath = filepath.Join(repo, rewritePath)
+	}
+	if err := os.WriteFile(
+		rewritePath,
+		[]byte(head+" "+head+" future metadata remains opaque\n"),
+		0644,
+	); err != nil {
+		t.Fatal(err)
+	}
+	source, err := os.Open(rewritePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := source.Close(); err != nil {
+			t.Errorf("close rewrite source: %v", err)
+		}
+	}()
+	before := captureCLIGitOperationState(t, repo)
+
+	cmd := exec.Command(cliBinary, "hook", "post-rewrite", "rebase")
+	cmd.Dir = repo
+	cmd.Stdin = source
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("post-rewrite failed: %v\n%s", err, output)
+	}
+	for _, unexpected := range []string{"failed to read rewrite mappings", "evidence could not be validated"} {
+		if strings.Contains(string(output), unexpected) {
+			t.Fatalf("post-rewrite output contains %q:\n%s", unexpected, output)
+		}
+	}
+	if after := captureCLIGitOperationState(t, repo); after != before {
+		t.Fatalf("repository changed\nbefore: %+v\nafter:  %+v", before, after)
 	}
 }
 

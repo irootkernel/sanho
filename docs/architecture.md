@@ -51,8 +51,10 @@ detector는 metadata를 제거하지 않으며 사용자가 Git 명령으로 의
 호출된다. 이 hook에 한해 stdin이 active backend의 Git 소유 rewrite 파일
 (`rebase-merge/rewritten-list` 또는 `rebase-apply/rewritten`)과 같은 regular
 file이고 offset 0에서 시작했음을 확인한다. 동시에 두 backend가 있으면
-실패한다. 이어서 old/new 값이 repository object format의 full OID이고 모두
-commit이며, 모든 새 commit이 현재 HEAD에서 도달 가능할 때 비공개 permit을
+실패한다. 각 line의 첫 두 필드를 old/new로 읽고 뒤의 optional extra-info는
+opaque 값으로 무시한다. extra-info는 source 신뢰나 permit의 근거가 아니다.
+old/new 값이 repository object format의 full OID이고 모두 commit이며, 모든
+새 commit이 현재 HEAD에서 도달 가능할 때 비공개 permit을
 발급한다. object 존재 여부와 commit type은 `cat-file --batch-check` 한 번으로
 검사하고, 중복을 제거한 새 commit 전체의 HEAD 도달 가능성은
 `rev-list --no-walk=unsorted --stdin` 한 번으로 검사한다. mapping 개수만큼

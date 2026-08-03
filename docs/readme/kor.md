@@ -107,10 +107,13 @@ HEAD, index와 worktree를 유지한다. Sanho는 operation을 자동 종료하�
 `.git/rebase-*`, sequencer metadata를 삭제하지 않는다. Git 복구 중 lifecycle
 hook은 Sanho 변경을 건너뛰지만 pre-push는 원격 게시를 계속 차단한다. 단,
 성공한 rebase가 active backend의 Git 소유 rewrite 파일을 stdin으로 넘기고 그
-안의 full old/new commit OID를 검증할 수 있으면 Git refs·index·worktree는
-건드리지 않고 pull-commit 기록, docs hash와 workspace 보고만 새 HEAD에
-맞춘다. pipe나 다른 파일에서 주입한 mapping, 비어 있거나 유효하지 않은
-mapping에는 이 예외를 적용하지 않는다.
+안의 각 line에서 첫 두 full old/new commit OID를 검증할 수 있으면 Git
+refs·index·worktree는 건드리지 않고 pull-commit 기록, docs hash와 workspace
+보고만 새 HEAD에 맞춘다. pipe나 다른 파일에서 주입한 mapping, 비어 있거나
+유효하지 않은 mapping에는 이 예외를 적용하지 않는다.
+뒤에 optional extra-info가 있으면 호환성을 위해 opaque 값으로 무시하지만
+source 신뢰나 commit 검증에는 사용하지 않는다.
+
 대규모 rebase의 mapping도 commit별 Git process가 아니라 두 번의 batch
 검사로 검증하며 reconciliation에는 별도의 30초 제한을 적용한다. 실패 시
 Git rebase는 완료되더라도 Sanho metadata는 보존되므로 `sanho status --json`과
