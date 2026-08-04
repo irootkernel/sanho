@@ -20,8 +20,8 @@ docs 저장소를 읽고 쓸 수 있는 SSH 인증도 준비해야 한다. Node.
 release 바이너리는 Go module에서 직접 설치할 수 있다.
 
 ```bash
-go install github.com/irootkernel/sanho/cmd/sanho@v0.1.3
-go install github.com/irootkernel/sanho/cmd/sanhod@v0.1.3
+go install github.com/irootkernel/sanho/cmd/sanho@v0.1.4
+go install github.com/irootkernel/sanho/cmd/sanhod@v0.1.4
 ```
 
 설치 위치는 `GOBIN`, 설정하지 않았다면 `$(go env GOPATH)/bin`이다.

@@ -41,8 +41,8 @@ make daemon-run
 Install both commands directly from the module:
 
 ```bash
-go install github.com/irootkernel/sanho/cmd/sanho@v0.1.3
-go install github.com/irootkernel/sanho/cmd/sanhod@v0.1.3
+go install github.com/irootkernel/sanho/cmd/sanho@v0.1.4
+go install github.com/irootkernel/sanho/cmd/sanhod@v0.1.4
 ```
 
 The commands are written to `GOBIN`, or to `$(go env GOPATH)/bin` when
