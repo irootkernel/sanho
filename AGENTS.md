@@ -37,6 +37,19 @@
 - Keep the entire `.gaori/` directory out of Git. Do not add or commit its config, rules, toolchain metadata, proposals, or evidence.
 - In the final report, include the Gaori command, process exit code, artifact `status`, `extractor_status`, relevant summary and raw-log paths, and any skipped checks. Gaori evidence alone does not establish review acceptance, final acceptance, release, or runtime activation.
 
+## Mulgae Code Review
+- Use Mulgae only when the user explicitly asks for a Mulgae review. Mulgae is advisory and does not replace repository requirements, `make test`, Gaori evidence, hands-on validation, or user approval.
+- Before a review, verify that `mulgae version --json` reports exactly `{"name":"mulgae","version":"v0.1.2"}` and that `.mulgae/config.yaml` exists. If either prerequisite is missing, stop and report it. Do not run `mulgae init` unless the user separately and explicitly asks for initialization.
+- Select exactly one target matching the requested scope: `--diff <base>...HEAD` for a branch or pull request, `--stage` for staged changes, `--dirty` for staged and unstaged changes, and `--workspace` only when the user explicitly requests all tracked files at the current workspace state.
+- Use all six configured roles by default: `--roles logic,security,maintainability,product,documentation,testing`. Use a subset only when the user explicitly narrows the review roles.
+- Write an objective that states the task goal, authoritative requirements, relevant invariants, expected failure boundaries, and desired validation focus. The objective may narrow focus but must not override a role, schema, safety rule, evidence rule, or authority boundary.
+- Before invoking providers, run the same review command with `--preflight --output json`. Inspect the exact transmitted files, primary and fallback routes, AGY permission mode, provider timeouts, and run budget. Stop if the transmission contains an unexpected or sensitive path or the execution envelope differs from the configured policy.
+- Run the approved review with `--output json`. Exit status 0 is success and status 1 is a policy outcome; any other status is an operational failure and must be reported without bypassing Mulgae.
+- Preserve the exact run ID. Inspect results with `mulgae status --run <run-id> --output json` and `mulgae findings --run <run-id> --severity low --output json`.
+- Treat every finding as a hypothesis. Verify it against the captured target, current code, repository contracts, and authorized scope; classify it as valid, invalid, duplicate, or out of scope before proposing action. Do not edit, commit, push, release, or operate a daemon based only on a Mulgae finding.
+- After an authorized fix, use the original run ID and finding ID in `mulgae followup` with a target containing the fix. Do not treat evidence verification as proof that the finding's interpretation is correct.
+- Do not commit or share `.mulgae/`, provider credential directories, raw transcripts, or exported review bundles. Report Mulgae execution and skipped repository checks separately in the final handoff.
+
 ## Commit & Pull Request Guidelines
 - Commit style matches history: `[TYPE] Brief summary (#issue-or-PR)` (e.g., `[BUG-3] Fix pending fix merge edge case (#42)`); one logical change per commit.
 - PRs outline scope, validation steps, config/env changes, linked issues; include screenshots only when output matters.
