@@ -201,6 +201,25 @@ staged 삭제로 바뀌지 않는다. `pull --force`는 staged docs까지 버리
 daemon workspace hash를 함께 갱신한다. 일치하는 commit이 없거나 pending
 pull 위에 dirty docs가 남아 있으면 임의의 hash를 선택하지 않는다.
 
+## AI agent 설정
+
+Sanho로 관리하는 프로젝트의 `AGENTS.md` 또는 `CLAUDE.md` 중 적용되는
+파일에 다음 공용 지침을 추가한다.
+
+```markdown
+## Sanho workflow
+
+This repository uses Sanho to synchronize its `docs/` directory with the canonical docs repository.
+
+- At the start of a task and before any authorized commit or push, run `sanho status --json`. If it fails, report the error and do not bypass Sanho.
+- If the repository is not initialized, stop and ask the user for the project name, docs repository URL, and any non-default socket path. Do not guess these values or initialize the workspace on your own.
+- Edit `docs/` as normal workspace files, but use normal Git commands and let the installed Sanho hooks run. Sanho does not grant permission to commit or push.
+- Never bypass Sanho with `--no-verify`, a force push used to evade a Sanho block, a `sanho push` command (it does not exist), or manual edits or removal of `.sanho_docs_hash`, `.git/sanho`, Git operation metadata, or Sanho-owned hook entries.
+- Do not run `sanho clean`, `sanho init --force`, or `sanho pull --force` without explicit user approval.
+- When Sanho interrupts a commit or push, inspect both `git status` and `sanho status --json`. Rerun the same command only when Sanho explicitly instructs you to; for pending main publication, follow the reported normal Git push sequence and then retry the original push.
+- For conflicts or an existing pull-commit transaction, use `pull_commit.classification`, `reason`, and `next_command`. For an active Git operation, treat `git_operation.next_commands` as choices, not commands to execute automatically. Do not choose continue, abort, or quit, delete metadata, or discard work without confirming the user's intent.
+```
+
 ## 충돌 방지 원칙
 
 daemon은 같은 `docs_repo_id`에 대한 sync, HEAD 조회, snapshot 조회, push,

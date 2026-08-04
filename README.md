@@ -136,6 +136,25 @@ Machine-readable output for query commands is documented in
 Release checks that require real remotes, branch rules, or service managers are
 documented in the [hands-on test checklist](docs/hands-on-testing.md).
 
+## Configure AI coding agents
+
+Add the following shared instructions to the applicable `AGENTS.md` or
+`CLAUDE.md` file in a Sanho-managed project:
+
+```markdown
+## Sanho workflow
+
+This repository uses Sanho to synchronize its `docs/` directory with the canonical docs repository.
+
+- At the start of a task and before any authorized commit or push, run `sanho status --json`. If it fails, report the error and do not bypass Sanho.
+- If the repository is not initialized, stop and ask the user for the project name, docs repository URL, and any non-default socket path. Do not guess these values or initialize the workspace on your own.
+- Edit `docs/` as normal workspace files, but use normal Git commands and let the installed Sanho hooks run. Sanho does not grant permission to commit or push.
+- Never bypass Sanho with `--no-verify`, a force push used to evade a Sanho block, a `sanho push` command (it does not exist), or manual edits or removal of `.sanho_docs_hash`, `.git/sanho`, Git operation metadata, or Sanho-owned hook entries.
+- Do not run `sanho clean`, `sanho init --force`, or `sanho pull --force` without explicit user approval.
+- When Sanho interrupts a commit or push, inspect both `git status` and `sanho status --json`. Rerun the same command only when Sanho explicitly instructs you to; for pending main publication, follow the reported normal Git push sequence and then retry the original push.
+- For conflicts or an existing pull-commit transaction, use `pull_commit.classification`, `reason`, and `next_command`. For an active Git operation, treat `git_operation.next_commands` as choices, not commands to execute automatically. Do not choose continue, abort, or quit, delete metadata, or discard work without confirming the user's intent.
+```
+
 ## Validation
 
 ```bash
