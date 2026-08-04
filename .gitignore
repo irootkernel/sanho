@@ -4,6 +4,7 @@ firebase-debug.log
 .omc/
 .codex/
 .claude/
+.gaori/
 
 .vscode
 data/
