@@ -258,10 +258,11 @@ service 등록 명령과 책임 경계는 [배포 규칙](deployment.md)을 따�
 남기는 회귀를 검사한다. daemon 연결·미연결 경우를 분리된 폐기 가능한
 복사본에서 수행한다.
 
-1. application clone에 docs-version이 다른 `main`과 unpublished feature
-   branch를 만든다. feature에는 실제 파일 변경 commit 하나와 빈 commit을
-   포함해 최소 1,000개 commit을 만들고 prepared transaction의 HEAD, index
-   tree, docs hash와 workspace report checksum을 기록한다.
+1. 기본 merge backend용 application clone에 docs-version이 다른 `main`과
+   unpublished feature branch를 만든다. feature에는 실제 파일 변경 commit
+   하나와 의도적으로 빈 commit을 포함해 최소 1,000개 commit을 만들고
+   prepared transaction의 HEAD, index tree, docs hash와 workspace report
+   checksum을 기록한다.
 2. `git --version`, `git rev-parse --show-object-format`, 시작 시각과
    `git rev-parse --git-path rebase-merge/rewritten-list` 결과를 기록한 뒤
    hook에서 호출하는 `git`만 감싸는 wrapper를 준비한다. wrapper는 인자를
@@ -278,16 +279,21 @@ service 등록 명령과 책임 경계는 [배포 규칙](deployment.md)을 따�
    refs, index와 worktree를 추가로 바꾸지 않았는지 checksum으로 확인한다.
 5. daemon을 중지한 복사본에서 같은 검사를 반복한다. rebase는 성공하고 같은
    docs hash의 pending workspace report가 남아야 한다.
-6. 별도 복사본에서 `git rebase --apply main`을 실행하고 active backend가
-   `rebase-apply/rewritten`이었음을 기록한다. merge backend와 동일한 metadata
-   및 Git 상태 조건을 만족해야 한다.
+6. apply backend용 별도 복사본에는 빈 commit fixture를 재사용하지 않는다.
+   전용 counter 파일을 매 commit마다 변경하는 방식으로 최소 1,000개의
+   non-empty commit을 만든 뒤 `git rebase --apply main`을 실행하고 active
+   backend가 `rebase-apply/rewritten`이었음을 기록한다. `Patch is empty`로
+   rebase가 Sanho hook 전에 중단되면 제품 실패가 아니라 fixture 오류이므로
+   non-empty commit으로 다시 구성한다. 유효한 apply rebase는 merge backend와
+   동일한 metadata 및 Git 상태 조건을 만족해야 한다.
 7. 각 복사본에서 `sanho status --json`을 기록한다. 정상 reconciliation 뒤
    pending·ambiguous·corrupt transaction이 없어야 하며 임시 clone과 daemon을
    정리한다.
 
-mapping 수나 지연을 줄여 통과시키거나, wrapper를 application의 일반 Git
-명령 전체에 적용해 결과를 오염시키거나, timeout 뒤 transaction 또는 rebase
-metadata를 수동 삭제하면 이 시나리오는 FAIL이다.
+어느 backend에서든 mapping 수나 지연을 줄여 통과시키거나, apply fixture에
+빈 commit을 섞어 Git 자체의 중단을 Sanho 실패로 기록하거나, wrapper를
+application의 일반 Git 명령 전체에 적용해 결과를 오염시키거나, timeout 뒤
+transaction 또는 rebase metadata를 수동 삭제하면 이 시나리오는 FAIL이다.
 
 ## H13. post-rewrite 형식 전방 호환성과 위조 차단
 
