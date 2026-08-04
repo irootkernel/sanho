@@ -427,6 +427,58 @@ func TestCLILifecycleHooksSkipMutationDuringGitOperation(t *testing.T) {
 	}
 }
 
+func TestCLIPostCommitUsesRebaseGuidanceDuringReplay(t *testing.T) {
+	cliBinary := getCliBinary(t)
+	root := t.TempDir()
+	repo := filepath.Join(root, "repo")
+	runRecoveryGit(t, root, "init", "--initial-branch=main", repo)
+	runRecoveryGit(t, repo, "config", "user.email", "test@example.com")
+	runRecoveryGit(t, repo, "config", "user.name", "Test User")
+	writeRecoveryFile(t, repo, "base.txt", "base\n")
+	runRecoveryGit(t, repo, "add", "base.txt")
+	runRecoveryGit(t, repo, "commit", "-m", "base")
+	runRecoveryGit(t, repo, "switch", "-c", "feature")
+	writeRecoveryFile(t, repo, "feature.txt", "feature\n")
+	runRecoveryGit(t, repo, "add", "feature.txt")
+	runRecoveryGit(t, repo, "commit", "-m", "feature")
+	runRecoveryGit(t, repo, "switch", "main")
+	writeRecoveryFile(t, repo, "main.txt", "main\n")
+	runRecoveryGit(t, repo, "add", "main.txt")
+	runRecoveryGit(t, repo, "commit", "-m", "main")
+	runRecoveryGit(t, repo, "switch", "feature")
+
+	hooksDir := runRecoveryGit(t, repo, "rev-parse", "--git-path", "hooks")
+	if !filepath.IsAbs(hooksDir) {
+		hooksDir = filepath.Join(repo, hooksDir)
+	}
+	hook := fmt.Sprintf("#!/bin/sh\nexec %q hook post-commit\n", cliBinary)
+	if err := os.WriteFile(filepath.Join(hooksDir, "post-commit"), []byte(hook), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	rebase := exec.Command("git", "-C", repo, "rebase", "main")
+	output, err := rebase.CombinedOutput()
+	if err != nil {
+		t.Fatalf("rebase failed: %v\n%s", err, output)
+	}
+	text := string(output)
+	for _, expected := range []string{
+		"Git rebase operation metadata is present",
+		"git rebase --continue",
+		"git rebase --abort",
+		"git rebase --quit",
+	} {
+		if !strings.Contains(text, expected) {
+			t.Fatalf("rebase output missing %q:\n%s", expected, output)
+		}
+	}
+	for _, unexpected := range []string{"multiple Git operation", "git cherry-pick --continue"} {
+		if strings.Contains(text, unexpected) {
+			t.Fatalf("rebase output contains %q:\n%s", unexpected, output)
+		}
+	}
+}
+
 func TestCLIPostRewriteAcceptsOptionalExtraInfoFromGitOwnedSource(t *testing.T) {
 	cliBinary := getCliBinary(t)
 	repo := setupCleanStaleRebaseWorkspace(t)

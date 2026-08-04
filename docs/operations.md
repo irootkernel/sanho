@@ -102,9 +102,11 @@ cherry-pick, revert와 `git am`도 `git status`를 확인한 뒤 해당 명령�
 
 Sanho는 어떤 경우에도 사용자 operation을 자동 abort/quit하거나 metadata를
 삭제하지 않는다. `.git/rebase-*`, `.git/sequencer` 같은 경로를 손으로
-삭제해서도 안 된다. detector가 여러 operation marker를 발견하면
-`multiple`, 종류를 안전하게 판별할 수 없는 sequencer는 `sequencer`로
-보고하고 `git status` 외의 정리 명령을 추측하지 않는다.
+삭제해서도 안 된다. rebase 중 Git의 commit replay가 남기는
+`CHERRY_PICK_HEAD`는 같은 rebase의 종속 marker로 처리한다. 그 밖에 여러
+operation marker를 발견하면 `multiple`, 종류를 안전하게 판별할 수 없는
+sequencer는 `sequencer`로 보고하고 `git status` 외의 정리 명령을 추측하지
+않는다.
 
 Git의 continue 과정에서 실행되는 `pre-commit`, `commit-msg`, `post-commit`,
 `post-checkout`, `post-merge` hook은 Sanho의 index/worktree/ref 변경과 daemon

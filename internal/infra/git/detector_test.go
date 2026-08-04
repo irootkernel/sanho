@@ -113,6 +113,7 @@ func TestDetector_DetectOperation(t *testing.T) {
 		setup        func(t *testing.T, repo string)
 		wantType     OperationType
 		wantCommands []string
+		wantDetected []OperationType
 	}{
 		{
 			name:     "clear",
@@ -134,6 +135,26 @@ func TestDetector_DetectOperation(t *testing.T) {
 			wantType: OperationRebase,
 		},
 		{
+			name: "rebase merge replay",
+			setup: func(t *testing.T, repo string) {
+				makeDetectorGitPath(t, repo, "rebase-merge", true, "")
+				makeDetectorGitPath(t, repo, "CHERRY_PICK_HEAD", false, "deadbeef\n")
+			},
+			wantType:     OperationRebase,
+			wantCommands: []string{"git status", "git rebase --continue", "git rebase --abort", "git rebase --quit"},
+			wantDetected: []OperationType{OperationRebase},
+		},
+		{
+			name: "rebase head replay",
+			setup: func(t *testing.T, repo string) {
+				makeDetectorGitPath(t, repo, "REBASE_HEAD", false, "deadbeef\n")
+				makeDetectorGitPath(t, repo, "CHERRY_PICK_HEAD", false, "deadbeef\n")
+			},
+			wantType:     OperationRebase,
+			wantCommands: []string{"git status", "git rebase --continue", "git rebase --abort", "git rebase --quit"},
+			wantDetected: []OperationType{OperationRebase},
+		},
+		{
 			name: "am",
 			setup: func(t *testing.T, repo string) {
 				makeDetectorGitPath(t, repo, "rebase-apply", true, "")
@@ -153,7 +174,8 @@ func TestDetector_DetectOperation(t *testing.T) {
 			setup: func(t *testing.T, repo string) {
 				makeDetectorGitPath(t, repo, "CHERRY_PICK_HEAD", false, "deadbeef\n")
 			},
-			wantType: OperationCherryPick,
+			wantType:     OperationCherryPick,
+			wantDetected: []OperationType{OperationCherryPick},
 		},
 		{
 			name: "revert",
@@ -193,6 +215,15 @@ func TestDetector_DetectOperation(t *testing.T) {
 			},
 			wantType: OperationMultiple,
 		},
+		{
+			name: "rebase and merge remain multiple",
+			setup: func(t *testing.T, repo string) {
+				makeDetectorGitPath(t, repo, "rebase-merge", true, "")
+				makeDetectorGitPath(t, repo, "MERGE_HEAD", false, "deadbeef\n")
+			},
+			wantType:     OperationMultiple,
+			wantDetected: []OperationType{OperationMerge, OperationRebase},
+		},
 	}
 
 	for _, test := range tests {
@@ -219,6 +250,9 @@ func TestDetector_DetectOperation(t *testing.T) {
 			}
 			if test.wantCommands != nil && !slices.Equal(operation.NextCommands, test.wantCommands) {
 				t.Fatalf("commands = %v, want %v", operation.NextCommands, test.wantCommands)
+			}
+			if test.wantDetected != nil && !slices.Equal(operation.DetectedTypes, test.wantDetected) {
+				t.Fatalf("detected types = %v, want %v", operation.DetectedTypes, test.wantDetected)
 			}
 		})
 	}

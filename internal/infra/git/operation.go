@@ -99,6 +99,14 @@ func (d *Detector) DetectOperation(ctx context.Context, repoPath string) (GitOpe
 			return GitOperation{}, err
 		}
 		if exists {
+			// Rebase replays commits through Git's cherry-pick machinery. Treat
+			// CHERRY_PICK_HEAD as part of that rebase rather than a second,
+			// independently recoverable operation.
+			if marker.typeName == OperationCherryPick {
+				if _, rebasing := detected[OperationRebase]; rebasing {
+					continue
+				}
+			}
 			detected[marker.typeName] = struct{}{}
 		}
 	}

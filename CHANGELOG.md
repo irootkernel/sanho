@@ -17,6 +17,9 @@
   never automatically aborted, quit, or deleted by Sanho.
 - Commit lifecycle hooks skip Sanho-owned mutations while Git recovery is in
   progress, while pre-push continues to block remote publication.
+- Commit replay during a rebase now reports rebase-specific recovery commands
+  instead of misclassifying Git's transient cherry-pick marker as a second
+  operation.
 - A successful rebase `post-rewrite` now validates Git's old/new commit
   mappings and reconciles only Sanho transaction and workspace metadata even
   though Git has not removed its rebase marker yet.
