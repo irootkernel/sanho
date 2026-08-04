@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.1.5 - 2026-08-04
+
+### Added
+
+- The root README and Korean guide now provide one shared, copy-ready Sanho
+  workflow for `AGENTS.md` and `CLAUDE.md`.
+- The AI agent guidance requires structured status checks, normal Git hooks,
+  explicit authorization for destructive Sanho commands, and user confirmation
+  before choosing Git recovery actions.
+
+### Compatibility
+
+- This release changes documentation only. CLI, daemon, HTTP, JSON,
+  configuration, transaction, and Git hook contracts remain unchanged.
+- Existing workspaces require no reinitialization or state migration.
+
 ## v0.1.4 - 2026-08-04
 
 ### Added
