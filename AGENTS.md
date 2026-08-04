@@ -1,4 +1,76 @@
-# Repository Guidelines
+# AGENTS.md
+
+Repository guidance for AI coding agents working on Sanho.
+
+This file is the complete local authority for how agents inspect, implement,
+and verify work in this repository. Apply these rules proportionally: preserve
+the same safety boundaries for every task without adding ceremony that does not
+improve a small change.
+
+## Core Behavior
+
+### 1. Inspect Before Acting
+
+**Resolve repository facts before making implementation decisions. Do not hide uncertainty.**
+
+Before implementing:
+
+- Read the requested code and the nearest relevant authority before changing anything.
+- Inspect the worktree, index, and relevant runtime or Git state when they can affect the task.
+- Resolve discoverable facts from the repository instead of asking the user for information the repository already provides.
+- State assumptions that materially affect scope, design, compatibility, safety, or verification.
+- If multiple interpretations would produce materially different outcomes, present the alternatives and recommend one instead of choosing silently.
+- Surface meaningful trade-offs and prefer a simpler approach when it satisfies the same requirement with less complexity or risk.
+- Stop and ask a focused question when unresolved ambiguity would materially change the result.
+- Push back when a request conflicts with repository authority, safety boundaries, or the user's stated goal.
+
+### 2. Prefer the Smallest Complete Solution
+
+**Use the minimum implementation that fully satisfies the verified requirement. Add nothing speculative.**
+
+- Implement only what the request requires.
+- Reuse established repository patterns before introducing a new abstraction.
+- Do not add speculative features, configurability, compatibility layers, or extension points.
+- Add defensive handling at real trust, persistence, concurrency, process, network, filesystem, and Git boundaries, not for states repository invariants make impossible.
+- Prefer a robust implementation when the requirement warrants it, but remove layers justified only by possible future needs.
+- If the implementation is substantially larger than the behavior it provides, simplify it before reporting completion.
+
+### 3. Make Surgical Changes
+
+**Touch only what the requested outcome and its verification require. Clean up only what the change makes obsolete.**
+
+- Do not refactor, reformat, rename, or clean up adjacent code unless the task requires it.
+- Match the local style even when another style would also work.
+- Preserve unrelated staged, unstaged, and untracked user changes.
+- Mention unrelated defects or dead code instead of modifying them without authorization.
+- Remove imports, variables, functions, files, generated references, or documentation made obsolete by the requested change.
+- Do not remove pre-existing dead code or unrelated artifacts unless the request includes that cleanup.
+
+Every changed line must be traceable to the requested outcome or its verification.
+
+### 4. Work Toward Verifiable Goals
+
+**Define success before implementation and continue until the result is proved or concretely blocked.**
+
+- Translate the request into explicit success checks before implementing.
+- For a bug, reproduce the failure when practical and add or identify a regression check that fails for the right reason before making it pass.
+- For a behavior change, add or update tests that prove the requested contract and relevant failure paths.
+- For a refactor, establish the relevant behavior and checks before editing, then run them again afterward.
+- Run focused checks first, then broader repository-standard checks when their cost and scope are justified.
+- Use `Makefile` targets for repository-standard generation, lint, build, and test workflows instead of inventing parallel commands.
+- Do not treat scaffolding, compilation alone, mocked success, or partial checks as proof when acceptance requires stronger evidence.
+- Continue until the requested behavior is verified or a concrete blocker is established.
+- Report skipped checks with the reason and distinguish assumptions from confirmed results.
+
+## Repository Authorities
+
+- Use `README.md` for the product boundary, supported components, public workflows, and top-level validation entrypoint.
+- Use `docs/architecture.md` for runtime, Git, synchronization, persistence, concurrency, and safety contracts.
+- Use `docs/operations.md`, `docs/deployment.md`, `docs/cli-json.md`, and `docs/hands-on-testing.md` for their respective operational, deployment, interface, and real-environment verification details.
+- Use `CHANGELOG.md` for released behavior and compatibility history, not as authority for unimplemented future work.
+- Use `Makefile` as the entry point for repository-standard generation, lint, build, and test commands.
+- Read the nearest relevant implementation and tests instead of copying detailed feature behavior into this file.
+- If authorities or implementation disagree, surface the mismatch and resolve it before changing behavior; do not silently choose the convenient source.
 
 ## Project Structure & Module Organization
 - `cmd/sanhod` hosts the sanhod HTTP service; `cmd/sanho` is the CLI entrypoint.
@@ -9,6 +81,16 @@
 ## Language Policy
 - Code, inline comments, and all CLI/HTTP interfaces stay in English.
 - Documentation under `docs/` and team communication, including conversations, should be written in Korean. Keep this repository guidance file in English.
+
+## Project-Specific Operating Rules
+
+- Do not commit, push, release, install binaries, operate a real remote, or start, stop, replace, or reconfigure an active daemon without explicit authorization.
+- Do not discard, overwrite, unstage, or otherwise disturb unrelated user changes or Git operation metadata.
+- Never bypass Sanho or Git safety guards with `--no-verify`, force operations, manual metadata deletion, or direct mutation of Sanho-managed state.
+- Use checkout-built `bin/sanho` and `bin/sanhod` with isolated `SANHO_HOME` and socket paths when validation must prove current source behavior.
+- Prefer disposable Git repositories under `/tmp` for integration, E2E, hook, and real-remote fixtures. Do not point tests at production-like repositories or an active `xyz.rootkernel.sanho` service unless the user explicitly selects them.
+- Never edit generated code manually. Change its source and use the documented generator or `Makefile` target.
+- Keep completion reports compact: state the outcome, changed files, verification performed, and actionable remaining risks or blockers.
 
 ## Build, Test, and Development Commands
 - Require Go 1.25+. Local daemon: `go run ./cmd/sanhod` (override `SANHO_HOME`, `SANHO_SOCKET`).
