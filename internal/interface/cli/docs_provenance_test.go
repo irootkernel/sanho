@@ -214,6 +214,56 @@ func TestWorkspaceReconciliationValidatesCanonicalProvenanceBeforeHashFastPath(t
 	}
 }
 
+func TestWorkspaceReconciliationHashFastPathRequiresMatchingCanonicalSnapshot(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		snapshot   map[string]string
+		wantErr    docsProvenanceClassification
+		wantChange bool
+	}{
+		{
+			name:     "valid canonical snapshot",
+			snapshot: map[string]string{"guide.md": "application\n"},
+		},
+		{
+			name:     "forged canonical snapshot",
+			snapshot: map[string]string{"guide.md": "different\n"},
+			wantErr:  docsProvenanceSnapshotMismatch,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			repo := newDocsProvenanceRepo(t)
+			writeDocsProvenanceFile(t, repo, "docs/guide.md", "application\n")
+			_ = commitDocsProvenanceRepo(t, repo, "docs\n\ndocs-version: "+provenanceHashOne)
+			if err := os.WriteFile(filepath.Join(repo, ".sanho_docs_hash"), []byte(provenanceHashOne+"\n"), 0644); err != nil {
+				t.Fatal(err)
+			}
+
+			changed, err := reconcileWorkspaceDocsFromHEADWithVerifier(
+				context.Background(),
+				repo,
+				docsProvenanceConfig(),
+				workspaceMutationPermit{},
+				newDocsProvenanceVerifier(&fakeDocsProvenanceHTTPClient{
+					snapshot: buildDocsProvenanceSnapshot(t, test.snapshot),
+				}),
+			)
+			if changed != test.wantChange {
+				t.Fatalf("reconcile changed=%t want %t", changed, test.wantChange)
+			}
+			if test.wantErr == "" {
+				if err != nil {
+					t.Fatalf("reconcile valid fast path: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), string(test.wantErr)) {
+				t.Fatalf("reconcile err=%v want classification %s", err, test.wantErr)
+			}
+		})
+	}
+}
+
 func docsProvenanceConfig() *client.WorkspaceConfig {
 	return &client.WorkspaceConfig{
 		Project:     "project",

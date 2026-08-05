@@ -306,3 +306,10 @@ make test-e2e-client E2E_SOCKET=/absolute/path/to/sanhod.sock
 통합·E2E 테스트의 docs 저장소에는 실제 운영 저장소 대신 `/tmp` 아래의
 폐기 가능한 bare Git 저장소와 clone을 사용한다. 전체 검증은
 `make test`로 실행한다.
+
+실제 Git hosting, 인증, branch rule과 설치 binary 검증은
+[hands-on 체크리스트](hands-on-testing.md)에 따라 별도 실행한다. 자동 gate와
+hands-on 증적이 모두 준비돼도 release diff와 결과를 사용자에게 먼저 제출해야 한다.
+사용자가 그 결과를 검토한 뒤 별도로 명시한 최종 승인 없이는 commit, push, tag,
+GitHub Release 또는 사용자 binary 설치를 진행하지 않는다. 구현이나 검증을
+수행하라는 지시는 릴리스 승인으로 해석하지 않는다.

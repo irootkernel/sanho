@@ -26,14 +26,26 @@ func TestSkipMutationHookFailsClosedWhenNormalCommitCannotInspectOperation(t *te
 	cmd := &cobra.Command{}
 	cmd.SetErr(new(bytes.Buffer))
 
-	skip, err := skipMutationHookDuringGitOperation(context.Background(), repo, "pre-commit", cmd, true)
-	if !skip || err == nil {
-		t.Fatalf("normal commit guard skip=%t err=%v, want fail-closed error", skip, err)
-	}
-
-	skip, err = skipMutationHookDuringGitOperation(context.Background(), repo, "post-checkout", cmd, false)
-	if !skip || err != nil {
-		t.Fatalf("lifecycle guard skip=%t err=%v, want non-mutating successful skip", skip, err)
+	for _, test := range []struct {
+		hook        string
+		blockCommit bool
+		wantErr     bool
+	}{
+		{hook: "pre-commit", blockCommit: true, wantErr: true},
+		{hook: "commit-msg", blockCommit: true, wantErr: true},
+		{hook: "post-checkout"},
+		{hook: "post-merge"},
+		{hook: "post-commit"},
+		{hook: "post-rewrite"},
+	} {
+		t.Run(test.hook, func(t *testing.T) {
+			skip, err := skipMutationHookDuringGitOperation(
+				context.Background(), repo, test.hook, cmd, test.blockCommit,
+			)
+			if !skip || (err != nil) != test.wantErr {
+				t.Fatalf("guard skip=%t err=%v wantErr=%t", skip, err, test.wantErr)
+			}
+		})
 	}
 }
 

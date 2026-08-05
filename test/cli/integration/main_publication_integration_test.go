@@ -186,6 +186,23 @@ func TestPrePushLegacyHookUpgradeDoesNotExecuteDirectURL(t *testing.T) {
 	if mainPublicationIntegrationRefExists(t, fixture.Remote, "refs/heads/feature") {
 		t.Fatal("legacy upgrade attempt changed the feature ref")
 	}
+
+	output, err = runMainPublicationIntegrationGit(fixture.Repo, "push", fixture.Remote, "feature")
+	if err == nil || !strings.Contains(output, "git push origin main") {
+		t.Fatalf("upgraded direct-URL retry did not preserve origin/main publication order: err=%v output=%q", err, output)
+	}
+	if mainPublicationIntegrationRefExists(t, fixture.Remote, "refs/heads/feature") {
+		t.Fatal("blocked direct-URL retry changed the feature ref")
+	}
+	if output, err = runMainPublicationIntegrationGit(fixture.Repo, "push", "origin", "main"); err != nil {
+		t.Fatalf("publish pending origin/main: %v\n%s", err, output)
+	}
+	if output, err = runMainPublicationIntegrationGit(fixture.Repo, "push", fixture.Remote, "feature"); err != nil {
+		t.Fatalf("direct-URL push after origin/main publication: %v\n%s", err, output)
+	}
+	if !mainPublicationIntegrationRefExists(t, fixture.Remote, "refs/heads/feature") {
+		t.Fatal("successful direct-URL retry did not create the feature ref")
+	}
 }
 
 func TestPrePushBlocksNonOriginBranchPushUntilMainIsPublished(t *testing.T) {

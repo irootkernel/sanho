@@ -231,6 +231,7 @@ func TestE2ERebaseLifecycleReconcilesAfterOperationClears(t *testing.T) {
 		}
 		assertNoRebaseMetadata(t, fixture.workspace)
 		assertHeadReconciliation(t, fixture, newDocsHash, true, "up_to_date")
+		assertPendingStatusPreservesLocalDocsRelation(t, fixture)
 
 		writeE2EFile(t, fixture.workspace, "after-rebase.txt", "normal commit\n")
 		runCmd(t, fixture.workspace, "git", "add", "after-rebase.txt")
@@ -269,6 +270,26 @@ func TestE2ERebaseLifecycleReconcilesAfterOperationClears(t *testing.T) {
 		}
 		assertNoRebaseMetadata(t, fixture.workspace)
 		assertHeadReconciliation(t, fixture, newDocsHash, true, "up_to_date")
+		pushAndAssertReconciled(t, fixture, newDocsHash)
+	})
+
+	t.Run("apply-rewritten-commit", func(t *testing.T) {
+		fixture, newDocsHash, oldHash, _ := setupDivergentProvenanceRebase(t, false)
+		output := runCmd(t, fixture.workspace, "git", "fetch", "origin")
+		output = append(output, runCmd(t, fixture.workspace, "git", "rebase", "--apply", "origin/main")...)
+		assertConciseLifecycleOutput(t, output)
+		assertNoRebaseMetadata(t, fixture.workspace)
+		switch got := readTrimmedFile(t, filepath.Join(fixture.workspace, ".sanho_docs_hash")); got {
+		case oldHash:
+			// Some Git versions provide no hook after clearing rebase-apply.
+			assertHeadReconciliation(t, fixture, newDocsHash, true, "up_to_date")
+		case newDocsHash:
+			// Other versions invoke a lifecycle hook after clearing the backend,
+			// allowing the same valid HEAD reconciliation before rebase returns.
+			assertHeadReconciliation(t, fixture, newDocsHash, false, "up_to_date")
+		default:
+			t.Fatalf("completed apply rebase docs hash=%s want old %s or reconciled %s", got, oldHash, newDocsHash)
+		}
 		pushAndAssertReconciled(t, fixture, newDocsHash)
 	})
 
@@ -345,6 +366,116 @@ func TestE2ERebaseLifecycleReconcilesAfterOperationClears(t *testing.T) {
 		}
 		if refExists(t, fixture.appOrigin, "refs/heads/quit-probe") {
 			t.Fatal("quit-conflicted push created remote ref")
+		}
+	})
+}
+
+func TestE2EInstalledHookTrustBoundaries(t *testing.T) {
+	t.Run("non-executable custom hook", func(t *testing.T) {
+		fixture := setupProvenanceRebaseFixtureBeforeInit(t, func(workspace string) {
+			hooksDir := gitOutput(t, workspace, "rev-parse", "--git-path", "hooks")
+			if !filepath.IsAbs(hooksDir) {
+				hooksDir = filepath.Join(workspace, hooksDir)
+			}
+			if err := os.MkdirAll(hooksDir, 0755); err != nil {
+				t.Fatal(err)
+			}
+			content := "#!/bin/sh\nprintf invoked > .custom-pre-commit-invoked\nsanho hook pre-commit\n"
+			if err := os.WriteFile(filepath.Join(hooksDir, "pre-commit"), []byte(content), 0644); err != nil {
+				t.Fatal(err)
+			}
+		})
+		hookPath := filepath.Join(gitOutput(t, fixture.workspace, "rev-parse", "--git-path", "hooks"), "pre-commit")
+		if !filepath.IsAbs(hookPath) {
+			hookPath = filepath.Join(fixture.workspace, hookPath)
+		}
+		info, err := os.Stat(hookPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := info.Mode().Perm(); got != 0744 {
+			t.Fatalf("installed custom hook permissions=%o want 744", got)
+		}
+		data, err := os.ReadFile(hookPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(data), "printf invoked") || !strings.Contains(string(data), "sanho hook pre-commit") {
+			t.Fatalf("custom hook content was not preserved:\n%s", data)
+		}
+		writeE2EFile(t, fixture.workspace, "hook-probe.txt", "probe\n")
+		runCmd(t, fixture.workspace, "git", "add", "hook-probe.txt")
+		runCmd(t, fixture.workspace, "git", "commit", "-m", "exercise executable custom hook")
+		if got := readTrimmedFile(t, filepath.Join(fixture.workspace, ".custom-pre-commit-invoked")); got != "invoked" {
+			t.Fatalf("custom pre-commit marker=%q want invoked", got)
+		}
+	})
+
+	t.Run("linked worktree init uses common hooks", func(t *testing.T) {
+		fixture := setupProvenanceRebaseFixture(t)
+		linked := filepath.Join(sharedRepoTempDir(t), "linked-init")
+		runCmd(t, fixture.workspace, "git", "worktree", "add", "-b", "linked-init", linked)
+		initCmd := exec.Command(
+			fixture.cli, "init", "--socket", fixture.socket,
+			"--project", fixture.project, "--docs-repo-url", fixture.docsOrigin,
+		)
+		initCmd.Dir = linked
+		if output, err := initCmd.CombinedOutput(); err != nil {
+			t.Fatalf("sanho init from linked worktree: %v\n%s", err, output)
+		}
+		commonHooks := gitOutput(t, linked, "rev-parse", "--git-path", "hooks")
+		if !filepath.IsAbs(commonHooks) {
+			commonHooks = filepath.Join(linked, commonHooks)
+		}
+		if _, err := os.Stat(filepath.Join(commonHooks, "pre-commit")); err != nil {
+			t.Fatalf("common pre-commit hook missing: %v", err)
+		}
+		privateGitDir := gitOutput(t, linked, "rev-parse", "--git-dir")
+		if !filepath.IsAbs(privateGitDir) {
+			privateGitDir = filepath.Join(linked, privateGitDir)
+		}
+		if _, err := os.Stat(filepath.Join(privateGitDir, "hooks", "pre-commit")); !os.IsNotExist(err) {
+			t.Fatalf("linked init wrote private hook: %v", err)
+		}
+		marker := gitOutput(t, linked, "rev-parse", "--git-path", "REBASE_HEAD")
+		if !filepath.IsAbs(marker) {
+			marker = filepath.Join(linked, marker)
+		}
+		head := gitOutput(t, linked, "rev-parse", "HEAD")
+		if err := os.WriteFile(marker, []byte(head+"\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		writeE2EFile(t, linked, "linked-hook-probe.txt", "probe\n")
+		runCmd(t, linked, "git", "add", "linked-hook-probe.txt")
+		commit := exec.Command("git", "commit", "-m", "linked hook probe")
+		commit.Dir = linked
+		if output, err := commit.CombinedOutput(); err == nil || !strings.Contains(strings.ToLower(string(output)), "orphaned rebase_head") {
+			t.Fatalf("common installed hook did not protect linked commit: err=%v\n%s", err, output)
+		}
+	})
+
+	t.Run("operation inspection error blocks real commit", func(t *testing.T) {
+		fixture := setupProvenanceRebaseFixture(t)
+		gitDir := gitOutput(t, fixture.workspace, "rev-parse", "--git-dir")
+		if !filepath.IsAbs(gitDir) {
+			gitDir = filepath.Join(fixture.workspace, gitDir)
+		}
+		for _, backend := range []string{"rebase-merge", "rebase-apply"} {
+			if err := os.MkdirAll(filepath.Join(gitDir, backend), 0700); err != nil {
+				t.Fatal(err)
+			}
+		}
+		originalHead := gitOutput(t, fixture.workspace, "rev-parse", "HEAD")
+		writeE2EFile(t, fixture.workspace, "operation-error-probe.txt", "probe\n")
+		runCmd(t, fixture.workspace, "git", "add", "operation-error-probe.txt")
+		commit := exec.Command("git", "commit", "-m", "operation inspection error probe")
+		commit.Dir = fixture.workspace
+		output, err := commit.CombinedOutput()
+		if err == nil || !strings.Contains(string(output), "inspect Git operation state") {
+			t.Fatalf("operation inspection error did not block commit: err=%v\n%s", err, output)
+		}
+		if got := gitOutput(t, fixture.workspace, "rev-parse", "HEAD"); got != originalHead {
+			t.Fatalf("blocked commit moved HEAD=%s want %s", got, originalHead)
 		}
 	})
 }
@@ -543,6 +674,13 @@ func pushAndAssertReconciled(t *testing.T, fixture provenanceRebaseFixture, docs
 }
 
 func setupProvenanceRebaseFixture(t *testing.T) provenanceRebaseFixture {
+	return setupProvenanceRebaseFixtureBeforeInit(t, nil)
+}
+
+func setupProvenanceRebaseFixtureBeforeInit(
+	t *testing.T,
+	beforeInit func(workspace string),
+) provenanceRebaseFixture {
 	t.Helper()
 	cli := getCliBinary(t)
 	t.Setenv("PATH", filepath.Dir(cli)+string(os.PathListSeparator)+os.Getenv("PATH"))
@@ -563,6 +701,9 @@ func setupProvenanceRebaseFixture(t *testing.T) provenanceRebaseFixture {
 	runCmd(t, "", "git", "init", "--bare", "--initial-branch=main", appOrigin)
 	runCmd(t, workspace, "git", "remote", "add", "origin", appOrigin)
 	runCmd(t, workspace, "git", "push", "-u", "origin", "main")
+	if beforeInit != nil {
+		beforeInit(workspace)
+	}
 
 	project := "provenance-rebase-" + filepath.Base(root)
 	t.Cleanup(func() { deleteProjectViaCLI(t, cli, socket, project, true) })
@@ -617,6 +758,33 @@ func assertHeadReconciliation(t *testing.T, fixture provenanceRebaseFixture, doc
 	reconciliation, ok := value["head_reconciliation"].(map[string]any)
 	if !ok || reconciliation["pending"] != pending || reconciliation["docs_hash"] != docsHash {
 		t.Fatalf("head_reconciliation=%#v want pending=%v hash=%s", value["head_reconciliation"], pending, docsHash)
+	}
+}
+
+func assertPendingStatusPreservesLocalDocsRelation(t *testing.T, fixture provenanceRebaseFixture) {
+	t.Helper()
+	cmd := exec.Command(fixture.cli, "status", "--json")
+	cmd.Dir = fixture.workspace
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("sanho status --json: %v\n%s", err, output)
+	}
+	var value struct {
+		Status       string `json:"status"`
+		DocsRelation struct {
+			Status string `json:"status"`
+			Behind int    `json:"behind"`
+		} `json:"docs_relation"`
+		HeadReconciliation struct {
+			Pending bool `json:"pending"`
+		} `json:"head_reconciliation"`
+	}
+	if err := json.Unmarshal(output, &value); err != nil {
+		t.Fatalf("decode pending status: %v\n%s", err, output)
+	}
+	if value.Status != "up_to_date" || !value.HeadReconciliation.Pending ||
+		value.DocsRelation.Status != "behind" || value.DocsRelation.Behind < 1 {
+		t.Fatalf("pending status did not preserve local docs relation: %+v\n%s", value, output)
 	}
 }
 

@@ -91,6 +91,26 @@ func TestHookInstaller_InstallHookMakesExistingHookExecutable(t *testing.T) {
 	}
 }
 
+func TestExecutableHookModePreservesExistingPermissionBits(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		mode os.FileMode
+		want os.FileMode
+	}{
+		{name: "regular file", mode: 0644, want: 0744},
+		{name: "private group read", mode: 0640, want: 0740},
+		{name: "already owner executable", mode: 0740, want: 0740},
+		{name: "all executable bits", mode: 0755, want: 0755},
+		{name: "no permissions", mode: 0000, want: 0100},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := executableHookMode(test.mode); got != test.want {
+				t.Fatalf("executableHookMode(%o)=%o want %o", test.mode, got, test.want)
+			}
+		})
+	}
+}
+
 func TestHookInstaller_InstallHookUsesCommonHooksDirForLinkedWorktree(t *testing.T) {
 	root := t.TempDir()
 	mainRepo := filepath.Join(root, "main")

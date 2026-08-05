@@ -318,6 +318,43 @@ OID가 remote 변경 전에 검증되는지 확인한다.
 direct `sanho hook pre-push` 호출만으로 remote 무변경을 증명하거나, negative fixture
 외부에서 hook을 우회하거나, unrestricted force push를 사용하면 FAIL이다.
 
+## H14. 설치 hook trust boundary와 status 호환성
+
+이 시나리오는 내부 installer나 hook 함수를 직접 호출하지 않고 공개 설치 binary와
+실제 Git 명령만으로 hook 설치 경계를 확인한다.
+
+1. 임시 `GOBIN`에 검증할 release의 `sanho`와 `sanhod`를 설치하고
+   `command -v`, `sanho version`, `go version -m`을 기록한다. checkout에서 빌드한
+   binary와 섞지 않는다.
+2. application clone의 `pre-commit`에 custom 명령과 `sanho hook pre-commit`을
+   포함한 mode `0644` 파일을 둔 뒤 `sanho init`을 실행한다. custom 내용과 기존
+   permission bit는 유지되고 owner execute가 추가돼야 하며, 실제 `git commit`에서
+   custom marker와 Sanho 검사가 모두 실행돼야 한다.
+3. 같은 repository의 linked worktree에서 별도 `sanho init`을 실행한다. hook은
+   `git rev-parse --git-path hooks`가 가리키는 common directory에 있어야 하고
+   worktree private gitdir의 `hooks`에는 생성되지 않아야 한다. linked worktree에만
+   standalone `REBASE_HEAD`를 둔 실제 commit은 차단되고 다른 worktree 상태는
+   바뀌지 않아야 한다.
+4. disposable clone에 `rebase-merge`와 `rebase-apply`를 함께 만들어 operation
+   inspection error를 유도한다. 실제 pre-commit은 commit을 차단하고 HEAD, index,
+   worktree, metadata와 remote refs를 보존해야 한다. lifecycle hook은 state를
+   변경하지 않고 성공해야 한다.
+5. fast-forward/no-op rebase 뒤 local docs hash만 이전 값인 상태에서
+   `sanho status --json`을 실행한다. 기존 `docs_relation`은 local hash 기준
+   `behind`를 유지하면서 최상위 `status`는 `up_to_date`,
+   `head_reconciliation.pending`은 `true`여야 한다.
+6. merge와 apply backend rebase를 모든 설치 hook과 함께 실행한다. active backend
+   중에는 Sanho state를 변경하지 않는다. backend clear 뒤 Git이 lifecycle hook을
+   제공하면 즉시 reconciled, 제공하지 않으면 pending이어야 하며 다음 pre-commit
+   또는 pre-push에서 멱등하게 수렴해야 한다.
+7. exact 두 줄 legacy pre-push hook으로 direct URL push를 실행한다. 첫 시도는
+   atomic upgrade만 수행하고, 두 번째 direct URL 시도는 pending `origin/main`
+   선행 게시를 안내해야 한다. `git push origin main` 성공 뒤 같은 direct URL
+   push가 성공하고 local/remote tip과 status가 일치해야 한다.
+
+비실행 hook이 경고만 남기고 무시되거나, linked worktree private hook에 의존하거나,
+operation 검사 실패 중 commit이 성공하거나, 기존 JSON field 의미를 바꾸면 FAIL이다.
+
 ## 릴리스 판정
 
 다음 조건을 모두 만족해야 hands-on 관점에서 릴리스 가능으로 판정한다.
@@ -329,3 +366,6 @@ direct `sanho hook pre-push` 호출만으로 remote 무변경을 증명하거나
   기록했으며 남은 pending·ambiguous·corrupt 상태가 없다.
 - 임시 branch, alias remote, clone, daemon과 service 변경을 정리했다.
 - 유지한 validation 파일과 commit은 소유 저장소와 유지 이유가 기록돼 있다.
+- 전체 release diff와 자동·hands-on 증적을 사용자에게 먼저 제출하고, 사용자가
+  해당 결과를 검토한 뒤 별도의 명시적 최종 릴리스 승인을 제공했다. 구현·검증
+  지시나 과거의 일반적인 릴리스 요청은 이 최종 승인으로 간주하지 않는다.

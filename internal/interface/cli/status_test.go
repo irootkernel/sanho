@@ -35,13 +35,23 @@ func TestFormatCommitRelation(t *testing.T) {
 
 func TestEffectiveStatusRelationUsesValidHEADWithoutChangingReferenceRelation(t *testing.T) {
 	reference := httpclient.CommitRelation{Status: docs.CommitRelationBehind, Behind: 1}
-	reconciliation := headReconciliationAssessment{
-		Pending:        true,
-		Classification: headReconciliationPending,
-		DocsRelation:   httpclient.CommitRelation{Status: docs.CommitRelationSame},
-	}
-	if got := effectiveStatusRelation(reference, reconciliation); got.Status != docs.CommitRelationSame {
-		t.Fatalf("effective relation=%+v want same", got)
+	for _, test := range []struct {
+		classification headReconciliationClassification
+		relation       httpclient.CommitRelation
+		want           docs.CommitRelationStatus
+	}{
+		{classification: headReconciliationPending, relation: httpclient.CommitRelation{Status: docs.CommitRelationSame}, want: docs.CommitRelationSame},
+		{classification: headReconciliationReconciled, relation: httpclient.CommitRelation{Status: docs.CommitRelationBehind}, want: docs.CommitRelationBehind},
+		{classification: headReconciliationInvalid, relation: httpclient.CommitRelation{Status: docs.CommitRelationSame}, want: docs.CommitRelationBehind},
+		{classification: headReconciliationUnknown, relation: httpclient.CommitRelation{Status: docs.CommitRelationSame}, want: docs.CommitRelationBehind},
+	} {
+		reconciliation := headReconciliationAssessment{
+			Classification: test.classification,
+			DocsRelation:   test.relation,
+		}
+		if got := effectiveStatusRelation(reference, reconciliation); got.Status != test.want {
+			t.Fatalf("classification=%s effective relation=%+v want %s", test.classification, got, test.want)
+		}
 	}
 	if reference.Status != docs.CommitRelationBehind || reference.Behind != 1 {
 		t.Fatalf("reference relation was mutated: %+v", reference)
