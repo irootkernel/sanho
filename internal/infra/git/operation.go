@@ -2,6 +2,7 @@ package git
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -33,15 +34,41 @@ const (
 	OperationBlocked OperationClassification = "blocked"
 )
 
+// OperationBackend identifies the Git-owned backend that can service recovery
+// commands for an operation.
+type OperationBackend string
+
+const (
+	OperationBackendNone        OperationBackend = "none"
+	OperationBackendRebaseMerge OperationBackend = "rebase_merge"
+	OperationBackendRebaseApply OperationBackend = "rebase_apply"
+)
+
+// OperationRecoveryClassification describes how detected metadata may be
+// recovered without implying that Sanho will mutate it.
+type OperationRecoveryClassification string
+
+const (
+	OperationRecoveryNone             OperationRecoveryClassification = "none"
+	OperationRecoveryGitManaged       OperationRecoveryClassification = "git_managed_operation"
+	OperationRecoveryConditionalRef   OperationRecoveryClassification = "conditional_pseudo_ref_delete"
+	OperationRecoveryManualInspection OperationRecoveryClassification = "manual_metadata_inspection"
+)
+
 // GitOperation is the stable description of Git operation metadata detected
 // for one worktree.
 type GitOperation struct {
-	Active         bool
-	Type           OperationType
-	Classification OperationClassification
-	Reason         string
-	NextCommands   []string
-	DetectedTypes  []OperationType
+	Active                 bool
+	Type                   OperationType
+	Classification         OperationClassification
+	Reason                 string
+	NextCommands           []string
+	DetectedTypes          []OperationType
+	Backend                OperationBackend
+	MetadataPaths          []string
+	Orphaned               bool
+	MetadataOID            string
+	RecoveryClassification OperationRecoveryClassification
 }
 
 // GitOperationBlockedError is returned when a Sanho workspace mutation is
@@ -57,25 +84,35 @@ func (e *GitOperationBlockedError) Error() string {
 // DetectOperation inspects worktree-specific Git metadata without changing it.
 func (d *Detector) DetectOperation(ctx context.Context, repoPath string) (GitOperation, error) {
 	detected := make(map[OperationType]struct{})
+	metadataPaths := make([]string, 0)
+	backend := OperationBackendNone
 
-	rebaseMerge, err := gitPathExists(ctx, repoPath, "rebase-merge")
+	rebaseMerge, rebaseMergePath, err := gitPathState(ctx, repoPath, "rebase-merge")
 	if err != nil {
 		return GitOperation{}, err
 	}
 	if rebaseMerge {
+		metadataPaths = append(metadataPaths, rebaseMergePath)
 		detected[OperationRebase] = struct{}{}
+		backend = OperationBackendRebaseMerge
 	}
 
-	rebaseApply, err := gitPathExists(ctx, repoPath, "rebase-apply")
+	rebaseApply, rebaseApplyPath, err := gitPathState(ctx, repoPath, "rebase-apply")
 	if err != nil {
 		return GitOperation{}, err
 	}
 	if rebaseApply {
-		applying, err := gitPathExists(ctx, repoPath, "rebase-apply/applying")
+		metadataPaths = append(metadataPaths, rebaseApplyPath)
+		if backend != OperationBackendNone {
+			return GitOperation{}, errors.New("multiple Git rebase backends are present")
+		}
+		backend = OperationBackendRebaseApply
+		applying, applyingPath, err := gitPathState(ctx, repoPath, "rebase-apply/applying")
 		if err != nil {
 			return GitOperation{}, err
 		}
 		if applying {
+			metadataPaths = append(metadataPaths, applyingPath)
 			detected[OperationAM] = struct{}{}
 		} else {
 			detected[OperationRebase] = struct{}{}
@@ -94,11 +131,12 @@ func (d *Detector) DetectOperation(ctx context.Context, repoPath string) (GitOpe
 		{path: "BISECT_START", typeName: OperationBisect},
 	}
 	for _, marker := range markers {
-		exists, err := gitPathExists(ctx, repoPath, marker.path)
+		exists, markerPath, err := gitPathState(ctx, repoPath, marker.path)
 		if err != nil {
 			return GitOperation{}, err
 		}
 		if exists {
+			metadataPaths = append(metadataPaths, markerPath)
 			// Rebase replays commits through Git's cherry-pick machinery. Treat
 			// CHERRY_PICK_HEAD as part of that rebase rather than a second,
 			// independently recoverable operation.
@@ -111,11 +149,12 @@ func (d *Detector) DetectOperation(ctx context.Context, repoPath string) (GitOpe
 		}
 	}
 
-	sequencer, err := gitPathExists(ctx, repoPath, "sequencer")
+	sequencer, sequencerPath, err := gitPathState(ctx, repoPath, "sequencer")
 	if err != nil {
 		return GitOperation{}, err
 	}
 	if sequencer {
+		metadataPaths = append(metadataPaths, sequencerPath)
 		sequencerType, err := detectSequencerType(ctx, repoPath)
 		if err != nil {
 			return GitOperation{}, err
@@ -125,10 +164,13 @@ func (d *Detector) DetectOperation(ctx context.Context, repoPath string) (GitOpe
 
 	if len(detected) == 0 {
 		return GitOperation{
-			Type:           OperationNone,
-			Classification: OperationClear,
-			NextCommands:   make([]string, 0),
-			DetectedTypes:  make([]OperationType, 0),
+			Type:                   OperationNone,
+			Classification:         OperationClear,
+			NextCommands:           make([]string, 0),
+			DetectedTypes:          make([]OperationType, 0),
+			Backend:                OperationBackendNone,
+			MetadataPaths:          make([]string, 0),
+			RecoveryClassification: OperationRecoveryNone,
 		}, nil
 	}
 
@@ -142,13 +184,30 @@ func (d *Detector) DetectOperation(ctx context.Context, repoPath string) (GitOpe
 	if len(types) > 1 {
 		operationType = OperationMultiple
 	}
+	sort.Strings(metadataPaths)
+	orphaned := backend == OperationBackendNone && containsOperationType(types, OperationRebase)
+	metadataOID := ""
+	recoveryClassification := OperationRecoveryGitManaged
+	if orphaned {
+		metadataOID = resolveOrphanedRebaseHeadOID(ctx, repoPath)
+		if metadataOID == "" {
+			recoveryClassification = OperationRecoveryManualInspection
+		} else {
+			recoveryClassification = OperationRecoveryConditionalRef
+		}
+	}
 	return GitOperation{
-		Active:         true,
-		Type:           operationType,
-		Classification: OperationBlocked,
-		Reason:         operationReason(operationType, types),
-		NextCommands:   operationNextCommands(operationType),
-		DetectedTypes:  types,
+		Active:                 true,
+		Type:                   operationType,
+		Classification:         OperationBlocked,
+		Reason:                 operationReason(operationType, types, orphaned),
+		NextCommands:           operationNextCommands(operationType, orphaned, metadataOID),
+		DetectedTypes:          types,
+		Backend:                backend,
+		MetadataPaths:          metadataPaths,
+		Orphaned:               orphaned,
+		MetadataOID:            metadataOID,
+		RecoveryClassification: recoveryClassification,
 	}, nil
 }
 
@@ -200,19 +259,19 @@ func detectSequencerType(ctx context.Context, repoPath string) (OperationType, e
 	return OperationSequencer, nil
 }
 
-func gitPathExists(ctx context.Context, repoPath, name string) (bool, error) {
+func gitPathState(ctx context.Context, repoPath, name string) (bool, string, error) {
 	path, err := resolveGitPath(ctx, repoPath, name)
 	if err != nil {
-		return false, err
+		return false, "", err
 	}
 	_, err = os.Lstat(path)
 	if err == nil {
-		return true, nil
+		return true, path, nil
 	}
 	if os.IsNotExist(err) {
-		return false, nil
+		return false, path, nil
 	}
-	return false, fmt.Errorf("inspect Git path %s: %w", name, err)
+	return false, path, fmt.Errorf("inspect Git path %s: %w", name, err)
 }
 
 func resolveGitPath(ctx context.Context, repoPath, name string) (string, error) {
@@ -232,7 +291,10 @@ func resolveGitPath(ctx context.Context, repoPath, name string) (string, error) 
 	return filepath.Clean(abs), nil
 }
 
-func operationReason(operationType OperationType, detected []OperationType) string {
+func operationReason(operationType OperationType, detected []OperationType, orphaned bool) string {
+	if orphaned && operationType == OperationRebase {
+		return "orphaned REBASE_HEAD metadata is present without an active rebase backend; Sanho workspace mutations are blocked"
+	}
 	if operationType == OperationMultiple {
 		values := make([]string, 0, len(detected))
 		for _, value := range detected {
@@ -249,7 +311,14 @@ func operationReason(operationType OperationType, detected []OperationType) stri
 	)
 }
 
-func operationNextCommands(operationType OperationType) []string {
+func operationNextCommands(operationType OperationType, orphaned bool, metadataOID string) []string {
+	if orphaned && operationType == OperationRebase {
+		commands := []string{"git status", "git rev-parse --verify 'REBASE_HEAD^{commit}'"}
+		if metadataOID != "" {
+			commands = append(commands, "git update-ref -d REBASE_HEAD "+metadataOID)
+		}
+		return commands
+	}
 	switch operationType {
 	case OperationRebase:
 		return []string{"git status", "git rebase --continue", "git rebase --abort", "git rebase --quit"}
@@ -266,4 +335,34 @@ func operationNextCommands(operationType OperationType) []string {
 	default:
 		return []string{"git status"}
 	}
+}
+
+func containsOperationType(types []OperationType, target OperationType) bool {
+	for _, operationType := range types {
+		if operationType == target {
+			return true
+		}
+	}
+	return false
+}
+
+func resolveOrphanedRebaseHeadOID(ctx context.Context, repoPath string) string {
+	cmd := exec.CommandContext(ctx, "git", "-C", repoPath, "rev-parse", "--verify", "REBASE_HEAD^{commit}")
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	oid := strings.TrimSpace(string(out))
+	if oid == "" || strings.ToLower(oid) != oid {
+		return ""
+	}
+	for _, r := range oid {
+		if !strings.ContainsRune("0123456789abcdef", r) {
+			return ""
+		}
+	}
+	if len(oid) != 40 && len(oid) != 64 {
+		return ""
+	}
+	return oid
 }

@@ -98,6 +98,30 @@ func (e *pullCommitEngine) assessTransaction(
 		assessment.NextCommand = "sanho pull-commit --recover"
 		return assessment, nil
 	}
+	if state.Version >= 3 && state.BranchRef != "" {
+		branchRef, branchErr := e.workspaceSync.SymbolicHead(ctx, workDir)
+		if branchErr != nil || branchRef != state.BranchRef {
+			assessment.Classification = pullCommitAmbiguous
+			assessment.Reason = "current HEAD is not on the branch that prepared the transaction"
+			assessment.NextCommand = "sanho pull-commit --recover"
+			return assessment, nil
+		}
+	}
+	if state.PreparedTree != "" {
+		tree, treeErr := e.workspaceSync.CommitTree(ctx, workDir, head)
+		if treeErr != nil {
+			assessment.Classification = pullCommitCorrupt
+			assessment.Reason = treeErr.Error()
+			assessment.NextCommand = "sanho pull-commit --recover"
+			return assessment, nil
+		}
+		if tree == state.PreparedTree {
+			assessment.Classification = pullCommitRewritten
+			assessment.Reason = "current branch contains the prepared index tree after a history rewrite"
+			assessment.NextCommand = "sanho pull-commit --recover"
+			return assessment, nil
+		}
+	}
 	containsSync, err := e.workspaceSync.IsAncestor(ctx, workDir, state.SyncCommit, head)
 	if err != nil {
 		assessment.Classification = pullCommitCorrupt
@@ -110,21 +134,6 @@ func (e *pullCommitEngine) assessTransaction(
 		assessment.Reason = "current HEAD does not contain the recorded docs sync commit"
 		assessment.NextCommand = "sanho pull-commit --recover"
 		return assessment, nil
-	}
-	if state.PreparedTree != "" {
-		tree, err := e.workspaceSync.CommitTree(ctx, workDir, head)
-		if err != nil {
-			assessment.Classification = pullCommitCorrupt
-			assessment.Reason = err.Error()
-			assessment.NextCommand = "sanho pull-commit --recover"
-			return assessment, nil
-		}
-		if tree == state.PreparedTree {
-			assessment.Classification = pullCommitRewritten
-			assessment.Reason = "current HEAD contains the prepared index tree after a history rewrite"
-			assessment.NextCommand = "sanho pull-commit --recover"
-			return assessment, nil
-		}
 	}
 	preparedParents, preparedErr := e.workspaceSync.CommitParents(ctx, workDir, preparedHead)
 	headParents, headErr := e.workspaceSync.CommitParents(ctx, workDir, head)

@@ -21,7 +21,7 @@ func runPostCommitHook(cmd *cobra.Command) error {
 		cmd.PrintErrf("sanho hook post-commit: %v\n", err)
 		return nil
 	}
-	if skipMutationHookDuringGitOperation(ctx, workDir, "post-commit", cmd) {
+	if skip, _ := skipMutationHookDuringGitOperation(ctx, workDir, "post-commit", cmd, false); skip {
 		return nil
 	}
 	config, err := fs.NewFileConfigLoader().Load(workDir)

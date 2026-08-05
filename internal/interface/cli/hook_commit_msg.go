@@ -33,8 +33,8 @@ func runCommitMsgHook(cmd *cobra.Command, args []string) error {
 		cmd.PrintErrf("sanho hook commit-msg: failed to get current directory: %v\n", err)
 		return nil // Don't block commit
 	}
-	if skipMutationHookDuringGitOperation(ctx, cwd, "commit-msg", cmd) {
-		return nil
+	if skip, operationErr := skipMutationHookDuringGitOperation(ctx, cwd, "commit-msg", cmd, true); skip {
+		return operationErr
 	}
 
 	// Create dependencies
@@ -51,8 +51,8 @@ func runCommitMsgHook(cmd *cobra.Command, args []string) error {
 		output,
 	)
 
-	// Execute - commit-msg hook should never block commit
-	// Note: CommitMsgUseCase.Execute always returns nil (handles errors internally with warnings)
+	// The use case remains best-effort after the Git-operation guard. The guard
+	// intentionally blocks a normal commit when only orphaned metadata exists.
 	_ = usecase.Execute(ctx, cwd, msgFilePath)
 
 	return nil // Always return nil to not block commit

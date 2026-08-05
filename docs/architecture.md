@@ -43,38 +43,41 @@ application repo
    실행 직전에 같은 조건을 다시 확인한다.
 
 일반 `git status --porcelain`과 ref 일치 여부는 operation metadata를 나타내지
-않으므로 변경 가능성 판정에 사용하지 않는다. marker가 진행 중 작업인지
-stale state인지 Sanho가 추측할 수 없으므로 둘 다 동일하게 차단한다.
-detector는 metadata를 제거하지 않으며 사용자가 Git 명령으로 의도를 결정한다.
+않으므로 변경 가능성 판정에 사용하지 않는다. rebase는 `rebase-merge` 또는
+`rebase-apply` 디렉터리가 있어야 active backend로 분류한다. backend 없이
+`REBASE_HEAD`만 있으면 `orphaned` metadata로 별도 분류하고 exact path와, commit으로
+검증할 수 있을 때만 full OID를 보고한다. 실제 backend와 orphan marker 모두 자동
+변경하지 않지만 복구 계약은 다르다. active backend에는 Git의 continue/abort/quit
+후보를 제공하고, orphan marker에는 해당 명령을 제안하지 않는다.
 
-성공한 rebase의 `post-rewrite`는 Git이 rebase metadata를 제거하기 전에
-호출된다. 이 hook에 한해 stdin이 active backend의 Git 소유 rewrite 파일
-(`rebase-merge/rewritten-list` 또는 `rebase-apply/rewritten`)과 같은 regular
-file이고 offset 0에서 시작했음을 확인한다. 동시에 두 backend가 있으면
-실패한다. 각 line의 첫 두 필드를 old/new로 읽고 뒤의 optional extra-info는
-opaque 값으로 무시한다. extra-info는 source 신뢰나 permit의 근거가 아니다.
-old/new 값이 repository object format의 full OID이고 모두 commit이며, 모든
-새 commit이 현재 HEAD에서 도달 가능할 때 비공개 permit을
-발급한다. object 존재 여부와 commit type은 `cat-file --batch-check` 한 번으로
-검사하고, 중복을 제거한 새 commit 전체의 HEAD 도달 가능성은
-`rev-list --no-walk=unsorted --stdin` 한 번으로 검사한다. mapping 개수만큼
-Git subprocess를 만들지 않는다. permit은 worktree 경로, 검증 당시 HEAD,
-rewrite command와 순서가 보존된 전체 mapping 복사본을 함께 보관한다.
-reconciliation 직전에 네 값이 모두 동일한지 확인하며, 하나라도 달라졌으면
-transaction을 읽거나 저장하기 전에 실패한다. 따라서 mapping loop에서는 객체나 commit tree를
-다시 조회하지 않고 검증된 mapping을 메모리에서 기록하며, 기존 rewrite는
-set으로 색인해 전체 mapping 수에 선형으로 처리한다. amend처럼 active Git
-operation이 없는 `post-rewrite`도 같은 batch 검증을 거쳐야 한다.
+active Git operation 중에는 `post-rewrite`를 포함한 모든 lifecycle hook이 Sanho
+state, daemon 보고, refs, index와 worktree를 변경하지 않는다. hook은 Git recovery를
+깨지 않도록 간결한 defer 메시지만 출력하고 성공한다. full 복구 안내는 operation이
+남아 사용자가 판단해야 하는 명시적 명령과 status에만 표시한다. pre-commit과
+commit-msg는 실제 backend replay에서는 성공하지만, orphan metadata가 있는 정상
+commit은 provenance가 유실되지 않도록 실패한다. pre-push는 두 상태 모두 fail-closed다.
 
-이 검증과 reconciliation에는 30초 제한을
-적용하고, 뒤이은 읽기 전용 hook status는 별도의 10초 제한을 사용한다.
-permit은
-pull-commit rewrite 기록, docs hash와 workspace 보고처럼 Sanho metadata를
-reconciliation하는 경로에서만 사용한다. refs, HEAD, index, worktree와 recovery
-ref를 변경하는 `WorkspaceSync` mutator에는 전달하지 않는다. mapping이 없거나
-검증되지 않거나 제한 시간이 지나면 일반 active operation과 동일하게 Sanho
-metadata를 변경하지 않는다. hook은 원래 Git operation을 실패시키지 않고
-경고 후 성공한다.
+rebase 종료 후 수렴은 `post-rewrite` 호출 여부에 의존하지 않는다. pre-commit과
+pre-push, operation이 clear인 HEAD 이동 hook은 현재 HEAD docs tree와 같은 reachable
+application commit의 `docs-version`을 확인하고, canonical commit 및 snapshot까지
+검증한 뒤 `.sanho_docs_hash`와 workspace 보고를 멱등하게 조정한다. unmerged index가
+있으면 metadata가 clear여도 변경하지 않는다. 읽기 전용 status는 같은 검증을 하되
+state를 쓰지 않고 `head_reconciliation`으로 valid HEAD가 local 조정을 기다리는 경우와
+실제 canonical drift를 구분한다.
+
+## pre-push docs provenance 경계
+
+pre-push는 현재 checkout이 아니라 stdin의 각 non-delete `refs/heads/*` update가
+제공한 local OID를 검증한다. 각 tip에서 reachable한 application commit 중 tip과
+docs tree가 같은 최신 `docs-version` commit을 찾고, trailer가 정확히 하나의 full
+lowercase OID인지 확인한다. 해당 OID는 canonical docs HEAD에서 reachable해야 하며,
+canonical snapshot은 application docs tree와 내용·mode·symlink 구조가 같아야 한다.
+유효한 commit 뒤의 non-doc commit은 허용한다.
+
+하나라도 missing, malformed, unknown, unreachable 또는 tree mismatch이면 전체 push를
+main 선행 게시보다 먼저 차단한다. 따라서 다중 ref push에서도 일부 remote ref만 먼저
+바뀌지 않는다. tag-only push와 branch deletion은 기존 계약을 유지한다. commit 제목의
+`[SANHO]` 문자열은 provenance 증거로 사용하지 않는다.
 
 `sanho status`의 main publication 판정은 `ls-remote`에 해당하는 읽기 전용
 조회로 remote main을 확인한다. remote-tracking ref 갱신과 완료 metadata

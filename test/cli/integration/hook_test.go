@@ -10,6 +10,13 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/irootkernel/sanho/internal/infra/fs"
+)
+
+const (
+	hookDocsOld = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	hookDocsNew = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 )
 
 // WorkspaceConfig mirrors the client.WorkspaceConfig for test setup.
@@ -264,12 +271,22 @@ func TestHookPostRewriteReconcilesAllRewrites(t *testing.T) {
 
 func TestHookPostMergeReconcilesHashAndReportsDaemon(t *testing.T) {
 	cliBinary := getCliBinary(t)
+	canonicalSnapshot := hookDocsSnapshot(t, "# New docs\n")
 	var reportMu sync.Mutex
 	var reportedHash string
 	daemon := newUnixTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/docs/head":
-			_ = json.NewEncoder(w).Encode(map[string]string{"head": "docs-new"})
+			_ = json.NewEncoder(w).Encode(map[string]string{"head": hookDocsNew})
+		case r.Method == http.MethodGet && r.URL.Path == "/projects/test-project/status":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"project": "test-project", "reference_workspace_id": "test-workspace-123",
+				"reference_docs_hash": hookDocsNew, "docs_head": hookDocsNew,
+				"reference_to_head": map[string]any{"status": "same", "ahead": 0, "behind": 0},
+				"workspaces":        []any{},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/docs/snapshot":
+			_ = json.NewEncoder(w).Encode(map[string]any{"snapshot": canonicalSnapshot, "commit": hookDocsNew})
 		case r.Method == http.MethodPut && r.URL.Path == "/workspaces/test-workspace-123/docs-hash":
 			var body struct {
 				DocsHash string `json:"docs_hash"`
@@ -289,7 +306,7 @@ func TestHookPostMergeReconcilesHashAndReportsDaemon(t *testing.T) {
 	}))
 	t.Cleanup(daemon.Close)
 
-	tempDir := setupTempWorkspace(t, daemon.SocketPath, "docs-old")
+	tempDir := setupTempWorkspace(t, daemon.SocketPath, hookDocsOld)
 	runGitCommand(t, tempDir, "init")
 	runGitCommand(t, tempDir, "config", "user.email", "test@example.com")
 	runGitCommand(t, tempDir, "config", "user.name", "Test User")
@@ -297,7 +314,7 @@ func TestHookPostMergeReconcilesHashAndReportsDaemon(t *testing.T) {
 		t.Fatalf("write docs: %v", err)
 	}
 	runGitCommand(t, tempDir, "add", "docs/readme.md")
-	runGitCommand(t, tempDir, "commit", "-m", "Sync docs", "-m", "docs-version: docs-new")
+	runGitCommand(t, tempDir, "commit", "-m", "Sync docs", "-m", "docs-version: "+hookDocsNew)
 
 	cmd := exec.Command(cliBinary, "hook", "post-merge", "0")
 	cmd.Dir = tempDir
@@ -309,24 +326,34 @@ func TestHookPostMergeReconcilesHashAndReportsDaemon(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read reconciled hash: %v", err)
 	}
-	if got := strings.TrimSpace(string(hash)); got != "docs-new" {
-		t.Fatalf("reconciled hash = %q, want docs-new", got)
+	if got := strings.TrimSpace(string(hash)); got != hookDocsNew {
+		t.Fatalf("reconciled hash = %q, want %s", got, hookDocsNew)
 	}
 	reportMu.Lock()
 	defer reportMu.Unlock()
-	if reportedHash != "docs-new" {
-		t.Fatalf("reported daemon hash = %q, want docs-new", reportedHash)
+	if reportedHash != hookDocsNew {
+		t.Fatalf("reported daemon hash = %q, want %s", reportedHash, hookDocsNew)
 	}
 }
 
 func TestGitPullPostMergeHookReconcilesHashAndReportsDaemon(t *testing.T) {
 	cliBinary := getCliBinary(t)
+	canonicalSnapshot := hookDocsSnapshot(t, "# New docs\n")
 	var reportMu sync.Mutex
 	var reportedHash string
 	daemon := newUnixTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/docs/head":
-			_ = json.NewEncoder(w).Encode(map[string]string{"head": "docs-new"})
+			_ = json.NewEncoder(w).Encode(map[string]string{"head": hookDocsNew})
+		case r.Method == http.MethodGet && r.URL.Path == "/projects/test-project/status":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"project": "test-project", "reference_workspace_id": "test-workspace-123",
+				"reference_docs_hash": hookDocsNew, "docs_head": hookDocsNew,
+				"reference_to_head": map[string]any{"status": "same", "ahead": 0, "behind": 0},
+				"workspaces":        []any{},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/docs/snapshot":
+			_ = json.NewEncoder(w).Encode(map[string]any{"snapshot": canonicalSnapshot, "commit": hookDocsNew})
 		case r.Method == http.MethodPut && r.URL.Path == "/workspaces/test-workspace-123/docs-hash":
 			var body struct {
 				DocsHash string `json:"docs_hash"`
@@ -345,7 +372,7 @@ func TestGitPullPostMergeHookReconcilesHashAndReportsDaemon(t *testing.T) {
 	}))
 	t.Cleanup(daemon.Close)
 
-	workspaceDir := setupTempWorkspace(t, daemon.SocketPath, "docs-old")
+	workspaceDir := setupTempWorkspace(t, daemon.SocketPath, hookDocsOld)
 	runGitCommand(t, workspaceDir, "init", "--initial-branch=main")
 	runGitCommand(t, workspaceDir, "config", "user.email", "test@example.com")
 	runGitCommand(t, workspaceDir, "config", "user.name", "Test User")
@@ -353,7 +380,7 @@ func TestGitPullPostMergeHookReconcilesHashAndReportsDaemon(t *testing.T) {
 		t.Fatalf("write initial docs: %v", err)
 	}
 	runGitCommand(t, workspaceDir, "add", "docs/readme.md")
-	runGitCommand(t, workspaceDir, "commit", "-m", "Initial docs", "-m", "docs-version: docs-old")
+	runGitCommand(t, workspaceDir, "commit", "-m", "Initial docs", "-m", "docs-version: "+hookDocsOld)
 
 	originDir := filepath.Join(t.TempDir(), "origin.git")
 	runGitCommand(t, workspaceDir, "init", "--bare", "--initial-branch=main", originDir)
@@ -368,7 +395,7 @@ func TestGitPullPostMergeHookReconcilesHashAndReportsDaemon(t *testing.T) {
 		t.Fatalf("write remote docs: %v", err)
 	}
 	runGitCommand(t, publisherDir, "add", "docs/readme.md")
-	runGitCommand(t, publisherDir, "commit", "-m", "Update docs", "-m", "docs-version: docs-new")
+	runGitCommand(t, publisherDir, "commit", "-m", "Update docs", "-m", "docs-version: "+hookDocsNew)
 	runGitCommand(t, publisherDir, "push", "origin", "main")
 
 	hookPath := filepath.Join(workspaceDir, ".git", "hooks", "post-merge")
@@ -383,14 +410,27 @@ func TestGitPullPostMergeHookReconcilesHashAndReportsDaemon(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read reconciled hash: %v", err)
 	}
-	if got := strings.TrimSpace(string(hash)); got != "docs-new" {
-		t.Fatalf("reconciled hash after git pull = %q, want docs-new", got)
+	if got := strings.TrimSpace(string(hash)); got != hookDocsNew {
+		t.Fatalf("reconciled hash after git pull = %q, want %s", got, hookDocsNew)
 	}
 	reportMu.Lock()
 	defer reportMu.Unlock()
-	if reportedHash != "docs-new" {
-		t.Fatalf("reported daemon hash after git pull = %q, want docs-new", reportedHash)
+	if reportedHash != hookDocsNew {
+		t.Fatalf("reported daemon hash after git pull = %q, want %s", reportedHash, hookDocsNew)
 	}
+}
+
+func hookDocsSnapshot(t *testing.T, content string) []byte {
+	t.Helper()
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "readme.md"), []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := fs.NewSnapshotBuilder().Build(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return snapshot
 }
 
 // TestHookWithPendingFix verifies hooks show pending fix warning.

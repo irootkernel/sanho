@@ -15,8 +15,8 @@ make daemon-run
 사용한다. 공개 release는 다음처럼 저장소에서 직접 설치한다.
 
 ```bash
-go install github.com/irootkernel/sanho/cmd/sanho@v0.1.5
-go install github.com/irootkernel/sanho/cmd/sanhod@v0.1.5
+go install github.com/irootkernel/sanho/cmd/sanho@v0.1.6
+go install github.com/irootkernel/sanho/cmd/sanhod@v0.1.6
 sanho version
 sanhod --version
 ```
@@ -62,8 +62,8 @@ sanho --socket /absolute/path/to/sanhod.sock state --all
 
 Sanho는 refs와 worktree의 겉보기 상태만으로 변경 가능 여부를 판단하지 않는다.
 `HEAD == origin/main`이고 `git status --porcelain`이 비어 있어도 Git의
-rebase, merge, cherry-pick, revert, bisect, `git am` 또는 sequencer metadata가
-남아 있으면 작업공간 변경을 차단한다. `.git`이 디렉터리인지 파일인지
+rebase backend, merge, cherry-pick, revert, bisect, `git am` 또는 sequencer
+metadata가 남아 있으면 작업공간 변경을 차단한다. `.git`이 디렉터리인지 파일인지
 추측하지 않고 `git rev-parse --git-path`로 현재 worktree의 metadata 경로를
 해석하므로 linked worktree의 상태도 서로 섞이지 않는다.
 
@@ -84,7 +84,8 @@ status를 계산하기 위해 자신이 관리하는 canonical docs clone을 ref
 git status
 ```
 
-rebase라면 의도에 따라 다음 중 하나를 선택한다.
+`git_operation.backend`가 `rebase_merge` 또는 `rebase_apply`인 실제 rebase라면
+의도에 따라 다음 중 하나를 선택한다.
 
 ```bash
 git rebase --continue
@@ -100,6 +101,12 @@ cherry-pick, revert와 `git am`도 `git status`를 확인한 뒤 해당 명령�
 `git bisect log`로 기록을 확인하고 계속 판정하거나 `git bisect reset`으로
 종료한다.
 
+backend 없이 `REBASE_HEAD`만 있으면 `orphaned: true`, `backend: none`이다. 이
+상태에서는 Git이 실행할 수 없는 `rebase --continue/--abort/--quit`을 제안하지
+않는다. exact metadata path와 검증된 `metadata_oid`를 확인한 뒤
+[복구 절차](recovery.md)의 compare-and-delete 명령을 사용한다. malformed marker에는
+삭제 명령을 제공하지 않는다.
+
 Sanho는 어떤 경우에도 사용자 operation을 자동 abort/quit하거나 metadata를
 삭제하지 않는다. `.git/rebase-*`, `.git/sequencer` 같은 경로를 손으로
 삭제해서도 안 된다. rebase 중 Git의 commit replay가 남기는
@@ -108,34 +115,32 @@ operation marker를 발견하면 `multiple`, 종류를 안전하게 판별할 �
 sequencer는 `sequencer`로 보고하고 `git status` 외의 정리 명령을 추측하지
 않는다.
 
-Git의 continue 과정에서 실행되는 `pre-commit`, `commit-msg`, `post-commit`,
-`post-checkout`, `post-merge` hook은 Sanho의 index/worktree/ref 변경과 daemon
-게시를 건너뛰고 경고 후 성공한다. `post-rewrite rebase`는 Git이 성공한 rebase
-뒤 active backend의 Git 소유 rewrite 파일을 stdin offset 0부터 전달하고,
-각 line의 첫 두 old/new 값이 full commit OID이며 모든 새 commit이 현재
-HEAD에서 도달 가능할 때만 예외다. Git이 뒤에 optional extra-info를 제공하면
-opaque 값으로 무시한다. 이때 pull-commit mapping, docs hash와
-workspace 보고만 reconciliation하며 Git refs, index, worktree와 operation
-metadata는 변경하지 않는다. mapping이 비었거나 검증에 실패하면 다른 hook과
-같이 무변경으로 종료한다. pre-push는 복구에 필요하지 않고 원격 변경을
-일으키므로 active operation 동안 계속 실패한다.
+Git의 continue 과정에서 실행되는 lifecycle hook은 Sanho의 state, daemon 보고,
+index/worktree/ref 변경을 모두 건너뛰고 간결한 defer 메시지와 함께 성공한다.
+`post-rewrite`도 active backend 중에는 예외가 아니다. orphan metadata가 있는
+정상 `git commit`은 pre-commit 또는 commit-msg에서 실패해 provenance 유실을
+막고, pre-push는 active와 orphan 상태 모두 차단한다.
 
-commit 수가 많은 rebase도 object 검사는 한 번의 `cat-file --batch-check`,
-도달 가능성 검사는 한 번의 `rev-list`로 처리한다. 검증 permit은 worktree,
-검증 당시 HEAD, rewrite command와 전체 mapping에 결속되며 reconciliation은
-mapping별 `rev-parse <oid>^{tree}`를 실행하지 않는다. amend도 같은 객체·도달
-가능성 검증을 거친다. post-rewrite 검증과 reconciliation은 30초 안에 끝나야
-하며 status 조회의 10초 제한과 분리돼 있다. 제한 시간을 넘기거나
-`signal: killed`, `context deadline exceeded`가
-출력되면 Git rebase 결과를 되돌리거나 같은 rebase를 즉시 반복하지 않는다.
-먼저 `sanho status --json`에서 transaction과 현재 HEAD를 기록하고, 남은
-prepared transaction은 안내된 `sanho pull-commit --recover`로 판정한다.
-이 실패 경로에서는 transaction, docs hash와 workspace report를 임의로
-정리하지 않는다.
+operation metadata가 clear된 뒤 pre-commit과 pre-push는 valid reachable HEAD
+`docs-version`을 canonical snapshot까지 검증하고 `.sanho_docs_hash`와 daemon
+workspace 보고를 멱등하게 조정한다. fast-forward/no-op rebase처럼
+`post-rewrite`가 없는 경우도 같다. `sanho status`는 state를 쓰지 않고
+`head_reconciliation`으로 이 대기 상태를 canonical drift와 구분한다. conflict 뒤
+`rebase --quit`처럼 backend는 끝났지만 unmerged index나 orphan marker가 남으면
+계속 fail-closed다.
 
-extra-info가 추가돼도 공개 상태나 복구 명령은 달라지지 않는다. 반대로 첫 두
-필드가 없거나 full OID가 아니면 mapping 전체를 거부한다. 내용이 동일해도
-pipe나 복사 파일은 Git 소유 rewrite 파일이 아니므로 허용하지 않는다.
+### pre-push provenance
+
+pre-push는 checkout HEAD가 아니라 Git이 stdin으로 제공한 모든 non-delete branch
+local OID를 검사한다. tip docs tree와 같은 reachable application commit의
+`docs-version`, canonical commit 도달 가능성, canonical snapshot tree가 모두
+일치해야 한다. trailer 누락·중복·축약·위조, unknown commit과 tree mismatch는
+main 선행 게시나 target ref 변경 전에 전체 push를 차단한다. 정상 provenance
+commit의 non-doc 후손은 허용하며 tag-only와 deletion 동작은 유지한다.
+
+이미 invalid branch가 게시된 경우에는 hook을 우회하거나 Sanho transaction을
+직접 지우지 말고 [게시 branch 복구 절차](recovery.md#이미-게시된-invalid-branch-복구)를
+따른다.
 
 ### `docs_repo_busy`
 
@@ -192,9 +197,11 @@ branch push도 허용된다. tag-only push와 ref 삭제는 이 규칙의 영향
 history를 강제 push로 덮어쓰지 않는다.
 
 `git commit --amend`는 준비된 commit을 sibling commit으로 바꾸므로 단순한
-ancestor 검사만으로 완료 여부를 판단하지 않는다. rebase 중 `post-rewrite`는
-Git 소유 rewrite 파일이라는 stdin 출처, old/new 매핑과 준비 당시 index tree를
-검증한다. hook이 중단된 경우
+ancestor 검사만으로 완료 여부를 판단하지 않는다. operation metadata가 없는
+amend의 `post-rewrite`는 Git 소유 rewrite 파일이라는 stdin 출처, old/new 매핑과
+준비 당시 index tree를 검증한다. 반면 active rebase 중 호출된 `post-rewrite`는
+Git 복구를 방해하지 않도록 mapping을 소비하되 Sanho state를 검증하거나 변경하지
+않는다. hook이 중단된 경우
 `sanho pull-commit --recover`가 commit graph, parent/tree와 rewrite 기록을
 검사한다. 복구 전에는 현재 HEAD, index, worktree를
 `refs/sanho/recovery/<transaction-id>/`에 보존하며, 완료를 증명할 수 없으면
@@ -214,8 +221,10 @@ pre-push는 transaction 디렉터리의 존재만으로 판단하지 않는다. 
 완료된 stale state는 멱등하게 정리하지만 `pending`, `ambiguous`, `corrupt`
 상태는 계속 차단하고 `status`와 같은 안전한 다음 명령을 출력한다.
 기존 workspace의 pre-push hook이 remote 인자를 전달하지 않으면 게시 대기
-상태를 임의 remote에 적용하지 않는다. Sanho가 hook을 제자리에서 갱신하고
-현재 push를 중단하므로 같은 push를 한 번 다시 실행한다.
+상태를 임의 remote에 적용하지 않는다. Sanho는 실행 중 hook inode를 덮어쓰지 않고
+같은 디렉터리의 임시 파일을 content와 기존 mode로 준비해 atomic rename한다.
+custom hook 내용은 유지된다. 첫 push는 중단되므로 안내대로 같은 push를 한 번만
+다시 실행한다.
 
 실제 remote, branch rule, 인증과 service manager를 포함한 릴리스 검증은
 [hands-on 테스트](hands-on-testing.md)의 공통 증거 양식과 시나리오를 따른다.

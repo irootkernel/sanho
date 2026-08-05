@@ -3,6 +3,7 @@ package git
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -32,7 +33,8 @@ func TestHookInstaller_InstallAllHooksMigratesPrePushArguments(t *testing.T) {
 		t.Fatal(err)
 	}
 	hookPath := filepath.Join(hooksDir, "pre-push")
-	if err := os.WriteFile(hookPath, []byte("#!/bin/sh\nsanho hook pre-push\n"), 0755); err != nil {
+	legacy := "#!/bin/sh\necho custom-before\nsanho hook pre-push\necho custom-after\n"
+	if err := os.WriteFile(hookPath, []byte(legacy), 0740); err != nil {
 		t.Fatal(err)
 	}
 	if err := NewHookInstaller().InstallAllHooks(context.Background(), tempDir); err != nil {
@@ -46,6 +48,91 @@ func TestHookInstaller_InstallAllHooksMigratesPrePushArguments(t *testing.T) {
 	if strings.Count(text, "sanho hook pre-push") != 1 || !strings.Contains(text, `sanho hook pre-push "$@"`) {
 		t.Fatalf("pre-push hook was not migrated:\n%s", text)
 	}
+	if !strings.Contains(text, "echo custom-before") || !strings.Contains(text, "echo custom-after") {
+		t.Fatalf("custom hook content was not preserved:\n%s", text)
+	}
+	info, err := os.Stat(hookPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0740 {
+		t.Fatalf("pre-push permissions=%o want 740", info.Mode().Perm())
+	}
+}
+
+func TestHookInstaller_InstallHookMakesExistingHookExecutable(t *testing.T) {
+	tempDir := t.TempDir()
+	hooksDir := filepath.Join(tempDir, ".git", "hooks")
+	if err := os.MkdirAll(hooksDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	hookPath := filepath.Join(hooksDir, "pre-commit")
+	content := "#!/bin/sh\necho custom\nsanho hook pre-commit\n"
+	if err := os.WriteFile(hookPath, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := NewHookInstaller().InstallHook(context.Background(), tempDir, "pre-commit", "sanho hook pre-commit"); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(hookPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != content {
+		t.Fatalf("custom hook content changed:\n%s", data)
+	}
+	info, err := os.Stat(hookPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0744 {
+		t.Fatalf("hook permissions=%o want 744", got)
+	}
+}
+
+func TestHookInstaller_InstallHookUsesCommonHooksDirForLinkedWorktree(t *testing.T) {
+	root := t.TempDir()
+	mainRepo := filepath.Join(root, "main")
+	linkedRepo := filepath.Join(root, "linked")
+	runHookInstallerGit(t, root, "init", "--initial-branch=main", mainRepo)
+	runHookInstallerGit(t, mainRepo, "config", "user.name", "Hook Test")
+	runHookInstallerGit(t, mainRepo, "config", "user.email", "hook@example.com")
+	if err := os.WriteFile(filepath.Join(mainRepo, "tracked"), []byte("tracked\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runHookInstallerGit(t, mainRepo, "add", "tracked")
+	runHookInstallerGit(t, mainRepo, "commit", "-m", "initial")
+	runHookInstallerGit(t, mainRepo, "worktree", "add", "-b", "linked", linkedRepo)
+
+	if err := NewHookInstaller().InstallHook(context.Background(), linkedRepo, "pre-commit", "sanho hook pre-commit"); err != nil {
+		t.Fatal(err)
+	}
+	commonHooks := runHookInstallerGit(t, linkedRepo, "rev-parse", "--git-path", "hooks")
+	if !filepath.IsAbs(commonHooks) {
+		commonHooks = filepath.Join(linkedRepo, commonHooks)
+	}
+	if _, err := os.Stat(filepath.Join(commonHooks, "pre-commit")); err != nil {
+		t.Fatalf("common hooks directory did not receive hook: %v", err)
+	}
+	privateGitDir := runHookInstallerGit(t, linkedRepo, "rev-parse", "--git-dir")
+	if !filepath.IsAbs(privateGitDir) {
+		privateGitDir = filepath.Join(linkedRepo, privateGitDir)
+	}
+	if _, err := os.Stat(filepath.Join(privateGitDir, "hooks", "pre-commit")); !os.IsNotExist(err) {
+		t.Fatalf("hook was written to linked-worktree private gitdir: %v", err)
+	}
+}
+
+func runHookInstallerGit(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+	return strings.TrimSpace(string(out))
 }
 
 func TestHookInstaller_RemoveHookLine(t *testing.T) {

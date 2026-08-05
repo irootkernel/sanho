@@ -82,9 +82,11 @@ docs-check:
 	@test -f README.md
 	@test -f CHANGELOG.md
 	@test -f docs/architecture.md
+	@test -f docs/cli-json.md
 	@test -f docs/deployment.md
 	@test -f docs/hands-on-testing.md
 	@test -f docs/operations.md
+	@test -f docs/recovery.md
 	@test -f docs/readme/kor.md
 	@if grep -REn 'docs/requirement\.md|build-server-with-web|run-web-local|run-local-dev-with-web|WEB_DIST_DIR|PTY_' README.md docs; then \
 		echo "Error: stale documentation reference found."; \

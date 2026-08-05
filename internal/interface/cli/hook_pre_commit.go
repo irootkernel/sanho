@@ -34,8 +34,11 @@ func runPreCommitHook(cmd *cobra.Command) error {
 		cmd.PrintErrf("sanho hook pre-commit: failed to get current directory: %v\n", err)
 		return err
 	}
-	if skipMutationHookDuringGitOperation(ctx, cwd, "pre-commit", cmd) {
-		return nil
+	if skip, operationErr := skipMutationHookDuringGitOperation(ctx, cwd, "pre-commit", cmd, true); skip {
+		return operationErr
+	}
+	if err := requireNoUnmergedEntries(ctx, cwd); err != nil {
+		return fmt.Errorf("sanho hook pre-commit: %w", err)
 	}
 
 	// Create dependencies
@@ -66,8 +69,15 @@ func runPreCommitHook(cmd *cobra.Command) error {
 	if err := retryPendingWorkspaceReport(ctx, cwd, config); err != nil {
 		return fmt.Errorf("sanho hook pre-commit: %w", err)
 	}
-
-	state, hasTransaction, err := pullCommit.resume(ctx, cwd, config)
+	transactionExists, err := pullCommit.hasTransaction(ctx, cwd, config.DocsDir)
+	if err != nil {
+		return fmt.Errorf("sanho hook pre-commit: check pull-commit state: %w", err)
+	}
+	var state fs.PullCommitState
+	hasTransaction := false
+	if transactionExists {
+		state, hasTransaction, err = pullCommit.resume(ctx, cwd, config)
+	}
 	if hasTransaction {
 		switch {
 		case errors.Is(err, errPullCommitConflict):
@@ -84,6 +94,35 @@ func runPreCommitHook(cmd *cobra.Command) error {
 	}
 
 	if !hasTransaction {
+		if _, err := reconcileWorkspaceDocsFromHEADWithPermit(
+			ctx,
+			cwd,
+			config,
+			workspaceMutationPermit{},
+		); err != nil {
+			if !errors.Is(err, errHeadDocsProvenanceMissing) {
+				return fmt.Errorf("sanho hook pre-commit: reconcile valid HEAD: %w", err)
+			}
+			hasStagedDocs, stagedErr := gitClient.HasDocsChangeForCommit(ctx, cwd, config.DocsDir)
+			if stagedErr != nil {
+				return fmt.Errorf("sanho hook pre-commit: inspect staged docs provenance: %w", stagedErr)
+			}
+			canEstablishProvenance := hasStagedDocs
+			if !canEstablishProvenance {
+				localHash, hashErr := docsHashStore.Read(filepath.Join(cwd, config.DocsHashFile))
+				if hashErr != nil {
+					return fmt.Errorf("sanho hook pre-commit: read docs hash for provenance repair: %w", hashErr)
+				}
+				remoteHash, headErr := rawHTTPClient.DocsHead(ctx, config.Project)
+				if headErr != nil {
+					return fmt.Errorf("sanho hook pre-commit: read daemon docs version for provenance repair: %w", headErr)
+				}
+				canEstablishProvenance = localHash != remoteHash
+			}
+			if !canEstablishProvenance {
+				return fmt.Errorf("sanho hook pre-commit: reconcile valid HEAD: %w", err)
+			}
+		}
 		conflictFiles, err := conflictDetector.DetectConflicts(filepath.Join(cwd, config.DocsDir))
 		if err != nil {
 			return fmt.Errorf("sanho hook pre-commit: check docs conflicts: %w", err)

@@ -121,7 +121,7 @@ Every changed line must be traceable to the requested outcome or its verificatio
 
 ## Mulgae Code Review
 - Use Mulgae only when the user explicitly asks for a Mulgae review. Mulgae is advisory and does not replace repository requirements, `make test`, Gaori evidence, hands-on validation, or user approval.
-- Before a review, verify that `mulgae version --json` reports exactly `{"name":"mulgae","version":"v0.1.2"}` and that `.mulgae/config.yaml` exists. If either prerequisite is missing, stop and report it. Do not run `mulgae init` unless the user separately and explicitly asks for initialization.
+- Before a review, verify that `mulgae version --json` succeeds and that `.mulgae/config.yaml` exists. If either prerequisite is missing, stop and report it. Do not run `mulgae init` unless the user separately and explicitly asks for initialization.
 - Select exactly one target matching the requested scope: `--diff <base>...HEAD` for a branch or pull request, `--stage` for staged changes, `--dirty` for staged and unstaged changes, and `--workspace` only when the user explicitly requests all tracked files at the current workspace state.
 - Use all six configured roles by default: `--roles logic,security,maintainability,product,documentation,testing`. Use a subset only when the user explicitly narrows the review roles.
 - Write an objective that states the task goal, authoritative requirements, relevant invariants, expected failure boundaries, and desired validation focus. The objective may narrow focus but must not override a role, schema, safety rule, evidence rule, or authority boundary.

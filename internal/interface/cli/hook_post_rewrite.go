@@ -56,7 +56,7 @@ func runPostRewriteHook(cmd *cobra.Command, args []string) error {
 		}
 		return nil
 	}
-	if operation.Active && !permit.verifiedRebasePostRewrite {
+	if operation.Active {
 		printMutationHookSkip(cmd, "post-rewrite", operation)
 		return nil
 	}

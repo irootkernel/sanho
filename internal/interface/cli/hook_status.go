@@ -42,15 +42,8 @@ func runHookStatusWithPermit(
 		cmd.PrintErrf("sanho %s: warning: failed to get current directory: %v\n", hookName, err)
 		return nil // Always exit 0
 	}
-	if permit.verifiedRebasePostRewrite {
-		if err := requireWorkspaceMutationSafeWithPermit(ctx, cwd, permit); err != nil {
-			cmd.PrintErrf("sanho %s: warning: verified rewrite permit was rejected: %v\n", hookName, err)
-			return nil
-		}
-	} else {
-		if skipMutationHookDuringGitOperation(ctx, cwd, hookName, cmd) {
-			return nil
-		}
+	if skip, _ := skipMutationHookDuringGitOperation(ctx, cwd, hookName, cmd, false); skip {
+		return nil
 	}
 
 	// Step 1: Load .sanho.json

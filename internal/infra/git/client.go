@@ -67,6 +67,18 @@ func (c *Client) RevParseHead(ctx context.Context, path string) (string, error) 
 	return strings.TrimSpace(string(out)), nil
 }
 
+// HasUnmergedEntries reports whether the index contains unresolved merge
+// stages. Git operation metadata may already be clear after rebase --quit, so
+// callers that mutate workspace state must check the index independently.
+func (c *Client) HasUnmergedEntries(ctx context.Context, path string) (bool, error) {
+	cmd := exec.CommandContext(ctx, "git", "-C", path, "ls-files", "--unmerged", "-z")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return false, fmt.Errorf("inspect unmerged index entries: %w\n%s", err, strings.TrimSpace(string(out)))
+	}
+	return len(out) > 0, nil
+}
+
 // VerifyCommit checks whether the given commit-ish exists in the repository.
 func (c *Client) VerifyCommit(ctx context.Context, path string, commit string) error {
 	// cat-file -e exits 0 if the object exists and is the right type.

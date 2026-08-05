@@ -11,11 +11,23 @@ import (
 	infraGit "github.com/irootkernel/sanho/internal/infra/git"
 )
 
+var errHeadDocsProvenanceMissing = errors.New("current HEAD docs tree does not match a reachable docs-version commit")
+
 func reconcileWorkspaceDocsFromHEADWithPermit(
 	ctx context.Context,
 	workDir string,
 	config *client.WorkspaceConfig,
 	permit workspaceMutationPermit,
+) (bool, error) {
+	return reconcileWorkspaceDocsFromHEADWithVerifier(ctx, workDir, config, permit, nil)
+}
+
+func reconcileWorkspaceDocsFromHEADWithVerifier(
+	ctx context.Context,
+	workDir string,
+	config *client.WorkspaceConfig,
+	permit workspaceMutationPermit,
+	verifier *docsProvenanceVerifier,
 ) (bool, error) {
 	config.ApplyDefaults()
 	gitClient := infraGit.NewClient()
@@ -26,6 +38,13 @@ func reconcileWorkspaceDocsFromHEADWithPermit(
 	}
 	if err := requireWorkspaceMutationSafeWithPermit(ctx, workDir, permit); err != nil {
 		return false, err
+	}
+	unmerged, err := gitClient.HasUnmergedEntries(ctx, workDir)
+	if err != nil {
+		return false, err
+	}
+	if unmerged {
+		return false, errors.New("git index contains unmerged entries; resolve conflicts before Sanho reconciliation")
 	}
 	head, err := syncer.Head(ctx, workDir)
 	if err != nil {
@@ -44,12 +63,12 @@ func reconcileWorkspaceDocsFromHEADWithPermit(
 		return false, nil
 	}
 
-	version, found, err := gitClient.ResolveHeadDocsVersion(ctx, workDir, config.DocsDir)
+	_, found, err := gitClient.ResolveDocsVersionCandidate(ctx, workDir, head, config.DocsDir)
 	if err != nil {
 		return false, err
 	}
 	if !found {
-		return false, errors.New("current HEAD docs tree does not match a reachable docs-version commit")
+		return false, errHeadDocsProvenanceMissing
 	}
 	if hasPulledDocs {
 		dirty, err := gitClient.HasLocalDocsChanges(
@@ -72,7 +91,21 @@ func reconcileWorkspaceDocsFromHEADWithPermit(
 	if err != nil {
 		return false, err
 	}
-	if currentHash == version.DocsHash {
+	if verifier == nil {
+		rawHTTPClient, err := newDaemonClient(config.SocketPath)
+		if err != nil {
+			return false, err
+		}
+		verifier = newDocsProvenanceVerifier(rawHTTPClient)
+	}
+	provenance, err := verifier.Verify(ctx, workDir, head, config)
+	if err != nil {
+		return false, err
+	}
+	if !provenance.Valid {
+		return false, fmt.Errorf("current HEAD docs provenance is %s: %s", provenance.Classification, provenance.Reason)
+	}
+	if currentHash == provenance.DocsHash {
 		if hasPulledDocs {
 			if err := pulledStore.Remove(); err != nil {
 				return false, err
@@ -80,10 +113,10 @@ func reconcileWorkspaceDocsFromHEADWithPermit(
 		}
 		return false, nil
 	}
-	if err := fs.NewFileDocsHashStore().Write(hashPath, version.DocsHash); err != nil {
+	if err := fs.NewFileDocsHashStore().Write(hashPath, provenance.DocsHash); err != nil {
 		return false, fmt.Errorf("update docs hash from HEAD: %w", err)
 	}
-	if err := reportWorkspaceDocsHashWithPermit(ctx, workDir, config, version.DocsHash, permit); err != nil {
+	if err := reportWorkspaceDocsHashWithPermit(ctx, workDir, config, provenance.DocsHash, permit); err != nil {
 		return true, err
 	}
 	if hasPulledDocs {

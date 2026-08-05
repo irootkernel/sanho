@@ -1,5 +1,40 @@
 # Changelog
 
+## v0.1.6 - 2026-08-05
+
+### Added
+
+- `git_operation` JSON now distinguishes active rebase backends from orphaned
+  metadata and reports exact metadata paths, a verified OID when available,
+  and a recovery classification.
+- `head_reconciliation` reports a valid reachable HEAD that awaits local
+  docs-hash reconciliation without misclassifying it as canonical drift.
+- A supported recovery guide covers conditional orphan pseudo-ref deletion and
+  repair of an already-published branch with invalid docs provenance.
+
+### Fixed
+
+- A standalone `REBASE_HEAD` no longer impersonates an active rebase or lets a
+  normal commit silently skip Sanho provenance handling.
+- Pre-push validates every proposed non-delete branch OID before any main or
+  target ref is published, rejecting missing, forged, unknown, unreachable, or
+  tree-mismatched `docs-version` provenance without partial multi-ref updates.
+- Lifecycle hooks never mutate Sanho state while a real Git operation is
+  active. Pre-commit and pre-push reconcile a valid HEAD after the operation
+  clears, including fast-forward and no-op rebases without post-rewrite.
+- Legacy pre-push hooks are upgraded with an atomic same-directory replacement
+  that preserves custom content and permission bits while ensuring the hook is
+  executable, so remote arguments are never executed as shell commands by the
+  running hook. Linked worktrees install hooks in Git's shared hooks directory.
+
+### Compatibility
+
+- Workspace configuration, daemon HTTP APIs, and transaction formats are
+  unchanged. The `git_operation` fields and `head_reconciliation` object are
+  additive JSON changes.
+- Tag-only pushes and branch deletions retain their existing behavior. Existing
+  legacy hooks may require one explicitly reported retry after atomic upgrade.
+
 ## v0.1.5 - 2026-08-04
 
 ### Added

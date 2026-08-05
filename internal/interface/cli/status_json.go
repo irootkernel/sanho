@@ -10,27 +10,41 @@ import (
 )
 
 type statusJSONOutput struct {
-	Project                       string                    `json:"project"`
-	WorkspaceID                   string                    `json:"workspace_id"`
-	DocsBase                      string                    `json:"docs_base"`
-	DocsHead                      string                    `json:"docs_head"`
-	Status                        client.DocsStatus         `json:"status"`
-	DocsRelation                  httpclient.CommitRelation `json:"docs_relation"`
-	PendingFix                    statusJSONPendingFix      `json:"pending_fix"`
-	PullCommit                    statusJSONPullCommit      `json:"pull_commit"`
-	MainPublication               statusJSONMainPublication `json:"main_publication"`
-	GitOperation                  statusJSONGitOperation    `json:"git_operation"`
-	Conflicts                     statusJSONConflicts       `json:"conflicts"`
-	WorkspaceComparisonsAvailable bool                      `json:"workspace_comparisons_available"`
-	Workspaces                    []statusJSONWorkspace     `json:"workspaces"`
+	Project                       string                       `json:"project"`
+	WorkspaceID                   string                       `json:"workspace_id"`
+	DocsBase                      string                       `json:"docs_base"`
+	DocsHead                      string                       `json:"docs_head"`
+	Status                        client.DocsStatus            `json:"status"`
+	DocsRelation                  httpclient.CommitRelation    `json:"docs_relation"`
+	PendingFix                    statusJSONPendingFix         `json:"pending_fix"`
+	PullCommit                    statusJSONPullCommit         `json:"pull_commit"`
+	MainPublication               statusJSONMainPublication    `json:"main_publication"`
+	GitOperation                  statusJSONGitOperation       `json:"git_operation"`
+	HeadReconciliation            statusJSONHeadReconciliation `json:"head_reconciliation"`
+	Conflicts                     statusJSONConflicts          `json:"conflicts"`
+	WorkspaceComparisonsAvailable bool                         `json:"workspace_comparisons_available"`
+	Workspaces                    []statusJSONWorkspace        `json:"workspaces"`
+}
+
+type statusJSONHeadReconciliation struct {
+	Pending        bool   `json:"pending"`
+	Classification string `json:"classification"`
+	AppCommit      string `json:"app_commit,omitempty"`
+	DocsHash       string `json:"docs_hash,omitempty"`
+	Reason         string `json:"reason,omitempty"`
 }
 
 type statusJSONGitOperation struct {
-	Active         bool     `json:"active"`
-	Type           string   `json:"type"`
-	Classification string   `json:"classification"`
-	Reason         string   `json:"reason"`
-	NextCommands   []string `json:"next_commands"`
+	Active                 bool     `json:"active"`
+	Type                   string   `json:"type"`
+	Classification         string   `json:"classification"`
+	Reason                 string   `json:"reason"`
+	NextCommands           []string `json:"next_commands"`
+	Backend                string   `json:"backend"`
+	MetadataPaths          []string `json:"metadata_paths"`
+	Orphaned               bool     `json:"orphaned"`
+	MetadataOID            string   `json:"metadata_oid"`
+	RecoveryClassification string   `json:"recovery_classification"`
 }
 
 type statusJSONMainPublication struct {
@@ -85,6 +99,7 @@ func buildStatusJSONOutput(
 	pullCommit pullCommitAssessment,
 	mainPublication mainPublicationAssessment,
 	gitOperation infraGit.GitOperation,
+	headReconciliation headReconciliationAssessment,
 ) statusJSONOutput {
 	var pendingFixCreatedAt *string
 	if hasPendingFix {
@@ -109,9 +124,10 @@ func buildStatusJSONOutput(
 			Exists:    hasPendingFix,
 			CreatedAt: pendingFixCreatedAt,
 		},
-		PullCommit:      buildStatusJSONPullCommit(pullCommit),
-		MainPublication: buildStatusJSONMainPublication(mainPublication),
-		GitOperation:    buildStatusJSONGitOperation(gitOperation),
+		PullCommit:         buildStatusJSONPullCommit(pullCommit),
+		MainPublication:    buildStatusJSONMainPublication(mainPublication),
+		GitOperation:       buildStatusJSONGitOperation(gitOperation),
+		HeadReconciliation: buildStatusJSONHeadReconciliation(headReconciliation),
 		Conflicts: statusJSONConflicts{
 			ScanStatus: conflictScanStatus,
 			Files:      files,
@@ -132,17 +148,48 @@ func buildStatusJSONOutput(
 	return output
 }
 
+func buildStatusJSONHeadReconciliation(assessment headReconciliationAssessment) statusJSONHeadReconciliation {
+	classification := assessment.Classification
+	if classification == "" {
+		classification = headReconciliationUnknown
+	}
+	return statusJSONHeadReconciliation{
+		Pending:        assessment.Pending,
+		Classification: string(classification),
+		AppCommit:      assessment.AppCommit,
+		DocsHash:       string(assessment.DocsHash),
+		Reason:         assessment.Reason,
+	}
+}
+
 func buildStatusJSONGitOperation(operation infraGit.GitOperation) statusJSONGitOperation {
 	commands := append([]string(nil), operation.NextCommands...)
 	if commands == nil {
 		commands = make([]string, 0)
 	}
+	metadataPaths := append([]string(nil), operation.MetadataPaths...)
+	if metadataPaths == nil {
+		metadataPaths = make([]string, 0)
+	}
+	backend := operation.Backend
+	if backend == "" {
+		backend = infraGit.OperationBackendNone
+	}
+	recoveryClassification := operation.RecoveryClassification
+	if recoveryClassification == "" {
+		recoveryClassification = infraGit.OperationRecoveryNone
+	}
 	return statusJSONGitOperation{
-		Active:         operation.Active,
-		Type:           string(operation.Type),
-		Classification: string(operation.Classification),
-		Reason:         operation.Reason,
-		NextCommands:   commands,
+		Active:                 operation.Active,
+		Type:                   string(operation.Type),
+		Classification:         string(operation.Classification),
+		Reason:                 operation.Reason,
+		NextCommands:           commands,
+		Backend:                string(backend),
+		MetadataPaths:          metadataPaths,
+		Orphaned:               operation.Orphaned,
+		MetadataOID:            operation.MetadataOID,
+		RecoveryClassification: string(recoveryClassification),
 	}
 }
 

@@ -45,6 +45,13 @@ func runPrePushHook(cmd *cobra.Command, args []string) error {
 	if err := requireWorkspaceMutationSafe(ctx, cwd); err != nil {
 		return wrapGitOperationGuard("sanho hook pre-push", err)
 	}
+	if err := requireNoUnmergedEntries(ctx, cwd); err != nil {
+		return fmt.Errorf("sanho hook pre-push: %w", err)
+	}
+	updates, err := readPrePushUpdates(cmd)
+	if err != nil {
+		return fmt.Errorf("sanho hook pre-push: %w", err)
+	}
 	if err := retryPendingWorkspaceReport(ctx, cwd, config); err != nil {
 		return fmt.Errorf("sanho hook pre-push: %w", err)
 	}
@@ -103,9 +110,28 @@ func runPrePushHook(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	updates, err := readPrePushUpdates(cmd)
+	rawHTTPClient, err := newDaemonClient(config.SocketPath)
 	if err != nil {
-		return fmt.Errorf("sanho hook pre-push: %w", err)
+		return err
+	}
+	if err := validatePrePushDocsProvenance(ctx, cwd, config, updates, rawHTTPClient, cmd); err != nil {
+		return err
+	}
+	if hasNonDeleteBranchUpdate(updates) {
+		head, headErr := infraGit.NewWorkspaceSync(nil, nil).Head(ctx, cwd)
+		if headErr != nil {
+			return fmt.Errorf("sanho hook pre-push: resolve current HEAD: %w", headErr)
+		}
+		if proposedBranchIncludesOID(updates, head) {
+			if _, reconcileErr := reconcileWorkspaceDocsFromHEADWithPermit(
+				ctx,
+				cwd,
+				config,
+				workspaceMutationPermit{},
+			); reconcileErr != nil {
+				return fmt.Errorf("sanho hook pre-push: reconcile valid HEAD: %w", reconcileErr)
+			}
+		}
 	}
 	remoteName := ""
 	if len(args) > 0 {

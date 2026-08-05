@@ -75,8 +75,14 @@ commit과 build date는 기존 사람용 `sanho version` 출력에서만 제공�
     "type": "none",
     "classification": "clear",
     "reason": "",
-    "next_commands": []
+    "next_commands": [],
+    "backend": "none",
+    "metadata_paths": [],
+    "orphaned": false,
+    "metadata_oid": "",
+    "recovery_classification": "none"
   },
+  "head_reconciliation": {"pending": false, "classification": "reconciled", "docs_hash": "0123456789abcdef"},
   "conflicts": {"scan_status": "complete", "files": []},
   "workspace_comparisons_available": true,
   "workspaces": []
@@ -119,6 +125,11 @@ metadata는 다음 정상 guarded workflow가 멱등하게 정리한다.
   "type": "rebase",
   "classification": "blocked",
   "reason": "Git rebase operation metadata is present; Sanho workspace mutations are blocked",
+  "backend": "rebase_merge",
+  "metadata_paths": ["/repo/.git/rebase-merge"],
+  "orphaned": false,
+  "metadata_oid": "",
+  "recovery_classification": "git_managed_operation",
   "next_commands": [
     "git status",
     "git rebase --continue",
@@ -127,6 +138,32 @@ metadata는 다음 정상 guarded workflow가 멱등하게 정리한다.
   ]
 }
 ```
+
+backend 없는 standalone marker는 다음처럼 additive field로 구분한다.
+
+```json
+{
+  "active": true,
+  "type": "rebase",
+  "classification": "blocked",
+  "backend": "none",
+  "metadata_paths": ["/repo/.git/REBASE_HEAD"],
+  "orphaned": true,
+  "metadata_oid": "955aa992c9418137ad65c17c17a3fa1a4cb972ea",
+  "recovery_classification": "conditional_pseudo_ref_delete",
+  "next_commands": [
+    "git status",
+    "git rev-parse --verify 'REBASE_HEAD^{commit}'",
+    "git update-ref -d REBASE_HEAD 955aa992c9418137ad65c17c17a3fa1a4cb972ea"
+  ]
+}
+```
+
+OID를 commit으로 검증할 수 없는 orphan marker는 `metadata_oid`가 비어 있고
+`recovery_classification`은 `manual_metadata_inspection`이다. 이때 조건부 삭제
+명령은 제공하지 않는다. `backend` 값은 `none`, `rebase_merge`, `rebase_apply`다.
+`metadata_paths`는 현재 worktree에 대해 Git이 해석한 exact path이며 linked
+worktree에서도 main worktree 경로와 섞이지 않는다.
 
 공개 `type`은 `none`, `rebase`, `am`, `merge`, `cherry_pick`, `revert`,
 `bisect`, `sequencer`, `multiple` 중 하나다. active operation은 항상
@@ -138,13 +175,17 @@ pull-commit/main-publication state를 변경하지 않는다. daemon은 canonica
 상태를 계산하기 위해 자신이 관리하는 docs clone을 fetch·checkout·reset할 수
 있다.
 
-대규모 rebase의 post-rewrite 검증이 제한 시간을 넘겨도 `git_operation`과
-`pull_commit`의 필드, classification 및 transaction version은 바뀌지 않는다.
-hook은 Git operation을 막지 않고 경고하지만 검증되지 않은 Sanho metadata는
-갱신하지 않으므로 기존 `pull_commit.next_command`에 따라 복구한다.
-post-rewrite line의 old/new 뒤에 optional extra-info가 추가돼도 이 JSON
-schema와 transaction version에는 변화가 없다. extra-info는 JSON에 노출하거나
-저장하지 않는다.
+`head_reconciliation`은 항상 존재하며 `pending`, `classification`, 선택적인
+`app_commit`, `docs_hash`, `reason`을 제공한다. classification은 `reconciled`,
+`pending`, `blocked`, `invalid`, `unknown` 중 하나다. valid HEAD의 docs hash가
+`.sanho_docs_hash`와 다르지만 canonical HEAD와 같으면 `pending: true`인 동시에
+최상위 `status`는 `up_to_date`일 수 있다. 이는 canonical drift가 아니라 다음
+pre-commit 또는 pre-push가 처리할 local reconciliation 대기 상태다. status는
+이 필드를 계산하면서 application state를 변경하지 않는다.
+
+active operation 중에는 `blocked`, provenance를 증명할 수 없으면 `invalid`, Git
+또는 daemon 조회 실패는 `unknown`이다. mutation-capable entrypoint가 operation
+clear와 resolved index를 확인한 뒤에만 pending 상태를 멱등하게 조정한다.
 
 작업공간 항목은 기존 사람용 표와 같은 repository 라벨, workspace ID,
 전체 docs hash, 현재 작업공간 및 HEAD와의 관계만 포함한다. 원본

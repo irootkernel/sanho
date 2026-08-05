@@ -162,7 +162,14 @@ func newStatusCmd() *cobra.Command {
 					}
 				}
 			}
-
+			headReconciliation := assessHeadReconciliation(
+				ctx,
+				cwd,
+				config,
+				localHash,
+				gitOperation,
+				httpClient,
+			)
 			// Determine status
 			var status client.DocsStatus
 			var daemonHeadStr string
@@ -217,9 +224,10 @@ func newStatusCmd() *cobra.Command {
 			} else {
 				daemonHeadStr = projectStatus.DocsHead
 				relation = projectStatus.ReferenceToHead
-				if relation.Status == docs.CommitRelationSame {
+				effectiveRelation := effectiveStatusRelation(relation, headReconciliation)
+				if effectiveRelation.Status == docs.CommitRelationSame {
 					status = client.DocsStatusUpToDate
-				} else if relation.Status == docs.CommitRelationUnknown && !legacyDifferent {
+				} else if effectiveRelation.Status == docs.CommitRelationUnknown && !legacyDifferent {
 					status = client.DocsStatusUnknown
 				} else {
 					status = client.DocsStatusOutdated
@@ -243,6 +251,7 @@ func newStatusCmd() *cobra.Command {
 					pullCommit,
 					mainPublication,
 					gitOperation,
+					headReconciliation,
 				)
 				if err := writeJSON(cmd.OutOrStdout(), output); err != nil {
 					return withErrorCode("internal_error", errors.Join(ErrInternal, err))
@@ -277,6 +286,11 @@ func newStatusCmd() *cobra.Command {
 				cmd.Println("  main_publish : none")
 			}
 			printStatusGitOperation(cmd, gitOperation)
+			cmd.Printf(
+				"  head_reconcile: %s (pending: %t)\n",
+				headReconciliation.Classification,
+				headReconciliation.Pending,
+			)
 			if daemonError == nil {
 				cmd.Println()
 				if comparisonAvailable {
@@ -297,6 +311,8 @@ func newStatusCmd() *cobra.Command {
 			} else if status == client.DocsStatusOutdated {
 				cmd.Println("sanho: docs base and daemon HEAD are different.")
 				cmd.Println("sanho: a merge may occur during pre-commit.")
+			} else if headReconciliation.Pending {
+				cmd.Println("sanho: canonical docs are up to date; valid HEAD awaits local reconciliation.")
 			} else if status == client.DocsStatusUpToDate {
 				cmd.Println("sanho: docs are up to date.")
 			}
@@ -331,13 +347,37 @@ func printStatusGitOperation(cmd *cobra.Command, operation infraGit.GitOperation
 	}
 	cmd.Printf("  git_operation: %s (%s)\n", operation.Type, operation.Classification)
 	cmd.Printf("  git_reason   : %s\n", operation.Reason)
+	if operation.Backend != "" {
+		cmd.Printf("  git_backend  : %s\n", operation.Backend)
+	}
+	cmd.Printf("  git_orphaned : %t\n", operation.Orphaned)
+	if operation.RecoveryClassification != "" {
+		cmd.Printf("  git_recovery_class: %s\n", operation.RecoveryClassification)
+	}
+	for _, path := range operation.MetadataPaths {
+		cmd.Printf("  git_metadata : %s\n", path)
+	}
+	if operation.MetadataOID != "" {
+		cmd.Printf("  git_oid      : %s\n", operation.MetadataOID)
+	}
 	cmd.Println("  git_recovery :")
 	for _, command := range operation.NextCommands {
 		cmd.Printf("    - %s\n", command)
 	}
-	if operation.Type == infraGit.OperationRebase {
+	if operation.Type == infraGit.OperationRebase && !operation.Orphaned {
 		cmd.Println("  git_note     : --abort restores the pre-rebase state; --quit keeps the current HEAD and working state.")
 	}
+}
+
+func effectiveStatusRelation(
+	reference httpclient.CommitRelation,
+	reconciliation headReconciliationAssessment,
+) httpclient.CommitRelation {
+	if reconciliation.Classification == headReconciliationPending ||
+		reconciliation.Classification == headReconciliationReconciled {
+		return reconciliation.DocsRelation
+	}
+	return reference
 }
 
 func formatCommitRelation(relation httpclient.CommitRelation) string {

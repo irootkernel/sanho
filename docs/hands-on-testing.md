@@ -177,7 +177,9 @@ artifact 삭제·손상은 실패 시나리오를 만드는 단계에서만 수�
    실제 push로 확인한다.
 4. remote 인자를 전달하지 않는 v0.1.2 pre-push hook으로 교체해 pending push를
    실행한다.
-5. 첫 push가 hook을 제자리에서 갱신하고 중단되며, 두 번째 push가 정상
+5. 첫 push가 같은 디렉터리의 임시 파일과 atomic rename으로 hook을 갱신하고
+   중단되는지 확인한다. 실행 중 shell에 `origin: command not found` 또는 URL 실행
+   오류가 없어야 하고 기존 custom 내용과 mode가 같아야 한다. 두 번째 push가 정상
    publication 흐름을 수행하는지 확인한다.
 6. `sanho clean` 후 Sanho가 소유한 hook 부분만 제거되는지 확인한다.
 
@@ -229,7 +231,7 @@ service 등록 명령과 책임 경계는 [배포 규칙](deployment.md)을 따�
    operation 및 복구 후보를 설명하며 실패하는지 확인한다. 각 명령 전후의
    local/remote refs와 checksum이 같아야 한다. `clean --dry-run`은 같은
    상태에서 성공하되 application workspace를 변경하지 않아야 한다.
-6. paused/stale operation에서 lifecycle hook은 경고 후 성공하되 commit
+6. active operation에서 lifecycle hook은 간결한 defer 안내 후 성공하되 commit
    message, transaction과 daemon state를 바꾸지 않고, pre-push만 계속
    실패하는지 확인한다. empty·malformed·HEAD에서 도달할 수 없는 mapping뿐
    아니라, 유효하고 도달 가능한 full OID mapping을 pipe나 다른 regular
@@ -240,23 +242,22 @@ service 등록 명령과 책임 경계는 [배포 규칙](deployment.md)을 따�
    시작한다. 해당 worktree의 Sanho mutation만 차단되고 다른 worktree는
    operation이 없는 것으로 보고되는지 확인한다. linked worktree의 `.git`이
    파일인 상태도 함께 기록한다.
-9. 사용자 의도에 맞게 continue, abort 또는 quit한 뒤 Sanho 명령을 다시
-   실행해 기존 pull-commit recovery와 main publication이 정상 동작하는지
-   확인한다.
-10. 별도 복사본에서 docs-version이 다른 main 위로 실제 rebase를 성공시킨다.
-    Git이 제공한 mapping으로 prepared head와 rewrite 기록, docs hash와 daemon
-    workspace hash가 새 HEAD에 맞춰지고 refs, index, worktree는 hook 때문에
-    추가로 바뀌지 않는지 확인한다. daemon이 없으면 같은 docs hash의 pending
-    workspace report가 남아야 한다.
+9. backend 없이 standalone `REBASE_HEAD`만 남긴 복사본에서 normal docs commit이
+   실패하고 exact path/OID와 conditional `update-ref -d`만 안내하는지 확인한다.
+   malformed marker에는 삭제 명령이 없어야 한다. 지원 절차로 marker를 제거한 뒤
+   Sanho 명령이 정상 동작하는지 확인한다.
+10. 사용자 의도에 맞게 continue, abort 또는 quit한 뒤 backend와 unmerged index,
+    orphan marker를 각각 확인한다. metadata가 clear된 경우 다음 pre-commit 또는
+    pre-push가 valid HEAD를 수렴시키며 기존 pull-commit recovery와 main publication이
+    정상 동작하는지 확인한다.
 
 `--quit`과 `--abort`의 결과를 같은 것으로 취급하거나 operation metadata를
 직접 삭제해 성공시키면 이 시나리오는 FAIL이다.
 
-## H12. 대규모 post-rewrite reconciliation
+## H12. rebase lifecycle 무변경과 종료 후 수렴
 
-이 시나리오는 대규모 실제 rebase가 hook 제한 시간 때문에 Sanho metadata만
-남기는 회귀를 검사한다. daemon 연결·미연결 경우를 분리된 폐기 가능한
-복사본에서 수행한다.
+이 시나리오는 실제 rebase 중 Sanho state가 변하지 않고, 종료 후에는
+`post-rewrite` 유무와 무관하게 valid HEAD로 수렴하는지 검사한다.
 
 1. 기본 merge backend용 application clone에 docs-version이 다른 `main`과
    unpublished feature branch를 만든다. feature에는 실제 파일 변경 commit
@@ -264,69 +265,58 @@ service 등록 명령과 책임 경계는 [배포 규칙](deployment.md)을 따�
    prepared transaction의 HEAD, index tree, docs hash와 workspace report
    checksum을 기록한다.
 2. `git --version`, `git rev-parse --show-object-format`, 시작 시각과
-   `git rev-parse --git-path rebase-merge/rewritten-list` 결과를 기록한 뒤
-   hook에서 호출하는 `git`만 감싸는 wrapper를 준비한다. wrapper는 인자를
-   trace 파일에 기록하고 `rev-parse --verify *^{tree}` 호출에만 40ms 지연을
-   추가한 뒤 실제 Git을 실행한다. 이 wrapper를 hook의 `PATH` 앞에 둔 상태로
-   기본 merge backend의 `git rebase main`을 실행한다.
-3. 종료 시간과 hook 출력을 기록한다. `signal: killed`,
-   `context deadline exceeded`, `Sanho mutation was skipped`가 없어야 하며
-   rewrite 수가 실제 mapping 수와 일치해야 한다. trace에는
-   `cat-file --batch-check`와 `rev-list --no-walk=unsorted --stdin`이 각각
-   한 번만 있어야 하고 `rev-parse --verify *^{tree}`는 없어야 한다.
-4. prepared head가 mapping의 새 HEAD로 바뀌고 docs hash와 daemon workspace
-   hash가 새 docs-version과 일치하는지 확인한다. hook이 rebase 결과 외에
-   refs, index와 worktree를 추가로 바꾸지 않았는지 checksum으로 확인한다.
-5. daemon을 중지한 복사본에서 같은 검사를 반복한다. rebase는 성공하고 같은
-   docs hash의 pending workspace report가 남아야 한다.
+   `git rev-parse --git-path rebase-merge` 결과를 기록하고 기본 merge backend의
+   `git rebase main`을 실행한다.
+3. 종료 시간과 hook 출력을 기록한다. active backend 중에는 간결한 defer 안내만
+   있어야 하며 recovery 명령 전체를 출력하지 않는다. transaction, rewrite 기록,
+   docs hash, workspace report, refs, index와 worktree checksum은 Git 자체 변경을
+   제외하고 같아야 한다.
+4. metadata가 clear된 뒤 `sanho status --json`이 valid HEAD의
+   `head_reconciliation.pending: true`를 표시하면서 canonical HEAD와 같으면
+   최상위 `status: up_to_date`인지 확인한다. status 전후 checksum은 같아야 한다.
+5. 정상 pre-commit과 pre-push를 각각 사용해 `.sanho_docs_hash`와 daemon workspace
+   hash가 새 docs-version으로 멱등 수렴하는지 확인한다.
 6. apply backend용 별도 복사본에는 빈 commit fixture를 재사용하지 않는다.
    전용 counter 파일을 매 commit마다 변경하는 방식으로 최소 1,000개의
    non-empty commit을 만든 뒤 `git rebase --apply main`을 실행하고 active
-   backend가 `rebase-apply/rewritten`이었음을 기록한다. `Patch is empty`로
+   backend가 `rebase-apply`였음을 기록한다. `Patch is empty`로
    rebase가 Sanho hook 전에 중단되면 제품 실패가 아니라 fixture 오류이므로
    non-empty commit으로 다시 구성한다. 유효한 apply rebase는 merge backend와
    동일한 metadata 및 Git 상태 조건을 만족해야 한다.
-7. 각 복사본에서 `sanho status --json`을 기록한다. 정상 reconciliation 뒤
-   pending·ambiguous·corrupt transaction이 없어야 하며 임시 clone과 daemon을
-   정리한다.
+7. fast-forward, up-to-date/no-op, commit rewrite, conflict 후 continue, abort,
+   quit를 별도 복사본에서 실행한다. abort는 원래 HEAD/hash를 유지하고, quit 뒤
+   unmerged index 또는 orphan marker가 남으면 pre-push가 계속 차단돼야 한다.
 
-어느 backend에서든 mapping 수나 지연을 줄여 통과시키거나, apply fixture에
-빈 commit을 섞어 Git 자체의 중단을 Sanho 실패로 기록하거나, wrapper를
-application의 일반 Git 명령 전체에 적용해 결과를 오염시키거나, timeout 뒤
-transaction 또는 rebase metadata를 수동 삭제하면 이 시나리오는 FAIL이다.
+active backend 중 일부 Sanho metadata라도 갱신하거나, fast-forward/no-op를
+`post-rewrite`가 없다는 이유로 제외하거나, operation metadata를 수동 삭제해
+성공시키면 이 시나리오는 FAIL이다.
 
-## H13. post-rewrite 형식 전방 호환성과 위조 차단
+## H13. pre-push docs provenance 무결성
 
-이 시나리오는 Git이 old/new OID 뒤에 optional extra-info를 추가하는 경우와
-내용만 복제한 위조 input을 구분하는지 확인한다. 실제 복구 절차가 아니라
-폐기 가능한 fixture에서만 active backend 파일을 조작한다.
+이 시나리오는 incident를 실제 설치 hook과 실제 push로 재현하고 모든 제안 branch
+OID가 remote 변경 전에 검증되는지 확인한다.
 
-1. prepared transaction이 있는 feature branch에서 여러 commit의 rebase를
-   `--exec false`로 중단한다. `git status`로 paused rebase를 확인하고 active
-   backend의 `rewritten-list` 또는 `rewritten` 절대 경로를
-   `git rev-parse --git-path`로 구한다.
-2. 원본 rewrite 파일, HEAD, refs, index tree, worktree, transaction, docs hash와
-   workspace report checksum을 기록한다. 원본 파일은 fixture 밖에 증거용으로
-   복사하되 positive 입력에는 복사본을 사용하지 않는다.
-3. active backend 파일의 각 non-empty line에 `future metadata remains opaque`
-   를 덧붙인다. `sanho hook post-rewrite rebase < "$rewrite_file"`을 실행해
-   evidence validation 경고 없이 첫 두 OID의 mapping만 기록되는지 확인한다.
-   extra-info 자체는 transaction이나 JSON에 저장되면 안 된다.
-4. hook 전후 refs, index와 worktree checksum이 같고, 검증된 mapping에 해당하는
-   Sanho transaction·docs hash·workspace report만 바뀌었는지 확인한다.
-5. 같은 내용을 `printf` pipe와 복사한 regular file에서 각각 전달한다. 두
-   경우 모두 provenance 경고 후 Sanho metadata가 바뀌지 않아야 하며 hook은
-   Git을 막지 않도록 종료 코드 0을 반환해야 한다.
-6. active backend 파일을 매번 원본에서 복원한 뒤 한 필드 line, 짧거나 대문자인
-   OID, 존재하지 않는 OID, blob OID, HEAD에서 도달 불가능한 commit OID를
-   차례로 넣는다. 각 경우 경고, 종료 코드 0과 모든 Sanho/Git checksum 불변을
-   확인한다.
-7. fixture의 원본 파일을 복원하고 사용자 의도에 따라 rebase를 abort 또는
-   continue한다. 종료 후 `sanho status --json`을 기록하고 임시 저장소를
-   삭제한다.
+1. 모든 Sanho hook을 설치하고 valid canonical docs/application commit을 만든다.
+2. standalone `REBASE_HEAD`만 남긴 뒤 normal docs commit이 provenance 없이
+   성공하지 못하고 HEAD, index, worktree, marker, transaction과 remote ref가
+   보존되는지 확인한다. 지원 절차로 marker를 조건부 제거한다.
+3. fixture 전용 빈 hooksPath로 docs 변경과 trailer 없는 unmanaged commit을 만든다.
+   이 우회는 제품 복구 절차가 아니라 negative fixture 구성에만 사용한다.
+4. valid branch와 unmanaged branch를 한 실제 push로 제안한다. pre-push가 stdin의
+   두 local OID를 검사해 전체 push를 거부하고 어느 remote ref도 바꾸지 않아야 한다.
+5. 별도 복사본에서 full OID 형식의 unknown/forged trailer, 중복 trailer, canonical
+   snapshot과 다른 tree를 각각 제안해 같은 fail-closed 결과를 확인한다.
+6. 정상 hook으로 docs-changing commit을 만들어 canonical 게시와 trailer를 확인한
+   뒤 push한다. 그 commit의 non-doc 후손과 서로 다른 valid OID의 multi-ref push도
+   성공해야 한다.
+7. exact 두 줄 legacy pre-push hook을 설치해 실제 origin push와 직접 URL push를
+   실행한다. 첫 시도는 atomic upgrade와 재시도를 안내하되 `origin` 또는 URL을 shell
+   command로 실행하지 않고, 안내된 재시도 뒤 local/remote tip과 status가 일치해야 한다.
+8. 이미 게시된 invalid branch 복사본은 [지원 복구 절차](recovery.md)를 실행해
+   staged/unstaged 변경, complete tree와 lease를 검증하고 `status: up_to_date`로 끝낸다.
 
-extra-info를 permit 근거로 사용하거나 pipe·복사 파일을 허용하거나 malformed
-첫 두 필드에서 일부 metadata를 갱신하면 이 시나리오는 FAIL이다.
+direct `sanho hook pre-push` 호출만으로 remote 무변경을 증명하거나, negative fixture
+외부에서 hook을 우회하거나, unrestricted force push를 사용하면 FAIL이다.
 
 ## 릴리스 판정
 

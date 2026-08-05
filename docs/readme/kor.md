@@ -20,8 +20,8 @@ docs 저장소를 읽고 쓸 수 있는 SSH 인증도 준비해야 한다. Node.
 release 바이너리는 Go module에서 직접 설치할 수 있다.
 
 ```bash
-go install github.com/irootkernel/sanho/cmd/sanho@v0.1.5
-go install github.com/irootkernel/sanho/cmd/sanhod@v0.1.5
+go install github.com/irootkernel/sanho/cmd/sanho@v0.1.6
+go install github.com/irootkernel/sanho/cmd/sanhod@v0.1.6
 ```
 
 설치 위치는 `GOBIN`, 설정하지 않았다면 `$(go env GOPATH)/bin`이다.
@@ -101,26 +101,20 @@ sanho status
 sanho status --json
 ```
 
-Sanho가 출력하는 continue/abort/quit 후보 중 사용자 의도에 맞는 Git 명령을
-선택한다. rebase의 `--abort`는 시작 전 상태를 복원하고 `--quit`은 현재
+실제 rebase backend가 있을 때 Sanho가 출력하는 continue/abort/quit 후보 중 사용자
+의도에 맞는 Git 명령을 선택한다. rebase의 `--abort`는 시작 전 상태를 복원하고 `--quit`은 현재
 HEAD, index와 worktree를 유지한다. Sanho는 operation을 자동 종료하거나
 `.git/rebase-*`, sequencer metadata를 삭제하지 않는다. Git 복구 중 lifecycle
-hook은 Sanho 변경을 건너뛰지만 pre-push는 원격 게시를 계속 차단한다. 단,
-성공한 rebase가 active backend의 Git 소유 rewrite 파일을 stdin으로 넘기고 그
-안의 각 line에서 첫 두 full old/new commit OID를 검증할 수 있으면 Git
-refs·index·worktree는 건드리지 않고 pull-commit 기록, docs hash와 workspace
-보고만 새 HEAD에 맞춘다. pipe나 다른 파일에서 주입한 mapping, 비어 있거나
-유효하지 않은 mapping에는 이 예외를 적용하지 않는다.
-뒤에 optional extra-info가 있으면 호환성을 위해 opaque 값으로 무시하지만
-source 신뢰나 commit 검증에는 사용하지 않는다.
+hook은 Sanho 변경을 건너뛰지만 pre-push는 원격 게시를 계속 차단한다.
+`post-rewrite`도 active operation 중에는 상태를 바꾸지 않는다. backend 없이
+standalone `REBASE_HEAD`만 있으면 orphan metadata로 보고하고, 정상 commit을
+차단하며 실행 불가능한 rebase 명령 대신 검증된 OID의 조건부 삭제 절차만 제공한다.
 
-대규모 rebase의 mapping도 commit별 Git process가 아니라 object와 도달 가능성
-각 한 번씩의 batch 검사로 검증한다. 검증 결과는 worktree, 검증 당시 HEAD,
-rewrite command와 순서가 보존된 전체 mapping에 결속한 비공개 permit으로
-reconciliation에 전달하므로 commit tree를 mapping별로 다시 조회하지 않는다.
-reconciliation에는 별도의 30초 제한을 적용한다. 실패 시
-Git rebase는 완료되더라도 Sanho metadata는 보존되므로 `sanho status --json`과
-`sanho pull-commit --recover`로 상태를 확인한다.
+operation이 clear되면 pre-commit과 pre-push가 valid reachable HEAD
+`docs-version`과 canonical snapshot을 검증해 docs hash와 workspace 보고를
+멱등하게 맞춘다. 따라서 fast-forward/no-op rebase처럼 `post-rewrite`가 없는
+경우도 수렴한다. 읽기 전용 status의 `head_reconciliation`은 이 local 대기 상태와
+실제 canonical drift를 구분한다. 상세 절차는 [복구 가이드](../recovery.md)를 따른다.
 
 Git commit 시 중앙 docs가 갱신된 상태라면 pre-commit hook이
 `pull-commit` 흐름을 자동으로 실행한다. 첫 시도에서는 `origin/main`을
@@ -140,11 +134,14 @@ commit 매핑을 읽어 준비된 commit의 rewrite를 확인하고 트랜잭션
 main`은 로컬 `main`의 system commit과 사용자 commit을 원래 push 한 번으로
 게시한다. 다른 origin branch를 push하면 pre-push가 먼저 로컬 `main` 전체를
 `origin/main`에 fast-forward push한 뒤 요청한 branch push를 계속한다. main
-게시가 거부되거나 원격과 갈라졌다면 target push도 중단하며 force push하지
+pre-push는 먼저 Git stdin의 모든 non-delete branch local OID에 대해 trailer,
+canonical ancestry와 docs tree를 검증한다. 하나라도 invalid이면 main이나 target
+remote ref를 바꾸기 전에 전체 push를 차단한다. 게시가 거부되거나 원격과 갈라졌다면 target push도 중단하며 force push하지
 않는다. 원인을 해결한 뒤 같은 `git push`를 다시 실행하면 된다.
 
 기존 workspace의 hook이 Git remote 인자를 전달하지 않으면 첫 게시 시도에서
-Sanho가 hook을 제자리에서 갱신하고 같은 push를 한 번 다시 요청한다. 별도
+Sanho가 custom 내용과 mode를 보존한 atomic 교체로 hook을 갱신하고 같은 push를
+한 번 다시 요청한다. 실행 중 hook inode를 덮어쓰지 않는다. 별도
 `sanho push`나 재초기화 명령은 없다. 게시 대기 중 `origin`이 아닌 remote,
 alias 또는 직접 URL로 branch를 push하면 우회 게시를 막기 위해 중단한다.
 먼저 `git push origin main`을 완료한 뒤 원래 push를 다시 실행한다. 게시

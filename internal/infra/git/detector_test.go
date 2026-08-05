@@ -145,13 +145,23 @@ func TestDetector_DetectOperation(t *testing.T) {
 			wantDetected: []OperationType{OperationRebase},
 		},
 		{
-			name: "rebase head replay",
+			name: "rebase replay subordinate markers",
 			setup: func(t *testing.T, repo string) {
+				makeDetectorGitPath(t, repo, "rebase-merge", true, "")
 				makeDetectorGitPath(t, repo, "REBASE_HEAD", false, "deadbeef\n")
 				makeDetectorGitPath(t, repo, "CHERRY_PICK_HEAD", false, "deadbeef\n")
 			},
 			wantType:     OperationRebase,
 			wantCommands: []string{"git status", "git rebase --continue", "git rebase --abort", "git rebase --quit"},
+			wantDetected: []OperationType{OperationRebase},
+		},
+		{
+			name: "malformed orphaned rebase head",
+			setup: func(t *testing.T, repo string) {
+				makeDetectorGitPath(t, repo, "REBASE_HEAD", false, "deadbeef\n")
+			},
+			wantType:     OperationRebase,
+			wantCommands: []string{"git status", "git rev-parse --verify 'REBASE_HEAD^{commit}'"},
 			wantDetected: []OperationType{OperationRebase},
 		},
 		{
@@ -255,6 +265,36 @@ func TestDetector_DetectOperation(t *testing.T) {
 				t.Fatalf("detected types = %v, want %v", operation.DetectedTypes, test.wantDetected)
 			}
 		})
+	}
+}
+
+func TestDetector_DetectOperationClassifiesValidOrphanedRebaseHead(t *testing.T) {
+	repo := initDetectorRepo(t)
+	runDetectorGit(t, repo, "config", "user.email", "test@example.com")
+	runDetectorGit(t, repo, "config", "user.name", "Test User")
+	runDetectorGit(t, repo, "commit", "--allow-empty", "-m", "base")
+	head := strings.TrimSpace(runDetectorGit(t, repo, "rev-parse", "HEAD"))
+	makeDetectorGitPath(t, repo, "REBASE_HEAD", false, head+"\n")
+
+	operation, err := NewDetector().DetectOperation(context.Background(), repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if operation.Type != OperationRebase || !operation.Active || !operation.Orphaned ||
+		operation.Backend != OperationBackendNone || operation.MetadataOID != head ||
+		operation.RecoveryClassification != OperationRecoveryConditionalRef {
+		t.Fatalf("orphaned operation = %+v", operation)
+	}
+	wantCommands := []string{
+		"git status",
+		"git rev-parse --verify 'REBASE_HEAD^{commit}'",
+		"git update-ref -d REBASE_HEAD " + head,
+	}
+	if !slices.Equal(operation.NextCommands, wantCommands) {
+		t.Fatalf("commands=%v want %v", operation.NextCommands, wantCommands)
+	}
+	if len(operation.MetadataPaths) != 1 || filepath.Base(operation.MetadataPaths[0]) != "REBASE_HEAD" {
+		t.Fatalf("metadata paths=%v", operation.MetadataPaths)
 	}
 }
 

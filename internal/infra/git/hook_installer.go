@@ -1,7 +1,6 @@
 package git
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"os"
@@ -38,16 +37,25 @@ func (h *HookInstaller) InstallHook(ctx context.Context, repoPath, hookName, lin
 
 	// Read existing content
 	existingContent := ""
+	mode := os.FileMode(0755)
 	if data, err := os.ReadFile(hookPath); err == nil {
 		existingContent = string(data)
+		info, statErr := os.Stat(hookPath)
+		if statErr != nil {
+			return fmt.Errorf("failed to stat hook file: %w", statErr)
+		}
+		mode = executableHookMode(info.Mode().Perm())
 		// Check if line already exists
 		if strings.Contains(existingContent, line) {
-			// Ensure file is executable even if line already exists
-			if err := os.Chmod(hookPath, 0755); err != nil {
-				return fmt.Errorf("failed to chmod hook file: %w", err)
+			if info.Mode().Perm() != mode {
+				if err := writeHookAtomic(hookPath, data, mode); err != nil {
+					return fmt.Errorf("failed to make hook executable: %w", err)
+				}
 			}
 			return nil // Already installed
 		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("failed to read hook file: %w", err)
 	}
 
 	// Prepare new content
@@ -78,22 +86,15 @@ func (h *HookInstaller) InstallHook(ctx context.Context, repoPath, hookName, lin
 		}
 	}
 
-	// Write hook file
-	if err := os.WriteFile(hookPath, []byte(content), 0755); err != nil {
+	if err := writeHookAtomic(hookPath, []byte(content), mode); err != nil {
 		return fmt.Errorf("failed to write hook file: %w", err)
 	}
-
-	// Explicitly chmod to ensure executability (WriteFile doesn't change mode of existing files)
-	if err := os.Chmod(hookPath, 0755); err != nil {
-		return fmt.Errorf("failed to chmod hook file: %w", err)
-	}
-
 	return nil
 }
 
 // resolveHooksDir resolves the actual git hooks directory.
 // For regular repos: <repo>/.git/hooks
-// For worktrees/submodules: parses .git file to find actual gitdir
+// For worktrees/submodules: asks Git for the effective shared hooks path.
 func (h *HookInstaller) resolveHooksDir(ctx context.Context, repoPath string) (string, error) {
 	gitPath := filepath.Join(repoPath, ".git")
 
@@ -109,33 +110,9 @@ func (h *HookInstaller) resolveHooksDir(ctx context.Context, repoPath string) (s
 		return filepath.Join(gitPath, "hooks"), nil
 	}
 
-	// .git is a file (worktree or submodule) - parse it to find actual gitdir
-	file, err := os.Open(gitPath)
-	if err != nil {
-		return "", fmt.Errorf("failed to open .git file: %w", err)
-	}
-	defer func() {
-		_ = file.Close()
-	}()
-
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.HasPrefix(line, "gitdir:") {
-			gitdir := strings.TrimSpace(strings.TrimPrefix(line, "gitdir:"))
-			// Handle relative paths
-			if !filepath.IsAbs(gitdir) {
-				gitdir = filepath.Join(repoPath, gitdir)
-			}
-			return filepath.Join(gitdir, "hooks"), nil
-		}
-	}
-
-	if err := scanner.Err(); err != nil {
-		return "", fmt.Errorf("failed to read .git file: %w", err)
-	}
-
-	// Fallback to git command
+	// A linked worktree's private gitdir is not its hooks directory. Git resolves
+	// hooks through the common directory, while submodules resolve to their own
+	// module gitdir, so delegate both cases to Git.
 	return h.resolveHooksDirViaGit(ctx, repoPath)
 }
 
@@ -169,7 +146,7 @@ func (h *HookInstaller) InstallAllHooks(ctx context.Context, repoPath string) er
 
 	for hookName, line := range hooks {
 		if hookName == "pre-push" {
-			if err := h.RemoveHookLine(ctx, repoPath, hookName, "sanho hook pre-push"); err != nil {
+			if err := h.replaceHookLineAtomic(ctx, repoPath, hookName, "sanho hook pre-push", line); err != nil {
 				return fmt.Errorf("failed to migrate %s hook: %w", hookName, err)
 			}
 		}
@@ -238,14 +215,94 @@ func (h *HookInstaller) RemoveHookLine(ctx context.Context, repoPath, hookName, 
 		content += "\n"
 	}
 
-	if err := os.WriteFile(hookPath, []byte(content), perm); err != nil {
+	if err := writeHookAtomic(hookPath, []byte(content), perm); err != nil {
 		return fmt.Errorf("failed to write hook file: %w", err)
 	}
-	if err := os.Chmod(hookPath, perm); err != nil {
-		return fmt.Errorf("failed to chmod hook file: %w", err)
-	}
-
 	return nil
+}
+
+func (h *HookInstaller) replaceHookLineAtomic(
+	ctx context.Context,
+	repoPath, hookName, oldLine, newLine string,
+) error {
+	hooksDir, err := h.resolveHooksDir(ctx, repoPath)
+	if err != nil {
+		return fmt.Errorf("failed to resolve hooks directory: %w", err)
+	}
+	hookPath := filepath.Join(hooksDir, hookName)
+	info, err := os.Stat(hookPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("failed to stat hook file: %w", err)
+	}
+	data, err := os.ReadFile(hookPath)
+	if err != nil {
+		return fmt.Errorf("failed to read hook file: %w", err)
+	}
+	lines := strings.Split(string(data), "\n")
+	hasNew := false
+	for _, line := range lines {
+		if strings.TrimSpace(line) == strings.TrimSpace(newLine) {
+			hasNew = true
+			break
+		}
+	}
+	changed := false
+	replaced := false
+	result := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if strings.TrimSpace(line) != strings.TrimSpace(oldLine) {
+			result = append(result, line)
+			continue
+		}
+		changed = true
+		if !hasNew && !replaced {
+			result = append(result, newLine)
+			replaced = true
+		}
+	}
+	if !changed {
+		return nil
+	}
+	content := strings.Join(result, "\n")
+	if !strings.HasSuffix(content, "\n") {
+		content += "\n"
+	}
+	if err := writeHookAtomic(hookPath, []byte(content), executableHookMode(info.Mode().Perm())); err != nil {
+		return fmt.Errorf("failed to replace hook file: %w", err)
+	}
+	return nil
+}
+
+func executableHookMode(mode os.FileMode) os.FileMode {
+	return mode | 0100
+}
+
+func writeHookAtomic(path string, data []byte, mode os.FileMode) error {
+	temp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	tempPath := temp.Name()
+	defer func() { _ = os.Remove(tempPath) }()
+	if err := temp.Chmod(mode); err != nil {
+		_ = temp.Close()
+		return err
+	}
+	if _, err := temp.Write(data); err != nil {
+		_ = temp.Close()
+		return err
+	}
+	if err := temp.Sync(); err != nil {
+		_ = temp.Close()
+		return err
+	}
+	if err := temp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tempPath, path)
 }
 
 // findLastExitLineIndex finds the index of the last effective line that is an exit command.

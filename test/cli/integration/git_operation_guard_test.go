@@ -14,7 +14,7 @@ import (
 	"testing"
 )
 
-func TestCLIPostRewriteReportsSuccessfulRebaseToDaemon(t *testing.T) {
+func TestCLIPostRewriteDoesNotMutateDuringSuccessfulRebase(t *testing.T) {
 	for _, backend := range []string{"merge", "apply"} {
 		t.Run(backend, func(t *testing.T) {
 			testCLIPostRewriteReportsSuccessfulRebaseToDaemon(t, backend)
@@ -103,16 +103,13 @@ func testCLIPostRewriteReportsSuccessfulRebaseToDaemon(t *testing.T, backend str
 	if output, err := rebase.CombinedOutput(); err != nil {
 		t.Fatalf("rebase failed: %v\n%s", err, output)
 	}
-	if got := strings.TrimSpace(string(readGuardFile(t, filepath.Join(repo, ".sanho_docs_hash")))); got != "docs-v2" {
-		t.Fatalf("docs hash=%q want docs-v2", got)
+	if got := strings.TrimSpace(string(readGuardFile(t, filepath.Join(repo, ".sanho_docs_hash")))); got != "docs-v1" {
+		t.Fatalf("active rebase changed docs hash=%q want docs-v1", got)
 	}
 	select {
 	case got := <-reported:
-		if got != "docs-v2" {
-			t.Fatalf("reported hash=%q want docs-v2", got)
-		}
+		t.Fatalf("active rebase reported docs hash %q", got)
 	default:
-		t.Fatal("daemon did not receive rewritten docs hash")
 	}
 	reportPath := runRecoveryGit(t, repo, "rev-parse", "--git-path", "sanho/workspace-report.json")
 	if !filepath.IsAbs(reportPath) {
@@ -123,7 +120,7 @@ func testCLIPostRewriteReportsSuccessfulRebaseToDaemon(t *testing.T, backend str
 	}
 }
 
-func TestCLIPostRewriteReconcilesLargeSuccessfulRebase(t *testing.T) {
+func TestCLIPostRewriteDoesNotMutateLargeSuccessfulRebase(t *testing.T) {
 	cliBinary := getCliBinary(t)
 	root := t.TempDir()
 	repo := filepath.Join(root, "repo")
@@ -246,28 +243,16 @@ func TestCLIPostRewriteReconcilesLargeSuccessfulRebase(t *testing.T) {
 	if newHead == preparedHead {
 		t.Fatal("rebase did not rewrite the prepared commit")
 	}
-	if got := strings.TrimSpace(string(readGuardFile(t, filepath.Join(repo, ".sanho_docs_hash")))); got != "docs-v2" {
-		t.Fatalf("docs hash=%q want docs-v2\n%s", got, output)
+	if got := strings.TrimSpace(string(readGuardFile(t, filepath.Join(repo, ".sanho_docs_hash")))); got != "docs-v1" {
+		t.Fatalf("active rebase changed docs hash=%q want docs-v1\n%s", got, output)
 	}
 
 	state := readGuardJSON(t, statePath)
-	if state["prepared_head"] != newHead || state["phase"] != "prepared" {
+	if state["prepared_head"] != preparedHead || state["phase"] != "prepared" {
 		t.Fatalf("transaction state=%#v", state)
 	}
-	rewrites := state["rewrites"].([]any)
-	if len(rewrites) != 1000 {
-		t.Fatalf("rewrite count=%d want 1000", len(rewrites))
-	}
-	preparedRewriteFound := false
-	for _, value := range rewrites {
-		rewrite := value.(map[string]any)
-		if rewrite["command"] == "rebase" && rewrite["old"] == preparedHead && rewrite["new"] == newHead {
-			preparedRewriteFound = true
-			break
-		}
-	}
-	if !preparedRewriteFound {
-		t.Fatalf("prepared rewrite %s -> %s was not recorded", preparedHead, newHead)
+	if rewrites, exists := state["rewrites"]; exists && rewrites != nil {
+		t.Fatalf("active rebase recorded rewrite state=%#v", rewrites)
 	}
 	trace := string(readGuardFile(t, tracePath))
 	if got := strings.Count(trace, "cat-file --batch-check="); got != 1 {
@@ -286,9 +271,8 @@ func TestCLIPostRewriteReconcilesLargeSuccessfulRebase(t *testing.T) {
 	if !filepath.IsAbs(reportPath) {
 		reportPath = filepath.Join(repo, reportPath)
 	}
-	report := readGuardJSON(t, reportPath)
-	if report["docs_hash"] != "docs-v2" {
-		t.Fatalf("workspace report=%#v", report)
+	if _, err := os.Stat(reportPath); !os.IsNotExist(err) {
+		t.Fatalf("active rebase created workspace report: %v", err)
 	}
 	if status := runRecoveryGit(t, repo, "status"); strings.Contains(status, "rebase in progress") {
 		t.Fatalf("rebase metadata remained:\n%s", status)
@@ -297,16 +281,6 @@ func TestCLIPostRewriteReconcilesLargeSuccessfulRebase(t *testing.T) {
 		t.Fatalf("workspace changed after rebase: %s", got)
 	}
 
-	repeat := exec.Command(cliBinary, "hook", "post-rewrite", "rebase")
-	repeat.Dir = repo
-	repeat.Stdin = strings.NewReader(preparedHead + " " + newHead + "\n")
-	if repeatOutput, err := repeat.CombinedOutput(); err != nil {
-		t.Fatalf("repeat post-rewrite failed: %v\n%s", err, repeatOutput)
-	}
-	state = readGuardJSON(t, statePath)
-	if got := len(state["rewrites"].([]any)); got != 1000 {
-		t.Fatalf("repeated rewrite count=%d want 1000", got)
-	}
 }
 
 func TestCLIMutationsFailClosedForCleanStaleRebase(t *testing.T) {
@@ -400,8 +374,13 @@ func TestCLILifecycleHooksSkipMutationDuringGitOperation(t *testing.T) {
 			if err != nil {
 				t.Fatalf("hook failed: %v\n%s", err, output)
 			}
-			if !strings.Contains(string(output), "Sanho mutation was skipped") {
+			if !strings.Contains(string(output), "Sanho reconciliation is deferred") {
 				t.Fatalf("hook did not explain skip:\n%s", output)
+			}
+			for _, unexpected := range []string{"git rebase --continue", "git rebase --abort", "git rebase --quit"} {
+				if strings.Contains(string(output), unexpected) {
+					t.Fatalf("lifecycle hook printed recovery command %q:\n%s", unexpected, output)
+				}
 			}
 			if test.name == "post-rewrite forged reachable mapping" &&
 				!strings.Contains(string(output), "inspect rewrite input offset") {
@@ -464,15 +443,19 @@ func TestCLIPostCommitUsesRebaseGuidanceDuringReplay(t *testing.T) {
 	text := string(output)
 	for _, expected := range []string{
 		"Git rebase operation metadata is present",
-		"git rebase --continue",
-		"git rebase --abort",
-		"git rebase --quit",
+		"Sanho reconciliation is deferred",
 	} {
 		if !strings.Contains(text, expected) {
 			t.Fatalf("rebase output missing %q:\n%s", expected, output)
 		}
 	}
-	for _, unexpected := range []string{"multiple Git operation", "git cherry-pick --continue"} {
+	for _, unexpected := range []string{
+		"multiple Git operation",
+		"git cherry-pick --continue",
+		"git rebase --continue",
+		"git rebase --abort",
+		"git rebase --quit",
+	} {
 		if strings.Contains(text, unexpected) {
 			t.Fatalf("rebase output contains %q:\n%s", unexpected, output)
 		}

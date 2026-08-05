@@ -12,7 +12,7 @@ import (
 	"github.com/irootkernel/sanho/internal/infra/fs"
 )
 
-func TestInspectPostRewriteMutationAllowsVerifiedActiveRebase(t *testing.T) {
+func TestInspectPostRewriteMutationNeverAllowsActiveRebaseMutation(t *testing.T) {
 	ctx := context.Background()
 	repo := t.TempDir()
 	runPullCommitTestGit(t, repo, "init", "--initial-branch=main")
@@ -45,8 +45,8 @@ func TestInspectPostRewriteMutationAllowsVerifiedActiveRebase(t *testing.T) {
 	if !permit.verifiedRebasePostRewrite || !operation.Active || operation.Type != "rebase" {
 		t.Fatalf("permit=%+v operation=%+v", permit, operation)
 	}
-	if err := requireWorkspaceMutationSafeWithPermit(ctx, repo, permit); err != nil {
-		t.Fatalf("verified permit was rejected: %v", err)
+	if err := requireWorkspaceMutationSafeWithPermit(ctx, repo, permit); err == nil {
+		t.Fatal("verified rewrite evidence allowed mutation during an active rebase")
 	}
 	wrongWorkDir := permit
 	wrongWorkDir.workDir = t.TempDir()
@@ -91,8 +91,8 @@ func TestInspectPostRewriteMutationUsesLinkedWorktreeOperation(t *testing.T) {
 	if !permit.verifiedRebasePostRewrite || !operation.Active {
 		t.Fatalf("permit=%+v operation=%+v", permit, operation)
 	}
-	if err := requireWorkspaceMutationSafeWithPermit(ctx, linked, permit); err != nil {
-		t.Fatalf("linked worktree permit was rejected: %v", err)
+	if err := requireWorkspaceMutationSafeWithPermit(ctx, linked, permit); err == nil {
+		t.Fatal("linked worktree rewrite evidence allowed mutation during an active rebase")
 	}
 
 	mainPermit, mainOperation, err := inspectPostRewriteMutation(

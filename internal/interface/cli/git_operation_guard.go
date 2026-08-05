@@ -56,6 +56,21 @@ func requireWorkspaceMutationSafe(ctx context.Context, workDir string) error {
 	return requireWorkspaceMutationSafeWithPermit(ctx, workDir, workspaceMutationPermit{})
 }
 
+func requireNoUnmergedEntries(ctx context.Context, workDir string) error {
+	if !infraGit.NewDetector().HasGitDir(workDir) {
+		return nil
+	}
+	gitClient := infraGit.NewClient()
+	unmerged, err := gitClient.HasUnmergedEntries(ctx, workDir)
+	if err != nil {
+		return err
+	}
+	if unmerged {
+		return errors.New("git index contains unmerged entries; resolve conflicts before running Sanho mutations")
+	}
+	return nil
+}
+
 func requireWorkspaceMutationSafeWithPermit(
 	ctx context.Context,
 	workDir string,
@@ -72,26 +87,11 @@ func requireWorkspaceMutationSafeWithPermit(
 	if !operation.Active {
 		return nil
 	}
-	if permit.allows(workDir, operation) {
-		head, err := infraGit.NewWorkspaceSync(nil, nil).Head(ctx, workDir)
-		if err != nil {
-			return fmt.Errorf("revalidate rewritten HEAD: %w", err)
-		}
-		if head == permit.rewrittenHead {
-			return nil
-		}
-	}
 	blocked := &infraGit.GitOperationBlockedError{Operation: operation}
 	return &workspaceMutationBlockedError{
 		cause:     blocked,
 		operation: operation,
 	}
-}
-
-func (p workspaceMutationPermit) allows(workDir string, operation infraGit.GitOperation) bool {
-	return p.verifiedRebasePostRewrite &&
-		filepath.Clean(p.workDir) == filepath.Clean(workDir) &&
-		operation.Type == infraGit.OperationRebase
 }
 
 func inspectPostRewriteMutation(
@@ -371,7 +371,7 @@ func (e *workspaceMutationBlockedError) Error() string {
 		message.WriteString("\n  ")
 		message.WriteString(command)
 	}
-	if e.operation.Type == infraGit.OperationRebase {
+	if e.operation.Type == infraGit.OperationRebase && !e.operation.Orphaned {
 		message.WriteString("\n'git rebase --abort' restores the pre-rebase state; ")
 		message.WriteString("'git rebase --quit' keeps the current HEAD, index, and working tree.")
 	}
@@ -388,10 +388,11 @@ func skipMutationHookDuringGitOperation(
 	ctx context.Context,
 	workDir, hookName string,
 	cmd *cobra.Command,
-) bool {
+	blockNormalCommit bool,
+) (bool, error) {
 	detector := infraGit.NewDetector()
 	if !detector.HasGitDir(workDir) {
-		return false
+		return false, nil
 	}
 	operation, err := detector.DetectOperation(ctx, workDir)
 	if err != nil {
@@ -400,13 +401,20 @@ func skipMutationHookDuringGitOperation(
 			hookName,
 			err,
 		)
-		return true
+		if blockNormalCommit {
+			return true, fmt.Errorf("sanho hook %s: inspect Git operation state: %w", hookName, err)
+		}
+		return true, nil
 	}
 	if !operation.Active {
-		return false
+		return false, nil
+	}
+	if blockNormalCommit && operation.Orphaned && operation.Type == infraGit.OperationRebase {
+		blocked := &infraGit.GitOperationBlockedError{Operation: operation}
+		return true, &workspaceMutationBlockedError{cause: blocked, operation: operation}
 	}
 	printMutationHookSkip(cmd, hookName, operation)
-	return true
+	return true, nil
 }
 
 func printMutationHookSkip(
@@ -415,17 +423,10 @@ func printMutationHookSkip(
 	operation infraGit.GitOperation,
 ) {
 	cmd.PrintErrf(
-		"sanho hook %s: warning: %s. Sanho mutation was skipped so Git recovery can continue.\n",
+		"sanho hook %s: %s. Sanho reconciliation is deferred until Git operation metadata is clear.\n",
 		hookName,
 		operation.Reason,
 	)
-	cmd.PrintErrln("Inspect 'git status' before choosing a recovery command.")
-	for _, command := range operation.NextCommands {
-		cmd.PrintErrf("  %s\n", command)
-	}
-	if operation.Type == infraGit.OperationRebase {
-		cmd.PrintErrln("  --abort restores the pre-rebase state; --quit keeps the current HEAD, index, and working tree.")
-	}
 }
 
 func wrapGitOperationGuard(command string, err error) error {

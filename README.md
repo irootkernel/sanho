@@ -41,8 +41,8 @@ make daemon-run
 Install both commands directly from the module:
 
 ```bash
-go install github.com/irootkernel/sanho/cmd/sanho@v0.1.5
-go install github.com/irootkernel/sanho/cmd/sanhod@v0.1.5
+go install github.com/irootkernel/sanho/cmd/sanho@v0.1.6
+go install github.com/irootkernel/sanho/cmd/sanhod@v0.1.6
 ```
 
 The commands are written to `GOBIN`, or to `$(go env GOPATH)/bin` when
@@ -107,15 +107,15 @@ docs-hash reports are retried before later commit and push operations.
 private Git metadata, and the next commit materializes it through the same
 `[SANHO] Update docs` flow without turning untouched remote files into staged
 deletions. `pull-commit` exposes that operation proactively. HEAD-moving hooks
-reconcile `.sanho_docs_hash` and daemon workspace state after merge, rewrite,
-or branch checkout when the resulting docs tree matches a reachable
-`docs-version` commit. Large rebase mapping sets use one batched object check
-and one batched reachability check under a dedicated reconciliation timeout.
-The resulting private validation permit is bound to the worktree, rewritten
-HEAD, rewrite command, and exact ordered mapping set, so reconciliation does
-not repeat a Git process for each rewritten commit. Optional fields after each
-old/new object ID pair are accepted as opaque Git metadata without weakening
-source provenance or commit validation. If a commit or rewrite hook is interrupted,
+never mutate Sanho state while a real Git operation is active. After operation
+metadata clears, post-checkout, post-merge, completed amend post-rewrite,
+pre-commit, and pre-push idempotently reconcile
+`.sanho_docs_hash` and daemon workspace state from a valid reachable HEAD
+`docs-version`, including fast-forward and no-op rebases that do not invoke
+post-rewrite. Read-only status distinguishes this pending local reconciliation
+from canonical docs drift. A standalone `REBASE_HEAD` without a rebase backend
+is reported as orphaned metadata and blocks normal commits with a conditional
+recovery procedure instead of unusable rebase commands. If a lifecycle hook is interrupted,
 `sanho pull-commit --recover` classifies the transaction and creates recovery
 refs before clearing only state that can be proven complete. `sanho status`
 shows the active phase and exact safe next command, and pre-push continues to
@@ -123,11 +123,14 @@ block ambiguous or incomplete transactions. A generated docs sync commit stays
 pending for application-repository publication. On `git push origin main`, the
 original push publishes the complete local main history. On another origin
 branch push, pre-push first fast-forwards the complete local main branch to
-`origin/main`, then allows the requested branch push. Main rejection or
-divergence blocks the target push without force-pushing; retry the same
+`origin/main`, then allows the requested branch push. Before that publication,
+pre-push validates every proposed non-delete branch OID's `docs-version`,
+canonical ancestry, and docs tree; one invalid ref blocks the whole push. Main
+rejection or divergence blocks the target push without force-pushing; retry the same
 `git push` after resolving the cause. On the first pending publication from an
-older workspace hook, Sanho upgrades the hook in place and asks for the same
-push once more. While main publication is pending, branch pushes through an
+older workspace hook, Sanho atomically replaces the hook while preserving
+custom content and permission bits and ensuring it remains executable, then
+asks for the same push once more. While main publication is pending, branch pushes through an
 alias remote or direct URL are blocked until `git push origin main` succeeds;
 tag-only pushes and deletions are unaffected.
 Run `sanho <command> --help` for the complete interface.
@@ -176,6 +179,7 @@ socket path only when testing an explicitly selected running daemon.
 - [Architecture](docs/architecture.md)
 - [CLI JSON output](docs/cli-json.md)
 - [Operations](docs/operations.md)
+- [Recovery procedures](docs/recovery.md)
 - [한국어 안내](docs/readme/kor.md)
 
 Historical Web, PTY, session, and agent roadmaps were removed because they no

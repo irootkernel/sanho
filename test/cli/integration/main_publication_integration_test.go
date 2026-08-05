@@ -2,7 +2,9 @@ package integration
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,6 +14,11 @@ import (
 	"github.com/irootkernel/sanho/internal/domain/client"
 	"github.com/irootkernel/sanho/internal/infra/fs"
 	infraGit "github.com/irootkernel/sanho/internal/infra/git"
+)
+
+const (
+	mainPublicationDocsHashOne = "1111111111111111111111111111111111111111"
+	mainPublicationDocsHashTwo = "2222222222222222222222222222222222222222"
 )
 
 func TestPrePushPublishesMixedLocalMainBeforeFeature(t *testing.T) {
@@ -132,13 +139,17 @@ func TestPrePushUpgradesLegacyHookBeforePublication(t *testing.T) {
 	fixture := setupMainPublicationIntegration(t)
 	cliBinary := getCliBinary(t)
 	hookPath := filepath.Join(fixture.Repo, ".git", "hooks", "pre-push")
-	legacyHook := fmt.Sprintf("#!/bin/sh\nPATH=%q:$PATH\nsanho hook pre-push\n", filepath.Dir(cliBinary))
+	t.Setenv("PATH", filepath.Dir(cliBinary)+string(os.PathListSeparator)+os.Getenv("PATH"))
+	legacyHook := "#!/bin/sh\nsanho hook pre-push\n"
 	if err := os.WriteFile(hookPath, []byte(legacyHook), 0755); err != nil {
 		t.Fatal(err)
 	}
 	output, err := runMainPublicationIntegrationGit(fixture.Repo, "push", "origin", "feature")
 	if err == nil || !strings.Contains(output, "upgraded the installed pre-push hook") {
 		t.Fatalf("legacy push err=%v output=%q", err, output)
+	}
+	if strings.Contains(output, "command not found") || strings.Contains(output, "origin: not found") {
+		t.Fatalf("live legacy hook executed trailing remote arguments:\n%s", output)
 	}
 	data, readErr := os.ReadFile(hookPath)
 	if readErr != nil {
@@ -155,6 +166,26 @@ func TestPrePushUpgradesLegacyHookBeforePublication(t *testing.T) {
 		t.Fatalf("retry upgraded push: %v\n%s", err, output)
 	}
 	assertMainPublicationIntegrationState(t, fixture.Repo, false)
+}
+
+func TestPrePushLegacyHookUpgradeDoesNotExecuteDirectURL(t *testing.T) {
+	fixture := setupMainPublicationIntegration(t)
+	cliBinary := getCliBinary(t)
+	hookPath := filepath.Join(fixture.Repo, ".git", "hooks", "pre-push")
+	t.Setenv("PATH", filepath.Dir(cliBinary)+string(os.PathListSeparator)+os.Getenv("PATH"))
+	if err := os.WriteFile(hookPath, []byte("#!/bin/sh\nsanho hook pre-push\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	output, err := runMainPublicationIntegrationGit(fixture.Repo, "push", fixture.Remote, "feature")
+	if err == nil || !strings.Contains(output, "upgraded the installed pre-push hook") {
+		t.Fatalf("legacy direct-URL push err=%v output=%q", err, output)
+	}
+	if strings.Contains(output, "command not found") || strings.Contains(output, ": not found") {
+		t.Fatalf("live legacy hook executed the remote URL:\n%s", output)
+	}
+	if mainPublicationIntegrationRefExists(t, fixture.Remote, "refs/heads/feature") {
+		t.Fatal("legacy upgrade attempt changed the feature ref")
+	}
 }
 
 func TestPrePushBlocksNonOriginBranchPushUntilMainIsPublished(t *testing.T) {
@@ -278,15 +309,48 @@ func setupMainPublicationIntegration(t *testing.T) mainPublicationIntegrationFix
 	runMainPublicationIntegrationGitOrFatal(t, repo, "commit", "--no-verify", "-m", "base")
 	runMainPublicationIntegrationGitOrFatal(t, repo, "remote", "add", "origin", remote)
 	runMainPublicationIntegrationGitOrFatal(t, repo, "push", "-u", "origin", "main")
-	setupSanhoConfig(t, repo, filepath.Join(root, "unused-sanhod.sock"))
+	firstSnapshot := mainPublicationIntegrationSnapshot(t, "first sync\n")
+	secondSnapshot := mainPublicationIntegrationSnapshot(t, "second sync\n")
+	daemon := newUnixTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/projects/test-project/status":
+			hash := r.URL.Query().Get("docs_hash")
+			relation := "same"
+			behind := 0
+			if hash == mainPublicationDocsHashOne {
+				relation = "behind"
+				behind = 1
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"project": "test-project", "reference_workspace_id": "test-workspace-123",
+				"reference_docs_hash": hash, "docs_head": mainPublicationDocsHashTwo,
+				"reference_to_head": map[string]any{"status": relation, "ahead": 0, "behind": behind},
+				"workspaces":        []any{},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/docs/snapshot":
+			hash := r.URL.Query().Get("commit")
+			snapshot := secondSnapshot
+			if hash == mainPublicationDocsHashOne {
+				snapshot = firstSnapshot
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"snapshot": snapshot, "commit": hash})
+		case r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/docs-hash"):
+			_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(daemon.Close)
+	setupSanhoConfig(t, repo, daemon.SocketPath)
 
 	parent := runMainPublicationIntegrationGitOrFatal(t, repo, "rev-parse", "HEAD")
-	firstSync := createMainPublicationIntegrationSync(t, repo, "docs-1", "first sync\n")
+	firstSync := createMainPublicationIntegrationSync(t, repo, mainPublicationDocsHashOne, "first sync\n")
+	runMainPublicationIntegrationGitOrFatal(t, repo, "reset", "--hard", firstSync)
 	publicationStore := mainPublicationIntegrationStore(t, repo)
 	if err := publicationStore.Ensure(parent, fs.MainPublicationCommit{
 		Commit:   firstSync,
 		Parent:   parent,
-		DocsHash: "docs-1",
+		DocsHash: mainPublicationDocsHashOne,
 		Subject:  client.DefaultDocsSyncCommitMessage,
 	}); err != nil {
 		t.Fatal(err)
@@ -296,11 +360,12 @@ func setupMainPublicationIntegration(t *testing.T) mainPublicationIntegrationFix
 	runMainPublicationIntegrationGitOrFatal(t, repo, "add", "main-user.txt")
 	runMainPublicationIntegrationGitOrFatal(t, repo, "commit", "--no-verify", "-m", "user main")
 	secondParent := runMainPublicationIntegrationGitOrFatal(t, repo, "rev-parse", "HEAD")
-	secondSync := createMainPublicationIntegrationSync(t, repo, "docs-2", "second sync\n")
+	secondSync := createMainPublicationIntegrationSync(t, repo, mainPublicationDocsHashTwo, "second sync\n")
+	runMainPublicationIntegrationGitOrFatal(t, repo, "reset", "--hard", secondSync)
 	if err := publicationStore.Ensure(parent, fs.MainPublicationCommit{
 		Commit:   secondSync,
 		Parent:   secondParent,
-		DocsHash: "docs-2",
+		DocsHash: mainPublicationDocsHashTwo,
 		Subject:  client.DefaultDocsSyncCommitMessage,
 	}); err != nil {
 		t.Fatal(err)
@@ -312,6 +377,9 @@ func setupMainPublicationIntegration(t *testing.T) mainPublicationIntegrationFix
 	runMainPublicationIntegrationGitOrFatal(t, repo, "add", "feature.txt")
 	runMainPublicationIntegrationGitOrFatal(t, repo, "commit", "--no-verify", "-m", "feature")
 	featureHead := runMainPublicationIntegrationGitOrFatal(t, repo, "rev-parse", "HEAD")
+	if err := os.WriteFile(filepath.Join(repo, ".sanho_docs_hash"), []byte(mainPublicationDocsHashTwo+"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
 	hookPath := filepath.Join(repo, ".git", "hooks", "pre-push")
 	hook := fmt.Sprintf("#!/bin/sh\nexec %q hook pre-push \"$@\"\n", cliBinary)
 	if err := os.WriteFile(hookPath, []byte(hook), 0755); err != nil {
@@ -323,6 +391,17 @@ func setupMainPublicationIntegration(t *testing.T) mainPublicationIntegrationFix
 		LocalMain:   localMain,
 		FeatureHead: featureHead,
 	}
+}
+
+func mainPublicationIntegrationSnapshot(t *testing.T, content string) []byte {
+	t.Helper()
+	root := t.TempDir()
+	writeMainPublicationIntegrationFile(t, root, "readme.md", content)
+	snapshot, err := fs.NewSnapshotBuilder().Build(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return snapshot
 }
 
 func createMainPublicationIntegrationSync(t *testing.T, repo, docsHash, content string) string {

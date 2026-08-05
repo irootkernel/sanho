@@ -33,6 +33,21 @@ func TestFormatCommitRelation(t *testing.T) {
 	}
 }
 
+func TestEffectiveStatusRelationUsesValidHEADWithoutChangingReferenceRelation(t *testing.T) {
+	reference := httpclient.CommitRelation{Status: docs.CommitRelationBehind, Behind: 1}
+	reconciliation := headReconciliationAssessment{
+		Pending:        true,
+		Classification: headReconciliationPending,
+		DocsRelation:   httpclient.CommitRelation{Status: docs.CommitRelationSame},
+	}
+	if got := effectiveStatusRelation(reference, reconciliation); got.Status != docs.CommitRelationSame {
+		t.Fatalf("effective relation=%+v want same", got)
+	}
+	if reference.Status != docs.CommitRelationBehind || reference.Behind != 1 {
+		t.Fatalf("reference relation was mutated: %+v", reference)
+	}
+}
+
 func TestPrintProjectWorkspacesSortsAndMarksCurrent(t *testing.T) {
 	status := httpclient.ProjectStatusResponse{
 		ReferenceWorkspaceID: "ws-current",
@@ -151,6 +166,13 @@ func TestBuildStatusJSONOutputUsesStableMachineFields(t *testing.T) {
 			Classification: infraGit.OperationClear,
 			NextCommands:   make([]string, 0),
 		},
+		headReconciliationAssessment{
+			Pending:        true,
+			Classification: headReconciliationPending,
+			AppCommit:      "application-commit",
+			DocsHash:       "full-head-hash",
+			Reason:         "valid HEAD awaits local reconciliation",
+		},
 	)
 
 	data, err := json.Marshal(output)
@@ -179,6 +201,11 @@ func TestBuildStatusJSONOutputUsesStableMachineFields(t *testing.T) {
 	if gitOperation["active"] != false || gitOperation["type"] != "none" ||
 		gitOperation["classification"] != "clear" || len(gitOperation["next_commands"].([]any)) != 0 {
 		t.Fatalf("git_operation = %#v", gitOperation)
+	}
+	headReconciliation := decoded["head_reconciliation"].(map[string]any)
+	if headReconciliation["pending"] != true || headReconciliation["classification"] != "pending" ||
+		headReconciliation["app_commit"] != "application-commit" || headReconciliation["docs_hash"] != "full-head-hash" {
+		t.Fatalf("head_reconciliation = %#v", headReconciliation)
 	}
 	workspaces := decoded["workspaces"].([]any)
 	workspace := workspaces[0].(map[string]any)
@@ -211,6 +238,31 @@ func TestBuildStatusJSONGitOperationIncludesRecoveryChoices(t *testing.T) {
 	}
 }
 
+func TestBuildStatusJSONGitOperationIncludesOrphanedMetadata(t *testing.T) {
+	output := buildStatusJSONGitOperation(infraGit.GitOperation{
+		Active:                 true,
+		Type:                   infraGit.OperationRebase,
+		Classification:         infraGit.OperationBlocked,
+		Reason:                 "orphaned REBASE_HEAD metadata is present",
+		Backend:                infraGit.OperationBackendNone,
+		MetadataPaths:          []string{"/repo/.git/REBASE_HEAD"},
+		Orphaned:               true,
+		MetadataOID:            "955aa992c9418137ad65c17c17a3fa1a4cb972ea",
+		RecoveryClassification: infraGit.OperationRecoveryConditionalRef,
+		NextCommands: []string{
+			"git status",
+			"git rev-parse --verify 'REBASE_HEAD^{commit}'",
+			"git update-ref -d REBASE_HEAD 955aa992c9418137ad65c17c17a3fa1a4cb972ea",
+		},
+	})
+	if !output.Orphaned || output.Backend != "none" ||
+		output.MetadataOID != "955aa992c9418137ad65c17c17a3fa1a4cb972ea" ||
+		output.RecoveryClassification != "conditional_pseudo_ref_delete" ||
+		len(output.MetadataPaths) != 1 {
+		t.Fatalf("git_operation=%+v", output)
+	}
+}
+
 func TestPrintStatusGitOperationExplainsRebaseRecovery(t *testing.T) {
 	command := &cobra.Command{}
 	output := new(bytes.Buffer)
@@ -233,6 +285,46 @@ func TestPrintStatusGitOperationExplainsRebaseRecovery(t *testing.T) {
 	} {
 		if !strings.Contains(text, value) {
 			t.Fatalf("status output missing %q:\n%s", value, text)
+		}
+	}
+}
+
+func TestPrintStatusGitOperationExplainsConditionalOrphanRecovery(t *testing.T) {
+	command := &cobra.Command{}
+	output := new(bytes.Buffer)
+	command.SetOut(output)
+	printStatusGitOperation(command, infraGit.GitOperation{
+		Active:                 true,
+		Type:                   infraGit.OperationRebase,
+		Classification:         infraGit.OperationBlocked,
+		Reason:                 "orphaned REBASE_HEAD metadata is present",
+		Backend:                infraGit.OperationBackendNone,
+		MetadataPaths:          []string{"/repo/.git/REBASE_HEAD"},
+		Orphaned:               true,
+		MetadataOID:            "955aa992c9418137ad65c17c17a3fa1a4cb972ea",
+		RecoveryClassification: infraGit.OperationRecoveryConditionalRef,
+		NextCommands: []string{
+			"git status",
+			"git rev-parse --verify 'REBASE_HEAD^{commit}'",
+			"git update-ref -d REBASE_HEAD 955aa992c9418137ad65c17c17a3fa1a4cb972ea",
+		},
+	})
+	text := output.String()
+	for _, value := range []string{
+		"git_backend  : none",
+		"git_orphaned : true",
+		"git_recovery_class: conditional_pseudo_ref_delete",
+		"git_metadata : /repo/.git/REBASE_HEAD",
+		"git_oid      : 955aa992c9418137ad65c17c17a3fa1a4cb972ea",
+		"git update-ref -d REBASE_HEAD 955aa992c9418137ad65c17c17a3fa1a4cb972ea",
+	} {
+		if !strings.Contains(text, value) {
+			t.Fatalf("status output missing %q:\n%s", value, text)
+		}
+	}
+	for _, value := range []string{"git rebase --continue", "git rebase --abort", "git rebase --quit"} {
+		if strings.Contains(text, value) {
+			t.Fatalf("orphan recovery must not recommend %q:\n%s", value, text)
 		}
 	}
 }
