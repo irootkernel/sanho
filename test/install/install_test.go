@@ -11,41 +11,35 @@ import (
 	"testing"
 )
 
-func TestGoInstallProducesBothBinaries(t *testing.T) {
+// v0.2 is daemonless (sanho-v0.2.md §1, D4): only the sanho CLI is
+// installed. The v0.1 sanhod expectation this test carried is retired
+// with the daemon itself (§6).
+func TestGoInstallProducesTheCLIBinary(t *testing.T) {
 	repoRoot := repositoryRoot(t)
 	binDir := t.TempDir()
 
-	install := exec.Command("go", "install", "./cmd/sanho", "./cmd/sanhod")
+	install := exec.Command("go", "install", "./cmd/sanho")
 	install.Dir = repoRoot
 	install.Env = append(os.Environ(), "GOBIN="+binDir)
 	if output, err := install.CombinedOutput(); err != nil {
 		t.Fatalf("go install failed: %v\n%s", err, output)
 	}
 
-	tests := []struct {
-		name       string
-		args       []string
-		wantPrefix string
-	}{
-		{name: "sanho", args: []string{"version"}, wantPrefix: "sanho version "},
-		{name: "sanhod", args: []string{"--version"}, wantPrefix: "sanhod version "},
+	const wantPrefix = "sanho version "
+	binary := filepath.Join(binDir, "sanho")
+	info, err := os.Stat(binary)
+	if err != nil {
+		t.Fatalf("installed binary sanho: %v", err)
 	}
-	for _, test := range tests {
-		binary := filepath.Join(binDir, test.name)
-		info, err := os.Stat(binary)
-		if err != nil {
-			t.Fatalf("installed binary %s: %v", test.name, err)
-		}
-		if info.Mode()&0111 == 0 {
-			t.Fatalf("installed binary %s is not executable", test.name)
-		}
-		output, err := exec.Command(binary, test.args...).CombinedOutput()
-		if err != nil {
-			t.Fatalf("%s version command failed: %v\n%s", test.name, err, output)
-		}
-		if !strings.HasPrefix(string(output), test.wantPrefix) {
-			t.Fatalf("%s output = %q, want prefix %q", test.name, output, test.wantPrefix)
-		}
+	if info.Mode()&0111 == 0 {
+		t.Fatal("installed binary sanho is not executable")
+	}
+	output, err := exec.Command(binary, "version").CombinedOutput()
+	if err != nil {
+		t.Fatalf("sanho version command failed: %v\n%s", err, output)
+	}
+	if !strings.HasPrefix(string(output), wantPrefix) {
+		t.Fatalf("sanho output = %q, want prefix %q", output, wantPrefix)
 	}
 }
 

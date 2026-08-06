@@ -23,7 +23,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/irootkernel/sanho/internal/config"
 	"github.com/irootkernel/sanho/internal/domain/provenance"
 	"github.com/irootkernel/sanho/internal/infra/appgit"
 	"github.com/irootkernel/sanho/internal/infra/canonical"
@@ -31,6 +30,10 @@ import (
 	"github.com/irootkernel/sanho/internal/infra/registry"
 	"github.com/irootkernel/sanho/internal/infra/wsstate"
 )
+
+// defaultHomeDirName is the sanho home directory name under the user's
+// home directory when SANHO_HOME is not set.
+const defaultHomeDirName = ".sanho"
 
 // errV1Workspace is the §8 pre-migration degradation signal: the
 // workspace is a v0.1 one, and only `sanho migrate` can act on it.
@@ -126,15 +129,24 @@ func (w *workspace) resolveGitDirs(ctx context.Context) error {
 	return nil
 }
 
-// resolveHome resolves the sanho home, reusing internal/config's
-// SANHO_HOME rule so the CLI and the (retired) daemon never disagree
-// about where `~/.sanho` is.
+// resolveHome resolves the sanho home: SANHO_HOME when set (must be an
+// absolute path), else "~/.sanho". This is the one thing the CLI ever
+// needed from the retired internal/config package (sanho-v0.2.md §6); it
+// is inlined here now that the package's only other caller, the daemon,
+// is gone.
 func resolveHome() (string, error) {
-	paths, err := config.ResolveRuntimePaths(os.Getenv("SANHO_HOME"), "")
-	if err != nil {
-		return "", err
+	home := os.Getenv("SANHO_HOME")
+	if home == "" {
+		userHome, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("resolve user home: %w", err)
+		}
+		home = filepath.Join(userHome, defaultHomeDirName)
 	}
-	return paths.HomeDir, nil
+	if !filepath.IsAbs(home) {
+		return "", errors.New("SANHO_HOME must be an absolute path")
+	}
+	return filepath.Clean(home), nil
 }
 
 // openRegistry opens the cross-workspace registry under the sanho home.

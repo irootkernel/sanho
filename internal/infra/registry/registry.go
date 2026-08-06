@@ -84,7 +84,7 @@ func Open(homeDir string) (*File, error) {
 	}
 	// MkdirAll only applies the requested mode to directories it
 	// creates; chmod explicitly so a pre-existing, more permissive home
-	// directory is still tightened (mirrors internal/config.PrepareRuntime).
+	// directory is still tightened.
 	if err := os.Chmod(homeDir, 0700); err != nil {
 		return nil, fmt.Errorf("secure sanho home %s: %w", homeDir, err)
 	}

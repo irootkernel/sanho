@@ -57,8 +57,8 @@ func seedV1Workspace(t *testing.T, w *world, baseCommit string, withDaemonState 
 	}
 
 	if withDaemonState {
-		// The v0.1 daemon schema (internal/infra/state): project name →
-		// docs-repo id → repository URL.
+		// The v0.1 daemon's state.json schema (retired, sanho-v0.2.md
+		// §6): project name → docs-repo id → repository URL.
 		writeFile(t, filepath.Join(w.home, "state.json"), `{
   "docs_repos": {
     "origin": {"ID": "origin", "Path": "`+w.origin+`", "RepoURL": "`+w.origin+`"}

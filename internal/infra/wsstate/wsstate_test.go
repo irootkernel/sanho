@@ -9,12 +9,23 @@ import (
 	"testing"
 	"time"
 
-	"github.com/irootkernel/sanho/internal/domain/client"
-	"github.com/irootkernel/sanho/internal/domain/docs"
 	"github.com/irootkernel/sanho/internal/domain/provenance"
-	"github.com/irootkernel/sanho/internal/domain/workspace"
 	"github.com/irootkernel/sanho/internal/infra/wsstate"
 )
+
+// legacyWorkspaceConfig mirrors the on-disk shape of a v0.1 `.sanho.json`
+// (formerly domain/client.WorkspaceConfig, retired by sanho-v0.2.md §6)
+// just enough for the v1-detection test below: a config that carries
+// socket_path and no schema_version. Inlined here rather than imported so
+// this package's tests do not resurrect a dependency on the retired
+// domain/client, domain/docs, and domain/workspace packages.
+type legacyWorkspaceConfig struct {
+	SocketPath  string `json:"socket_path"`
+	WorkspaceID string `json:"workspace_id"`
+	Project     string `json:"project"`
+	ActorEmail  string `json:"actor_email"`
+	DocsDir     string `json:"docs_dir"`
+}
 
 // --- Config: ApplyDefaults ---------------------------------------------
 
@@ -39,14 +50,13 @@ func TestConfigApplyDefaults_PreservesExplicitDocsDir(t *testing.T) {
 func TestLoadConfig_DetectsV1FromRealLegacyShape(t *testing.T) {
 	dir := t.TempDir()
 
-	legacy := client.WorkspaceConfig{
+	legacy := legacyWorkspaceConfig{
 		SocketPath:  filepath.Join(dir, "sanhod.sock"),
-		WorkspaceID: workspace.WorkspaceID("ws-legacy"),
-		Project:     docs.ProjectName("legacy-project"),
+		WorkspaceID: "ws-legacy",
+		Project:     "legacy-project",
 		ActorEmail:  "legacy@example.com",
 		DocsDir:     "docs",
 	}
-	legacy.ApplyDefaults()
 	writeJSON(t, filepath.Join(dir, wsstate.ConfigFileName), legacy)
 
 	got, err := wsstate.LoadConfig(dir)
