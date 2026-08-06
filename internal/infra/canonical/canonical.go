@@ -78,6 +78,11 @@ const (
 	networkTimeout = 120 * time.Second
 )
 
+// DefaultBranch is the publication branch §5.2 assumes before a clone
+// has been consulted. User-facing guidance that must name a ref while
+// the clone is unavailable uses it rather than inventing a name.
+const DefaultBranch = defaultBranch
+
 // Store is a handle on the private bare clone at
 // <git-common-dir>/sanho/canonical.
 type Store struct {

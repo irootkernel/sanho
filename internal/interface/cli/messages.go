@@ -31,6 +31,7 @@ package cli
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 )
@@ -240,7 +241,13 @@ func pushUnreachableMessage(url, cause string) string {
 // succeed, so the message says "manual intervention required" and gives
 // the diagnostics needed to choose a target — never a command that will
 // fail (D3).
-func pushRewrittenMessage(base, anchor, cloneDir string) string {
+//
+// branch is the publication branch, and naming it is load-bearing. The
+// private clone is `git init --bare` plus a fetch (§5.2), so it holds
+// `refs/remotes/origin/<branch>` and no `refs/remotes/origin/HEAD` at
+// all: a listing command naming HEAD exits 128 in the very state that
+// prints it, which is exactly the closure failure D3 forbids.
+func pushRewrittenMessage(base, anchor, cloneDir, branch string) string {
 	if anchor != "" {
 		return fmt.Sprintf("sanho: canonical history was rewritten; base %s is no longer reachable\n"+
 			"Run 'sanho sync --rebase-onto %s', resolve if needed, commit, then push again.\n"+
@@ -248,9 +255,9 @@ func pushRewrittenMessage(base, anchor, cloneDir string) string {
 	}
 	return fmt.Sprintf("sanho: canonical history was rewritten; base %s is no longer reachable\n"+
 		"manual intervention required: no canonical commit carries this workspace's docs base tree.\n"+
-		"List the candidates with:  git -C %s log --oneline refs/remotes/origin/HEAD\n"+
+		"List the candidates with:  git -C %s log --oneline refs/remotes/origin/%s\n"+
 		"Then run:                  sanho sync --rebase-onto <commit>\n"+
-		"%s", shortOID(base), cloneDir, msgPushRejectedTrailer)
+		"%s", shortOID(base), cloneDir, branch, msgPushRejectedTrailer)
 }
 
 // pushPublishedMessage reports a successful publication.
@@ -347,4 +354,264 @@ const doctorFixHint = "run 'sanho doctor --fix' to re-derive the base from commi
 // registryLockHint names the lock path in a timeout message (§5.7).
 func registryLockHint(lockPath string) string {
 	return fmt.Sprintf("another sanho process holds %s; retry in a moment", lockPath)
+}
+
+// --- The guidance catalog (§5.9 closure, §9 rule 2) --------------------
+//
+// D3 makes it normative that *every advised command must succeed in the
+// state where it is advised*. A test can only enforce that against a
+// catalog it can enumerate, so every message above that names a next
+// command appears below exactly once per rendering that reaches a user.
+//
+// Two tests hold the two halves of the contract shut:
+//
+//   - catalog_test.go parses THIS FILE and requires a Catalog entry for
+//     every constant or renderer whose literals name a `sanho …` or
+//     `git …` command. Adding guidance here without a catalog entry
+//     fails the build.
+//   - test/cli/e2e's closure suite requires one fixture per Scenario in
+//     ClosureScenarios(), reaches that state with the real binary,
+//     asserts Match appears, and runs NextCommands. Adding a catalog
+//     entry with a new scenario and no fixture fails the build too.
+//
+// Nothing here changes what sanho prints: Sample is produced by calling
+// the very renderer it describes.
+
+// CatalogEntry is one user-facing message that names a next command.
+type CatalogEntry struct {
+	// ID is this message's stable identity, independent of its wording.
+	ID string
+	// Source is the constant or renderer in messages.go that produces
+	// it. It is what ties the catalog to the file the scan reads.
+	Source string
+	// Scenario is the closure-scenario ID: the state the e2e suite
+	// builds in order to make this message appear and then run its
+	// NextCommands. Scenarios are one-to-one with entries.
+	Scenario string
+	// Sample is the message rendered with representative arguments —
+	// the exact bytes the renderer produces, not a paraphrase.
+	Sample string
+	// Match is a literal substring present in *every* rendering, which
+	// is what the closure suite asserts against real output.
+	Match string
+	// NextCommands are the commands this message advises, written the
+	// way the closure suite runs them. An angle-bracketed token is a
+	// placeholder the fixture substitutes (`<clone-dir>`, `<commit>`).
+	//
+	// Two entries name a command the message text does not quote:
+	// push_markers and push_unreachable. Both describe a state the user
+	// leaves by *retrying the push* — resolving markers, or restoring
+	// network access — so `git push` is the advised action even though
+	// the action line spells it in prose. The closure suite treats them
+	// exactly like the rest: reach the state, clear its cause, run the
+	// command, require success.
+	NextCommands []string
+}
+
+// Sample OIDs for the catalog renderings. They are syntactically real
+// (40 hex characters) so that shortOID renders them as it would in
+// production.
+const (
+	sampleBaseOID = "67c4bbfeada37f5dda8fb79aa43216ef062cd8df"
+	sampleHeadOID = "9a41f2c0e1d2c3b4a5968778695a4b3c2d1e0f9a"
+)
+
+// samplePlaceholderClone and samplePlaceholderBranch are the
+// placeholders the rewrite-recovery entry carries, so its Sample and its
+// NextCommands agree character for character before substitution.
+const (
+	samplePlaceholderClone  = "<clone-dir>"
+	samplePlaceholderBranch = "<branch>"
+)
+
+// Catalog is the enumerable form of the guidance contract.
+var Catalog = []CatalogEntry{
+	{
+		ID:           "migrate_required",
+		Source:       "msgMigrateRequired",
+		Scenario:     "v1_layout",
+		Sample:       msgMigrateRequired,
+		Match:        "this workspace uses the v0.1 layout",
+		NextCommands: []string{"sanho migrate"},
+	},
+	{
+		ID:           "not_in_workspace",
+		Source:       "msgNotInWorkspace",
+		Scenario:     "not_a_workspace",
+		Sample:       msgNotInWorkspace,
+		Match:        "not a sanho workspace",
+		NextCommands: []string{"sanho init"},
+	},
+	{
+		ID:           "push_sync_in_progress",
+		Source:       "msgSyncInProgressPush",
+		Scenario:     "push_sync_in_progress",
+		Sample:       msgSyncInProgressPush,
+		Match:        "finish the sync first",
+		NextCommands: []string{"sanho sync --abort"},
+	},
+	{
+		ID:           "clean_needs_confirmation",
+		Source:       "msgCleanNeedsConfirmation",
+		Scenario:     "clean_unconfirmed",
+		Sample:       msgCleanNeedsConfirmation,
+		Match:        "rerun with -y to confirm",
+		NextCommands: []string{"sanho clean --dry-run"},
+	},
+	{
+		ID:           "clean_sync_in_progress",
+		Source:       "msgCleanSyncInProgress",
+		Scenario:     "clean_sync_in_progress",
+		Sample:       msgCleanSyncInProgress,
+		Match:        "a conflicted sync is in progress",
+		NextCommands: []string{"sanho sync --abort"},
+	},
+	{
+		ID:           "migrate_blocked",
+		Source:       "msgMigrateBlockedByTransaction",
+		Scenario:     "migrate_blocked",
+		Sample:       msgMigrateBlockedByTransaction,
+		Match:        "pull-commit transaction or pending-fix state",
+		NextCommands: []string{"sanho migrate"},
+	},
+	{
+		ID:           "commit_behind_clean",
+		Source:       "commitBehindClean",
+		Scenario:     "behind_clean",
+		Sample:       commitBehindClean(2),
+		Match:        "'sanho sync' will merge cleanly",
+		NextCommands: []string{"sanho sync"},
+	},
+	{
+		ID:           "commit_behind_conflicts",
+		Source:       "commitBehindConflicts",
+		Scenario:     "behind_conflicts",
+		Sample:       commitBehindConflicts(1, []string{"docs/api.md"}),
+		Match:        "'sanho sync' will report conflicts in",
+		NextCommands: []string{"sanho sync"},
+	},
+	{
+		ID:           "commit_behind_unknown",
+		Source:       "commitBehindUnknown",
+		Scenario:     "behind_unknown",
+		Sample:       commitBehindUnknown(1),
+		Match:        "run 'sanho sync' to reconcile",
+		NextCommands: []string{"sanho sync"},
+	},
+	{
+		ID:           "sync_conflict",
+		Source:       "syncConflictMessage",
+		Scenario:     "sync_conflict",
+		Sample:       syncConflictMessage("docs", []string{"docs/api.md"}),
+		Match:        "merged docs with upstream",
+		NextCommands: []string{"git add docs/ && git commit", "sanho sync --abort"},
+	},
+	{
+		ID:           "unresolved_sync",
+		Source:       "unresolvedSyncMessage",
+		Scenario:     "unresolved_sync",
+		Sample:       unresolvedSyncMessage("docs", []string{"docs/api.md"}),
+		Match:        "a sync is in progress",
+		NextCommands: []string{"git add docs/ && git commit", "sanho sync --abort"},
+	},
+	{
+		ID:           "staged_markers",
+		Source:       "stagedMarkersMessage",
+		Scenario:     "staged_markers",
+		Sample:       stagedMarkersMessage([]string{"docs/api.md"}),
+		Match:        "staged docs contain conflict markers",
+		NextCommands: []string{"git add docs/ && git commit"},
+	},
+	{
+		ID:           "push_conflict",
+		Source:       "pushConflictMessage",
+		Scenario:     "push_conflict",
+		Sample:       pushConflictMessage(sampleBaseOID, sampleHeadOID),
+		Match:        "your docs changes conflict with upstream",
+		NextCommands: []string{"sanho sync"},
+	},
+	{
+		ID:           "push_sync_required",
+		Source:       "pushSyncRequiredMessage",
+		Scenario:     "push_sync_required",
+		Sample:       pushSyncRequiredMessage("no_base", "", sampleHeadOID),
+		Match:        "docs must be reconciled before publishing",
+		NextCommands: []string{"sanho sync"},
+	},
+	{
+		ID:           "push_markers",
+		Source:       "pushMarkersMessage",
+		Scenario:     "push_markers",
+		Sample:       pushMarkersMessage([]string{"docs/api.md"}),
+		Match:        "pushed docs still contain conflict markers",
+		NextCommands: []string{"git push"},
+	},
+	{
+		ID:           "push_unreachable",
+		Source:       "pushUnreachableMessage",
+		Scenario:     "canonical_unreachable",
+		Sample:       pushUnreachableMessage("git@host:docs.git", "connection refused"),
+		Match:        "canonical repository unreachable",
+		NextCommands: []string{"git push"},
+	},
+	{
+		ID:       "push_rewritten",
+		Source:   "pushRewrittenMessage",
+		Scenario: "history_rewritten",
+		// The anchor-naming rendering of the same function is a
+		// defensive branch: pre-push only raises ErrHistoryRewritten
+		// when the docs-base-tree search found nothing, so the message a
+		// user actually meets is this one. The anchor rendering stays
+		// pinned by messages_test.go rather than by a fixture that
+		// cannot exist.
+		Sample: pushRewrittenMessage(sampleBaseOID, "", samplePlaceholderClone, samplePlaceholderBranch),
+		Match:  "canonical history was rewritten",
+		NextCommands: []string{
+			"git -C " + samplePlaceholderClone + " log --oneline refs/remotes/origin/" + samplePlaceholderBranch,
+			"sanho sync --rebase-onto <commit>",
+		},
+	},
+	{
+		ID:           "stamp_warning",
+		Source:       "commitMsgStampWarning",
+		Scenario:     "stamp_warning",
+		Sample:       commitMsgStampWarning("no docs base is recorded"),
+		Match:        "docs provenance not stamped",
+		NextCommands: []string{"sanho doctor --fix"},
+	},
+	{
+		ID:           "doctor_fix_hint",
+		Source:       "doctorFixHint",
+		Scenario:     "doctor_fix_hint",
+		Sample:       doctorFixHint,
+		Match:        "re-derive the base from commit history",
+		NextCommands: []string{"sanho doctor --fix"},
+	},
+	{
+		ID:           "stale_canonical",
+		Source:       "staleCanonicalLine",
+		Scenario:     "stale_data",
+		Sample:       staleCanonicalLine(50 * time.Hour),
+		Match:        "old — run 'sanho status --refresh'",
+		NextCommands: []string{"sanho status --refresh"},
+	},
+	{
+		ID:           "never_fetched",
+		Source:       "neverFetchedLine",
+		Scenario:     "never_fetched",
+		Sample:       neverFetchedLine,
+		Match:        "canonical has never been fetched",
+		NextCommands: []string{"sanho status --refresh"},
+	},
+}
+
+// ClosureScenarios is the manifest the e2e closure suite matches its
+// fixture table against, sorted so the two sides compare as sequences.
+func ClosureScenarios() []string {
+	scenarios := make([]string, 0, len(Catalog))
+	for _, entry := range Catalog {
+		scenarios = append(scenarios, entry.Scenario)
+	}
+	sort.Strings(scenarios)
+	return scenarios
 }

@@ -492,18 +492,28 @@ func reportPushError(cmd *cobra.Command, ws *workspace, err error) error {
 // say whether one exists. When it does not, the message says so rather
 // than printing a command that would fail (D3, audit H5).
 func rewrittenGuidance(ctx context.Context, ws *workspace) string {
+	// The publication branch names the ref the listing command reads.
+	// It comes from the clone whenever there is one — and there always
+	// is when this message is reached, since publication could not have
+	// got as far as case ④ otherwise.
+	branch := canonical.DefaultBranch
+	store, openErr := ws.openCanonical()
+	if openErr == nil {
+		branch = store.Branch()
+	}
+
 	base, hasBase, err := ws.statePort().LoadBase()
 	if err != nil || !hasBase {
-		return pushRewrittenMessage("", "", ws.cloneDir())
+		return pushRewrittenMessage("", "", ws.cloneDir(), branch)
 	}
 
 	anchor := ""
-	if store, openErr := ws.openCanonical(); openErr == nil {
+	if openErr == nil {
 		if found, ok, searchErr := store.FindCommitByDocsTree(ctx, base.Tree); searchErr == nil && ok {
 			anchor = found
 		}
 	}
-	return pushRewrittenMessage(base.Commit, anchor, ws.cloneDir())
+	return pushRewrittenMessage(base.Commit, anchor, ws.cloneDir(), branch)
 }
 
 // causeLine reduces an error chain to the one line worth showing, per

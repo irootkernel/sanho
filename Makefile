@@ -28,7 +28,8 @@ UNIT_PACKAGES := \
 	./internal/usecase/docsync \
 	./internal/usecase/publish
 
-CHECK_PACKAGES := $(UNIT_PACKAGES) ./test/cli/integration ./test/install ./test/docsync
+CHECK_PACKAGES := $(UNIT_PACKAGES) \
+	./test/cli/integration ./test/cli/e2e ./test/install ./test/docsync
 
 .PHONY: \
 	cli-build cli-install install docs-check test-package-ownership test-architecture \
@@ -104,11 +105,17 @@ test-int: cli-build
 	SANHO_CLI_BINARY="$(CURDIR)/$(CLI_BINARY)" $(GO) test ./test/cli/integration -count=1 -v -race
 	$(GO) test ./test/docsync -count=1 -race
 
-# The v0.1 CLI e2e suite (test/cli/e2e) was a daemon-shaped behavior
-# matrix and is deleted with the v0.1 client (sanho-v0.2.md §9 rule 6).
-# P5 restores a v0.2 scenario e2e suite here; until then this target
-# proves only that the CLI installs and runs.
-test-e2e:
+# test/cli/e2e is the v0.2 scenario suite restored by P5: the guidance
+# closure table (§9 rule 2), the S-matrix (§9 rule 5), and process-level
+# concurrency (§9 rule 3).
+#
+# It runs WITHOUT -race, deliberately. Every assertion here is about
+# separate `sanho` and `git` *processes*, so the detector would only
+# instrument the test harness that spawns them — buying nothing while
+# roughly halving throughput. The in-process suites carry -race
+# (test-unit, test-int), which is where it detects anything.
+test-e2e: cli-build
+	SANHO_CLI_BINARY="$(CURDIR)/$(CLI_BINARY)" $(GO) test ./test/cli/e2e -count=1 -v -timeout 20m
 	$(GO) test ./test/install -count=1
 
 # Compatibility aliases for the previous target names.

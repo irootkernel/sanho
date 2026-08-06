@@ -74,7 +74,7 @@ func TestRewrittenGuidanceOnlyNamesARunnableCommand(t *testing.T) {
 	base := "67c4bbfeada37f5dda8fb79aa43216ef062cd8df"
 	anchor := "1111111111111111111111111111111111111111"
 
-	withAnchor := pushRewrittenMessage(base, anchor, "/repo/.git/sanho/canonical")
+	withAnchor := pushRewrittenMessage(base, anchor, "/repo/.git/sanho/canonical", "main")
 	if !strings.Contains(withAnchor, "sanho sync --rebase-onto "+anchor) {
 		t.Fatalf("message with an anchor =\n%s\nwant it to name the anchor commit", withAnchor)
 	}
@@ -82,13 +82,30 @@ func TestRewrittenGuidanceOnlyNamesARunnableCommand(t *testing.T) {
 		t.Fatalf("message with an anchor =\n%s\nwant no manual-intervention text", withAnchor)
 	}
 
-	withoutAnchor := pushRewrittenMessage(base, "", "/repo/.git/sanho/canonical")
+	withoutAnchor := pushRewrittenMessage(base, "", "/repo/.git/sanho/canonical", "main")
 	if !strings.Contains(withoutAnchor, "manual intervention required") {
 		t.Fatalf("message without an anchor =\n%s\nwant it to say manual intervention is required", withoutAnchor)
 	}
 	// It must still tell the user how to find a target.
 	if !strings.Contains(withoutAnchor, "git -C /repo/.git/sanho/canonical log") {
 		t.Fatalf("message without an anchor =\n%s\nwant it to show how to list candidates", withoutAnchor)
+	}
+
+	// And the ref it names must be one the private clone actually has.
+	// The clone is `git init --bare` plus a fetch (§5.2), so it carries
+	// refs/remotes/origin/<branch> and no origin/HEAD: naming HEAD made
+	// the advised command exit 128 in the state that printed it.
+	if !strings.Contains(withoutAnchor, "refs/remotes/origin/main") {
+		t.Fatalf("message without an anchor =\n%s\nwant it to name the publication branch's remote-tracking ref", withoutAnchor)
+	}
+	if strings.Contains(withoutAnchor, "refs/remotes/origin/HEAD") {
+		t.Fatalf("message without an anchor =\n%s\nnames refs/remotes/origin/HEAD, which the private clone never has", withoutAnchor)
+	}
+
+	// A workspace publishing to master must be told about master.
+	onMaster := pushRewrittenMessage(base, "", "/repo/.git/sanho/canonical", "master")
+	if !strings.Contains(onMaster, "refs/remotes/origin/master") {
+		t.Fatalf("message on a master workspace =\n%s\nwant it to name refs/remotes/origin/master", onMaster)
 	}
 }
 
@@ -161,7 +178,7 @@ func TestMessagesAreEnglishOnly(t *testing.T) {
 		pushSyncRequiredMessage("no_base", "a", "b"),
 		pushMarkersMessage([]string{"docs/a.md"}),
 		pushUnreachableMessage("git@host:docs.git", "connection refused"),
-		pushRewrittenMessage("a", "b", "/clone"),
+		pushRewrittenMessage("a", "b", "/clone", "main"),
 		pushPublishedMessage("abc", "fast_forward"),
 		syncedMessage("abc", "def"),
 		upToDateMessage("abc"),
