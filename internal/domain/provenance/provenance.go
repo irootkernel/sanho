@@ -37,13 +37,20 @@ func (b Base) IsZero() bool { return b.Commit == "" && b.Tree == "" }
 // Valid reports whether the recorded OIDs are well-formed. An empty
 // Tree is permitted (legacy adoption); an empty Commit is not.
 func (b Base) Valid() bool {
-	panic("unimplemented (sanho v0.2 P1)")
+	if !OIDPattern.MatchString(b.Commit) {
+		return false
+	}
+	return b.Tree == "" || OIDPattern.MatchString(b.Tree)
 }
 
 // Trailers renders the trailer lines to append for this base, in order.
 // The tree line is omitted when Tree is empty.
 func (b Base) Trailers() []string {
-	panic("unimplemented (sanho v0.2 P1)")
+	trailers := []string{TrailerBase + ": " + b.Commit}
+	if b.Tree != "" {
+		trailers = append(trailers, TrailerBaseTree+": "+b.Tree)
+	}
+	return trailers
 }
 
 // StampInputs are the facts the commit-msg hook gathers locally to decide
@@ -66,7 +73,17 @@ type StampInputs struct {
 // its parent (covers --amend of a docs-touching commit, including
 // message-only rewords). Over-stamping is harmless by design.
 func ShouldStamp(in StampInputs) bool {
-	panic("unimplemented (sanho v0.2 P1)")
+	if in.MessageHasBase {
+		return false
+	}
+	// Plain string equality is the right notion of "same docs tree" for
+	// both real OIDs and the "" sentinel: an unborn HEAD ("") and a
+	// docs-free HEAD~ ("") are equally "no tree", so "" == "" correctly
+	// reads as unchanged, and "" compared against a real OID correctly
+	// reads as changed, on either side. No special-casing needed.
+	changedInIndex := in.IndexDocsTree != in.HeadDocsTree
+	headChangedFromParent := in.HeadDocsTree != in.HeadParentDocsTree
+	return changedInIndex || headChangedFromParent
 }
 
 // CommitTrailers is one commit's parsed trailer values, used for base
@@ -83,5 +100,47 @@ type CommitTrailers struct {
 // {Commit: X, Tree: ""}. Malformed or duplicate-valued trailers on a
 // commit disqualify that commit and the scan continues.
 func SelectBase(newestFirst []CommitTrailers) (Base, bool) {
-	panic("unimplemented (sanho v0.2 P1)")
+	for _, c := range newestFirst {
+		if base, ok := adoptFrom(c); ok {
+			return base, true
+		}
+	}
+	return Base{}, false
+}
+
+// adoptFrom applies the single-commit adoption rule described on
+// SelectBase to one commit's trailers: docs-base takes priority whenever
+// the key is present at all, valid or not — an invalid (or duplicated)
+// docs-base does NOT fall back to a legacy trailer on the *same* commit,
+// it disqualifies the commit outright, and the outer scan moves on to
+// the next commit. docs-version is consulted only when docs-base is
+// entirely absent from this commit.
+func adoptFrom(c CommitTrailers) (Base, bool) {
+	if values := c.Values[TrailerBase]; len(values) > 0 {
+		if len(values) != 1 || !OIDPattern.MatchString(values[0]) {
+			return Base{}, false // disqualified: not exactly one valid value
+		}
+		return Base{Commit: values[0], Tree: singleValidTree(c)}, true
+	}
+
+	if values := c.Values[LegacyTrailerVersion]; len(values) > 0 {
+		if len(values) != 1 || !OIDPattern.MatchString(values[0]) {
+			return Base{}, false // disqualified: not exactly one valid value
+		}
+		return Base{Commit: values[0]}, true
+	}
+
+	return Base{}, false // neither key present on this commit
+}
+
+// singleValidTree extracts docs-base-tree when it is present exactly
+// once and well-formed. Any other shape (absent, duplicated, malformed)
+// yields "" without disqualifying the commit's docs-base adoption — only
+// TrailerBase/LegacyTrailerVersion values can disqualify a commit.
+func singleValidTree(c CommitTrailers) string {
+	values := c.Values[TrailerBaseTree]
+	if len(values) == 1 && OIDPattern.MatchString(values[0]) {
+		return values[0]
+	}
+	return ""
 }
