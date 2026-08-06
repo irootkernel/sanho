@@ -1,174 +1,108 @@
 package cli
 
+// `sanho project add|delete` (sanho-v0.2.md §5.8): registry
+// administration, file-based. Same UX as v0.1, no daemon.
+
 import (
-	"errors"
 	"fmt"
 
-	"github.com/spf13/cobra"
+	"github.com/irootkernel/sanho/internal/infra/registry"
 
-	"github.com/irootkernel/sanho/internal/domain/client"
-	"github.com/irootkernel/sanho/internal/domain/docs"
-	"github.com/irootkernel/sanho/internal/infra/httpclient"
+	"github.com/spf13/cobra"
 )
 
-// newProjectCmd creates the project parent command.
 func newProjectCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "project",
-		Short: "Manage projects on the sanhod",
-		Long:  `Commands for managing projects registered with the sanhod.`,
+		Short: "Manage project registrations",
 	}
-
-	cmd.AddCommand(newProjectAddCmd())
-	cmd.AddCommand(newProjectDeleteCmd())
-
+	cmd.AddCommand(newProjectAddCmd(), newProjectDeleteCmd())
 	return cmd
 }
 
-// newProjectAddCmd creates the project add command.
 func newProjectAddCmd() *cobra.Command {
-	var (
-		projectName string
-		docsRepoURL string
-	)
+	var docsRepoURL string
 
 	cmd := &cobra.Command{
-		Use:   "add",
-		Short: "Register a project with the sanhod",
-		Long: `Register a new project and its associated docs repository with the sanhod.
-
-This command requires:
-- Project name
-- Docs repository URL
-
-The docs_repo_id is automatically extracted from the docs repository URL.
-For example: git@github.com:org/my_docs.git -> docs_repo_id = "my_docs"`,
+		Use:   "add <project>",
+		Short: "Register a project and its canonical docs repository",
+		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx, cancel := createContext(DefaultTimeout)
-			defer cancel()
-
-			// Validate required flags
-			if err := validateRequiredFlag("project", projectName); err != nil {
-				return err
+			if docsRepoURL == "" {
+				return fmt.Errorf("--docs-repo-url is required")
 			}
-			if err := validateRequiredFlag("docs-repo-url", docsRepoURL); err != nil {
-				return err
-			}
-
-			// Extract docs_repo_id from URL
-			docsRepoID := client.ExtractDocsRepoID(docsRepoURL)
-			if docsRepoID == "" {
-				return errors.New("failed to extract docs_repo_id from docs-repo-url")
-			}
-
-			// Get actor email from git config or prompt
-			cwd, _ := getWorkingDirectory()
-			if cwd == "" {
-				cwd = "."
-			}
-			actorEmail, err := promptForEmail(ctx, cwd)
-			if err != nil {
-				return err
-			}
-
-			// Create HTTP client and call API
-			httpClient, err := newDaemonClient("")
-			if err != nil {
-				return err
-			}
-			req := httpclient.CreateProjectRequest{
-				Project:     docs.ProjectName(projectName),
-				DocsRepoID:  docsRepoID,
-				DocsRepoURL: docsRepoURL,
-				ActorEmail:  actorEmail,
-			}
-
-			if err := httpClient.CreateOrUpdateProject(ctx, req); err != nil {
-				if errors.Is(err, httpclient.ErrUnknownProject) {
-					return fmt.Errorf("failed to create project: daemon returned unknown_project error")
-				}
-				return fmt.Errorf("failed to create/update project: %w", err)
-			}
-
-			fmt.Printf("sanho: project '%s' registered successfully.\n", projectName)
-			fmt.Printf("  docs_repo_id  : %s\n", docsRepoID)
-			fmt.Printf("  docs_repo_url : %s\n", docsRepoURL)
-
-			return nil
+			return runProjectAdd(cmd, args[0], docsRepoURL)
 		},
 	}
-
-	cmd.Flags().StringVar(&projectName, "project", "", "Project name (required)")
-	cmd.Flags().StringVar(&docsRepoURL, "docs-repo-url", "", "Docs repository Git URL (required)")
-
+	cmd.Flags().StringVar(&docsRepoURL, "docs-repo-url", "", "Canonical docs repository URL")
 	return cmd
 }
 
-// newProjectDeleteCmd creates the project delete command.
-func newProjectDeleteCmd() *cobra.Command {
-	var (
-		projectName string
-		force       bool
-		yes         bool
-	)
-
-	cmd := &cobra.Command{
-		Use:   "delete",
-		Short: "Remove a project from the sanhod",
-		Long: `Remove a project from the sanhod.
-
-Note: This does not delete any local directories or files.
-Workspaces associated with this project will no longer function.
-
-Use --force to delete a project even if it has registered workspaces.`,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx, cancel := createContext(DefaultTimeout)
-			defer cancel()
-
-			// Validate required flags
-			if err := validateRequiredFlag("project", projectName); err != nil {
-				return err
-			}
-
-			// Confirmation prompt unless --yes is provided
-			if !yes {
-				fmt.Printf("You are about to delete project '%s' from the daemon.\n", projectName)
-				fmt.Println("Registered workspaces will no longer function.")
-				confirmed, err := promptForConfirmation("Proceed? (y/N): ")
-				if err != nil {
-					return err
-				}
-				if !confirmed {
-					return nil
-				}
-			}
-
-			// Create HTTP client and call API
-			httpClient, err := newDaemonClient("")
-			if err != nil {
-				return err
-			}
-
-			if err := httpClient.DeleteProject(ctx, docs.ProjectName(projectName), force); err != nil {
-				if errors.Is(err, httpclient.ErrUnknownProject) {
-					return fmt.Errorf("project '%s' does not exist on the daemon", projectName)
-				}
-				if errors.Is(err, httpclient.ErrProjectHasWorkspaces) {
-					return fmt.Errorf("project '%s' has registered workspaces. Use --force to delete anyway, or unregister workspaces first", projectName)
-				}
-				return fmt.Errorf("failed to delete project: %w", err)
-			}
-
-			fmt.Printf("sanho: project '%s' deleted successfully.\n", projectName)
-			fmt.Println("Workspaces connected to this project will no longer communicate with sanho.")
-
-			return nil
-		},
+func runProjectAdd(cmd *cobra.Command, project, url string) error {
+	file, err := openRegistry()
+	if err != nil {
+		return err
+	}
+	// upsertProject is the URL-conflict guard: registering a name that
+	// already points somewhere else would let two workspaces publish to
+	// different repositories under one project (audit M9).
+	if err := file.Update(cmd.Context(), func(state *registry.State) error {
+		return upsertProject(state, project, url)
+	}); err != nil {
+		return err
 	}
 
-	cmd.Flags().StringVar(&projectName, "project", "", "Project name to delete (required)")
-	cmd.Flags().BoolVar(&force, "force", false, "Force delete even if workspaces exist")
-	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "Skip confirmation prompt")
+	writef(cmd.OutOrStdout(), "sanho: registered project %s -> %s\n", project, url)
+	return nil
+}
 
+func newProjectDeleteCmd() *cobra.Command {
+	var force bool
+
+	cmd := &cobra.Command{
+		Use:   "delete <project>",
+		Short: "Remove a project registration",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runProjectDelete(cmd, args[0], force)
+		},
+	}
+	cmd.Flags().BoolVar(&force, "force", false, "Delete even while workspaces still reference the project")
 	return cmd
+}
+
+// runProjectDelete removes a project registration.
+//
+// It refuses while workspaces still reference the project, because those
+// workspaces would keep working from their own configs while `sanho
+// state` stopped being able to explain where their docs go. --force is
+// the deliberate override; the workspace entries are left alone either
+// way, since deleting them would erase observations the checkouts
+// themselves can still refresh.
+func runProjectDelete(cmd *cobra.Command, project string, force bool) error {
+	file, err := openRegistry()
+	if err != nil {
+		return err
+	}
+
+	var referencing []string
+	if err := file.Update(cmd.Context(), func(state *registry.State) error {
+		if _, ok := state.Projects[project]; !ok {
+			return fmt.Errorf("project %q is not registered", project)
+		}
+		for _, workspace := range projectWorkspaces(*state, project) {
+			referencing = append(referencing, workspace.LocalPath)
+		}
+		if len(referencing) > 0 && !force {
+			return fmt.Errorf("project %q still has %d registered workspace(s) (%s); run 'sanho clean' in them, or rerun with --force",
+				project, len(referencing), referencing[0])
+		}
+		delete(state.Projects, project)
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	writef(cmd.OutOrStdout(), "sanho: removed project %s\n", project)
+	return nil
 }

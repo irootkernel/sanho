@@ -234,6 +234,30 @@ func SaveBase(workDir string, b provenance.Base) error {
 	return nil
 }
 
+// ClearBase removes the base file, restoring the "no base recorded"
+// state. An absent file is not an error: what matters is the
+// post-condition, and `sanho sync --abort` must stay re-runnable after
+// an interruption (§5.5 step 7, guidance closure).
+//
+// It exists because a zero provenance.Base is not a writable value —
+// the schema has no representation for an empty commit OID and LoadBase
+// rejects one as corrupt — so "forget the base" cannot be expressed as a
+// SaveBase call.
+//
+// Only BaseFileName is removed. LegacyHashFileName is a read-only v0.1
+// compatibility input (§8) that sanho never writes; deleting it would
+// destroy state a rollback still needs.
+func ClearBase(workDir string) error {
+	path := filepath.Join(workDir, BaseFileName)
+	if err := os.Remove(path); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("remove base file %s: %w", path, err)
+	}
+	return nil
+}
+
 // SyncNote records an in-progress conflicted sync (§5.5).
 type SyncNote struct {
 	PrevBase  provenance.Base `json:"prev_base"`

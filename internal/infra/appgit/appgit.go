@@ -17,6 +17,7 @@ package appgit
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -27,6 +28,16 @@ import (
 	"github.com/irootkernel/sanho/internal/domain/markers"
 	"github.com/irootkernel/sanho/internal/infra/gitx"
 )
+
+// ErrUnmergedIndex reports that the index carries unmerged (stage > 0)
+// entries, which `git write-tree` refuses to turn into a tree.
+//
+// It is distinguishable on purpose. The pre-commit gate stamps
+// provenance from the index tree, and an unmerged index is a state git
+// itself will refuse to commit from — so the gate skips stamping and
+// stays out of the way rather than reporting a sanho failure for a
+// condition git is about to report itself (§5.1, §5.6 "never blocks").
+var ErrUnmergedIndex = errors.New("the index has unmerged entries")
 
 // DefaultDocsDir is the docs directory New falls back to, matching the
 // workspace config default.
@@ -123,6 +134,138 @@ func (r *Repo) commitExists(ctx context.Context, commit string) (bool, error) {
 		return false, fmt.Errorf("appgit: resolve commit %s in %s: %w", commit, r.workDir, err)
 	}
 	return res.ExitCode == 0, nil
+}
+
+// IndexDocsTree returns the docs tree OID of the CURRENT index — the
+// tree the commit being prepared will carry, which is the first input of
+// the §5.1 stamping rule.
+//
+// `git write-tree` is the whole mechanism, and it is safe to call from
+// inside `commit-msg` for two reasons. It writes tree objects to the
+// object database and never alters an index *entry* — at most it
+// refreshes the index's cache-tree extension, a pure optimization cache
+// that git recomputes on its own anyway. And git runs commit hooks with
+// GIT_INDEX_FILE pointing at the in-flight commit's index, which gitx
+// inherits, so this reads exactly the content being committed rather
+// than a stale `.git/index`.
+//
+// (WorktreeDocsTree needs a scratch index precisely because it must
+// `git add` first; here the index is already exactly what is wanted.)
+//
+// An absent docs directory yields the empty tree, matching DocsTreeOf.
+// An unmerged index yields ErrUnmergedIndex.
+func (r *Repo) IndexDocsTree(ctx context.Context) (string, error) {
+	res, err := r.git.RunExit(ctx, "write-tree")
+	if err != nil {
+		return "", fmt.Errorf("appgit: write index tree in %s: %w", r.workDir, err)
+	}
+	if res.ExitCode != 0 {
+		stderr := string(res.Stderr)
+		if strings.Contains(strings.ToLower(stderr), "unmerged") {
+			return "", fmt.Errorf("appgit: write index tree in %s: %w", r.workDir, ErrUnmergedIndex)
+		}
+		return "", fmt.Errorf("appgit: write index tree in %s: exit %d: %s",
+			r.workDir, res.ExitCode, strings.TrimSpace(stderr))
+	}
+
+	root := firstLine(res.Stdout)
+	sub, err := r.git.RunExit(ctx, "rev-parse", "--verify", "--quiet", root+":"+r.docsDir)
+	if err != nil {
+		return "", fmt.Errorf("appgit: resolve index docs tree in %s: %w", r.workDir, err)
+	}
+	if sub.ExitCode != 0 {
+		return r.EmptyTree(ctx)
+	}
+	return firstLine(sub.Stdout), nil
+}
+
+// ScanStagedDocsForMarkers applies the §5.4 detector to the docs content
+// of the INDEX — the pre-commit gate of §5.6 step 1, which is what stops
+// unresolved conflict markers from being committed in the first place.
+//
+// Unmerged entries (stage > 0) are skipped rather than scanned: their
+// stages are the *inputs* of a merge git has not resolved, so they carry
+// no marker text, and git refuses to commit from that index anyway. The
+// gate is fail-closed in the same two ways as the blob and worktree
+// scanners (audit H2): a blob over markers.MaxScanSize is an error naming
+// the file, never a silent pass, and read failures propagate. Symlink and
+// gitlink entries are skipped — their content is a path, not text.
+func (r *Repo) ScanStagedDocsForMarkers(ctx context.Context) ([]string, error) {
+	res, err := r.git.Run(ctx, "ls-files", "--stage", "-z", "--", r.docsDir)
+	if err != nil {
+		return nil, fmt.Errorf("appgit: list staged docs in %s: %w", r.workDir, err)
+	}
+
+	var conflicted []string
+	for _, record := range strings.Split(string(res.Stdout), "\x00") {
+		if strings.TrimSpace(record) == "" {
+			continue
+		}
+		entry, err := parseLsFilesStageEntry(record)
+		if err != nil {
+			return nil, fmt.Errorf("appgit: read staged docs listing in %s: %w", r.workDir, err)
+		}
+		if entry.stage != 0 || entry.mode == modeSymlink || entry.mode == modeGitlink {
+			continue
+		}
+
+		size, err := r.blobSize(ctx, entry.object)
+		if err != nil {
+			return nil, err
+		}
+		if size > markers.MaxScanSize {
+			return nil, fmt.Errorf("appgit: staged %s is %d bytes: %w", entry.path, size, markers.ErrTooLarge)
+		}
+
+		content, err := r.git.Run(ctx, "cat-file", "blob", entry.object)
+		if err != nil {
+			return nil, fmt.Errorf("appgit: read staged %s: %w", entry.path, err)
+		}
+		if markers.Scan(content.Stdout).HasMarkers {
+			conflicted = append(conflicted, entry.path)
+		}
+	}
+	return conflicted, nil
+}
+
+// lsFilesStageEntry is one `git ls-files --stage -z` record:
+// "<mode> SP <object> SP <stage>HT<path>". Unlike ls-tree there is no
+// size column, so sizes come from blobSize.
+type lsFilesStageEntry struct {
+	mode   string
+	object string
+	stage  int
+	path   string
+}
+
+func parseLsFilesStageEntry(record string) (lsFilesStageEntry, error) {
+	head, path, ok := strings.Cut(record, "\t")
+	if !ok || path == "" {
+		return lsFilesStageEntry{}, fmt.Errorf("malformed ls-files entry %q", record)
+	}
+	fields := strings.Fields(head)
+	if len(fields) != 3 {
+		return lsFilesStageEntry{}, fmt.Errorf("malformed ls-files entry %q", record)
+	}
+	stage, err := strconv.Atoi(fields[2])
+	if err != nil {
+		return lsFilesStageEntry{}, fmt.Errorf("malformed stage in ls-files entry %q", record)
+	}
+	return lsFilesStageEntry{mode: fields[0], object: fields[1], stage: stage, path: path}, nil
+}
+
+// blobSize asks git for an object's size before its content is read, so
+// the size cap is enforced without ever materializing an oversized blob.
+func (r *Repo) blobSize(ctx context.Context, object string) (int64, error) {
+	line, err := r.git.Line(ctx, "cat-file", "-s", object)
+	if err != nil {
+		return 0, fmt.Errorf("appgit: read size of %s in %s: %w", object, r.workDir, err)
+	}
+	size, err := strconv.ParseInt(strings.TrimSpace(line), 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("appgit: parse size of %s in %s: %w", object, r.workDir, err)
+	}
+	return size, nil
 }
 
 // ScanDocsBlobsForMarkers scans a commit's docs blobs (§5.4 detector);

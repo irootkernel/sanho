@@ -1,107 +1,159 @@
-// Package cli provides the command-line interface for sanho.
+// Package cli is the sanho v0.2 command-line interface: the nine
+// commands and six hook entry points of sanho-v0.2.md §5.8/§5.10, and
+// the one place in the codebase where the layers are wired together.
+//
+// That wiring role is deliberate and is the reason several adapters live
+// here rather than in a use case. The architecture gate forbids a
+// usecase package from importing infra and an infra package from
+// importing usecase; interface/cli may see both, so it is where
+// canonical.Link, appgit.Repo, wsstate and registry are bound to the
+// ports that usecase/publish, usecase/docsync and usecase/admin declare
+// (see ports.go).
+//
+// It is also where *lifecycle glue* lives — init, clean, migrate,
+// doctor. See the placement note in usecase/admin's package comment for
+// why those are commands rather than use cases.
 package cli
 
 import (
 	"errors"
-	"fmt"
 	"os"
+	"runtime/debug"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
 
-// Exit codes following the roadmap's Phase 0 exit-code policy:
-// - 0: Success
-// - 1: User-fixable issues (environment, config, daemon/network errors)
-// - 2+: Unexpected internal bugs
+// Exit codes (sanho-v0.2.md §5.8), unchanged from v0.1:
+//
+//	0  success
+//	1  user-actionable — a state the user can fix, named in the message
+//	2  internal bug — a panic or an explicitly classified defect
 const (
-	ExitCodeSuccess       = 0
-	ExitCodeUserError     = 1
-	ExitCodeInternalError = 2
+	exitSuccess  = 0
+	exitUser     = 1
+	exitInternal = 2
 )
 
-// ErrInternal represents an unexpected internal error that should exit with code 2.
-var ErrInternal = errors.New("internal error")
+// errInternal marks a failure as a bug in sanho rather than a state the
+// user can act on, routing it to exit code 2.
+var errInternal = errors.New("internal error")
 
-// BuildInfo contains build-time information injected via ldflags.
+// errAlreadyReported is returned by a command that has already written
+// its own guidance — the multi-line §5.9 templates, which must appear
+// exactly as composed rather than behind a "sanho: " prefix. The root
+// renderer prints nothing more for it and exits 1.
+var errAlreadyReported = errors.New("guidance already reported")
+
+// BuildInfo carries the ldflags-injected build identity.
 type BuildInfo struct {
 	Version   string
 	Commit    string
 	BuildDate string
 }
 
-// verbose is a global flag for enabling debug output.
+// Execute runs the CLI and terminates the process with the §5.8 exit
+// code.
+func Execute(info BuildInfo) { os.Exit(Run(info, os.Args[1:], os.Stdout, os.Stderr)) }
+
+// Run executes one CLI invocation and returns its exit code, without
+// terminating the process. Splitting it out of Execute is what lets the
+// hooks and commands be exercised in-process.
+//
+// A panic anywhere below is classified as exit 2: an internal bug is the
+// one failure class the user cannot act on, so it is reported as such
+// instead of being mistaken for a refusal.
+func Run(info BuildInfo, args []string, stdout, stderr *os.File) (code int) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			writef(stderr, "sanho: internal error: %v\n", recovered)
+			writef(stderr, "%s\n", debug.Stack())
+			code = exitInternal
+		}
+	}()
+
+	root := newRootCmd(info)
+	root.SetArgs(args)
+	root.SetOut(stdout)
+	root.SetErr(stderr)
+
+	if err := root.Execute(); err != nil {
+		return renderError(stderr, err)
+	}
+	return exitSuccess
+}
+
+// errorPrefix heads every user-facing error line.
+const errorPrefix = "sanho: "
+
+// renderError applies the §5.9 rule that a user never sees a raw Go
+// error chain: a command that composed its own guidance already printed
+// it, anything else is prefixed once.
+//
+// "Once" is the operative word. Several messages are normative *whole
+// lines* — §8 fixes `sanho: this workspace uses the v0.1 layout; run
+// 'sanho migrate'` exactly, and hooks print it verbatim — so they carry
+// the prefix themselves. Prefixing those again would produce
+// `sanho: sanho: …` and break the very string the spec pins.
+func renderError(stderr *os.File, err error) int {
+	switch {
+	case errors.Is(err, errAlreadyReported):
+		return exitUser
+	case errors.Is(err, errInternal):
+		writef(stderr, "%sinternal error: %v\n", errorPrefix, err)
+		return exitInternal
+	}
+
+	message := err.Error()
+	if !strings.HasPrefix(message, errorPrefix) {
+		message = errorPrefix + message
+	}
+	writeln(stderr, message)
+	return exitUser
+}
+
+// verbose is the global --verbose flag. It only ever adds detail; no
+// behavior depends on it.
 var verbose bool
 
-// socketPathFlag overrides workspace and environment socket configuration.
-var socketPathFlag string
-
-// buildInfo stores build-time information.
-var buildInfo BuildInfo
-
-// NewRootCmd creates and returns the root command.
-func NewRootCmd(info BuildInfo) *cobra.Command {
-	buildInfo = info
+func newRootCmd(info BuildInfo) *cobra.Command {
 	verbose = false
-	socketPathFlag = ""
 
-	rootCmd := &cobra.Command{
+	root := &cobra.Command{
 		Use:   "sanho",
-		Short: "A document coordination system for Git repositories",
-		Long: `Sanho is a central document coordination system designed to synchronize
-a specific documentation directory (e.g., docs/) across multiple Git repositories.
+		Short: "Keep docs/ synchronized with a canonical docs repository",
+		Long: `Sanho keeps the docs/ directory of an application repository synchronized
+with one canonical docs repository.
 
-It ensures that documentation remains consistent and version-controlled
-in a dedicated repository, separate from the application code.`,
+Publication happens at 'git push'; the commit path only performs a local,
+network-free freshness check. Reconciling is an explicit command
+('sanho sync') that runs between your own commits — sanho never creates
+commits in your repository.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
+	root.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Print additional diagnostic detail")
 
-	// Global flags
-	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose output")
-	rootCmd.PersistentFlags().StringVar(&socketPathFlag, "socket", "", "sanhod Unix socket path")
-
-	// Register subcommands
-	rootCmd.AddCommand(newVersionCmd())
-	rootCmd.AddCommand(newInitCmd())
-	rootCmd.AddCommand(newStatusCmd())
-	rootCmd.AddCommand(newFixCmd())
-	rootCmd.AddCommand(newHookCmd())
-	rootCmd.AddCommand(newProjectCmd())
-	rootCmd.AddCommand(newWorkspaceCmd())
-	rootCmd.AddCommand(newStateCmd())
-	rootCmd.AddCommand(newPullCmd())
-	rootCmd.AddCommand(newPullCommitCmd())
-	rootCmd.AddCommand(newCleanCmd())
-
-	return rootCmd
+	root.AddCommand(
+		newInitCmd(),
+		newStatusCmd(),
+		newStateCmd(),
+		newSyncCmd(),
+		newPullCmd(),
+		newCleanCmd(),
+		newDoctorCmd(),
+		newProjectCmd(),
+		newHookCmd(),
+		newMigrateCmd(),
+		newVersionCmd(info),
+	)
+	return root
 }
 
-// Execute runs the root command.
-func Execute(info BuildInfo) {
-	cmd := NewRootCmd(info)
-	executedCmd, err := cmd.ExecuteC()
-	if err != nil {
-		renderCommandError(executedCmd, err)
-
-		// Determine exit code based on error type
-		if errors.Is(err, ErrInternal) {
-			os.Exit(ExitCodeInternalError)
-		}
-		os.Exit(ExitCodeUserError)
-	}
-}
-
-// IsVerbose returns whether verbose mode is enabled.
-func IsVerbose() bool {
-	return verbose
-}
-
-// LogDebugStderr prints a debug message to stderr if verbose mode is enabled.
-// Note: verbose flag is set during Cobra flag parsing, so this function
-// only produces output after rootCmd.Execute() has been called.
-// For debugging before CLI initialization, consider using environment variables.
-func LogDebugStderr(format string, args ...interface{}) {
+// debugf prints a diagnostic line under --verbose. Diagnostics go to
+// stderr so that --json stdout stays machine-readable.
+func debugf(cmd *cobra.Command, format string, args ...any) {
 	if verbose {
-		fmt.Fprintf(os.Stderr, "[DEBUG] "+format+"\n", args...)
+		writef(cmd.ErrOrStderr(), "sanho: "+format+"\n", args...)
 	}
 }

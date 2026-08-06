@@ -79,22 +79,17 @@ func (a appPort) MergeDocs(ctx context.Context, baseTree, oursTree, theirsTree s
 	return result.Tree, conflicts, result.Clean, nil
 }
 
-// statePort adapts wsstate to docsync.StatePort. ClearBase removes the
-// base file outright, which is the only way to express "no base is
-// recorded" — the schema has no representation for an empty OID.
+// statePort adapts wsstate to docsync.StatePort. Every method is a
+// direct wsstate call, including ClearBase — removing the base file
+// outright is the only way to express "no base is recorded", since the
+// schema has no representation for an empty OID.
 type statePort struct{ workDir, gitDir string }
 
 func (s statePort) LoadBase() (provenance.Base, bool, error) { return wsstate.LoadBase(s.workDir) }
 
 func (s statePort) SaveBase(base provenance.Base) error { return wsstate.SaveBase(s.workDir, base) }
 
-func (s statePort) ClearBase() error {
-	err := os.Remove(filepath.Join(s.workDir, wsstate.BaseFileName))
-	if err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	return nil
-}
+func (s statePort) ClearBase() error { return wsstate.ClearBase(s.workDir) }
 
 func (s statePort) LoadSyncNote() (provenance.Base, provenance.Base, bool, error) {
 	note, ok, err := wsstate.LoadSyncNote(s.gitDir)
@@ -130,8 +125,20 @@ type flow struct {
 // the workspace. No base is recorded yet; each test decides.
 func newFlow(t *testing.T, canonicalFiles, docsFiles map[string]string) *flow {
 	t.Helper()
+	return newFlowAt(t, newOrigin(t, canonicalFiles), docsFiles)
+}
 
-	origin := newOrigin(t, canonicalFiles)
+// newEmptyCanonicalFlow is newFlow against a canonical repository that
+// has never been published into — the state a brand-new docs repo is in
+// (sanho-v0.2.md §5.3 bootstrap).
+func newEmptyCanonicalFlow(t *testing.T, docsFiles map[string]string) *flow {
+	t.Helper()
+	return newFlowAt(t, newEmptyOrigin(t), docsFiles)
+}
+
+func newFlowAt(t *testing.T, origin string, docsFiles map[string]string) *flow {
+	t.Helper()
+
 	appDir := newRepo(t, "app")
 
 	writeFile(t, appDir, ".gitignore", wsstate.BaseFileName+"\n")
@@ -399,6 +406,19 @@ func newRepo(t *testing.T, name string) string {
 	}
 	gitRun(t, dir, "init", "--quiet", "-b", "main")
 	return dir
+}
+
+// newEmptyOrigin creates a bare canonical repository with no commits at
+// all — no branch exists yet, so canonical Head reports ErrEmptyBranch.
+func newEmptyOrigin(t *testing.T) string {
+	t.Helper()
+
+	origin := filepath.Join(t.TempDir(), "origin.git")
+	if err := os.MkdirAll(origin, 0755); err != nil {
+		t.Fatalf("create %s: %v", origin, err)
+	}
+	gitRun(t, origin, "init", "--bare", "--quiet", "-b", "main")
+	return origin
 }
 
 // newOrigin creates a bare canonical repository seeded with files.

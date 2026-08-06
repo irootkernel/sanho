@@ -1,329 +1,349 @@
 package cli
 
+// `sanho init` (sanho-v0.2.md §5.8): register the project and this
+// workspace, write the v2 files, clone canonical, install the six hooks,
+// and establish a base.
+//
+// Three head states, decided in this order (see establishBase):
+//
+//	fresh     canonical has content and this workspace has no docs of its
+//	          own — check canonical's docs out and adopt its head.
+//	bootstrap canonical is empty — record no base and say so; the first
+//	          push publishes (§5.3).
+//	reuse     local docs already exist — derive the base from the docs
+//	          provenance already in this repository's history, and never
+//	          overwrite the user's files.
+//
+// Reuse refusing is the important case. Docs with no provenance could be
+// anything, and adopting canonical's head as their base would assert an
+// ancestry that is not true — the next push would then "merge" unrelated
+// content. Refusing, and naming --force for the destructive alternative,
+// is the fail-closed reading.
+
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+
+	"github.com/irootkernel/sanho/internal/domain/provenance"
+	"github.com/irootkernel/sanho/internal/infra/appgit"
+	"github.com/irootkernel/sanho/internal/infra/canonical"
+	"github.com/irootkernel/sanho/internal/infra/gitx"
+	"github.com/irootkernel/sanho/internal/infra/registry"
+	"github.com/irootkernel/sanho/internal/infra/wsstate"
 
 	"github.com/spf13/cobra"
-
-	"github.com/irootkernel/sanho/internal/domain/client"
-	"github.com/irootkernel/sanho/internal/domain/docs"
-	"github.com/irootkernel/sanho/internal/infra/fs"
-	"github.com/irootkernel/sanho/internal/infra/git"
-	"github.com/irootkernel/sanho/internal/infra/httpclient"
 )
 
-// newInitCmd creates the init command.
-func newInitCmd() *cobra.Command {
-	var (
-		projectName string
-		docsDir     string
-		docsRepoURL string
-		force       bool
-	)
+// gitignoreEntries are added on init. The legacy v0.1 names stay listed
+// so that a workspace which still carries them (or is rolled back to
+// v0.1) never accidentally commits them (§8).
+var gitignoreEntries = []string{
+	wsstate.ConfigFileName,
+	wsstate.BaseFileName,
+	wsstate.LegacyHashFileName,
+	".sanho_pending_fix",
+}
 
-	type initMode int
-	const (
-		modeFresh initMode = iota // download snapshot
-		modeReuse                 // reuse existing docs
-	)
+type initOptions struct {
+	project     string
+	docsRepoURL string
+	docsDir     string
+	actorEmail  string
+	force       bool
+	confirmed   bool
+}
+
+func newInitCmd() *cobra.Command {
+	var opts initOptions
 
 	cmd := &cobra.Command{
 		Use:   "init",
-		Short: "Initialize a workspace for Sanho",
-		Long: `Initialize the current directory as a sanho workspace.
+		Short: "Register this repository as a sanho workspace",
+		Args:  cobra.NoArgs,
+		RunE:  func(cmd *cobra.Command, _ []string) error { return runInit(cmd, opts) },
+	}
+	cmd.Flags().StringVar(&opts.project, "project", "", "Project name (required)")
+	cmd.Flags().StringVar(&opts.docsRepoURL, "docs-repo-url", "", "Canonical docs repository URL (required)")
+	cmd.Flags().StringVar(&opts.docsDir, "docs-dir", appgit.DefaultDocsDir, "Docs directory, relative to the repository root")
+	cmd.Flags().StringVar(&opts.actorEmail, "actor-email", "", "Email recorded on canonical commits (default: git config user.email)")
+	cmd.Flags().BoolVar(&opts.force, "force", false, "Replace an existing docs directory with canonical content")
+	cmd.Flags().BoolVarP(&opts.confirmed, "yes", "y", false, "Confirm destructive operations without prompting")
+	return cmd
+}
 
-This command will:
-- Verify this is a Git repository
-- Register the project if not already registered
-- Register this workspace with the sanhod
-- Download the current docs snapshot from the daemon
-- Create .sanho.json configuration file
-- Create .sanho_docs_hash file
-- Add workspace metadata files to .gitignore
-- Install Git hooks for document synchronization
+func runInit(cmd *cobra.Command, opts initOptions) error {
+	ctx := cmd.Context()
 
-Prerequisites:
-- Current directory must be a Git repository
-- .sanho.json must not exist (unless --force is used)
-- docs directory must not exist unless this repo already has sanho-managed docs (docs-version commits)`,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			// Get current working directory
-			cwd, err := getWorkingDirectory()
-			if err != nil {
-				return err
-			}
-			detector := git.NewDetector()
-			if !detector.HasGitDir(cwd) {
-				return errors.New("current directory is not a Git repository. Run 'git init' first")
-			}
-			if err := requireWorkspaceMutationSafe(cmd.Context(), cwd); err != nil {
-				return wrapGitOperationGuard("sanho init", err)
-			}
-
-			resolvedSocketPath, err := resolveSocketPath("")
-			if err != nil {
-				return err
-			}
-
-			// Collect required values interactively if not provided via flags.
-			// This keeps sanho init primarily conversational, as designed.
-			if projectName == "" {
-				input, err := promptForInput("Enter project name: ")
-				if err != nil {
-					return err
-				}
-				if input == "" {
-					return errors.New("project name is required")
-				}
-				projectName = input
-			}
-
-			// Get current repo's origin URL for context (short-lived timeout)
-			gitCtx, gitCancel := createContext(DefaultTimeout)
-			currentRepoURL, _ := detector.GetRemoteOriginURL(gitCtx, cwd)
-			gitCancel()
-
-			// Collect docs repository URL interactively if not provided via flag.
-			if docsRepoURL == "" {
-				// Show current repo URL as reference
-				prompt := "Enter docs repository Git SSH URL"
-				if currentRepoURL != "" {
-					prompt += fmt.Sprintf(" (current: %s)", currentRepoURL)
-				}
-				prompt += ": "
-				input, err := promptForInput(prompt)
-				if err != nil {
-					return err
-				}
-				if input == "" {
-					return errors.New("docs repository URL is required")
-				}
-				docsRepoURL = input
-			}
-
-			// Set default docs dir
-			if docsDir == "" {
-				docsDir = client.DefaultDocsDir
-			}
-
-			// Check if .sanho.json already exists
-			configWriter := fs.NewFileConfigWriter()
-			if configWriter.Exists(cwd) && !force {
-				return errors.New("this directory is already a sanho workspace (.sanho.json exists). Use --force to reinitialize")
-			}
-
-			// Resolve docs path safely within the workspace to avoid deleting
-			// arbitrary paths when using --docs-dir with --force.
-			docsPath, err := resolveDocsPath(cwd, docsDir)
-			if err != nil {
-				return err
-			}
-
-			// Prepare git client for repo inspection
-			gitClient := git.NewClient()
-
-			// Decide init mode (fresh download vs reuse existing docs)
-			initMode := modeFresh
-			var reuseBaseHash string
-
-			if !force {
-				if _, err := os.Stat(docsPath); err == nil {
-					hasDocsVersion, err := gitClient.HasDocsVersionCommits(context.Background(), cwd)
-					if err != nil {
-						return fmt.Errorf("failed to inspect git history for docs-version commits: %w", err)
-					}
-					if !hasDocsVersion {
-						return errors.New("existing docs directory detected, but this repository has no docs-version commits; back up or remove the docs directory before retrying, or use --force to replace it")
-					}
-
-					clean, err := gitClient.IsPathClean(context.Background(), cwd, docsDir)
-					if err != nil {
-						return fmt.Errorf("failed to check docs directory cleanliness: %w", err)
-					}
-					if !clean {
-						return errors.New("uncommitted changes exist in the docs directory; commit them, or back up and restore the directory before running sanho init again")
-					}
-
-					hash, err := gitClient.GetLastDocsVersionHash(context.Background(), cwd)
-					if err != nil {
-						if errors.Is(err, git.ErrNoDocsVersionCommits) {
-							return errors.New("docs-version commits exist, but their base hash could not be resolved; verify that the sanho commit-msg hook is working")
-						}
-						return fmt.Errorf("failed to read last docs-version hash: %w", err)
-					}
-					initMode = modeReuse
-					reuseBaseHash = hash
-				}
-			}
-
-			// Get actor email from git config or prompt (with its own timeout)
-			emailCtx, emailCancel := createContext(DefaultTimeout)
-			actorEmail, err := promptForEmail(emailCtx, cwd)
-			emailCancel()
-			if err != nil {
-				return err
-			}
-
-			// Create context for daemon interactions and Git hook installation
-			ctx, cancel := createContext(LongTimeout)
-			defer cancel()
-
-			// repoURL is the same as currentRepoURL (already fetched above)
-			repoURL := currentRepoURL
-
-			// Extract docs_repo_id from URL
-			docsRepoID := client.ExtractDocsRepoID(docsRepoURL)
-			if docsRepoID == "" {
-				return errors.New("failed to extract docs_repo_id from docs-repo-url")
-			}
-
-			// Create HTTP client
-			httpClient := httpclient.NewHTTPClient(resolvedSocketPath)
-
-			// Step 1: Register project (idempotent)
-			fmt.Printf("Registering project '%s'...\n", projectName)
-			projectReq := httpclient.CreateProjectRequest{
-				Project:     docs.ProjectName(projectName),
-				DocsRepoID:  docsRepoID,
-				DocsRepoURL: docsRepoURL,
-				ActorEmail:  actorEmail,
-			}
-			if err := httpClient.CreateOrUpdateProject(ctx, projectReq); err != nil {
-				return fmt.Errorf("failed to register project: %w", err)
-			}
-
-			// Step 2: Register workspace
-			fmt.Println("Registering workspace...")
-			workspaceReq := httpclient.RegisterWorkspaceRequest{
-				Project:    docs.ProjectName(projectName),
-				LocalPath:  cwd,
-				RepoURL:    repoURL,
-				ActorEmail: actorEmail,
-			}
-			workspaceResp, err := httpClient.RegisterWorkspace(ctx, workspaceReq)
-			if err != nil {
-				if errors.Is(err, httpclient.ErrUnknownProject) {
-					return fmt.Errorf("project '%s' is not registered on daemon. Run 'sanho project add' first", projectName)
-				}
-				return fmt.Errorf("failed to register workspace: %w", err)
-			}
-
-			var docsBaseHash docs.CommitHash
-
-			if initMode == modeFresh {
-				// Step 3: Download docs snapshot
-				fmt.Println("Downloading docs snapshot...")
-				snapshot, commitHash, err := httpClient.DocsSnapshot(ctx, docs.ProjectName(projectName), "")
-				if err != nil {
-					return fmt.Errorf("failed to download docs snapshot: %w", err)
-				}
-
-				// Step 4: Apply snapshot, ensuring docs directory reflects the daemon state
-				// When --force is used, always clear any existing docs to avoid stale content,
-				// regardless of whether the snapshot is empty or not.
-				if force {
-					if err := os.RemoveAll(docsPath); err != nil {
-						return fmt.Errorf("failed to remove docs directory '%s': %w", docsDir, err)
-					}
-				}
-
-				if len(snapshot) > 0 {
-					applier := fs.NewSnapshotApplier()
-					if err := applier.Apply(snapshot, cwd, docsDir); err != nil {
-						return fmt.Errorf("failed to apply docs snapshot: %w", err)
-					}
-				} else {
-					// Create empty docs directory
-					if err := os.MkdirAll(docsPath, 0755); err != nil {
-						return fmt.Errorf("failed to create docs directory: %w", err)
-					}
-				}
-
-				if commitHash == "" {
-					return errors.New("daemon returned empty docs HEAD hash; init cannot proceed")
-				}
-				docsBaseHash = docs.CommitHash(commitHash)
-			} else {
-				// Reuse existing docs directory without touching its contents.
-				docsBaseHash = docs.CommitHash(reuseBaseHash)
-				if docsBaseHash.IsZero() {
-					return errors.New("failed to determine docs base hash from git log")
-				}
-			}
-
-			// Step 5: Write .sanho.json
-			config := &client.WorkspaceConfig{
-				SocketPath:            resolvedSocketPath,
-				WorkspaceID:           workspaceResp.WorkspaceID,
-				Project:               docs.ProjectName(projectName),
-				ActorEmail:            actorEmail,
-				DocsDir:               docsDir,
-				DocsHashFile:          client.DefaultDocsHashFile,
-				PendingFixFile:        client.DefaultPendingFixFile,
-				DocsSyncCommitMessage: client.DefaultDocsSyncCommitMessage,
-			}
-			if err := configWriter.Write(cwd, config); err != nil {
-				return fmt.Errorf("failed to write .sanho.json: %w", err)
-			}
-
-			// Step 6: Write docs hash file
-			hashStore := fs.NewFileDocsHashStore()
-			hashPath := filepath.Join(cwd, client.DefaultDocsHashFile)
-			if err := hashStore.Write(hashPath, docsBaseHash); err != nil {
-				return fmt.Errorf("failed to write docs hash file: %w", err)
-			}
-
-			// Step 7: Remove pending fix file if exists
-			pendingFixPath := filepath.Join(cwd, client.DefaultPendingFixFile)
-			_ = os.Remove(pendingFixPath)
-
-			// Step 8: Ensure .gitignore excludes sanho workspace metadata
-			gitignoreManager := fs.NewGitignoreManager()
-			if err := gitignoreManager.EnsureEntries(
-				cwd,
-				"# Sanho",
-				[]string{client.DefaultDocsHashFile, fs.ConfigFileName, fs.WorkspaceReportFallbackFile},
-			); err != nil {
-				return fmt.Errorf("failed to update .gitignore: %w", err)
-			}
-
-			// Step 9: Install Git hooks
-			fmt.Println("Installing Git hooks...")
-			hookInstaller := git.NewHookInstaller()
-			if err := hookInstaller.InstallAllHooks(ctx, cwd); err != nil {
-				return fmt.Errorf("failed to install Git hooks: %w", err)
-			}
-
-			// Success message
-			fmt.Println()
-			if initMode == modeReuse {
-				status := "up_to_date"
-				if string(docsBaseHash) != string(workspaceResp.CurrentDocsHead) {
-					status = "outdated"
-				}
-				fmt.Println("sanho: 기존 docs 디렉토리를 그대로 사용하여 workspace 를 초기화했습니다.")
-				fmt.Printf("  workspace_id : %s\n", workspaceResp.WorkspaceID)
-				fmt.Printf("  docs_base    : %s\n", docsBaseHash)
-				fmt.Printf("  daemon_head  : %s\n", workspaceResp.CurrentDocsHead)
-				fmt.Printf("  status       : %s\n", status)
-			} else {
-				fmt.Println("sanho: workspace initialized.")
-				fmt.Printf("  workspace_id : %s\n", workspaceResp.WorkspaceID)
-				fmt.Printf("  docs_head    : %s\n", docsBaseHash)
-			}
-
-			return nil
-		},
+	root, err := requireGitWorktreeRoot(ctx)
+	if err != nil {
+		return err
+	}
+	if opts.project == "" || opts.docsRepoURL == "" {
+		return fmt.Errorf("--project and --docs-repo-url are required")
+	}
+	if opts.docsDir == "" {
+		opts.docsDir = appgit.DefaultDocsDir
+	}
+	if _, err := os.Stat(filepath.Join(root, wsstate.ConfigFileName)); err == nil && !opts.force {
+		return fmt.Errorf("%s already exists in %s; rerun with --force to reinitialize", wsstate.ConfigFileName, root)
 	}
 
-	cmd.Flags().StringVar(&projectName, "project", "", "Project name (required)")
-	cmd.Flags().StringVar(&docsDir, "docs-dir", "", "Local docs directory (default: docs)")
-	cmd.Flags().StringVar(&docsRepoURL, "docs-repo-url", "", "Docs repository Git URL (required)")
-	cmd.Flags().BoolVar(&force, "force", false, "Force reinitialize even if already initialized")
+	if opts.actorEmail == "" {
+		if opts.actorEmail, err = gitUserEmail(ctx, root); err != nil {
+			return err
+		}
+	}
 
-	return cmd
+	config := wsstate.Config{
+		WorkspaceID: registryKey(opts.project, root),
+		Project:     opts.project,
+		DocsRepoURL: opts.docsRepoURL,
+		ActorEmail:  opts.actorEmail,
+		DocsDir:     opts.docsDir,
+	}
+
+	// The registry first: a project whose name is already bound to a
+	// different docs repository must stop the whole operation before any
+	// file in the workspace changes.
+	file, err := openRegistry()
+	if err != nil {
+		return err
+	}
+	if err := file.Update(ctx, func(state *registry.State) error {
+		return upsertProject(state, opts.project, opts.docsRepoURL)
+	}); err != nil {
+		return err
+	}
+
+	if err := wsstate.SaveConfig(root, config); err != nil {
+		return err
+	}
+	ws, err := openWorkspace(ctx)
+	if err != nil {
+		return err
+	}
+
+	store, err := canonical.Ensure(ctx, ws.commonDir, opts.docsRepoURL)
+	if err != nil {
+		return err
+	}
+	if err := store.Fetch(ctx); err != nil {
+		return err
+	}
+
+	base, hasBase, staged, err := establishBase(ctx, cmd, ws, store, opts)
+	if err != nil {
+		return err
+	}
+	if hasBase {
+		if err := ws.statePort().SaveBase(base); err != nil {
+			return err
+		}
+	}
+
+	if err := ws.repo.InstallHooks(ctx); err != nil {
+		return err
+	}
+	if err := ensureGitignoreEntries(root); err != nil {
+		return err
+	}
+	if err := upsertWorkspace(ctx, file, ws, base); err != nil {
+		return err
+	}
+
+	renderInitSummary(cmd, ws, store, base, hasBase, staged)
+	return nil
+}
+
+// requireGitWorktreeRoot resolves the current directory and insists it
+// is the top of a git worktree. Every v0.2 mechanism — hooks, trees,
+// provenance — is built on git, and the hooks always run from the top,
+// so initializing anywhere else would produce a workspace whose own
+// hooks could not find it.
+func requireGitWorktreeRoot(ctx context.Context) (string, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("resolve the current directory: %w", err)
+	}
+	root, err := filepath.Abs(cwd)
+	if err != nil {
+		return "", fmt.Errorf("resolve the current directory: %w", err)
+	}
+
+	top, err := gitx.New(root).Line(ctx, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return "", fmt.Errorf("%s is not inside a git repository; run 'git init' first", root)
+	}
+	if resolved, err := filepath.EvalSymlinks(top); err == nil {
+		top = resolved
+	}
+	if here, err := filepath.EvalSymlinks(root); err == nil {
+		root = here
+	}
+	if top != root {
+		return "", fmt.Errorf("run 'sanho init' at the repository root (%s)", top)
+	}
+	return root, nil
+}
+
+func gitUserEmail(ctx context.Context, root string) (string, error) {
+	res, err := gitx.New(root).RunExit(ctx, "config", "--get", "user.email")
+	if err != nil {
+		return "", fmt.Errorf("read git user.email: %w", err)
+	}
+	email := strings.TrimSpace(string(res.Stdout))
+	if res.ExitCode != 0 || email == "" {
+		return "", fmt.Errorf("no git user.email is configured; set it or pass --actor-email")
+	}
+	return email, nil
+}
+
+// establishBase implements the three head states described at the top of
+// this file. staged reports whether canonical docs were written into the
+// worktree and index, which is the one outcome that leaves the user a
+// commit to make.
+func establishBase(ctx context.Context, cmd *cobra.Command, ws *workspace, store *canonical.Store, opts initOptions) (base provenance.Base, hasBase, staged bool, err error) {
+	head, headTree, headErr := store.Head(ctx)
+	canonicalEmpty := headErr != nil
+
+	docsExist, err := docsDirHasContent(ws)
+	if err != nil {
+		return provenance.Base{}, false, false, err
+	}
+
+	switch {
+	case canonicalEmpty:
+		// Nothing to adopt and nothing to check out; the first push
+		// bootstraps canonical (§5.3).
+		writeln(cmd.ErrOrStderr(), msgInitCanonicalEmpty)
+		return provenance.Base{}, false, false, nil
+
+	case docsExist && !opts.force:
+		reused, ok, reuseErr := reuseExistingDocs(ctx, cmd, ws, store)
+		return reused, ok, false, reuseErr
+
+	case docsExist && opts.force:
+		if !opts.confirmed {
+			return provenance.Base{}, false, false, fmt.Errorf("%s", msgInitForceNeedsConfirmation)
+		}
+		fallthrough
+
+	default:
+		// Fresh mode: canonical's docs become this workspace's docs. The
+		// objects have to come across first — the tree lives in the
+		// private clone, and a checkout can only write what the app
+		// repository's own object database holds (§5.2 object exchange).
+		if _, err := ws.link(store).FetchIntoApp(ctx); err != nil {
+			return provenance.Base{}, false, false, err
+		}
+		if err := ws.repo.CheckoutDocsTree(ctx, headTree); err != nil {
+			return provenance.Base{}, false, false, err
+		}
+		return provenance.Base{Commit: head, Tree: headTree}, true, true, nil
+	}
+}
+
+// reuseExistingDocs derives the base from provenance already present in
+// this repository's history (§5.10 derivation, §5.1 legacy coexistence),
+// and never touches the user's files.
+//
+// A derived base that canonical does not recognize is kept with a
+// warning rather than rejected: the trailer is evidence of what these
+// docs were built from, and canonical history may simply have been
+// rewritten since — which is exactly the state docs-base-tree exists to
+// recover from (D2). Discarding it would throw away the anchor.
+func reuseExistingDocs(ctx context.Context, cmd *cobra.Command, ws *workspace, store *canonical.Store) (provenance.Base, bool, error) {
+	derived, found, err := deriveBase(ctx, ws.root)
+	if err != nil {
+		return provenance.Base{}, false, err
+	}
+	if !found {
+		return provenance.Base{}, false, fmt.Errorf("%s", msgInitNoProvenance)
+	}
+
+	known, err := store.ResolveCommit(ctx, derived.Commit)
+	if err != nil {
+		return provenance.Base{}, false, err
+	}
+	if !known {
+		writef(cmd.ErrOrStderr(),
+			"sanho: the derived docs base %s is not in the canonical repository; canonical history may have been rewritten. Run 'sanho status' to check, and 'sanho sync' to reconcile.\n",
+			shortOID(derived.Commit))
+	}
+	return derived, true, nil
+}
+
+// docsDirHasContent reports whether the docs directory exists and holds
+// anything. An empty directory is treated as absent: it constrains
+// nothing and refusing on it would be a surprise.
+func docsDirHasContent(ws *workspace) (bool, error) {
+	path := filepath.Join(ws.root, filepath.FromSlash(ws.config.DocsDir))
+	entries, err := os.ReadDir(path)
+	switch {
+	case err == nil:
+		return len(entries) > 0, nil
+	case os.IsNotExist(err):
+		return false, nil
+	default:
+		return false, fmt.Errorf("inspect the docs directory %s: %w", path, err)
+	}
+}
+
+// ensureGitignoreEntries appends the sanho state files to .gitignore,
+// skipping any line already present. Exact-line matching again: a
+// `.sanho.json` entry must not be mistaken for `.sanho_base.json`.
+func ensureGitignoreEntries(root string) error {
+	path := filepath.Join(root, ".gitignore")
+
+	existing, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("read %s: %w", path, err)
+	}
+
+	present := map[string]bool{}
+	for _, line := range strings.Split(string(existing), "\n") {
+		present[strings.TrimSpace(line)] = true
+	}
+
+	var added []string
+	for _, entry := range gitignoreEntries {
+		if !present[entry] {
+			added = append(added, entry)
+			present[entry] = true
+		}
+	}
+	if len(added) == 0 {
+		return nil
+	}
+
+	content := string(existing)
+	if content != "" && !strings.HasSuffix(content, "\n") {
+		content += "\n"
+	}
+	content += strings.Join(added, "\n") + "\n"
+	return os.WriteFile(path, []byte(content), 0644)
+}
+
+func renderInitSummary(cmd *cobra.Command, ws *workspace, store *canonical.Store, base provenance.Base, hasBase, staged bool) {
+	out := cmd.OutOrStdout()
+	writeln(out, "sanho: workspace initialized")
+	writef(out, "  workspace  : %s\n", ws.root)
+	writef(out, "  project    : %s\n", ws.config.Project)
+	writef(out, "  docs dir   : %s\n", ws.config.DocsDir)
+	writef(out, "  docs repo  : %s (branch %s)\n", store.URL(), store.Branch())
+	writef(out, "  clone      : %s\n", store.Dir())
+	if hasBase {
+		writef(out, "  docs base  : %s\n", shortOID(base.Commit))
+	} else {
+		writeln(out, "  docs base  : (none yet)")
+	}
+	writef(out, "  hooks      : %d installed\n", len(appgit.Hooks()))
+	if staged {
+		// Fresh mode stages canonical's docs into the index; the commit
+		// is the user's to make (P3: the tool never authors commits).
+		writeln(out, "\nCanonical docs are staged. Commit them:  git commit -m 'docs: adopt canonical docs'")
+	}
 }

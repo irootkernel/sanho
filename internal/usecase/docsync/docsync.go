@@ -11,6 +11,7 @@ import (
 	"fmt"
 
 	"github.com/irootkernel/sanho/internal/domain/provenance"
+	pubdom "github.com/irootkernel/sanho/internal/domain/publish"
 )
 
 // CanonicalPort is the slice of canonical-clone behavior sync needs.
@@ -111,7 +112,9 @@ type Result struct {
 	Status Status
 	// NewBase is the adopted base (canonical head, or --rebase-onto
 	// target). It is also set for StatusUpToDate, where it repeats the
-	// base already recorded, so renderers always have an OID to name.
+	// base already recorded, so renderers always have an OID to name —
+	// with one exception: an empty canonical repository has no commit to
+	// name, so a StatusUpToDate run against one leaves NewBase zero.
 	NewBase provenance.Base
 	// Conflicts lists conflicted docs paths when StatusConflicts.
 	Conflicts []string
@@ -208,6 +211,13 @@ func (u *UseCase) Run(ctx context.Context, opts Options) (Result, error) {
 	// ErrUnreachable travels up intact.
 	if err := u.Canonical.Fetch(ctx); err != nil {
 		return Result{}, fmt.Errorf("refresh canonical repository: %w", err)
+	}
+	empty, err := u.canonicalEmpty(ctx)
+	if err != nil {
+		return Result{}, err
+	}
+	if empty {
+		return noUpstreamYet(opts.RebaseOnto)
 	}
 	if _, err := u.Canonical.FetchIntoApp(ctx); err != nil {
 		return Result{}, fmt.Errorf("import canonical objects: %w", err)
@@ -404,6 +414,13 @@ func (u *UseCase) Pull(ctx context.Context, withCommit bool) (Result, error) {
 	if err := u.Canonical.Fetch(ctx); err != nil {
 		return Result{}, fmt.Errorf("refresh canonical repository: %w", err)
 	}
+	empty, err := u.canonicalEmpty(ctx)
+	if err != nil {
+		return Result{}, err
+	}
+	if empty {
+		return noUpstreamYet("")
+	}
 	if _, err := u.Canonical.FetchIntoApp(ctx); err != nil {
 		return Result{}, fmt.Errorf("import canonical objects: %w", err)
 	}
@@ -478,6 +495,9 @@ func (u *UseCase) Pull(ctx context.Context, withCommit bool) (Result, error) {
 // explicit target overrides it, because it is what defines the set of
 // objects FetchIntoApp imported — the fact resolveBaseTree decides on.
 //
+// It is only reached once canonicalEmpty has ruled out the no-commits
+// state, so Head is guaranteed to resolve here.
+//
 // The explicit --rebase-onto target must be a canonical commit: that is
 // the check that matters, since merging toward something canonical has
 // never published would record a base the next push cannot use. Its
@@ -504,6 +524,41 @@ func (u *UseCase) resolveTarget(ctx context.Context, rebaseOnto string) (head, t
 		return "", "", "", fmt.Errorf("resolve the docs tree of %s: %w", shortOID(rebaseOnto), err)
 	}
 	return head, rebaseOnto, tree, nil
+}
+
+// canonicalEmpty reports whether canonical carries no commits at all.
+//
+// It is asked immediately after the fetch and *before* any object
+// import, because importing from a branch that does not exist is itself
+// a git error ("couldn't find remote ref"): the emptiness question has
+// to be settled before anything downstream assumes a head exists.
+func (u *UseCase) canonicalEmpty(ctx context.Context) (bool, error) {
+	_, _, err := u.Canonical.Head(ctx)
+	switch {
+	case err == nil:
+		return false, nil
+	case errors.Is(err, pubdom.ErrEmptyBranch):
+		return true, nil
+	default:
+		return false, fmt.Errorf("read canonical head: %w", err)
+	}
+}
+
+// noUpstreamYet is the answer both Run and Pull give for a canonical
+// repository nothing has ever published into (§5.3 bootstrap). There is
+// no upstream content to consume and no commit to record as a base, so
+// the truthful outcome is "up to date" with an empty NewBase; the first
+// `git push` creates canonical's root commit.
+//
+// An explicit --rebase-onto target is the one thing that cannot be
+// answered this way: naming a commit in a repository that has none is a
+// mistake, and reporting it as "up to date" would hide it.
+func noUpstreamYet(rebaseOnto string) (Result, error) {
+	if rebaseOnto != "" {
+		return Result{}, fmt.Errorf("%w: %s (the canonical repository has no commits yet)",
+			ErrUnknownTarget, shortOID(rebaseOnto))
+	}
+	return Result{Status: StatusUpToDate}, nil
 }
 
 // resolveBaseTree answers "which canonical tree do the local docs

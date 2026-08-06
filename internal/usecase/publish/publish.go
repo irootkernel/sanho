@@ -63,6 +63,10 @@ type AppRepoPort interface {
 	// RepoIdentity returns the app repo short name and current branch
 	// for the canonical commit subject.
 	RepoIdentity(ctx context.Context) (repoName, branch string, err error)
+	// EmptyTree returns this repository's empty-tree OID. Publication
+	// needs it for exactly one state: an empty canonical repository has
+	// no head tree, and "no docs published yet" is the empty tree.
+	EmptyTree(ctx context.Context) (string, error)
 	// WorktreeDocsTree returns the current worktree docs tree OID (for
 	// the base-advance rule).
 	WorktreeDocsTree(ctx context.Context) (string, error)
@@ -342,26 +346,29 @@ func (u *UseCase) publishTip(ctx context.Context, t *tip, base *provenance.Base,
 	decided := pubdom.CaseUpToDate
 
 	for attempt := 0; attempt < MaxCASRetries; attempt++ {
-		head, headTree, err := u.Canonical.Head(ctx)
+		head, headTree, bootstrap, err := u.canonicalHead(ctx)
 		if err != nil {
-			return "", decided, fmt.Errorf("read canonical head: %w", err)
+			return "", decided, err
 		}
 
 		// Case ① short-circuits before the base is consulted at all, so
 		// a workspace with a missing or orphaned base can still push
-		// docs-identical (or docs-free) commits.
+		// docs-identical (or docs-free) commits. On an empty canonical
+		// this is the docs-free push: the tip has no docs, the canonical
+		// "tree" is the empty tree, and there is nothing to bootstrap.
 		if t.docsTree == headTree {
 			return "", pubdom.CaseUpToDate, nil
 		}
-		if !hasBase {
+		if !hasBase && !bootstrap {
 			// No merge base means no safe way to combine this tip with
 			// canonical. `sanho sync` establishes one and succeeds in
 			// this state, so the guidance stays closed (D3).
 			return "", pubdom.CaseUnknownBase, &SyncRequiredError{Head: head, Reason: ReasonNoBase}
 		}
 
-		decided, err = u.decideWithReanchor(ctx, t, base, head, headTree)
-		if err != nil {
+		if bootstrap {
+			decided = decideBootstrap(t.docsTree, headTree)
+		} else if decided, err = u.decideWithReanchor(ctx, t, base, head, headTree); err != nil {
 			return "", decided, err
 		}
 
@@ -391,11 +398,64 @@ func (u *UseCase) publishTip(ctx context.Context, t *tip, base *provenance.Base,
 		}
 	}
 
-	head, _, err := u.Canonical.Head(ctx)
+	head, _, _, err := u.canonicalHead(ctx)
 	if err != nil {
-		return "", decided, fmt.Errorf("read canonical head: %w", err)
+		return "", decided, err
 	}
 	return "", decided, &SyncRequiredError{Base: base.Commit, Head: head, Reason: ReasonCASExhausted}
+}
+
+// canonicalHead reads canonical head, translating the "nothing has ever
+// been published" state into the facts the case analysis needs: no head
+// commit, and the empty tree as the head's docs tree.
+//
+// bootstrap is the flag that tells the rest of publishTip it is looking
+// at a repository with no history rather than at one whose head merely
+// happens to be unreachable.
+func (u *UseCase) canonicalHead(ctx context.Context) (head, headTree string, bootstrap bool, err error) {
+	head, headTree, err = u.Canonical.Head(ctx)
+	switch {
+	case err == nil:
+		return head, headTree, false, nil
+	case !errors.Is(err, pubdom.ErrEmptyBranch):
+		return "", "", false, fmt.Errorf("read canonical head: %w", err)
+	}
+
+	empty, err := u.App.EmptyTree(ctx)
+	if err != nil {
+		return "", "", false, fmt.Errorf("resolve the empty tree: %w", err)
+	}
+	return "", empty, true, nil
+}
+
+// decideBootstrap is the §5.3 case analysis against an empty canonical
+// repository, and it deliberately disregards the recorded base.
+//
+// An empty canonical has no history, so there is nothing for a base to
+// be an ancestor of and nothing for it to be unknown *to*: BaseKnown and
+// BaseIsAncestor are vacuously true, and the effective base is "no
+// commit", which equals the (absent) head. Decide then returns
+// CaseUpToDate when the tip carries no docs either, and otherwise
+// CaseFastForward — publishing the tip's docs tree as a root commit with
+// no parent and no lease.
+//
+// Treating a *recorded* base the same way is the point rather than an
+// oversight. Feeding a stale base into the ordinary analysis would yield
+// CaseUnknownBase and a "canonical history was rewritten" rejection,
+// which is a false diagnosis: canonical was never written at all. The
+// state is reachable in practice — a workspace whose canonical
+// repository was emptied or replaced — and the honest response is to
+// bootstrap it, which loses nothing because there is no upstream content
+// to merge with.
+func decideBootstrap(tipDocsTree, emptyTree string) pubdom.Case {
+	return pubdom.Decide(pubdom.Inputs{
+		Base:           provenance.Base{},
+		TipDocsTree:    tipDocsTree,
+		Head:           "",
+		HeadDocsTree:   emptyTree,
+		BaseKnown:      true,
+		BaseIsAncestor: true,
+	})
 }
 
 // decideWithReanchor runs domain Decide and, on case ④, attempts the

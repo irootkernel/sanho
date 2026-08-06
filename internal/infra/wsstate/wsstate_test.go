@@ -486,3 +486,70 @@ func assertNoLeftoverTemp(t *testing.T, dir string) {
 		t.Fatalf("leftover temp files: %v", matches)
 	}
 }
+
+// --- ClearBase: the "no base recorded" state -------------------------------
+
+func TestClearBase_RemovesTheBaseFile(t *testing.T) {
+	dir := t.TempDir()
+	base := provenance.Base{
+		Commit: "67c4bbfeada37f5dda8fb79aa43216ef062cd8df",
+		Tree:   "2f41ab90c3d2e1f4a5b6c7d8e9f0a1b2c3d4e5f6",
+	}
+	if err := wsstate.SaveBase(dir, base); err != nil {
+		t.Fatalf("SaveBase() error = %v", err)
+	}
+
+	if err := wsstate.ClearBase(dir); err != nil {
+		t.Fatalf("ClearBase() error = %v", err)
+	}
+
+	_, ok, err := wsstate.LoadBase(dir)
+	if err != nil {
+		t.Fatalf("LoadBase() error = %v", err)
+	}
+	if ok {
+		t.Fatal("LoadBase() ok = true after ClearBase, want false")
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, wsstate.BaseFileName)); !os.IsNotExist(statErr) {
+		t.Fatalf("Stat(base file) error = %v, want not-exist", statErr)
+	}
+}
+
+func TestClearBase_AbsentFileIsNotAnError(t *testing.T) {
+	dir := t.TempDir()
+	if err := wsstate.ClearBase(dir); err != nil {
+		t.Fatalf("ClearBase() on an absent file error = %v, want nil", err)
+	}
+	// Idempotence is what makes an interrupted `sanho sync --abort`
+	// re-runnable (§5.5 step 7).
+	if err := wsstate.ClearBase(dir); err != nil {
+		t.Fatalf("second ClearBase() error = %v, want nil", err)
+	}
+}
+
+func TestClearBase_LeavesTheLegacyHashFileAlone(t *testing.T) {
+	dir := t.TempDir()
+	legacy := filepath.Join(dir, wsstate.LegacyHashFileName)
+	writeFile(t, legacy, "67c4bbfeada37f5dda8fb79aa43216ef062cd8df\n")
+	if err := wsstate.SaveBase(dir, provenance.Base{Commit: "67c4bbfeada37f5dda8fb79aa43216ef062cd8df"}); err != nil {
+		t.Fatalf("SaveBase() error = %v", err)
+	}
+
+	if err := wsstate.ClearBase(dir); err != nil {
+		t.Fatalf("ClearBase() error = %v", err)
+	}
+
+	// The v0.1 file is a read-only compatibility input a rollback needs;
+	// ClearBase must not consume it. LoadBase therefore still answers
+	// from it.
+	if _, err := os.Stat(legacy); err != nil {
+		t.Fatalf("Stat(legacy hash file) error = %v, want it preserved", err)
+	}
+	got, ok, err := wsstate.LoadBase(dir)
+	if err != nil || !ok {
+		t.Fatalf("LoadBase() = (%+v, %v, %v), want the legacy base", got, ok, err)
+	}
+	if got.Commit != "67c4bbfeada37f5dda8fb79aa43216ef062cd8df" {
+		t.Fatalf("LoadBase() commit = %q, want the legacy value", got.Commit)
+	}
+}

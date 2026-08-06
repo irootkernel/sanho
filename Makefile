@@ -36,7 +36,6 @@ CLIENT_UNIT_PACKAGES := \
 	./internal/buildinfo \
 	./internal/domain/client \
 	./internal/domain/markers \
-	./internal/domain/merge \
 	./internal/domain/provenance \
 	./internal/domain/publish \
 	./internal/infra/appgit \
@@ -44,17 +43,15 @@ CLIENT_UNIT_PACKAGES := \
 	./internal/infra/fs \
 	./internal/infra/fsx \
 	./internal/infra/gitx \
-	./internal/infra/httpclient \
 	./internal/infra/registry \
 	./internal/infra/wsstate \
 	./internal/interface/cli \
 	./internal/usecase/admin \
 	./internal/usecase/docsync \
-	./internal/usecase/hook \
 	./internal/usecase/publish
 
 DAEMON_CHECK_PACKAGES := $(DAEMON_UNIT_PACKAGES) ./test/integration ./test/e2e
-CLIENT_CHECK_PACKAGES := $(CLIENT_UNIT_PACKAGES) ./test/cli/integration ./test/cli/e2e ./test/install
+CLIENT_CHECK_PACKAGES := $(CLIENT_UNIT_PACKAGES) ./test/cli/integration ./test/install ./test/docsync
 
 .PHONY: \
 	daemon-build daemon-install daemon-run daemon-run-dev \
@@ -179,6 +176,7 @@ test-int-daemon:
 
 test-int-client: cli-build
 	SANHO_CLI_BINARY="$(CURDIR)/$(CLI_BINARY)" $(GO) test ./test/cli/integration -count=1 -v
+	$(GO) test ./test/docsync -count=1
 
 test-e2e:
 	$(MAKE) test-e2e-daemon
@@ -191,13 +189,12 @@ test-e2e-daemon: daemon-build
 		SANHO_DAEMON_BINARY="$(CURDIR)/$(DAEMON_BINARY)" $(GO) test ./test/e2e -count=1; \
 	fi
 
+# The v0.1 CLI e2e suite (test/cli/e2e) was a daemon-shaped behavior
+# matrix and is deleted with the v0.1 client (sanho-v0.2.md §9 rule 6).
+# P5 restores a v0.2 scenario suite here; until then this target proves
+# only that both binaries install and run.
 test-e2e-client: cli-build daemon-build
 	$(GO) test ./test/install -count=1
-	@if [ -n "$(strip $(E2E_SOCKET))" ]; then \
-		SANHO_CLI_BINARY="$(CURDIR)/$(CLI_BINARY)" SANHO_DAEMON_BINARY="$(CURDIR)/$(DAEMON_BINARY)" SANHO_E2E_SOCKET="$(E2E_SOCKET)" $(GO) test ./test/cli/e2e -count=1 -v; \
-	else \
-		SANHO_CLI_BINARY="$(CURDIR)/$(CLI_BINARY)" SANHO_DAEMON_BINARY="$(CURDIR)/$(DAEMON_BINARY)" $(GO) test ./test/cli/e2e -count=1 -v; \
-	fi
 
 # Compatibility aliases for the previous target names.
 build-daemon-binary: daemon-build

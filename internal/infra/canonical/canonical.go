@@ -37,6 +37,11 @@ var ErrNonFastForward = pubdom.ErrNonFastForward
 // domain/publish for the same reason as ErrNonFastForward.
 var ErrUnreachable = pubdom.ErrUnreachable
 
+// ErrEmptyBranch is Head's answer for a canonical repository into which
+// nothing has ever been published. Re-exported from domain/publish for
+// the same reason as the two sentinels above.
+var ErrEmptyBranch = pubdom.ErrEmptyBranch
+
 const (
 	// CloneRelPath is the clone's location under the app repository's
 	// git common dir (§5.2). Linked worktrees share one clone because
@@ -330,6 +335,14 @@ func (s *Store) Age() (age time.Duration, ok bool) {
 
 // Head returns the last-fetched canonical head commit and its docs
 // tree OID (for a docs-only canonical repo, the root tree).
+//
+// A publication branch with no commits is reported as ErrEmptyBranch
+// rather than as an opaque failure: an empty canonical repository is the
+// ordinary starting state of a new project, and the flow layer has a
+// correct answer for it (bootstrap publication; nothing to consume on
+// sync/pull). Callers that cannot distinguish it would otherwise have to
+// read the message text to tell "nothing published yet" from "the clone
+// is broken".
 func (s *Store) Head(ctx context.Context) (commit, tree string, err error) {
 	run := gitx.New(s.dir)
 	res, err := run.RunExit(ctx, "rev-parse", "--verify", "--quiet", s.remoteRef()+"^{commit}")
@@ -337,7 +350,7 @@ func (s *Store) Head(ctx context.Context) (commit, tree string, err error) {
 		return "", "", fmt.Errorf("canonical: resolve head of %s: %w", s.branch, err)
 	}
 	if res.ExitCode != 0 {
-		return "", "", fmt.Errorf("canonical: branch %s has no commits in %s (fetch first)", s.branch, s.dir)
+		return "", "", fmt.Errorf("%w: %s in %s", ErrEmptyBranch, s.branch, s.dir)
 	}
 	commit = firstLine(res.Stdout)
 

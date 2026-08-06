@@ -816,3 +816,90 @@ func TestIsZeroOID(t *testing.T) {
 		}
 	}
 }
+
+// --- Bootstrap: publishing into an empty canonical repository ---------
+
+// newBootstrapScenario is newScenario against a canonical repository
+// with no commits at all — a docs repository that has just been created
+// and never published into (sanho-v0.2.md §5.3).
+func newBootstrapScenario(t *testing.T) *scenario {
+	t.Helper()
+	s := newScenario(t)
+	s.canonical.branch = nil
+	s.state.base, s.state.hasBase = provenance.Base{}, false
+	return s
+}
+
+func TestRunBootstrapsAnEmptyCanonicalWithoutABase(t *testing.T) {
+	s := newBootstrapScenario(t)
+
+	outcome, err := s.run(t)
+	if err != nil {
+		t.Fatalf("Run() error = %v, want a bootstrap publication", err)
+	}
+	if outcome.Case != pubdom.CaseFastForward {
+		t.Fatalf("Case = %v, want CaseFastForward", outcome.Case)
+	}
+	if outcome.Published == "" {
+		t.Fatal("Published = \"\", want the new canonical root commit")
+	}
+	if len(s.canonical.created) != 1 {
+		t.Fatalf("created %d canonical commits, want 1", len(s.canonical.created))
+	}
+	// A root commit: no parent, and the pushed tip's docs tree verbatim.
+	created := s.canonical.created[0]
+	if created.parent != "" {
+		t.Fatalf("parent = %q, want a root commit with no parent", created.parent)
+	}
+	if created.tree != tipTree {
+		t.Fatalf("tree = %s, want the tip's docs tree %s", created.tree, tipTree)
+	}
+	// The lease is empty: there is no remote ref to compare against yet.
+	if got := s.canonical.pushLeases[0]; got != "" {
+		t.Fatalf("push lease = %q, want empty for a branch-creating push", got)
+	}
+	if !outcome.BaseAdvanced {
+		t.Fatal("BaseAdvanced = false, want the base recorded after the first publish")
+	}
+}
+
+func TestRunBootstrapsAnEmptyCanonicalEvenWithARecordedBase(t *testing.T) {
+	s := newBootstrapScenario(t)
+	// A base recorded against history that no longer exists. Feeding it
+	// into the ordinary analysis would produce a "history was rewritten"
+	// rejection, which is a false diagnosis: canonical was never written.
+	s.state.base = provenance.Base{Commit: canonHead, Tree: canonTree}
+	s.state.hasBase = true
+
+	outcome, err := s.run(t)
+	if err != nil {
+		t.Fatalf("Run() error = %v, want a bootstrap publication", err)
+	}
+	if outcome.Case != pubdom.CaseFastForward {
+		t.Fatalf("Case = %v, want CaseFastForward", outcome.Case)
+	}
+	if outcome.Published == "" {
+		t.Fatal("Published = \"\", want the new canonical root commit")
+	}
+}
+
+func TestRunPublishesNothingForADocsFreeTipOnAnEmptyCanonical(t *testing.T) {
+	s := newBootstrapScenario(t)
+	// The tip carries no docs at all, so its docs tree *is* the empty
+	// tree — which is exactly what an empty canonical holds.
+	s.app.emptyTree = tipTree
+
+	outcome, err := s.run(t)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if outcome.Case != pubdom.CaseUpToDate {
+		t.Fatalf("Case = %v, want CaseUpToDate", outcome.Case)
+	}
+	if outcome.Published != "" {
+		t.Fatalf("Published = %q, want nothing published", outcome.Published)
+	}
+	if len(s.canonical.created) != 0 {
+		t.Fatalf("created %d canonical commits, want none", len(s.canonical.created))
+	}
+}

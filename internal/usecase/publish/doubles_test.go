@@ -2,7 +2,6 @@ package publish
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/irootkernel/sanho/internal/domain/provenance"
@@ -65,6 +64,7 @@ type fakeCanonical struct {
 	imported   []string
 	created    []createdCommit
 	mergeCalls []string
+	pushLeases []string
 	nextOID    int
 }
 
@@ -86,10 +86,12 @@ func (c *fakeCanonical) Fetch(ctx context.Context) error {
 	return c.fetchErr
 }
 
+// Head models infra/canonical's contract, including its distinguishable
+// answer for a repository nothing has ever published into.
 func (c *fakeCanonical) Head(ctx context.Context) (string, string, error) {
 	head := c.head()
 	if head.commit == "" {
-		return "", "", errors.New("canonical branch has no commits")
+		return "", "", fmt.Errorf("%w: main", pubdom.ErrEmptyBranch)
 	}
 	return head.commit, head.tree, nil
 }
@@ -166,6 +168,7 @@ func (c *fakeCanonical) CommitDocsTree(ctx context.Context, tree, parent, author
 
 func (c *fakeCanonical) PushHead(ctx context.Context, newHead, expectedOld string) error {
 	c.pushes++
+	c.pushLeases = append(c.pushLeases, expectedOld)
 	if c.onPush != nil {
 		c.onPush(c, c.pushes)
 	}
@@ -196,6 +199,7 @@ type fakeApp struct {
 	identityErr error
 	worktree    string
 	worktreeErr error
+	emptyTree   string
 
 	scanned       []string
 	subjectCalls  []string
@@ -228,6 +232,16 @@ func (a *fakeApp) RepoIdentity(ctx context.Context) (string, string, error) {
 		return "", "", a.identityErr
 	}
 	return a.repoName, a.branch, nil
+}
+
+// EmptyTree stands in for the app repository's empty-tree OID. The
+// default is a recognizable sentinel so a test that never sets it can
+// still tell "the empty tree" apart from any tree it did register.
+func (a *fakeApp) EmptyTree(ctx context.Context) (string, error) {
+	if a.emptyTree == "" {
+		return "tree-empty", nil
+	}
+	return a.emptyTree, nil
 }
 
 func (a *fakeApp) WorktreeDocsTree(ctx context.Context) (string, error) {

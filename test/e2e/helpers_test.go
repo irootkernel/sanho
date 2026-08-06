@@ -162,40 +162,6 @@ func repoRoot(t *testing.T) string {
 	return abs
 }
 
-// getCliBinaryE2E returns a sanho binary path for e2e CLI runs.
-// It prefers SANHO_CLI_BINARY, then repo-root bin/sanho, otherwise builds a temp binary.
-func getCliBinaryE2E(t *testing.T) string {
-	t.Helper()
-
-	// Env override
-	if bin := strings.TrimSpace(os.Getenv("SANHO_CLI_BINARY")); bin != "" {
-		if _, err := os.Stat(bin); err == nil {
-			return bin
-		}
-		t.Logf("SANHO_CLI_BINARY set but not found: %s", bin)
-	}
-
-	// Existing bin under repo root
-	candidates := []string{
-		filepath.Join(repoRoot(t), "bin", "sanho"),
-	}
-	for _, c := range candidates {
-		if _, err := os.Stat(c); err == nil {
-			return c
-		}
-	}
-
-	// Build temp binary
-	tmpDir := t.TempDir()
-	binPath := filepath.Join(tmpDir, "sanho")
-	cmd := exec.Command("go", "build", "-o", binPath, "./cmd/sanho")
-	cmd.Dir = repoRoot(t)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("failed to build sanho binary: %v\noutput:\n%s", err, string(out))
-	}
-	return binPath
-}
-
 // runCmdE2E executes a command and fails the test when it errors.
 func runCmdE2E(t *testing.T, dir string, extraEnv map[string]string, name string, args ...string) []byte {
 	t.Helper()

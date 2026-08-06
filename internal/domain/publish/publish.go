@@ -32,6 +32,17 @@ var (
 	// ErrUnreachable wraps failures reaching origin; write paths fail
 	// closed on it with the §5.9 canonical-unreachable message.
 	ErrUnreachable = errors.New("canonical repository unreachable")
+	// ErrEmptyBranch reports that the canonical publication branch
+	// carries no commits at all — a brand-new docs repository that
+	// nothing has published into yet.
+	//
+	// It is a distinct sentinel rather than a plain failure because it is
+	// not one: it is the ordinary starting state of a fresh project, and
+	// each flow has a correct answer for it. Publication bootstraps
+	// (root commit, no lease); sync and pull have nothing to consume and
+	// report up to date. Both live above infra, hence the sentinel lives
+	// here beside its two siblings.
+	ErrEmptyBranch = errors.New("canonical publication branch has no commits")
 )
 
 // Case enumerates §5.3's publication case analysis.

@@ -1,198 +1,208 @@
 package cli
 
+// `sanho clean` (sanho-v0.2.md §5.8): remove sanho from this workspace.
+//
+// --dry-run is STRICTLY READ-ONLY, and that is the point of the split
+// below rather than an aspiration. Audit M4 was a v0.1 dry-run that
+// deleted state while reporting what it "would" do; here the plan is
+// computed by cleanPlan, which performs no writes at all, and only
+// applyCleanPlan touches anything. The regression test asserts that a
+// dry-run leaves every file byte-identical — including the sync note and
+// the registry.
+
 import (
+	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
-	"github.com/spf13/cobra"
+	"github.com/irootkernel/sanho/internal/infra/wsstate"
 
-	"github.com/irootkernel/sanho/internal/infra/fs"
-	"github.com/irootkernel/sanho/internal/infra/git"
-	"github.com/irootkernel/sanho/internal/infra/httpclient"
+	"github.com/spf13/cobra"
 )
 
-// newCleanCmd creates the clean command.
+// cleanPlan is what a clean would do. Building it is a pure read.
+type cleanPlan struct {
+	// files are workspace files to delete, absolute.
+	files []string
+	// directories are trees to delete, absolute (the canonical clone,
+	// and the docs directory under --remove-docs).
+	directories []string
+	// registryKey is the entry to drop.
+	registryKey string
+	// hooks names the hook lines that will be removed, for the summary.
+	hookCount int
+}
+
 func newCleanCmd() *cobra.Command {
-	var (
-		yes        bool
-		offline    bool
-		dryRun     bool
-		removeDocs bool
-	)
+	var dryRun, removeDocs, confirmed bool
 
 	cmd := &cobra.Command{
 		Use:   "clean",
-		Short: "Remove sanho configuration and unlink workspace",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			cwd, err := getWorkingDirectory()
-			if err != nil {
-				return err
-			}
+		Short: "Remove sanho state, hooks, and the private clone from this workspace",
+		Long: `Remove this workspace's sanho registration: the six hook lines, the config and
+base files, the private canonical clone, and the registry entry.
 
-			loader := fs.NewFileConfigLoader()
-			config, err := loader.Load(cwd)
-			if err != nil {
-				return fmt.Errorf("failed to load .sanho.json: %w", err)
-			}
-			config.ApplyDefaults()
-			if !dryRun {
-				if err := requireWorkspaceMutationSafe(cmd.Context(), cwd); err != nil {
-					return wrapGitOperationGuard("sanho clean", err)
-				}
-			}
-			hasPullCommit, err := newPullCommitEngine(nil).hasTransaction(cmd.Context(), cwd, config.DocsDir)
-			if err != nil {
-				return fmt.Errorf("failed to check pull-commit state: %w", err)
-			}
-			if hasPullCommit {
-				return errors.New("cannot clean an incomplete pull-commit transaction; use 'sanho pull-commit --continue' or '--abort' first")
-			}
-			hasPulledDocs, err := hasPulledDocsBaseline(cmd.Context(), cwd)
-			if err != nil {
-				return fmt.Errorf("failed to check pulled docs baseline: %w", err)
-			}
-			if hasPulledDocs {
-				return errors.New("cannot clean while pulled docs await a base commit; run 'sanho pull-commit' first")
-			}
-			hasPendingReport, err := hasPendingWorkspaceReport(cmd.Context(), cwd)
-			if err != nil {
-				return fmt.Errorf("failed to check pending workspace report: %w", err)
-			}
-			if hasPendingReport {
-				return errors.New("cannot clean while a workspace docs-hash report is pending; restore daemon access and retry a guarded command first")
-			}
-			mainPublication, err := assessMainPublication(cmd.Context(), cwd, mainPublicationAssessmentOptions{
-				RefreshOrigin: true,
-				ReadOnly:      dryRun,
-			})
-			if err != nil {
-				return fmt.Errorf("failed to check main publication state: %w", err)
-			}
-			if mainPublication.Exists {
-				return fmt.Errorf(
-					"cannot clean while origin/main publication is %s: %s; run 'git push origin main' or another origin branch push first",
-					mainPublication.Classification,
-					mainPublication.Reason,
-				)
-			}
-
-			configPath := filepath.Join(cwd, fs.ConfigFileName)
-			docsHashPath := filepath.Join(cwd, config.DocsHashFile)
-			pendingFixPath := filepath.Join(cwd, config.PendingFixFile)
-			docsPath := filepath.Join(cwd, config.DocsDir)
-
-			cmd.Printf("sanho clean target:\n")
-			cmd.Printf("  socket    : %s\n", config.SocketPath)
-			cmd.Printf("  project   : %s\n", config.Project)
-			cmd.Printf("  workspace : %s\n", config.WorkspaceID)
-			cmd.Printf("  remove files: %s, %s, %s\n", configPath, docsHashPath, pendingFixPath)
-			if removeDocs {
-				cmd.Printf("  remove docs dir: %s\n", docsPath)
-			}
-			cmd.Printf("  hooks to clean: pre-commit, post-checkout, post-merge, post-rewrite, pre-push, commit-msg, post-commit\n")
-			if dryRun {
-				cmd.Println("  dry-run: no changes will be made")
-			}
-
-			if !yes && !dryRun {
-				confirmed, err := promptForConfirmation("Proceed? (y/N): ")
-				if err != nil {
-					return err
-				}
-				if !confirmed {
-					return nil
-				}
-			}
-
-			if !offline && !dryRun {
-				ctx, cancel := createContext(DefaultTimeout)
-				defer cancel()
-
-				client, err := newDaemonClient(config.SocketPath)
-				if err != nil {
-					return err
-				}
-				if err := client.DeleteWorkspace(ctx, config.WorkspaceID); err != nil {
-					if errors.Is(err, httpclient.ErrUnknownWorkspace) {
-						cmd.Println("sanho: workspace already removed on daemon (unknown_workspace). Continuing...")
-					} else {
-						return fmt.Errorf("failed to delete workspace on daemon: %w", err)
-					}
-				} else {
-					cmd.Println("sanho: workspace removed from daemon.")
-				}
-			} else if offline && !dryRun {
-				cmd.Println("sanho: offline mode - skipping daemon workspace deletion.")
-			}
-
-			removePath := func(p string, allowMissing bool) error {
-				if dryRun {
-					cmd.Printf("dry-run: would remove %s\n", p)
-					return nil
-				}
-				if err := os.Remove(p); err != nil {
-					if os.IsNotExist(err) && allowMissing {
-						cmd.Printf("sanho: %s not found, skipping.\n", p)
-						return nil
-					}
-					return fmt.Errorf("failed to remove %s: %w", p, err)
-				}
-				return nil
-			}
-
-			if err := removePath(configPath, true); err != nil {
-				return err
-			}
-			if err := removePath(docsHashPath, true); err != nil {
-				return err
-			}
-			if err := removePath(pendingFixPath, true); err != nil {
-				return err
-			}
-
-			if removeDocs {
-				if dryRun {
-					cmd.Printf("dry-run: would remove directory %s\n", docsPath)
-				} else if err := os.RemoveAll(docsPath); err != nil && !os.IsNotExist(err) {
-					return fmt.Errorf("failed to remove docs directory: %w", err)
-				}
-			}
-
-			// Clean sanho hook lines
-			if !dryRun {
-				cleaner := git.NewHookInstaller()
-				hookLines := map[string]string{
-					"pre-commit":    "sanho hook pre-commit",
-					"post-checkout": "sanho hook post-checkout",
-					"post-merge":    "sanho hook post-merge",
-					"post-rewrite":  "sanho hook post-rewrite \"$@\"",
-					"pre-push":      "sanho hook pre-push \"$@\"",
-					"commit-msg":    "sanho hook commit-msg \"$1\"",
-					"post-commit":   "sanho hook post-commit",
-				}
-				for hookName, line := range hookLines {
-					if err := cleaner.RemoveHookLine(cmd.Context(), cwd, hookName, line); err != nil {
-						return fmt.Errorf("failed to clean hook %s: %w", hookName, err)
-					}
-					if err := cleaner.RemoveHookLine(cmd.Context(), cwd, "pre-push", "sanho hook pre-push"); err != nil {
-						return fmt.Errorf("failed to clean legacy pre-push hook: %w", err)
-					}
-				}
-			} else {
-				cmd.Println("dry-run: skipping hook cleanup")
-			}
-
-			cmd.Println("sanho: clean completed.")
-			return nil
+--dry-run prints what would be removed and changes nothing at all.
+The real run requires -y, because it is not reversible.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runClean(cmd, dryRun, removeDocs, confirmed)
 		},
 	}
-
-	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "Skip confirmation prompt")
-	cmd.Flags().BoolVar(&offline, "offline", false, "Skip daemon workspace deletion")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Show actions without making changes")
-	cmd.Flags().BoolVar(&removeDocs, "remove-docs", false, "Remove docs directory as well")
-
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print what would be removed; change nothing")
+	cmd.Flags().BoolVar(&removeDocs, "remove-docs", false, "Also delete the docs directory")
+	cmd.Flags().BoolVarP(&confirmed, "yes", "y", false, "Confirm the removal")
 	return cmd
+}
+
+func runClean(cmd *cobra.Command, dryRun, removeDocs, confirmed bool) error {
+	ctx := cmd.Context()
+
+	// A v0.1 workspace is cleanable: removal is exactly what v0.2 can do
+	// for it without interpreting any v0.1 state, and RemoveHooks knows
+	// the legacy lines. So openWorkspace's v1 signal is tolerated here.
+	ws, err := openWorkspace(ctx)
+	if err != nil && !errors.Is(err, errV1Workspace) {
+		return err
+	}
+
+	plan, err := cleanPlan{}.build(ctx, ws, removeDocs)
+	if err != nil {
+		return err
+	}
+
+	if dryRun {
+		renderCleanPlan(cmd.OutOrStdout(), plan, true)
+		return nil
+	}
+	if !confirmed {
+		return fmt.Errorf("%s", msgCleanNeedsConfirmation)
+	}
+
+	// Refuse while a sync is owed: cleaning would strand a docs worktree
+	// full of markers with no note explaining them. The named command
+	// cannot fail once its precondition holds (§5.5 step 7).
+	if inProgress, err := ws.statePort().SyncInProgress(); err != nil {
+		return err
+	} else if inProgress {
+		return fmt.Errorf("%s", msgCleanSyncInProgress)
+	}
+
+	if err := applyCleanPlan(ctx, ws, plan); err != nil {
+		return err
+	}
+	renderCleanPlan(cmd.OutOrStdout(), plan, false)
+	return nil
+}
+
+// build computes the plan. Every call here is a read: Stat, and the hook
+// inventory. Nothing is opened for writing, nothing is created, and the
+// registry is not even locked — a --dry-run must not so much as touch
+// the lock file's mtime.
+func (cleanPlan) build(ctx context.Context, ws *workspace, removeDocs bool) (cleanPlan, error) {
+	plan := cleanPlan{registryKey: ws.registryKey(), hookCount: 0}
+
+	for _, name := range []string{
+		wsstate.ConfigFileName,
+		wsstate.BaseFileName,
+		wsstate.LegacyHashFileName,
+		".sanho_pending_fix",
+	} {
+		path := filepath.Join(ws.root, name)
+		if exists, err := pathExists(path); err != nil {
+			return cleanPlan{}, err
+		} else if exists {
+			plan.files = append(plan.files, path)
+		}
+	}
+
+	if exists, err := pathExists(ws.cloneDir()); err != nil {
+		return cleanPlan{}, err
+	} else if exists {
+		plan.directories = append(plan.directories, ws.cloneDir())
+	}
+
+	if removeDocs {
+		docs := filepath.Join(ws.root, filepath.FromSlash(ws.config.DocsDir))
+		if exists, err := pathExists(docs); err != nil {
+			return cleanPlan{}, err
+		} else if exists {
+			plan.directories = append(plan.directories, docs)
+		}
+	}
+
+	states, err := ws.repo.HooksStatus(ctx)
+	if err != nil {
+		return cleanPlan{}, err
+	}
+	for _, state := range states {
+		if state.Installed || len(state.Legacy) > 0 {
+			plan.hookCount++
+		}
+	}
+	return plan, nil
+}
+
+// applyCleanPlan performs the removals.
+//
+// Hooks go first, because they are the part that keeps *acting* on the
+// repository: once they are gone, an interrupted clean leaves an inert
+// workspace rather than hooks pointing at state that no longer exists.
+// The registry entry goes last, for the symmetric reason — it is the
+// record that this workspace was managed, and dropping it while its
+// files remain would hide a half-cleaned checkout from `sanho state`.
+func applyCleanPlan(ctx context.Context, ws *workspace, plan cleanPlan) error {
+	if err := ws.repo.RemoveHooks(ctx); err != nil {
+		return err
+	}
+	if err := wsstate.ClearSyncNote(ws.gitDir); err != nil {
+		return err
+	}
+	for _, path := range plan.files {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("remove %s: %w", path, err)
+		}
+	}
+	for _, dir := range plan.directories {
+		if err := os.RemoveAll(dir); err != nil {
+			return fmt.Errorf("remove %s: %w", dir, err)
+		}
+	}
+
+	file, err := openRegistry()
+	if err != nil {
+		return err
+	}
+	return removeWorkspace(ctx, file, plan.registryKey)
+}
+
+func renderCleanPlan(out io.Writer, plan cleanPlan, dryRun bool) {
+	verb, tense := "removed", ""
+	if dryRun {
+		verb, tense = "would remove", " (dry run — nothing was changed)"
+	}
+	writef(out, "sanho: %s%s\n", verb, tense)
+
+	writef(out, "  hooks         : %d hook file(s) carry sanho lines\n", plan.hookCount)
+	for _, path := range plan.files {
+		writef(out, "  file          : %s\n", path)
+	}
+	for _, dir := range plan.directories {
+		writef(out, "  directory     : %s\n", dir)
+	}
+	writef(out, "  registry entry: %s\n", plan.registryKey)
+}
+
+func pathExists(path string) (bool, error) {
+	switch _, err := os.Lstat(path); {
+	case err == nil:
+		return true, nil
+	case os.IsNotExist(err):
+		return false, nil
+	default:
+		return false, fmt.Errorf("inspect %s: %w", path, err)
+	}
 }

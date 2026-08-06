@@ -1,256 +1,214 @@
 package cli
 
+// `sanho state` (sanho-v0.2.md §5.8): the registry dump. It reads
+// ~/.sanho/state.json under the shared lock — no daemon, no socket.
+
 import (
 	"context"
 	"errors"
-	"os"
+	"io"
 	"sort"
+	"text/tabwriter"
 	"time"
 
-	"github.com/spf13/cobra"
+	"github.com/irootkernel/sanho/internal/infra/registry"
 
-	"github.com/irootkernel/sanho/internal/domain/docs"
-	"github.com/irootkernel/sanho/internal/infra/fs"
-	"github.com/irootkernel/sanho/internal/infra/httpclient"
+	"github.com/spf13/cobra"
 )
 
-// stateTimeout is the timeout for state operations.
-const stateTimeout = 30 * time.Second
-
-type stateJSONOutput struct {
-	Scope      string               `json:"scope"`
-	Project    *string              `json:"project"`
-	DocsHeads  map[string]string    `json:"docs_heads"`
-	Workspaces []stateJSONWorkspace `json:"workspaces"`
+// stateJSON is the stable `sanho state --json` schema:
+//
+//	{
+//	  "home":     "<sanho home directory>",
+//	  "scope":    "<project name>" | "all",
+//	  "projects": [{"name": "...", "docs_repo_url": "...",
+//	                "head": "<oid>"}],
+//	  "workspaces": [{"workspace_id": "...", "project": "...",
+//	                  "local_path": "...", "base_commit": "...",
+//	                  "base_tree": "...", "actor_email": "...",
+//	                  "last_updated_at": "RFC3339"}]
+//	}
+//
+// `head` is present only when the command runs inside a workspace of
+// that project — canonical heads live in per-workspace clones (§5.2), so
+// there is nowhere else to read one from. It is omitted rather than
+// guessed.
+type stateJSON struct {
+	Home       string          `json:"home"`
+	Scope      string          `json:"scope"`
+	Projects   []projectJSON   `json:"projects"`
+	Workspaces []workspaceJSON `json:"workspaces"`
 }
 
-type stateJSONWorkspace struct {
-	WorkspaceID    string  `json:"workspace_id"`
-	Project        string  `json:"project"`
-	DocsHash       string  `json:"docs_hash"`
-	LastReportedAt *string `json:"last_reported_at"`
-	LastActor      *string `json:"last_actor"`
+type projectJSON struct {
+	Name        string `json:"name"`
+	DocsRepoURL string `json:"docs_repo_url"`
+	Head        string `json:"head,omitempty"`
 }
 
-// newStateCmd creates the state command.
+type workspaceJSON struct {
+	WorkspaceID   string    `json:"workspace_id"`
+	Project       string    `json:"project"`
+	LocalPath     string    `json:"local_path"`
+	BaseCommit    string    `json:"base_commit"`
+	BaseTree      string    `json:"base_tree"`
+	ActorEmail    string    `json:"actor_email"`
+	LastUpdatedAt time.Time `json:"last_updated_at"`
+}
+
+// scopeAll is the Scope value for a `--all` dump.
+const scopeAll = "all"
+
 func newStateCmd() *cobra.Command {
-	var showAll bool
-	var jsonOutput bool
+	var all, asJSON bool
 
 	cmd := &cobra.Command{
 		Use:   "state",
-		Short: "Query daemon state for registered projects and workspaces",
-		Long: `Query the sanhod for the current state of docs HEAD
-and registered workspaces.
+		Short: "Show the registered projects and workspaces",
+		Long: `Print the cross-workspace registry (~/.sanho/state.json).
 
-By default, shows only the current project's state.
-Use --all to see all projects.
-
-Outside a sanho workspace, --all uses the configured or default daemon socket.`,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runStateCommand(cmd, showAll, jsonOutput)
-		},
+Inside a managed workspace the output is scoped to that workspace's project;
+--all prints every registration.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error { return runState(cmd, all, asJSON) },
 	}
-
-	cmd.Flags().BoolVar(&showAll, "all", false, "Show all projects and workspaces")
-	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Print machine-readable JSON")
-
+	cmd.Flags().BoolVar(&all, "all", false, "Print every project, not just this workspace's")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "Print machine-readable JSON")
 	return cmd
 }
 
-// runStateCommand executes the sanho state logic.
-func runStateCommand(cmd *cobra.Command, showAll bool, jsonOutput bool) error {
-	ctx, cancel := context.WithTimeout(context.Background(), stateTimeout)
-	defer cancel()
+func runState(cmd *cobra.Command, all, asJSON bool) error {
+	ctx := cmd.Context()
 
-	// Get current working directory
-	cwd, err := os.Getwd()
+	file, err := openRegistry()
 	if err != nil {
-		if !jsonOutput {
-			cmd.PrintErrf("sanho state: failed to get current directory: %v\n", err)
-		}
-		return withErrorCode("internal_error", err)
+		return err
 	}
-
-	// Load config to get daemon socket path and project
-	configLoader := fs.NewFileConfigLoader()
-	config, err := configLoader.Load(cwd)
-
-	var socketPath string
-	var currentProject docs.ProjectName
-
+	state, err := file.Read(ctx)
 	if err != nil {
-		// Config not found
-		if showAll && errors.Is(err, fs.ErrConfigNotFound) {
-			socketPath = ""
-		} else if errors.Is(err, fs.ErrConfigNotFound) {
-			if !jsonOutput {
-				cmd.PrintErrf("sanho state: this directory is not a sanho workspace.\n")
-				cmd.PrintErrf("Please run 'sanho init' first or use --all with --socket.\n")
-			}
-			return withErrorCode("not_in_workspace", err)
-		} else {
-			if !jsonOutput {
-				cmd.PrintErrf("sanho state: failed to load config: %v\n", err)
-			}
-			return withErrorCode("invalid_workspace_config", err)
-		}
-	} else {
-		// Config found
-		socketPath = config.SocketPath
-		currentProject = config.Project
+		return err
 	}
 
-	// Create HTTP client
-	httpClient, err := newDaemonClient(socketPath)
-	if err != nil {
-		return withErrorCode("invalid_socket_path", err)
+	// `sanho state` reads the registry, which exists outside any
+	// workspace, so running it elsewhere is legitimate: it simply has no
+	// project to scope to and no clone to read heads from.
+	ws, wsErr := openWorkspace(ctx)
+	if wsErr != nil && !errors.Is(wsErr, errNotWorkspace) && !errors.Is(wsErr, errV1Workspace) {
+		return wsErr
+	}
+	inWorkspace := wsErr == nil
+
+	scope := scopeAll
+	if !all && inWorkspace {
+		scope = ws.config.Project
 	}
 
-	// Get state from daemon
-	var resp httpclient.StateResponse
-	if showAll {
-		resp, err = httpClient.GetState(ctx, nil)
-	} else {
-		resp, err = httpClient.GetState(ctx, &currentProject)
-	}
+	document := stateJSON{Home: file.HomeDir(), Scope: scope}
+	document.Projects = collectProjects(ctx, state, scope, ws, inWorkspace)
+	document.Workspaces = collectWorkspaces(state, scope)
 
-	if err != nil {
-		if errors.Is(err, httpclient.ErrUnknownProject) {
-			if !jsonOutput {
-				cmd.PrintErrf("sanho state: project '%s' is not registered on daemon.\n", currentProject)
-				cmd.PrintErrf("Please run 'sanho project add' to register the project.\n")
-			}
-			return withErrorCode("unknown_project", err)
-		}
-		if !jsonOutput {
-			cmd.PrintErrf("sanho state: failed to get state from daemon: %v\n", err)
-		}
-		return withErrorCode("daemon_request_failed", err)
+	if asJSON {
+		return writeJSON(cmd.OutOrStdout(), document)
 	}
-
-	// Output the state
-	if jsonOutput {
-		output := buildStateJSONOutput(showAll, currentProject, resp)
-		if err := writeJSON(cmd.OutOrStdout(), output); err != nil {
-			return withErrorCode("internal_error", errors.Join(ErrInternal, err))
-		}
-		return nil
-	}
-	if showAll {
-		printAllState(cmd, resp)
-	} else {
-		printProjectState(cmd, currentProject, resp)
-	}
-
+	renderState(cmd.OutOrStdout(), document)
 	return nil
 }
 
-func buildStateJSONOutput(showAll bool, project docs.ProjectName, resp httpclient.StateResponse) stateJSONOutput {
-	output := stateJSONOutput{
-		Scope:      "all",
-		DocsHeads:  make(map[string]string),
-		Workspaces: make([]stateJSONWorkspace, 0, len(resp.Workspaces)),
-	}
-	if showAll {
-		for name, head := range resp.DocsHeads {
-			output.DocsHeads[name] = head
-		}
-	} else {
-		output.Scope = "project"
-		projectName := string(project)
-		output.Project = &projectName
-		if head, ok := resp.DocsHeads[projectName]; ok {
-			output.DocsHeads[projectName] = head
-		}
-	}
-
-	for _, ws := range resp.Workspaces {
-		if !showAll && ws.Project != string(project) {
+// collectProjects lists the registered projects in scope, attaching the
+// canonical head only for the project of the workspace we are standing
+// in.
+func collectProjects(ctx context.Context, state registry.State, scope string, ws *workspace, inWorkspace bool) []projectJSON {
+	projects := make([]projectJSON, 0, len(state.Projects))
+	for name, project := range state.Projects {
+		if scope != scopeAll && name != scope {
 			continue
 		}
-		var lastActor *string
-		if ws.LastActorEmail != "" {
-			actor := ws.LastActorEmail
-			lastActor = &actor
+		row := projectJSON{Name: name, DocsRepoURL: project.DocsRepoURL}
+		if inWorkspace && name == ws.config.Project {
+			row.Head = cachedCanonicalHead(ctx, ws)
 		}
-		output.Workspaces = append(output.Workspaces, stateJSONWorkspace{
-			WorkspaceID:    ws.WorkspaceID,
-			Project:        ws.Project,
-			DocsHash:       ws.DocsHash,
-			LastReportedAt: ws.LastReportedAt,
-			LastActor:      lastActor,
+		projects = append(projects, row)
+	}
+	sort.Slice(projects, func(i, j int) bool { return projects[i].Name < projects[j].Name })
+	return projects
+}
+
+// cachedCanonicalHead reads the last-fetched head, best effort. No
+// clone, no fetch, no head — all three are ordinary states here, and
+// none is worth failing a registry dump over.
+func cachedCanonicalHead(ctx context.Context, ws *workspace) string {
+	store := canonicalOrNil(ws)
+	if store == nil {
+		return ""
+	}
+	head, _, err := store.Head(ctx)
+	if err != nil {
+		return ""
+	}
+	return head
+}
+
+func collectWorkspaces(state registry.State, scope string) []workspaceJSON {
+	project := ""
+	if scope != scopeAll {
+		project = scope
+	}
+
+	rows := projectWorkspaces(state, project)
+	out := make([]workspaceJSON, 0, len(rows))
+	for key, entry := range state.Workspaces {
+		if project != "" && entry.Project != project {
+			continue
+		}
+		out = append(out, workspaceJSON{
+			WorkspaceID:   key,
+			Project:       entry.Project,
+			LocalPath:     entry.LocalPath,
+			BaseCommit:    entry.BaseCommit,
+			BaseTree:      entry.BaseTree,
+			ActorEmail:    entry.ActorEmail,
+			LastUpdatedAt: entry.LastUpdatedAt,
 		})
 	}
-	sort.Slice(output.Workspaces, func(i, j int) bool {
-		if output.Workspaces[i].Project != output.Workspaces[j].Project {
-			return output.Workspaces[i].Project < output.Workspaces[j].Project
-		}
-		return output.Workspaces[i].WorkspaceID < output.Workspaces[j].WorkspaceID
-	})
-	return output
+	sort.Slice(out, func(i, j int) bool { return out[i].WorkspaceID < out[j].WorkspaceID })
+	return out
 }
 
-// printProjectState prints state for the current project only.
-func printProjectState(cmd *cobra.Command, project docs.ProjectName, resp httpclient.StateResponse) {
-	cmd.Print("sanho state:\n")
-	cmd.Printf("  project: %s\n", project)
+func renderState(out io.Writer, document stateJSON) {
+	writef(out, "home  : %s\n", document.Home)
+	writef(out, "scope : %s\n", document.Scope)
 
-	// Get docs head for this project
-	if head, ok := resp.DocsHeads[string(project)]; ok {
-		cmd.Printf("  docs_head: %s\n", head)
-	} else {
-		cmd.Print("  docs_head: (not found)\n")
+	if len(document.Projects) == 0 {
+		writeln(out, "\nno projects are registered")
+		return
 	}
 
-	// Filter workspaces for this project
-	cmd.Print("  workspaces:\n")
-	count := 0
-	for _, ws := range resp.Workspaces {
-		if ws.Project == string(project) {
-			count++
-			printWorkspace(cmd, ws, "    ")
+	writeln(out, "\nprojects:")
+	table := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
+	writeln(table, "  PROJECT\tDOCS REPO\tHEAD")
+	for _, project := range document.Projects {
+		head := project.Head
+		if head == "" {
+			head = "-"
+		} else {
+			head = shortOID(head)
 		}
+		writef(table, "  %s\t%s\t%s\n", project.Name, project.DocsRepoURL, head)
 	}
-	if count == 0 {
-		cmd.Print("    (none)\n")
-	}
-}
+	_ = table.Flush()
 
-// printAllState prints state for all projects.
-func printAllState(cmd *cobra.Command, resp httpclient.StateResponse) {
-	cmd.Print("sanho state --all:\n")
-
-	// Print docs heads
-	cmd.Print("  docs_heads:\n")
-	if len(resp.DocsHeads) == 0 {
-		cmd.Print("    (none)\n")
-	} else {
-		for project, head := range resp.DocsHeads {
-			cmd.Printf("    %s: %s\n", project, head)
-		}
+	if len(document.Workspaces) == 0 {
+		writeln(out, "\nno workspaces are registered")
+		return
 	}
 
-	// Print all workspaces
-	cmd.Print("  workspaces:\n")
-	if len(resp.Workspaces) == 0 {
-		cmd.Print("    (none)\n")
-	} else {
-		for _, ws := range resp.Workspaces {
-			printWorkspace(cmd, ws, "    ")
-		}
+	writeln(out, "\nworkspaces:")
+	table = tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
+	writeln(table, "  WORKSPACE\tPROJECT\tBASE\tACTOR\tREPORTED")
+	for _, entry := range document.Workspaces {
+		writef(table, "  %s\t%s\t%s\t%s\t%s\n",
+			entry.LocalPath, entry.Project, shortOID(entry.BaseCommit),
+			entry.ActorEmail, formatTimestamp(entry.LastUpdatedAt))
 	}
-}
-
-// printWorkspace prints a single workspace summary.
-func printWorkspace(cmd *cobra.Command, ws httpclient.WorkspaceSummary, indent string) {
-	cmd.Printf("%s- workspace_id: %s\n", indent, ws.WorkspaceID)
-	cmd.Printf("%s  project: %s\n", indent, ws.Project)
-	cmd.Printf("%s  docs_hash: %s\n", indent, ws.DocsHash)
-	if ws.LastReportedAt != nil {
-		cmd.Printf("%s  last_reported_at: %s\n", indent, *ws.LastReportedAt)
-	}
-	if ws.LastActorEmail != "" {
-		cmd.Printf("%s  last_actor: %s\n", indent, ws.LastActorEmail)
-	}
+	_ = table.Flush()
 }
