@@ -212,6 +212,37 @@ func TestRunRebaseOnto(t *testing.T) {
 		}
 	})
 
+	// The explicit target overrides an unusable base: instead of the
+	// ErrUnknownBase refusal (whose own message advises --rebase-onto —
+	// refusing here was the D3 closure violation the e2e suite caught),
+	// the merge falls back to the empty tree as its base, exactly as in
+	// the no-base state.
+	t.Run("an unusable base falls back to the empty tree", func(t *testing.T) {
+		for name, base := range map[string]provenance.Base{
+			"unknown base with no recorded tree":   {Commit: commitOID(7)},
+			"unknown base with an unanchored tree": {Commit: commitOID(7), Tree: treeOID(7)},
+		} {
+			t.Run(name, func(t *testing.T) {
+				f := newFixture()
+				f.state.base = base
+				f.canonical.known[commitOID(2)] = true
+				f.app.commitTrees[commitOID(2)] = treeOID(2)
+
+				result, err := f.useCase().Run(context.Background(), Options{RebaseOnto: commitOID(2)})
+				if err != nil {
+					t.Fatalf("Run: %v", err)
+				}
+				if len(f.app.mergeCalls) != 1 || f.app.mergeCalls[0].base != emptyTreeOID {
+					t.Fatalf("merge base = %v, want the empty tree", f.app.mergeCalls)
+				}
+				want := provenance.Base{Commit: commitOID(2), Tree: treeOID(2)}
+				if result.NewBase != want {
+					t.Fatalf("NewBase = %+v, want %+v", result.NewBase, want)
+				}
+			})
+		}
+	})
+
 	t.Run("a known target replaces canonical head", func(t *testing.T) {
 		f := newFixture()
 		// Canonical head is commit 1; aim at the older commit 2 instead.

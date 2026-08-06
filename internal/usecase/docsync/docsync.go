@@ -244,7 +244,7 @@ func (u *UseCase) Run(ctx context.Context, opts Options) (Result, error) {
 	}
 
 	// Step 4 — the three-way merge, in the app repo.
-	baseTree, err := u.resolveBaseTree(ctx, base, hasBase, head)
+	baseTree, err := u.resolveBaseTree(ctx, base, hasBase, head, opts.RebaseOnto != "")
 	if err != nil {
 		return Result{}, err
 	}
@@ -440,7 +440,7 @@ func (u *UseCase) Pull(ctx context.Context, withCommit bool) (Result, error) {
 		// closure).
 		return Result{}, fmt.Errorf("%w: no docs base is recorded; run 'sanho sync' first", ErrPullNeedsSync)
 	}
-	baseTree, err := u.resolveBaseTree(ctx, base, true, head)
+	baseTree, err := u.resolveBaseTree(ctx, base, true, head, false)
 	if err != nil {
 		return Result{}, err
 	}
@@ -594,13 +594,18 @@ func noUpstreamYet(rebaseOnto string) (Result, error) {
 //     by FetchIntoApp and usable as a merge base. With no recorded
 //     tree, or no commit carrying it, there is nothing to anchor to and
 //     the user is directed to `--rebase-onto`.
-func (u *UseCase) resolveBaseTree(ctx context.Context, base provenance.Base, hasBase bool, head string) (string, error) {
+//
+//   - Base unusable but the caller passed an explicit `--rebase-onto`
+//     target (explicitTarget): fall back to the **empty tree**, exactly
+//     as in the no-base state. The user has designated the canonical
+//     commit to merge toward; refusing here would make the tool's own
+//     rewrite guidance advise a command that cannot succeed (the D3
+//     closure violation the e2e closure suite caught). An empty base is
+//     the honest ancestor when recorded history and canonical history
+//     genuinely share nothing.
+func (u *UseCase) resolveBaseTree(ctx context.Context, base provenance.Base, hasBase bool, head string, explicitTarget bool) (string, error) {
 	if !hasBase {
-		tree, err := u.App.EmptyTree(ctx)
-		if err != nil {
-			return "", fmt.Errorf("resolve the empty tree: %w", err)
-		}
-		return tree, nil
+		return u.emptyBaseTree(ctx)
 	}
 
 	reachable, err := u.baseIsReachable(ctx, base.Commit, head)
@@ -616,6 +621,9 @@ func (u *UseCase) resolveBaseTree(ctx context.Context, base provenance.Base, has
 	}
 
 	if base.Tree == "" {
+		if explicitTarget {
+			return u.emptyBaseTree(ctx)
+		}
 		return "", fmt.Errorf("%w: %s carries no docs-base-tree to re-anchor by; pick a canonical commit and run 'sanho sync --rebase-onto <commit>'",
 			ErrUnknownBase, shortOID(base.Commit))
 	}
@@ -624,12 +632,25 @@ func (u *UseCase) resolveBaseTree(ctx context.Context, base provenance.Base, has
 		return "", fmt.Errorf("search canonical history for docs tree %s: %w", shortOID(base.Tree), err)
 	}
 	if !found {
+		if explicitTarget {
+			return u.emptyBaseTree(ctx)
+		}
 		return "", fmt.Errorf("%w: neither %s nor its docs tree %s is in canonical history; pick a canonical commit and run 'sanho sync --rebase-onto <commit>'",
 			ErrUnknownBase, shortOID(base.Commit), shortOID(base.Tree))
 	}
 	tree, err := u.App.CommitTree(ctx, anchor)
 	if err != nil {
 		return "", fmt.Errorf("resolve the docs tree of re-anchored base %s: %w", shortOID(anchor), err)
+	}
+	return tree, nil
+}
+
+// emptyBaseTree resolves the empty tree as a merge base (the no-base
+// and explicit-target fallbacks of resolveBaseTree).
+func (u *UseCase) emptyBaseTree(ctx context.Context) (string, error) {
+	tree, err := u.App.EmptyTree(ctx)
+	if err != nil {
+		return "", fmt.Errorf("resolve the empty tree: %w", err)
 	}
 	return tree, nil
 }
