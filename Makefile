@@ -39,6 +39,7 @@ CLIENT_UNIT_PACKAGES := \
 	./internal/domain/merge \
 	./internal/domain/provenance \
 	./internal/domain/publish \
+	./internal/infra/appgit \
 	./internal/infra/canonical \
 	./internal/infra/fs \
 	./internal/infra/fsx \
