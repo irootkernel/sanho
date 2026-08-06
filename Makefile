@@ -35,11 +35,22 @@ CLIENT_UNIT_PACKAGES := \
 	./cmd/sanho \
 	./internal/buildinfo \
 	./internal/domain/client \
+	./internal/domain/markers \
 	./internal/domain/merge \
+	./internal/domain/provenance \
+	./internal/domain/publish \
+	./internal/infra/canonical \
 	./internal/infra/fs \
+	./internal/infra/fsx \
+	./internal/infra/gitx \
 	./internal/infra/httpclient \
+	./internal/infra/registry \
+	./internal/infra/wsstate \
 	./internal/interface/cli \
-	./internal/usecase/hook
+	./internal/usecase/admin \
+	./internal/usecase/docsync \
+	./internal/usecase/hook \
+	./internal/usecase/publish
 
 DAEMON_CHECK_PACKAGES := $(DAEMON_UNIT_PACKAGES) ./test/integration ./test/e2e
 CLIENT_CHECK_PACKAGES := $(CLIENT_UNIT_PACKAGES) ./test/cli/integration ./test/cli/e2e ./test/install
