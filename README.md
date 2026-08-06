@@ -1,78 +1,70 @@
 # Sanho
 
-Sanho keeps the `docs/` directories in application repositories synchronized
-with a dedicated canonical docs repository. The product has exactly two
-runtime components:
+Sanho keeps the `docs/` directories of multiple application repositories
+synchronized with one canonical docs repository, and tells you early when they
+have drifted apart.
 
-- `sanhod`: a small HTTP daemon that coordinates docs repository access.
-- `sanho`: a CLI used by developers and Git hooks in application workspaces.
+The product is exactly one executable:
 
-There is no Web UI, browser terminal, PTY, or session runtime.
+- `sanho`: a CLI used by developers and by Git hooks in application workspaces.
 
-## How it works
+There is no daemon, no socket, no HTTP API, no Web UI, no browser terminal, and
+no session runtime. Nothing to install, start, supervise, or lose.
 
-Each initialized application workspace records the docs commit on which its
-local `docs/` tree is based. The CLI compares that commit with the canonical
-remote docs HEAD through the daemon.
+## Why
 
-When a workspace publishes docs, the daemon serializes all Git operations for
-that `docs_repo_id`, refreshes its clone from origin, and accepts the snapshot
-only when the submitted base still matches remote HEAD. An outdated writer is
-rejected and must merge or pull before retrying. Failed pushes reset the daemon
-clone to origin so an unpushed local commit cannot become a false HEAD.
+Docs that live next to the code they describe get edited by whoever is holding
+the code. Docs that live in one shared repository stay findable and reviewable.
+Sanho lets you have both: you edit `docs/` as ordinary files in your application
+repository, and Sanho publishes and reconciles that directory against a
+canonical docs repository using nothing but git's own semantics.
+
+Two sentences describe the whole model:
+
+- **Publication happens at `git push`.** Commits are local and private, exactly
+  as in plain git.
+- **Detection happens at `git commit`.** The commit path reads local state only,
+  prints at most one line, and never blocks.
+
+Everything else follows. `git commit` works offline, always. Sanho never authors
+a commit in your repository and never moves your refs. Conflict resolution is
+the standard git idiom you already know: edit, `git add`, `git commit`.
 
 ## Requirements
 
-- Go 1.25 or later
-- Git
-- macOS or Linux
-- SSH credentials that can read and write the configured docs repositories
+- Go 1.25 or later — **to install only.** The installed binary does not need Go.
+- Git. No minimum version is enforced; merge paths use `git merge-tree
+  --write-tree`, which needs git 2.38 or newer in practice.
+- macOS or Linux.
+- Non-interactive credentials that can read and write the docs repository.
+  Sanho never prompts: network operations run with `GIT_TERMINAL_PROMPT=0` and
+  `ssh -o BatchMode=yes`, so a passphrase-protected key must be in ssh-agent.
 
-Node.js and npm are not required.
+Node.js and npm are not required. The only runtime dependency is cobra.
 
-## Build and run
+## Quickstart
 
-```bash
-make daemon-build
-make cli-build
-make daemon-run
-```
-
-Install both commands directly from the module:
+### Install
 
 ```bash
-go install github.com/irootkernel/sanho/cmd/sanho@v0.1.6
-go install github.com/irootkernel/sanho/cmd/sanhod@v0.1.6
+go install github.com/irootkernel/sanho/cmd/sanho@v0.2.0
+sanho version
 ```
 
-The commands are written to `GOBIN`, or to `$(go env GOPATH)/bin` when
-`GOBIN` is unset. Ensure that directory is on `PATH`. `sanho version` and
-`sanhod --version` report the installed module version.
+Go writes the binary to `GOBIN`, or to `$(go env GOPATH)/bin` when `GOBIN` is
+unset. That directory must be on `PATH` — including the `PATH` of whatever runs
+your Git hooks.
 
-The daemon runs in the foreground and listens only on the Unix socket
-`~/.sanho/sanhod.sock`. It stores state in `~/.sanho/state.json` and managed
-docs clones under `~/.sanho/docs_repos/`.
+From a checkout:
 
 ```bash
-curl --unix-socket ~/.sanho/sanhod.sock http://sanho/healthz
-SANHO_HOME=/var/lib/sanho SANHO_SOCKET=/run/user/$(id -u)/sanhod.sock make daemon-run
+make cli-build     # bin/sanho
+make install       # go install ./cmd/sanho
 ```
 
-For local development without building first:
+### Initialize a workspace
 
-```bash
-make daemon-run-dev
-```
-
-## Initialize a workspace
-
-For a checkout-local installation, use:
-
-```bash
-make install
-```
-
-Then run this in an application Git repository:
+Run this at the **root** of an application Git repository:
 
 ```bash
 sanho init \
@@ -80,64 +72,127 @@ sanho init \
   --docs-repo-url git@github.com:example/example-docs.git
 ```
 
-Use the global `--socket /absolute/path/to/sanhod.sock` option when the daemon
-does not use the default socket. `sanho init` persists the resolved absolute
-path as `socket_path` in `.sanho.json`.
+`init` registers the project, writes `.sanho.json`, creates a private clone of
+the docs repository inside `.git/sanho/canonical`, installs six Git hooks, and
+adds Sanho's state files to `.gitignore`. Then, depending on what it finds:
 
-Useful daily commands:
+- Canonical has content and you have no local `docs/` — canonical's docs are
+  checked out and staged. You make the commit.
+- Canonical is empty — no base is recorded, and your first push publishes.
+- You already have local `docs/` — the base is derived from the provenance
+  already in your repository's history. Your files are never touched.
+
+### The daily loop
 
 ```bash
-sanho status
-sanho status --json
-sanho pull
-sanho pull-commit
-sanho fix
-sanho state
-sanho state --json
+sanho status     # where am I
+sanho sync       # reconcile with upstream
+sanho pull       # just take canonical's docs (no local edits)
+git push         # publish — there is no `sanho push`
 ```
 
-`sanho init` installs the Git hooks used to check, merge, and publish docs.
-When a commit detects a newer central docs version, the pre-commit hook creates a
-`[SANHO] Update docs` commit on the latest acceptable `main`, preserves staged
-and unstaged changes, and asks you to rerun the same `git commit` command.
-Unpublished linear feature branches are rebased onto that commit; published,
-non-linear, or diverged branches fail without changing local refs. Workspace
-docs-hash reports are retried before later commit and push operations.
-`pull` keeps its no-commit behavior, records the adopted docs snapshot in
-private Git metadata, and the next commit materializes it through the same
-`[SANHO] Update docs` flow without turning untouched remote files into staged
-deletions. `pull-commit` exposes that operation proactively. HEAD-moving hooks
-never mutate Sanho state while a real Git operation is active. After operation
-metadata clears, post-checkout, post-merge, completed amend post-rewrite,
-pre-commit, and pre-push idempotently reconcile
-`.sanho_docs_hash` and daemon workspace state from a valid reachable HEAD
-`docs-version`, including fast-forward and no-op rebases that do not invoke
-post-rewrite. Read-only status distinguishes this pending local reconciliation
-from canonical docs drift. A standalone `REBASE_HEAD` without a rebase backend
-is reported as orphaned metadata and blocks normal commits with a conditional
-recovery procedure instead of unusable rebase commands. If a lifecycle hook is interrupted,
-`sanho pull-commit --recover` classifies the transaction and creates recovery
-refs before clearing only state that can be proven complete. `sanho status`
-shows the active phase and exact safe next command, and pre-push continues to
-block ambiguous or incomplete transactions. A generated docs sync commit stays
-pending for application-repository publication. On `git push origin main`, the
-original push publishes the complete local main history. On another origin
-branch push, pre-push first fast-forwards the complete local main branch to
-`origin/main`, then allows the requested branch push. Before that publication,
-pre-push validates every proposed non-delete branch OID's `docs-version`,
-canonical ancestry, and docs tree; one invalid ref blocks the whole push. Main
-rejection or divergence blocks the target push without force-pushing; retry the same
-`git push` after resolving the cause. On the first pending publication from an
-older workspace hook, Sanho atomically replaces the hook while preserving
-custom content and permission bits and ensuring it remains executable, then
-asks for the same push once more. While main publication is pending, branch pushes through an
-alias remote or direct URL are blocked until `git push origin main` succeeds;
-tag-only pushes and deletions are unaffected.
-Run `sanho <command> --help` for the complete interface.
-Machine-readable output for query commands is documented in
-[CLI JSON output](docs/cli-json.md).
-Release checks that require real remotes, branch rules, or service managers are
-documented in the [hands-on test checklist](docs/hands-on-testing.md).
+A commit on a stale base prints one line and succeeds:
+
+```text
+sanho: docs base is 2 commits behind — 'sanho sync' will merge cleanly
+```
+
+Silence means you are up to date. When you see the warning, run `sanho sync`. On
+a clean merge it writes one ordinary commit authored by you:
+
+```text
+sanho: synced docs to 9a41f2cbbbbb (commit 3f0d1a5c7e21)
+```
+
+Then push as usual:
+
+```text
+sanho: published docs 9a41f2cbbbbb (fast_forward)
+```
+
+If a push is rejected, **no remote ref was changed.** Run the command Sanho
+names, then retry the same `git push`.
+
+## The conflict idiom
+
+A conflicted `sanho sync` is a **success**, not a failure. It did what it was
+asked to do, the markers are in your worktree, and the exit code is 0.
+
+```text
+sanho: merged docs with upstream — 2 files have conflicts:
+  docs/api.md
+  docs/schema.md
+Resolve the markers, then:  git add docs/ && git commit
+To undo this sync:          sanho sync --abort
+```
+
+Markers are labeled by name, not by temp path:
+
+```text
+<<<<<<< sanho-ours
+my sentence
+=======
+the upstream sentence
+>>>>>>> sanho-upstream
+```
+
+Resolve it exactly as you would any merge conflict:
+
+```bash
+$EDITOR docs/api.md docs/schema.md
+git add docs/
+git commit -m "docs: resolve sync conflicts"
+git push
+```
+
+Or undo it:
+
+```bash
+sanho sync --abort
+```
+
+`sanho sync --abort` **cannot fail.** It moves no ref, creates no commit, and
+touches only the docs worktree and two state files. If it is interrupted, run it
+again.
+
+Every next-step command Sanho prints actually succeeds in the state where it is
+printed. When no command can succeed, Sanho prints "manual intervention
+required" plus diagnostics instead of a command that would fail.
+
+## Command surface
+
+```bash
+sanho init      # register this repository as a workspace
+sanho status    # base vs canonical, sync preview, siblings   (--refresh, --json)
+sanho state     # registered projects and workspaces          (--all, --json)
+sanho sync      # reconcile        (--abort, --rebase-onto <oid>, --json)
+sanho pull      # fast-forward consume                        (--commit, --json)
+sanho clean     # remove Sanho from this workspace  (--dry-run, --remove-docs, -y)
+sanho doctor    # check this workspace                        (--fix, --json)
+sanho project   # add | delete a project registration
+sanho migrate   # convert a v0.1 workspace to the v0.2 layout
+sanho hook      # hook entry points (invoked by git, not by hand)
+sanho version   # (--json)
+```
+
+Exit codes: `0` success · `1` a state you can act on · `2` a bug in Sanho.
+
+`sanho doctor` exits 0 even when it finds warnings — a diagnostic command that
+fails whenever it finds a problem cannot be used to investigate one.
+
+## Installed Git hooks
+
+| Hook | Role | Blocks? |
+|---|---|---|
+| `pre-commit` | Staged marker gate, local freshness warning | Markers only |
+| `commit-msg` | Stamp `docs-base` / `docs-base-tree` trailers | Never |
+| `pre-push` | Publish to canonical, marker gate, sync gate | Yes — the only one |
+| `post-checkout` | Re-derive the docs base after HEAD moved | Never |
+| `post-merge` | Same | Never |
+| `post-rewrite` | Same (amend, rebase) | Never |
+
+Hook lines are matched by **exact line**, so foreign hook content is preserved
+verbatim on install and on removal.
 
 ## Configure AI coding agents
 
@@ -150,13 +205,36 @@ Add the following shared instructions to the applicable `AGENTS.md` or
 This repository uses Sanho to synchronize its `docs/` directory with the canonical docs repository.
 
 - At the start of a task and before any authorized commit or push, run `sanho status --json`. If it fails, report the error and do not bypass Sanho.
-- If the repository is not initialized, stop and ask the user for the project name, docs repository URL, and any non-default socket path. Do not guess these values or initialize the workspace on your own.
-- Edit `docs/` as normal workspace files, but use normal Git commands and let the installed Sanho hooks run. Sanho does not grant permission to commit or push.
-- Never bypass Sanho with `--no-verify`, a force push used to evade a Sanho block, a `sanho push` command (it does not exist), or manual edits or removal of `.sanho_docs_hash`, `.git/sanho`, Git operation metadata, or Sanho-owned hook entries.
-- Do not run `sanho clean`, `sanho init --force`, or `sanho pull --force` without explicit user approval.
-- When Sanho interrupts a commit or push, inspect both `git status` and `sanho status --json`. Rerun the same command only when Sanho explicitly instructs you to; for pending main publication, follow the reported normal Git push sequence and then retry the original push.
-- For conflicts or an existing pull-commit transaction, use `pull_commit.classification`, `reason`, and `next_command`. For an active Git operation, treat `git_operation.next_commands` as choices, not commands to execute automatically. Do not choose continue, abort, or quit, delete metadata, or discard work without confirming the user's intent.
+- If the repository is not initialized, stop and ask the user for the project name and docs repository URL. Do not guess these values or initialize the workspace on your own.
+- Edit `docs/` as normal workspace files. Use normal Git commands and let the installed Sanho hooks run. Sanho never authors commits and never grants permission to commit or push.
+- On a `sanho: docs base is N commits behind` warning, run `sanho sync`, then continue. That is the whole protocol.
+- If `sanho sync` reports conflicts, it succeeded: markers are in the worktree and the exit code is 0. Resolve them, `git add`, and `git commit` as for any merge. If the correct resolution is not evident from the two sides, stop and ask the user rather than guessing.
+- Never bypass Sanho with `--no-verify`, a force push used to evade a Sanho block, a `sanho push` command (it does not exist), or manual edits to `.sanho.json`, `.sanho_base.json`, `.git/sanho/`, or Sanho-owned hook lines.
+- Do not run `sanho clean`, `sanho init --force`, `sanho sync --abort`, or `sanho migrate` without explicit user approval.
+- When a push is rejected, read the first stderr line, run the command Sanho names, then retry the same `git push`. Sanho only ever names a command that succeeds in the state it was printed in.
+- Read machine output from `--json` on `status`, `state`, `sync`, `pull`, `doctor`, and `version`. Do not parse the human-readable tables, and do not read a sync result from the exit code.
 ```
+
+## Upgrading from v0.1
+
+The canonical repository is untouched — same repository, same linear main, only
+the commit-message convention changes going forward. Old `docs-version:`
+trailers and `[SANHO] Update docs` commits stay as inert history, and v0.2 reads
+the old trailer key, so no history rewrite is needed.
+
+Because hook lines invoke `sanho` by name, installing the v0.2 binary routes
+v0.1-era hooks to it immediately. v0.2 degrades safely rather than
+half-operating: commits keep working and print one migrate hint, while `git
+push` fails closed. The push boundary is the natural migration prompt.
+
+```bash
+cp ~/.sanho/state.json ~/.sanho/state.json.pre-v0.2   # back up first
+go install github.com/irootkernel/sanho/cmd/sanho@v0.2.0
+cd /path/to/app && sanho migrate
+```
+
+The full procedure — including stopping the v0.1 daemon and rolling back — is in
+[deployment rules](docs/deployment.md) and [recovery procedures](docs/recovery.md).
 
 ## Validation
 
@@ -164,23 +242,39 @@ This repository uses Sanho to synchronize its `docs/` directory with the canonic
 make test
 ```
 
-`make test` runs `test-prepare`, `test-unit`, `test-int`, and `test-e2e` in
-that order. Each phase can be run independently, or narrowed to its
-`-daemon`/`-client` target.
+`make test` runs `test-prepare`, `test-unit`, `test-int`, and `test-e2e` in that
+order. `test-prepare` covers generation, formatting, module verification, the
+docs gate, package ownership, the architecture guardrail, vet, and lint.
+Integration and e2e suites build `bin/sanho` and drive it as a black box
+against throwaway git repositories; the e2e leg includes the scenario matrix
+and the guidance-closure suite, which executes every next-step command Sanho
+prints in the exact state that prints it.
 
-The daemon and CLI end-to-end suites launch isolated daemons with temporary
-runtime homes and Unix sockets by default. Set `E2E_SOCKET` to an absolute
-socket path only when testing an explicitly selected running daemon.
+Guidance closure is enforced, not aspirational. Every message that names a next
+command lives in one catalog; a unit test parses the message file as source and
+fails the build when a message is added without a catalog entry; and the suite
+in `test/cli/e2e` reaches each advising state, asserts the message appears, then
+runs the command it names in that state and requires success.
 
-## Operations and design
+Release checks that need real remotes, branch protection rules, two machines, or
+a real v0.1 installation are documented in the
+[hands-on test checklist](docs/hands-on-testing.md).
 
+## Documentation
+
+- [Architecture](docs/architecture.md) — the implementation authority: runtime,
+  Git, provenance, publication, sync, persistence, concurrency, and safety
+  contracts.
+- [Operations](docs/operations.md) — daily flows and failure response.
+- [Recovery procedures](docs/recovery.md) — what to do when something is stuck.
+- [Deployment rules](docs/deployment.md) — install, onboard, upgrade, remove.
+- [CLI JSON output](docs/cli-json.md) — `--json` schemas and agent automation
+  norms.
+- [Hands-on test checklist](docs/hands-on-testing.md) — pre-release manual
+  verification.
 - [Changelog](CHANGELOG.md)
-- [Deployment rules](docs/deployment.md)
-- [Architecture](docs/architecture.md)
-- [CLI JSON output](docs/cli-json.md)
-- [Operations](docs/operations.md)
-- [Recovery procedures](docs/recovery.md)
 - [한국어 안내](docs/readme/kor.md)
 
-Historical Web, PTY, session, and agent roadmaps were removed because they no
-longer describe this product.
+Documentation under `docs/` is written in Korean; this file and `AGENTS.md` are
+in English. `sanho-v0.2.md` is the v0.2 design record and is historical —
+`docs/architecture.md` supersedes it as the description of what the code does.

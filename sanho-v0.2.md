@@ -1,6 +1,7 @@
 # Sanho v0.2 — Design Specification
 
 **Status**: Accepted (design review completed 2026-08-07)
+**STATUS — implemented**: this design was implemented on branch `v0.2` on 2026-08-07. Per the "Relationship" paragraph below, `docs/architecture.md` has been rewritten to match the shipped code and is now the implementation authority; this file is the historical design record. Where the two disagree, the code is correct and `docs/architecture.md` states the outcome — including the points §11 left open and the places where implementation refined the design (notably: no user-visible machine error codes, `--json` also on `pull` and `doctor`, and `sanho migrate` having no `--purge` flag and rewriting `~/.sanho/state.json` in place).
 **Audience**: the Sanho development team. This document is the single source of truth for the v0.2 architecture. It is written so that implementation can proceed without further design decisions except where §11 explicitly defers them.
 **Relationship to `docs/architecture.md`**: that document describes the v0.1.x implementation and remains authoritative for the code currently in `main`. This document describes the v0.2 target. When v0.2 lands, `docs/architecture.md` must be rewritten to match it and this file becomes historical.
 

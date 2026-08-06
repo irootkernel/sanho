@@ -65,18 +65,20 @@ Every changed line must be traceable to the requested outcome or its verificatio
 ## Repository Authorities
 
 - Use `README.md` for the product boundary, supported components, public workflows, and top-level validation entrypoint.
-- Use `docs/architecture.md` for runtime, Git, synchronization, persistence, concurrency, and safety contracts.
-- Use `docs/operations.md`, `docs/deployment.md`, `docs/cli-json.md`, and `docs/hands-on-testing.md` for their respective operational, deployment, interface, and real-environment verification details.
+- Use `docs/architecture.md` for runtime, Git, provenance, publication, synchronization, persistence, concurrency, and safety contracts. It is the implementation authority.
+- Use `docs/operations.md`, `docs/recovery.md`, `docs/deployment.md`, `docs/cli-json.md`, and `docs/hands-on-testing.md` for their respective operational, recovery, deployment, interface, and real-environment verification details.
+- Treat `sanho-v0.2.md` as the historical design record for the v0.2 re-architecture, not as a description of current behavior. Where it and the code disagree, the code is correct and `docs/architecture.md` states the outcome.
 - Use `CHANGELOG.md` for released behavior and compatibility history, not as authority for unimplemented future work.
 - Use `Makefile` as the entry point for repository-standard generation, lint, build, and test commands.
 - Read the nearest relevant implementation and tests instead of copying detailed feature behavior into this file.
 - If authorities or implementation disagree, surface the mismatch and resolve it before changing behavior; do not silently choose the convenient source.
 
 ## Project Structure & Module Organization
-- `cmd/sanhod` hosts the sanhod HTTP service; `cmd/sanho` is the CLI entrypoint.
-- Core logic sits in `internal/{config,domain,infra,interface,usecase}`; keep new packages domain-oriented.
-- Docs/roadmaps live in `docs/`; fixture docs repos for tests in `docs_repos/`; runtime artifacts in `data/` and `tmp/` (ignored); builds in `bin/`.
-- Tests: co-locate package unit tests as `*_test.go`; daemon integration in `test/integration`, daemon e2e in `test/e2e`; CLI integration/e2e in `test/cli/...`.
+- `cmd/sanho` is the only entrypoint. Sanho ships a single binary and has no daemon.
+- Core logic sits in `internal/{buildinfo,domain,infra,interface,usecase}`; keep new packages domain-oriented.
+- Layering is enforced by `internal/architecture`: a `usecase` package must not import `infra`, and an `infra` package must not import `usecase`. `internal/interface/cli` is the only place that sees both, so it is where adapters are bound to declared ports.
+- Docs live in `docs/`; runtime artifacts in `data/` and `tmp/` (ignored); builds in `bin/`.
+- Tests: co-locate package unit tests as `*_test.go`; black-box CLI behavior in `test/cli/integration`; guidance-closure and scenario suites in `test/cli/e2e`; sync/pull flow coverage in `test/docsync`; the install check in `test/install`.
 
 ## Language Policy
 - Code, inline comments, and all CLI/HTTP interfaces stay in English.
@@ -84,35 +86,38 @@ Every changed line must be traceable to the requested outcome or its verificatio
 
 ## Project-Specific Operating Rules
 
-- Do not commit, push, release, install binaries, operate a real remote, or start, stop, replace, or reconfigure an active daemon without explicit authorization.
+- Do not commit, push, release, install binaries, or operate a real remote without explicit authorization.
 - Do not discard, overwrite, unstage, or otherwise disturb unrelated user changes or Git operation metadata.
 - Never bypass Sanho or Git safety guards with `--no-verify`, force operations, manual metadata deletion, or direct mutation of Sanho-managed state.
-- Use checkout-built `bin/sanho` and `bin/sanhod` with isolated `SANHO_HOME` and socket paths when validation must prove current source behavior.
-- Prefer disposable Git repositories under `/tmp` for integration, E2E, hook, and real-remote fixtures. Do not point tests at production-like repositories or an active `xyz.rootkernel.sanho` service unless the user explicitly selects them.
+- Use the checkout-built `bin/sanho` with an isolated `SANHO_HOME` when validation must prove current source behavior.
+- Prefer disposable Git repositories under a temporary directory for integration, hook, and real-remote fixtures. Do not point tests at production-like repositories unless the user explicitly selects them.
 - Never edit generated code manually. Change its source and use the documented generator or `Makefile` target.
 - Keep completion reports compact: state the outcome, changed files, verification performed, and actionable remaining risks or blockers.
 
 ## Build, Test, and Development Commands
-- Require Go 1.25+. Local daemon: `go run ./cmd/sanhod` (override `SANHO_HOME`, `SANHO_SOCKET`).
-- Build/install: `make daemon-build` → `bin/sanhod`, `make cli-build` → `bin/sanho`; `make install` installs both to Go's binary directory.
+- Require Go 1.25+ to build. Git is required at runtime; no minimum git version is enforced, though merge paths need git 2.38+ in practice.
+- Build/install: `make cli-build` → `bin/sanho`; `make cli-install` (aliased by `make install`) installs it to Go's binary directory. `build-cli` and `install-cli` remain as compatibility aliases.
 - The complete `make test` verification runs `test-prepare`, `test-unit`, `test-int`, and `test-e2e` sequentially.
-- Each phase can be narrowed to its `-daemon` or `-client` target. E2E uses an isolated daemon by default; set `E2E_SOCKET` only when targeting an explicitly selected daemon.
-- Local daemon loop: `make daemon-run` builds and runs `bin/sanhod`.
+- `test-prepare` runs generation, formatting, module verification, `docs-check`, `test-package-ownership`, `test-architecture`, vet, and lint. `test-unit` runs the unit packages with `-race`. `test-int` builds `bin/sanho`, passes it through `SANHO_CLI_BINARY`, and runs `test/cli/integration` and `test/docsync`. `test-e2e` drives the built binary through `test/cli/e2e` (the scenario matrix, process-level concurrency, and the guidance-closure suite) and runs the `go install` check in `test/install`.
+- Adding a package under `cmd/...` or `internal/...` requires adding it to `UNIT_PACKAGES` in the `Makefile`, or `test-package-ownership` fails.
+- `make docs-check` asserts that the documented file set exists and greps for retired references; keep it green.
 
 ## Coding Style & Naming Conventions
 - Use standard Go formatting (`go fmt ./...` is in prep targets); exported names follow Go casing, packages stay lowercase.
-- Keep names explicit about intent and side effects; command wiring in `cmd/sanho`, HTTP handlers in `internal/interface/http`, domain types in `internal/domain`.
+- Keep names explicit about intent and side effects; command and hook wiring in `internal/interface/cli`, flow orchestration in `internal/usecase`, pure decisions in `internal/domain`, git execution in `internal/infra/gitx`.
+- Every user-facing string that names a next command belongs in `internal/interface/cli/messages.go` and in that file's guidance catalog, not at its call site. A unit test parses the file as source and fails the build when a message advises a command without a catalog entry, and the `test/cli/e2e` closure suite then runs that command in the state the message is printed in.
 - Tests use `TestXxx`/`BenchmarkXxx` patterns; table tests for branch-heavy logic are preferred.
 
 ## Testing Guidelines
-- Add unit tests near new code; move cross-adapter cases to `test/integration` and end-to-end flows to `test/e2e` or `test/cli/e2e`.
-- Set `SANHO_E2E_SOCKET` for non-default daemons; point `SANHO_CLI_BINARY` at a fresh build for CLI suites.
+- Add unit tests near new code; move cross-adapter flow cases to `test/docsync` and black-box command behavior to `test/cli/integration`.
+- Do not mock below the git boundary. Merge, publication, base re-derivation, and marker-detection logic are tested against real `git` in temporary repositories.
+- Point `SANHO_CLI_BINARY` at a fresh build for the CLI suites; `make test-int` does this. Use an isolated `SANHO_HOME` in anything that touches the registry.
 - Keep failing tests that capture expected behavior when fixing regressions; aim for coverage on new branches.
 
 ## Gaori Test Evidence
 - The repository documentation and task scope remain authoritative for deciding which tests are required. Gaori is an optional execution and evidence-compression adapter, not an additional test gate or acceptance authority.
 - Run tests that are expected to be long or noisy through Gaori from the repository root: preparation `gaori --json run prepare`, unit `gaori --json run unit`, integration `gaori --json run integration`, E2E `gaori --json run e2e`, and the complete suite `gaori --json run all`.
-- Run a dynamically selected Go test as `gaori --json run --parser go-test --tag go --tag unit -- go test <package> <test arguments>`. Daemon/client Make subtasks may use the same ad-hoc form with a parser and phase tags that match their actual output.
+- Run a dynamically selected Go test as `gaori --json run --parser go-test --tag go --tag unit -- go test <package> <test arguments>`. Narrower Make subtasks may use the same ad-hoc form with a parser and phase tags that match their actual output.
 - Before the first Gaori run in a task, verify that `gaori --version` reports exactly `gaori v0.1.8`. Configured commands require the local `.gaori/tester.yaml`. If the binary, expected version, or config is unavailable, use the repository's normal documented test command and report that Gaori evidence compression was unavailable. Do not install or upgrade Gaori or change local Gaori state without an explicit user request.
 - The executed command's exit code is authoritative for pass/fail. `extractor_status` describes evidence quality only and never changes the result. Tags select project rules, not parsers, and specialized parsers do not automatically fall back to `generic`.
 - When a command passes, do not open its generated logs by default. When it does not pass, inspect `*.summary.md` first, followed by `*.summary.json` or a bounded excerpt for the relevant failure. Read only a bounded raw-log section when compact evidence is insufficient or degraded. Open or share `*.raw.log` only when necessary because raw logs are preserved without redaction and may contain secrets.
@@ -139,4 +144,6 @@ Every changed line must be traceable to the requested outcome or its verificatio
 
 ## Security & Configuration Tips
 - Do not commit secrets; `.sanho*`, `data/`, and temp repos should stay untracked (init updates `.gitignore`).
-- Prefer disposable repos under `/tmp` for e2e runs to avoid polluting real workspaces.
+- Prefer disposable repos under a temporary directory for end-to-end runs to avoid polluting real workspaces.
+- Preserve the existing permission discipline: the sanho home is `0700`, the registry and its backup are `0600`, and every state write goes through the shared atomic writer in `internal/infra/fsx`.
+- Keep git invocations argv-only through `internal/infra/gitx`. Never build a shell command line, and never drop `GIT_TERMINAL_PROMPT=0` or the network runner's SSH `BatchMode` policy.

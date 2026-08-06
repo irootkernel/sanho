@@ -1,315 +1,542 @@
 # Sanho 운영 가이드
 
-설치, 상주 실행, 업그레이드, 제거의 소유권과 절차는
-[배포 규칙](deployment.md)을 따른다.
+설치, 업그레이드, 제거의 소유권과 절차는 [배포 규칙](deployment.md)을 따른다.
+구조와 계약은 [아키텍처](architecture.md)가 권위 문서다.
 
 ## 빌드와 실행
 
 ```bash
-make daemon-build
-make cli-build
-make daemon-run
+make cli-build     # bin/sanho
+make cli-install   # go install ./cmd/sanho
+make install       # cli-install의 별칭
+sanho version
 ```
 
-로컬 checkout에서 두 실행 파일을 Go 설치 경로에 넣으려면 `make install`을
-사용한다. 공개 release는 다음처럼 저장소에서 직접 설치한다.
+공개 release는 저장소에서 직접 설치한다.
 
 ```bash
-go install github.com/irootkernel/sanho/cmd/sanho@v0.1.6
-go install github.com/irootkernel/sanho/cmd/sanhod@v0.1.6
-sanho version
-sanhod --version
+go install github.com/irootkernel/sanho/cmd/sanho@v0.2.0
 ```
 
-개발 중에는 `make daemon-run-dev`로 `go run`을 사용할 수 있다. daemon은
-별도의 frontend build나 hot-reload 도구를 요구하지 않는다.
+실행 파일은 `sanho` 하나다. daemon, socket, service 등록, frontend build,
+hot-reload 도구는 없다.
 
-런타임 경로를 바꾸는 환경 변수는 두 개다.
+런타임 경로를 바꾸는 환경 변수는 하나뿐이다.
 
 | 변수 | 기본값 | 설명 |
 |---|---|---|
-| `SANHO_HOME` | `~/.sanho` | state와 docs clone을 보관하는 daemon 전용 디렉터리 |
-| `SANHO_SOCKET` | `$SANHO_HOME/sanhod.sock` | Unix socket의 절대 경로 |
+| `SANHO_HOME` | `~/.sanho` | 레지스트리와 잠금 파일을 두는 디렉터리. 절대 경로여야 한다. |
 
-state는 `$SANHO_HOME/state.json`, docs clone은 프로젝트 등록 시
-`$SANHO_HOME/docs_repos/<docs_repo_id>` 아래에 생성된다. daemon은 home과
-docs clone 디렉터리를 `0700`, state와 socket을 `0600`으로 관리한다.
-`.sanho*`와 인증 정보는 commit하지 않는다.
+canonical clone은 sanho home이 아니라 각 작업공간의
+`<git-common-dir>/sanho/canonical`에 있다. 작업공간마다 하나이므로 서로 이름이
+충돌할 수 없다. `.sanho*` 파일과 인증 정보는 commit하지 않는다(`sanho init`이
+`.gitignore`에 항목을 넣는다).
 
-## 서비스 관리
+## 일상 흐름
 
-daemon은 foreground 프로세스로만 제공한다. 로그인 또는 부팅 시 자동 실행,
-재시작, 로그 보존은 사용자가 launchd나 systemd 같은 운영체제 service
-manager에 직접 등록해 관리한다. 저장소의 Make target은 service를 설치하거나
-시작하지 않는다.
-
-## 상태 확인
+### 1. 상태 확인
 
 ```bash
-curl --fail --unix-socket ~/.sanho/sanhod.sock http://sanho/healthz
-sanho state --all
-sanho state --all --json
-sanho --socket /absolute/path/to/sanhod.sock state --all
+sanho status              # 캐시된 canonical 기준
+sanho status --refresh    # 먼저 fetch한 뒤 보고
+sanho status --json
 ```
 
-정상 health 응답은 `{"ok":true}`다. `/state`는 등록된 모든 프로젝트의
-원격 HEAD를 갱신하므로 Git fetch나 SSH 오류가 있으면 전체 요청이
-실패한다. 일부 프로젝트만 stale 값으로 표시하지 않는 의도적인 정책이다.
+출력은 다음 모양이다.
+
+```text
+workspace : /path/to/app
+project   : product
+docs repo : git@github.com:example/example-docs.git (branch main)
+base      : 67c4bbfeada3
+canonical : 9a41f2cbbbbb
+data      : canonical data is 3 minutes old
+relation  : behind 2, ahead 0
+sync      : 2 behind — 'sanho sync' will merge cleanly
+```
+
+`data` 줄은 언제나 캐시 나이를 말한다. 24시간을 넘기면 갱신 방법도 함께
+말한다.
+
+```text
+data      : canonical data is 3 days old — run 'sanho status --refresh'
+data      : canonical has never been fetched — run 'sanho status --refresh'
+```
+
+canonical에 아직 commit이 없으면 관계와 sync 예측을 계산하지 않는다.
+
+```text
+canonical : (no commits yet — your first push will publish docs)
+```
+
+base가 clone 안에서 해석되지 않으면 숫자를 지어내지 않는다.
+
+```text
+relation  : unknown (the recorded base is not in the canonical clone)
+```
+
+### 2. behind 경고를 만나면 sync
+
+commit할 때 base가 뒤처져 있으면 `pre-commit`이 한 줄을 출력한다. commit은
+그대로 성공한다.
+
+```text
+sanho: docs base is 2 commits behind — 'sanho sync' will merge cleanly
+sanho: docs base is 2 commits behind — 'sanho sync' will report conflicts in docs/api.md; syncing sooner keeps them small
+sanho: docs base is 2 commits behind — run 'sanho sync' to reconcile
+sanho: docs base is 2 commits behind — 'sanho sync' will merge cleanly (canonical last checked 3 days ago)
+```
+
+최신 상태면 아무것도 출력하지 않는다. 침묵이 정상 신호다.
+
+경고를 보면 `sanho sync`를 실행한다. 사전 조건은 docs 경로가 worktree와
+index 양쪽에서 깨끗한 것이다. docs 밖의 작업 중인 변경은 건드리지 않는다.
+
+```bash
+sanho sync
+```
+
+깨끗하게 병합되면 사용자 이름으로 된 일반 commit 하나가 생긴다.
+
+```text
+sanho: synced docs to 9a41f2cbbbbb (commit 3f0d1a5c7e21)
+```
+
+병합 결과가 현재 docs와 같으면 commit할 것이 없으므로 base만 옮긴다.
+
+```text
+sanho: docs base advanced to 9a41f2cbbbbb (docs unchanged)
+```
+
+할 일이 없으면 그렇게 말한다.
+
+```text
+sanho: docs are up to date with 9a41f2cbbbbb
+sanho: canonical repository has no commits yet; nothing to sync
+```
+
+docs가 dirty하면 거절한다. sync는 사용자 속도로 실행되므로 물어보는 편이
+맞고, 이 요구 조건 덕분에 v0.1의 4겹 보존 기계가 통째로 사라졌다.
+
+```text
+sanho: docs have uncommitted changes: commit or stash your docs changes first
+```
+
+### 3. 충돌 해소 루프
+
+`sanho sync`가 충돌을 보고해도 **실패가 아니다.** 종료 코드는 0이고
+`--json`의 `status`는 `conflicts`다.
+
+```text
+sanho: merged docs with upstream — 2 files have conflicts:
+  docs/api.md
+  docs/schema.md
+Resolve the markers, then:  git add docs/ && git commit
+To undo this sync:          sanho sync --abort
+```
+
+마커는 임시 경로가 아니라 이름으로 표시된다.
+
+```text
+<<<<<<< sanho-ours
+내 편집
+=======
+상류 편집
+>>>>>>> sanho-upstream
+```
+
+해소는 완전히 표준 git 관용구다.
+
+```bash
+$EDITOR docs/api.md docs/schema.md
+git add docs/
+git commit -m "docs: resolve sync conflicts"
+```
+
+해소가 끝나기 전에 commit하면 막힌다. 안내는 같은 두 선택지를 반복한다.
+
+```text
+sanho: a sync is in progress — 1 files still have conflicts:
+  docs/api.md
+Resolve the markers, then:  git add docs/ && git commit
+To undo this sync:          sanho sync --abort
+```
+
+sync 중이 아닌데 staged docs에 마커가 있으면 별도 메시지로 막는다.
+
+```text
+sanho: staged docs contain conflict markers:
+  docs/api.md
+Resolve them, then 'git add' the files and commit again.
+```
+
+해소가 commit되면 다음 `pre-commit` 또는 `pre-push`가 note를 정리한다.
+
+```text
+sanho: sync resolved; the sync note has been cleared
+```
+
+되돌리고 싶으면 언제든 abort할 수 있다.
+
+```bash
+sanho sync --abort
+```
+
+```text
+sanho: sync aborted; docs restored to HEAD
+```
+
+### 4. push 거절 대응
+
+게시는 `git push` 시점에만 일어난다. 성공하면 한 줄이 나온다.
+
+```text
+sanho: published docs 9a41f2cbbbbb (fast_forward)
+```
+
+case 이름은 `up_to_date`, `fast_forward`, `auto_merge`, `unknown_base`다.
+`auto_merge`는 상류와 자동으로 합쳐 게시했다는 뜻이며 push는 그대로
+계속된다. 이때 worktree는 건드리지 않으므로 `status`가 "behind(내 병합
+결과)"로 보인다. `sanho pull`이 따라잡는다.
+
+거절은 다음 다섯 가지다. 어느 경우에도 원격 ref는 하나도 바뀌지 않는다.
+
+**(a) docs 충돌.**
+
+```text
+sanho: your docs changes conflict with upstream (base 67c4bbfeada3 → 9a41f2cbbbbb)
+Run 'sanho sync', resolve, commit, then push again.
+error: push rejected — no remote ref was changed
+```
+
+**(b) 화해가 필요한 그 밖의 상태.** 사유는 `no_base`(기록된 base 없음)
+또는 `cas_retry_exhausted`(경합에서 3번 연속 패배)다.
+
+```text
+sanho: docs must be reconciled before publishing (no_base; base (none) → 9a41f2cbbbbb)
+Run 'sanho sync', resolve if needed, commit, then push again.
+error: push rejected — no remote ref was changed
+```
+
+**(c) commit된 충돌 마커.**
+
+```text
+sanho: pushed docs still contain conflict markers:
+  docs/api.md
+resolve the markers before pushing
+error: push rejected — no remote ref was changed
+```
+
+**(d) sync 미완료.**
+
+```text
+sanho: finish the sync first: resolve conflicts, then 'git add' and 'git commit' (or 'sanho sync --abort')
+error: push rejected — no remote ref was changed
+```
+
+**(e) canonical 도달 불가 / 이력 rewrite.** 아래 장애 대응 절을 본다.
+
+어떤 경우에도 `--no-verify`, force push, hook 파일 수정으로 우회하지 않는다.
+안내된 명령을 실행한 뒤 **같은 `git push`를 다시 실행**하면 된다.
+
+### 5. 소비만 할 때는 pull
+
+로컬 docs 편집이 전혀 없을 때 canonical을 그대로 받아온다.
+
+```bash
+sanho pull
+sanho pull --commit   # 갱신을 'docs: sync to <oid>' commit으로도 기록
+```
+
+```text
+sanho: pulled docs to 9a41f2cbbbbb
+sanho: pulled docs to 9a41f2cbbbbb (commit 3f0d1a5c7e21)
+```
+
+로컬 편집이 있으면 덮어쓰지 않고 거절한다.
+
+```text
+sanho: local docs have changes that 'sanho pull' cannot fast-forward: local docs differ from base 67c4bbfeada3; run 'sanho sync' to reconcile them
+sanho: local docs have changes that 'sanho pull' cannot fast-forward: no docs base is recorded; run 'sanho sync' first
+```
+
+### 6. 다른 작업공간 확인
+
+```bash
+sanho state           # 현재 작업공간의 프로젝트만
+sanho state --all     # 등록된 전부
+sanho status          # siblings 표 포함
+```
+
+sibling 표의 관계 값은 `same`, `ahead N`, `behind N`, `diverged`,
+`unknown`이다. 레지스트리 항목은 다른 checkout이 **보고한 값**이므로, 이
+clone이 해석하지 못하는 commit은 추측 대신 `unknown`으로 남는다.
 
 ## 장애 대응
 
-### 진행 중이거나 stale인 Git operation
+### canonical 도달 불가
 
-Sanho는 refs와 worktree의 겉보기 상태만으로 변경 가능 여부를 판단하지 않는다.
-`HEAD == origin/main`이고 `git status --porcelain`이 비어 있어도 Git의
-rebase backend, merge, cherry-pick, revert, bisect, `git am` 또는 sequencer
-metadata가 남아 있으면 작업공간 변경을 차단한다. `.git`이 디렉터리인지 파일인지
-추측하지 않고 `git rev-parse --git-path`로 현재 worktree의 metadata 경로를
-해석하므로 linked worktree의 상태도 서로 섞이지 않는다.
+읽기 경로와 쓰기 경로가 다르게 동작한다. 이 비대칭은 의도된 것이다.
 
-다음 명령은 operation을 먼저 정리할 때까지 실패한다.
+- **읽기**(`status`, `state`, `pre-commit` 감지): 마지막 fetch 결과를 그대로
+  제공하고, 데이터 나이를 명시한다. **오프라인 commit은 언제나 성공한다.**
+  코드만 바꾼 commit도, docs를 바꾼 commit도 마찬가지다. commit 경로는
+  network 연결을 아예 열지 않는다.
+- **쓰기**(`sync`, `pull`, `pre-push` 게시): fetch가 성공해야 하며 실패하면
+  fail-closed다. push는 이미 network 접근을 전제하기 때문이다.
 
-- `init`, `pull`, `fix`, 실제 `clean`
-- `pull-commit`과 `--continue`, `--abort`, `--recover`
-- pre-push와 main 선행 게시
-
-`sanho status`와 `sanho status --json`, `clean --dry-run`은 현재 application
-workspace에 대해 읽기 전용으로 계속 사용할 수 있다. daemon은 project
-status를 계산하기 위해 자신이 관리하는 canonical docs clone을 refresh할 수
-있지만 application workspace의 refs, index, worktree나 operation metadata는
-변경하지 않는다. 상태 출력의 `git_operation`에서 감지된 종류, 차단 이유와
-후보 명령을 확인한다. 항상 다음 명령으로 실제 Git 상태를 먼저 읽는다.
-
-```bash
-git status
+```text
+sanho: canonical repository unreachable (git@github.com:example/example-docs.git): <git이 보고한 한 줄>
+Check network access to the docs repository, then push again.
+error: push rejected — no remote ref was changed
 ```
 
-`git_operation.backend`가 `rebase_merge` 또는 `rebase_apply`인 실제 rebase라면
-의도에 따라 다음 중 하나를 선택한다.
-
-```bash
-git rebase --continue
-git rebase --abort
-git rebase --quit
-```
-
-`--abort`는 rebase 시작 전 branch 위치와 상태를 복원한다. `--quit`은 현재
-HEAD, index와 worktree를 유지한 채 rebase metadata만 종료한다. 따라서
-`--quit`을 일괄적인 stale-state 정리 명령으로 사용하지 않는다. merge,
-cherry-pick, revert와 `git am`도 `git status`를 확인한 뒤 해당 명령의
-`--continue`, `--abort`, 필요 시 `--quit`을 선택한다. bisect는
-`git bisect log`로 기록을 확인하고 계속 판정하거나 `git bisect reset`으로
-종료한다.
-
-backend 없이 `REBASE_HEAD`만 있으면 `orphaned: true`, `backend: none`이다. 이
-상태에서는 Git이 실행할 수 없는 `rebase --continue/--abort/--quit`을 제안하지
-않는다. exact metadata path와 검증된 `metadata_oid`를 확인한 뒤
-[복구 절차](recovery.md)의 compare-and-delete 명령을 사용한다. malformed marker에는
-삭제 명령을 제공하지 않는다.
-
-Sanho는 어떤 경우에도 사용자 operation을 자동 abort/quit하거나 metadata를
-삭제하지 않는다. `.git/rebase-*`, `.git/sequencer` 같은 경로를 손으로
-삭제해서도 안 된다. rebase 중 Git의 commit replay가 남기는
-`CHERRY_PICK_HEAD`는 같은 rebase의 종속 marker로 처리한다. 그 밖에 여러
-operation marker를 발견하면 `multiple`, 종류를 안전하게 판별할 수 없는
-sequencer는 `sequencer`로 보고하고 `git status` 외의 정리 명령을 추측하지
-않는다.
-
-Git의 continue 과정에서 실행되는 lifecycle hook은 Sanho의 state, daemon 보고,
-index/worktree/ref 변경을 모두 건너뛰고 간결한 defer 메시지와 함께 성공한다.
-`post-rewrite`도 active backend 중에는 예외가 아니다. orphan metadata가 있는
-정상 `git commit`은 pre-commit 또는 commit-msg에서 실패해 provenance 유실을
-막고, pre-push는 active와 orphan 상태 모두 차단한다.
-
-operation metadata가 clear된 뒤 pre-commit과 pre-push는 valid reachable HEAD
-`docs-version`을 canonical snapshot까지 검증하고 `.sanho_docs_hash`와 daemon
-workspace 보고를 멱등하게 조정한다. fast-forward/no-op rebase처럼
-`post-rewrite`가 없는 경우도 같다. `sanho status`는 state를 쓰지 않고
-`head_reconciliation`으로 이 대기 상태를 canonical drift와 구분한다. conflict 뒤
-`rebase --quit`처럼 backend는 끝났지만 unmerged index나 orphan marker가 남으면
-계속 fail-closed다.
-
-### pre-push provenance
-
-pre-push는 checkout HEAD가 아니라 Git이 stdin으로 제공한 모든 non-delete branch
-local OID를 검사한다. tip docs tree와 같은 reachable application commit의
-`docs-version`, canonical commit 도달 가능성, canonical snapshot tree가 모두
-일치해야 한다. trailer 누락·중복·축약·위조, unknown commit과 tree mismatch는
-main 선행 게시나 target ref 변경 전에 전체 push를 차단한다. 정상 provenance
-commit의 non-doc 후손은 허용하며 tag-only와 deletion 동작은 유지한다.
-
-이미 invalid branch가 게시된 경우에는 hook을 우회하거나 Sanho transaction을
-직접 지우지 말고 [게시 branch 복구 절차](recovery.md#이미-게시된-invalid-branch-복구)를
-따른다.
-
-### `docs_repo_busy`
-
-같은 docs repo에서 다른 sync, read, push, delete가 진행 중이다. 진행 중인
-작업이 끝난 뒤 다시 시도한다. 잠금을 우회해 clone을 직접 수정하지 않는다.
-
-### `outdated`
-
-다른 작업공간이 먼저 docs origin을 갱신했다. Git commit 중이라면
-pre-commit hook이 `pull-commit` 흐름을 자동 실행한다. 충돌이 없으면 원격
-docs만 담은 `[SANHO] Update docs` 커밋을 최신 `main` 위에 만들고 현재
-staged/unstaged 변경을 보존한 뒤 commit을 한 번 중단한다. 같은
-`git commit` 명령을 다시 실행하면 원래 변경을 이어서 커밋한다.
-
-동기화 전에 `origin/main`을 fetch한다. 로컬 `main`이 뒤처졌다면 최신
-원격 commit을 기준으로 하고, 로컬이 앞서 있다면 로컬 `main`을 기준으로
-한다. 둘이 갈라졌다면 자동으로 어느 쪽도 선택하지 않고 실패한다.
-현재 branch가 `main`이면 그대로 유지한다. 다른 branch라면 원격에
-게시되지 않았고 merge commit이 없는 경우에만 새 docs system commit 위로
-자동 rebase한다. upstream이나 같은 이름의 원격 branch가 있는 published
-branch는 history를 바꾸지 않고 실패한다. 이 과정은 임시 clone에서 먼저
-검증하고, 성공했을 때만 로컬 `main`과 현재 branch ref를 함께 갱신한다.
-system commit은 `origin/main` 도달 여부를 확인할 때까지 게시 대기 상태로
-기록한다.
-
-`git push origin main`은 로컬 `main` 전체를 원래 push로 게시한다. 다른
-origin branch를 push하면 pre-push가 먼저 로컬 `main` 전체를
-`origin/main`에 fast-forward push한다. main 게시를 확인한 뒤에만 원래
-target push를 계속한다. 로컬 main에 일반 commit이 섞여 있어도 main에 둔
-게시 의도를 우선해 함께 게시한다. 원격 main이 먼저 변경됐거나 권한,
-branch protection, network 문제로 main push가 실패하면 target push도
-차단한다. force push나 별도 `sanho push` 명령은 사용하지 않고 같은
-`git push`를 재시도한다.
-
-게시 대기 상태에서 main과 다른 branch를 한 push로 함께 갱신하면 remote의
-부분 성공 여부를 통제할 수 없으므로 차단한다. 이 경우 `origin/main`을 먼저
-push한 뒤 나머지 ref push를 다시 실행한다.
-
-main 선행 게시만 성공하고 target push가 실패한 경우 게시 대기 상태는 이미
-정리된다. 다음 재시도는 target만 push한다. direct main push의 성공 여부는
-hook이 사후 관찰할 수 없으므로 다음 `sanho status` 또는 origin branch
-push가 `origin/main`을 fetch해 상태를 멱등하게 정리한다.
-
-게시 대기 상태에서 `origin`이 아닌 remote 이름, 같은 URL을 가리키는 alias,
-또는 remote URL을 직접 지정해 branch를 push하면 Sanho는 이를 자동 게시
-대상으로 해석하지 않고 차단한다. 먼저 `git push origin main`을 실행한 뒤
-원래 push를 재시도한다. 게시 대기 상태가 해소되면 다른 remote와 직접 URL의
-branch push도 허용된다. tag-only push와 ref 삭제는 이 규칙의 영향을 받지
-않는다.
-
-텍스트 충돌이 있으면 파일을 해결하고 stage한 뒤
-`sanho pull-commit --continue`를 실행한다. 시스템 커밋 생성 전에는
-`sanho pull-commit --abort`로 원래 상태를 복원할 수 있다. 원격
-history를 강제 push로 덮어쓰지 않는다.
-
-`git commit --amend`는 준비된 commit을 sibling commit으로 바꾸므로 단순한
-ancestor 검사만으로 완료 여부를 판단하지 않는다. operation metadata가 없는
-amend의 `post-rewrite`는 Git 소유 rewrite 파일이라는 stdin 출처, old/new 매핑과
-준비 당시 index tree를 검증한다. 반면 active rebase 중 호출된 `post-rewrite`는
-Git 복구를 방해하지 않도록 mapping을 소비하되 Sanho state를 검증하거나 변경하지
-않는다. hook이 중단된 경우
-`sanho pull-commit --recover`가 commit graph, parent/tree와 rewrite 기록을
-검사한다. 복구 전에는 현재 HEAD, index, worktree를
-`refs/sanho/recovery/<transaction-id>/`에 보존하며, 완료를 증명할 수 없으면
-transaction을 삭제하지 않는다.
-
-버전 1·2의 legacy transaction은 준비 당시 tree와 rewrite mapping이 없다.
-따라서 같은 parent를 가진 sibling commit이어도 저장된 `merged-index.tar.gz`와
-현재 HEAD의 docs tree가 내용과 Git file mode, symbolic link 구조까지
-일치할 때만 `recoverable_rewrite`로 처리한다. snapshot 누락·손상은
-`corrupt`, docs 불일치는 `ambiguous`다. 이때 `.git/sanho`를 직접 삭제하거나
-backup ref를 제거하지 말고 `sanho status`의 `reason`과 `next_command`를
-기록한 뒤 보존된 `refs/sanho/recovery/<transaction-id>/`에서 필요한 Git
-상태를 확인한다. 원래 의도를 확인할 수 없다면 자동 정리하거나 push하지
-않는다.
-
-pre-push는 transaction 디렉터리의 존재만으로 판단하지 않는다. 논리적으로
-완료된 stale state는 멱등하게 정리하지만 `pending`, `ambiguous`, `corrupt`
-상태는 계속 차단하고 `status`와 같은 안전한 다음 명령을 출력한다.
-기존 workspace의 pre-push hook이 remote 인자를 전달하지 않으면 게시 대기
-상태를 임의 remote에 적용하지 않는다. Sanho는 실행 중 hook inode를 덮어쓰지 않고
-같은 디렉터리의 임시 파일을 content와 기존 mode로 준비해 atomic rename한다.
-custom hook 내용은 유지된다. 첫 push는 중단되므로 안내대로 같은 push를 한 번만
-다시 실행한다.
-
-실제 remote, branch rule, 인증과 service manager를 포함한 릴리스 검증은
-[hands-on 테스트](hands-on-testing.md)의 공통 증거 양식과 시나리오를 따른다.
-
-바이너리는 base/local/remote 내용 비교만으로 결과가 명확한 경우 자동으로
-처리한다. local과 remote가 base와 서로 다르게 변경된 바이너리는 경로를
-포함한 오류로 중단하고 worktree, index, docs hash와 transaction 상태를
-변경하지 않는다. 이 경우 `sanho fix`나 `pull-commit --continue`가 아니라
-중앙 문서 또는 로컬 파일을 원하는 내용으로 일치시킨 뒤 `pull-commit`을
-다시 실행한다.
-
-`pull`, system commit, 일반 사용자 commit은 성공한 docs hash를 daemon에
-보고한다. 일반 commit은 `post-commit` hook이 보고하며, hook을 실행하지
-않는 system commit과 commit을 만들지 않는 `pull`은 CLI가 명시적으로
-보고한다. 보고가 실패하면 pending 상태를 Git metadata 아래에 남긴다.
-다음 pull/commit/push가 이를 먼저 재시도하며, daemon에 반영될 때까지 새
-commit과 push 및 `clean`을 허용하지 않는다. system commit 보고 실패는
-진행 중인 `pull-commit` 트랜잭션 자체가 같은 역할을 한다.
-
-`pull`은 worktree와 docs hash를 즉시 갱신하지만 애플리케이션 commit은
-만들지 않는다. 대신 pull 직전 index와 반영한 snapshot을 Git private
-metadata에 기록한다. 다음 일반 commit의 pre-commit 또는 명시적
-`pull-commit`이 이 기준선을 소비해 `[SANHO] Update docs` commit을 만든다.
-pull로 새로 생긴 원격 파일은 사용자가 실제로 stage해 삭제하지 않는 한
-로컬 staged 삭제로 해석하지 않는다. `--force` pull은 기존 staged docs도
-버리므로 기준선의 원래 index 역시 현재 HEAD 기준으로 다시 잡는다.
-
-실제 `git pull`, rebase/amend, branch checkout처럼 HEAD가 바뀌는 작업은
-각각 `post-merge`, `post-rewrite`, `post-checkout` hook에서 HEAD의 docs
-tree를 다시 확인한다. 현재 tree와 일치하는 reachable `docs-version`
-commit을 찾았을 때만 `.sanho_docs_hash`와 daemon workspace hash를 함께
-갱신한다. 일치하는 commit이 없거나 pending pull 위에서 dirty docs가
-발견되면 추측해서 보고하지 않고 경고 또는 보호 실패로 남긴다.
-
-### Git fetch 또는 push 실패
-
-SSH key, 저장소 URL, 네트워크, branch 권한을 확인한다.
+확인 순서는 SSH key, 저장소 URL, network, branch 권한이다.
 
 ```bash
 git ls-remote <docs-repo-url> HEAD
+sanho doctor
 ```
 
-daemon은 실패 후 clone을 origin으로 reset한다. 장애 조사 중에도
-`~/.sanho/docs_repos`의 clone에서 임의 commit이나 force push를 만들지 않는다.
+Sanho는 프롬프트를 띄우지 않는다. network 작업에는
+`ssh -o BatchMode=yes -o ConnectTimeout=10`을 강제하므로 자격 증명이 없으면
+기다리지 않고 즉시 실패한다. 조사 중에도 `.git/sanho/canonical` 안에서 임의
+commit이나 force push를 만들지 않는다.
 
-### state 손상
+### sync 진행 중
 
-primary state 파일이 깨졌다면 daemon은 `<state-path>.bak`에서 자동
-복구한다. 둘 다 깨졌을 때는 시작이 실패한다. 이 경우 두 파일을 먼저
-별도 위치에 보존하고 JSON과 로그를 조사한다. 빈 state 파일로 덮어써서
-문제를 숨기지 않는다.
+`sync.json`이 남아 있는 동안에는 게시가 막히고, `sync`와 `pull`도 거절한다.
+
+```text
+sanho: a conflicted sync is in progress: syncing 67c4bbfeada3 to 9a41f2cbbbbb; resolve the markers and commit, or run 'sanho sync --abort'
+```
+
+`sanho doctor`도 같은 상태를 경고로 보고한다.
+
+```text
+[warn] sync             a sync from 67c4bbfeada3 to 9a41f2cbbbbb is unresolved — resolve the markers and commit, or run 'sanho sync --abort'
+```
+
+선택지는 둘뿐이고 둘 다 반드시 성공한다. 마커를 해소해 commit하거나,
+`sanho sync --abort`로 되돌린다. `.git/sanho`를 손으로 지우지 않는다.
+
+`sanho clean`도 이 상태에서는 거절한다. 마커투성이 docs worktree를 설명할
+note 없이 남기게 되기 때문이다.
+
+```text
+sanho: a conflicted sync is in progress; finish it, or run 'sanho sync --abort' first
+```
+
+note가 없는데 abort를 실행하면 그렇게 말한다.
+
+```text
+sanho: no sync is in progress
+```
+
+### canonical 이력 rewrite
+
+기록된 base가 canonical 게시 branch에서 더 이상 도달할 수 없는 상태다. push는
+먼저 `docs-base-tree`와 같은 docs tree를 가진 commit을 canonical 이력에서
+찾아 스스로 재유도를 시도한다. 성공하면 사용자는 아무것도 하지 않아도 된다.
+
+재유도에 실패하면, 실행 가능한 명령이 있을 때만 명령을 안내한다.
+
+```text
+sanho: canonical history was rewritten; base 67c4bbfeada3 is no longer reachable
+Run 'sanho sync --rebase-onto 1111111111111111111111111111111111111111', resolve if needed, commit, then push again.
+error: push rejected — no remote ref was changed
+```
+
+어떤 canonical commit도 그 docs tree를 갖고 있지 않으면 실패할 명령을
+안내하는 대신 후보를 고르는 방법을 알려 준다.
+
+```text
+sanho: canonical history was rewritten; base 67c4bbfeada3 is no longer reachable
+manual intervention required: no canonical commit carries this workspace's docs base tree.
+List the candidates with:  git -C /path/to/app/.git/sanho/canonical log --oneline refs/remotes/origin/main
+Then run:                  sanho sync --rebase-onto <commit>
+error: push rejected — no remote ref was changed
+```
+
+조회 명령이 `origin/HEAD`가 아니라 게시 branch 이름을 그대로 쓰는 것은
+중요하다. private clone은 `git init --bare` + fetch로 만들어지므로
+`refs/remotes/origin/<branch>`만 있고 `refs/remotes/origin/HEAD`는 없다.
+HEAD를 지목하는 명령은 그 명령이 출력되는 바로 그 상태에서 실패한다.
+
+`sanho sync`가 같은 상태를 만나면 다음처럼 거절한다.
+
+```text
+sanho: the recorded docs base is unknown to the canonical repository: neither 67c4bbfeada3 nor its docs tree 2f41ab90c3d2 is in canonical history; pick a canonical commit and run 'sanho sync --rebase-onto <commit>'
+sanho: the recorded docs base is unknown to the canonical repository: 67c4bbfeada3 carries no docs-base-tree to re-anchor by; pick a canonical commit and run 'sanho sync --rebase-onto <commit>'
+```
+
+존재하지 않는 대상을 지정하면 거절한다.
+
+```text
+sanho: the requested target is not a canonical commit: deadbeefdead
+```
+
+자세한 절차는 [복구 가이드](recovery.md)를 따른다.
+
+### base 파일 손상 또는 유실
+
+`sanho doctor`가 진단하고 `--fix`가 고친다. 복구는 완전히 로컬이다. commit
+이력의 trailer를 다시 읽는 것이 전부이므로 network도 canonical도 필요 없다.
+
+```bash
+sanho doctor
+sanho doctor --fix
+```
+
+```text
+[warn] base             no docs base is recorded — run 'sanho doctor --fix' to re-derive the base from commit history
+[warn] base             the recorded base is not a valid OID pair — run 'sanho doctor --fix' to re-derive the base from commit history
+[warn] base             the base file is unreadable: <원인> — run 'sanho doctor --fix' to re-derive the base from commit history
+```
+
+성공하면 다음과 같다.
+
+```text
+[ok  ] base-fix         re-derived the base as 67c4bbfeada3 from commit history
+```
+
+이력에 stamp된 commit이 하나도 없으면 재유도할 근거가 없다.
+
+```text
+[warn] base-fix         no commit in the last 500 carries a docs-base or docs-version trailer; run 'sanho sync' to establish a base
+```
+
+trailer가 지워지는 흔한 경로는 메시지만 바꾸는 `git commit --amend -m`이다.
+다음 commit이 stamp 규칙 2번(HEAD의 docs tree가 HEAD~와 다름)으로 자동
+복원하며, 그 전에도 `sanho doctor --fix`로 즉시 복원할 수 있다. trailer는
+기록이자 복구원이지 gate 입력이 아니므로 유실이 작업을 막지 않는다.
+
+```text
+sanho: docs provenance not stamped (no docs base is recorded); run 'sanho doctor --fix' to restore it
+```
+
+### 레지스트리 잠금과 손상
+
+레지스트리(`~/.sanho/state.json`)는 관찰용이다. 게시 정확성은 여기에 의존하지
+않으므로 갱신 실패가 성공한 작업을 되돌리지 않는다.
+
+다른 Sanho 프로세스가 잠금을 쥐고 있으면 5초 후 포기한다.
+
+```text
+[warn] registry         the registry lock is not available: another sanho process holds /Users/name/.sanho/state.lock; retry in a moment
+```
+
+잠시 후 다시 시도한다. 잠금 파일을 지우거나 우회하지 않는다.
+
+primary가 깨졌으면 `.bak`에서 자동 복구하고 primary도 되살린다. 둘 다 읽을 수
+없을 때만 오류이며, 이 경우 **빈 상태로 시작하지 않는다**.
+
+```text
+sanho: registry state is unreadable: primary /Users/name/.sanho/state.json is corrupt (<원인>) and backup /Users/name/.sanho/state.json.bak is also corrupt (<원인>)
+```
+
+두 파일을 먼저 다른 곳에 보존한 뒤 JSON을 조사한다. 빈 파일로 덮어써서 문제를
+숨기지 않는다. 레지스트리는 재구성 가능한 상태이므로, 조사 후 각 작업공간에서
+`sanho init`(또는 `sanho sync`/`sanho status`)을 한 번씩 실행하면 항목이 다시
+채워진다.
+
+### v0.1 강등 상태
+
+v0.2 binary를 설치했지만 아직 `sanho migrate`를 실행하지 않은 작업공간이다.
+hook 라인이 `sanho`를 이름으로 호출하므로 강등은 자동으로 시작된다.
+
+```text
+sanho: this workspace uses the v0.1 layout; run 'sanho migrate'
+```
+
+- `git commit`은 계속 성공한다. hook은 위 힌트만 출력하고 통과한다.
+- `git push`는 위 힌트와 함께 fail-closed로 막힌다. push 경계가 migration을
+  촉구하는 지점이다.
+- `sanho status`를 비롯한 명령은 exit 1로 거절한다.
+- `sanho clean`은 이 상태에서도 동작한다.
+- `sanho migrate`가 이 상태에서 성공하는 유일한 명령이다.
+
+migration 절차는 [배포 규칙](deployment.md)의 "v0.1 → v0.2 업그레이드" 절에
+있다.
+
+### 작업공간이 아닌 곳
+
+```text
+sanho: not a sanho workspace (no .sanho.json here); run 'sanho init' to create one
+```
+
+작업공간 판정은 **현재 디렉터리**에 `.sanho.json`이 있는지로만 한다. 상위
+디렉터리를 거슬러 올라가지 않는다. hook은 언제나 worktree 최상위에서
+실행되므로, 올라가면 의도치 않은 작업공간을 건드릴 수 있기 때문이다.
+`sanho state`는 예외적으로 작업공간 밖에서도 동작한다. 레지스트리는 작업공간
+바깥에 있기 때문이며, 이때는 범위를 좁힐 프로젝트와 head를 읽을 clone이 없다.
+
+## 진단
+
+```bash
+sanho doctor
+sanho doctor --json
+```
+
+검사 항목은 `git`, `workspace-config`, `hooks`, `clone`, `canonical-head`,
+`base`(필요 시 `base-fix`), `registry`, `sync`, `docs`다. 경고를 찾아도 종료
+코드는 0이다. 문제를 찾을 때마다 실패하는 진단 명령은 문제 조사에 쓸 수 없다.
+검사 자체를 실행할 수 없을 때만 1이다.
+
+hook 문제는 재설치를 안내한다.
+
+```text
+[warn] hooks            pre-push: missing; post-merge: installed 2 times — run 'sanho init --force' to reinstall
+[warn] hooks            pre-push: carries v0.1 lines — run 'sanho init --force' to reinstall
+```
+
+clone 문제는 다음과 같다.
+
+```text
+[warn] clone            the private clone is missing (/path/.git/sanho/canonical) — run 'sanho init' in this workspace
+[warn] clone            origin is <A> but the workspace config says <B>
+```
+
+`docs` 검사는 파일 수, 바이트, symlink 수를 보고한다. symlink는 v0.1의 tar
+snapshot 전송에서 조용한 데이터 유실 원인이었으나, v0.2는 내용을 git object로
+옮기므로 이제 경고가 아니라 목록 정보다.
 
 ## 검증
 
 ```bash
-make test-prepare
-make test-unit
-make test-int
-make test-e2e
+make test
 ```
 
-`make test`는 위 네 단계를 표시된 순서대로 모두 실행한다.
-`test-prepare`는 코드 생성, format, 모듈 검증, 문서 검사, daemon/client
-패키지 소유권 검사, 아키텍처 guardrail, vet, lint를 수행한다. 각 단계는
-`test-prepare-daemon`, `test-unit-client`처럼 `-daemon` 또는 `-client`
-접미사가 붙은 target으로 범위를 좁힐 수 있다.
+`make test`는 `test-prepare`, `test-unit`, `test-int`, `test-e2e`를 이 순서로
+실행한다.
 
-daemon과 client E2E는 기본적으로 임시 home과 Unix socket을 사용하는
-독립 daemon을 띄운다. 실행 중인 별도 daemon을 대상으로 확인하려는
-경우에만 `E2E_SOCKET`에 절대 socket 경로를 명시한다.
+| target | 내용 |
+|---|---|
+| `test-prepare` | `go generate`, `go fmt`, `go mod verify`, `docs-check`, 패키지 소유권 검사, 아키텍처 guardrail, `go vet`, `golangci-lint` |
+| `test-unit` | 모든 단위 패키지를 `-race`로 실행 |
+| `test-int` | `bin/sanho`를 빌드해 `SANHO_CLI_BINARY`로 넘기고 `test/cli/integration`과 `test/docsync`를 실행 |
+| `test-e2e` | `test/cli/e2e` — 시나리오 매트릭스(S1~S11), 프로세스 수준 동시성, guidance closure 스위트 — 와 `test/install`(`go install ./cmd/sanho` 확인) |
+| `docs-check` | 필수 문서 존재 여부와 폐기된 참조 문자열 검사 |
+| `test-package-ownership` | `go list` 결과와 `UNIT_PACKAGES` 목록이 일치하는지 검사 |
+| `test-architecture` | usecase↔infra 계층 규칙 |
 
-```bash
-make test-e2e-daemon
-make test-e2e-daemon E2E_SOCKET=/absolute/path/to/sanhod.sock
-make test-e2e-client
-make test-e2e-client E2E_SOCKET=/absolute/path/to/sanhod.sock
-```
+통합 테스트의 docs 저장소에는 실제 운영 저장소 대신 임시 디렉터리의 폐기
+가능한 bare Git 저장소를 사용한다.
 
-통합·E2E 테스트의 docs 저장소에는 실제 운영 저장소 대신 `/tmp` 아래의
-폐기 가능한 bare Git 저장소와 clone을 사용한다. 전체 검증은
-`make test`로 실행한다.
+`test/cli/e2e`에는 빌드된 binary를 블랙박스로 구동하는 guidance closure
+스위트와 시나리오 스위트가 있다. 카탈로그 항목마다 실제 작업공간을 그 상태로
+만들고, 메시지가 실제로 나오는지 확인한 뒤, 안내된 명령을 그 상태에서 그대로
+실행해 성공을 요구한다. 어느 target에서 실행하든 `SANHO_CLI_BINARY`로 검사
+대상 binary를 지정해야 한다. 프로세스를 띄우는 스위트이므로 `-race` 없이
+실행하며, `-race`는 in-process 스위트(`test-unit`, `test-int`)가 담당한다.
 
-실제 Git hosting, 인증, branch rule과 설치 binary 검증은
-[hands-on 체크리스트](hands-on-testing.md)에 따라 별도 실행한다. 자동 gate와
-hands-on 증적이 모두 준비돼도 release diff와 결과를 사용자에게 먼저 제출해야 한다.
-사용자가 그 결과를 검토한 뒤 별도로 명시한 최종 승인 없이는 commit, push, tag,
-GitHub Release 또는 사용자 binary 설치를 진행하지 않는다. 구현이나 검증을
-수행하라는 지시는 릴리스 승인으로 해석하지 않는다.
+안내 문자열을 카탈로그에 등록하지 않으면 `test-unit`이 실패한다. 메시지
+파일을 소스로 파싱해 등록 누락을 잡는 검사가 `internal/interface/cli`
+단위 테스트에 들어 있기 때문이다.
+
+실제 Git hosting, 인증, branch rule, 여러 머신을 포함한 릴리스 검증은
+[hands-on 체크리스트](hands-on-testing.md)에 따라 별도로 실행한다. 자동 gate와
+hands-on 증적이 모두 준비돼도 release diff와 결과를 사용자에게 먼저 제출해야
+한다. 사용자가 그 결과를 검토한 뒤 별도로 명시한 최종 승인 없이는 commit,
+push, tag, GitHub Release 또는 사용자 binary 설치를 진행하지 않는다. 구현이나
+검증을 수행하라는 지시는 릴리스 승인으로 해석하지 않는다.

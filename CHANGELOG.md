@@ -1,5 +1,153 @@
 # Changelog
 
+## v0.2.0 - 2026-08-07
+
+Sanho is now a single CLI. Publication moved from commit time to push time, the
+daemon is gone, and the tool no longer creates commits in application
+repositories.
+
+### Added
+
+- `sanho sync` reconciles local docs with canonical between your own commits:
+  fetch, three-way merge, and one ordinary user-authored `docs: sync to <oid>`
+  commit laid under your work. `--abort` restores the pre-sync state and cannot
+  fail, because sync touches only the docs worktree and two state files.
+  `--rebase-onto <commit>` reconciles against an explicit canonical commit for
+  history-rewrite recovery.
+- `sanho doctor` checks git, workspace config, hooks, the private clone, the
+  base file, the registry lock, sync state, and the docs inventory. `--fix`
+  re-derives a missing or invalid docs base from commit trailers, entirely
+  offline. It exits 0 even when it reports warnings.
+- `sanho migrate` converts a v0.1 workspace to the v0.2 layout in place. It is
+  idempotent, refuses while a v0.1 transaction or pending-fix state exists, and
+  prints the daemon stop command rather than running it.
+- A per-workspace private bare clone of the docs repository at
+  `<git-common-dir>/sanho/canonical`, with an explicit fetch policy and a
+  recorded last-fetch time that every cached answer reports as data age.
+- `--json` on `sync`, `pull`, and `doctor`, in addition to `status`, `state`,
+  and `version`. A conflicted sync reports `status: "conflicts"` with exit 0.
+- Bounded compare-and-swap retry on publication: a lost race refetches and
+  re-decides from scratch, up to three attempts, never replaying a stale merge
+  and never force-pushing.
+- Guidance closure: every next-step command Sanho prints succeeds in the state
+  where it is printed. When no command can succeed, the message says "manual
+  intervention required" and gives diagnostics instead.
+- A conflict-marker detector with no line-length limit, binary sniffing, an
+  explicit oversize error, and error propagation that fails gates closed.
+
+### Changed
+
+- Publication happens in `pre-push`, not `pre-commit`. `git commit` is now local
+  and network-free, and always works offline. A stale base produces one
+  informational line instead of a designed failure and a retry.
+- Provenance moved from identity to ancestry. Commits carry
+  `docs-base: <commit>` and `docs-base-tree: <tree>` instead of
+  `docs-version: <commit>`. The tree value is the anchor that survives a
+  canonical history rewrite. Stamping is offline, covers amends and rewords, and
+  never blocks a commit.
+- Conflict resolution is the standard git idiom: `sanho sync`, edit, `git add`,
+  `git commit`. There is no continue/abort/recover transaction protocol.
+- Concurrency control moved from a single-machine in-process mutex to git's own
+  push compare-and-swap, which works across processes and machines, plus a
+  `flock` on `~/.sanho/state.lock` for the local registry.
+- `.sanho_docs_hash` is replaced by `.sanho_base.json` (`{version, commit,
+  tree}`). The legacy single-line file is still read as a compatibility input
+  and is never written or deleted by v0.2.
+- `.sanho.json` gains `schema_version: 2` and `docs_repo_url`, and drops
+  `socket_path`. The CLI resolves the docs repository itself.
+- `~/.sanho/state.json` is now a version 2 registry keyed by full repository
+  URLs, updated directly by each CLI invocation under the lock. Basename-keyed
+  collisions between different repositories with the same name are gone.
+- Content moves between repositories as git objects over local transport, so
+  symlinks and file modes are handled by git natively. The tar snapshot
+  subsystem is not used on any path.
+- Merges use `git merge-tree --write-tree` with conflict sides labeled
+  `sanho-ours` and `sanho-upstream` instead of temp paths. Its exit contract
+  (0 clean, 1 conflicted, higher a real error) is distinct from
+  `git merge-file`'s and is read correctly.
+- Hook installation and removal match by exact line for all six hooks, preserve
+  foreign hook content verbatim, insert above a trailing `exit`, add only the
+  owner-execute bit, and delete a file left holding nothing but a shebang.
+- Every state write — registry, base file, workspace config, sync note, hook
+  files — goes through one atomic writer with fsync on the file and its
+  directory.
+- All git invocations go through a single runner: argv-only, no shell,
+  `GIT_TERMINAL_PROMPT=0` always, SSH `BatchMode` and a connect timeout on
+  network operations, and per-command timeouts.
+- No git version is enforced. `sanho init` does not gate on one and `sanho
+  doctor` reports the detected version as information.
+- `sanho status` reports base, canonical head with data age, the sync preview,
+  sync-in-progress state, and siblings with relations computed locally. Offline
+  status now answers from the last fetch with an explicit staleness line instead
+  of refusing.
+- `sanho clean --dry-run` is strictly read-only and does not touch the registry
+  lock file.
+- Documentation under `docs/` was rewritten for v0.2. `docs/architecture.md` is
+  the implementation authority; `sanho-v0.2.md` is the historical design record.
+
+### Removed
+
+- The `sanhod` daemon, its Unix socket, and the entire HTTP surface — server,
+  handlers, DTOs, and client. The `/healthz`, `/projects`, `/workspaces`,
+  `/docs/head`, `/docs/snapshot`, `/docs/push`, and `/state` endpoints no longer
+  exist, and neither do the launchd and systemd deployment paths.
+- Tool-authored `[SANHO] Update docs` commits. Sanho never creates a commit in
+  an application repository.
+- The pull-commit engine, its five-phase transaction, recovery classifier, and
+  recovery refs, along with `sanho pull-commit` and its `--continue`,
+  `--abort`, and `--recover` modes.
+- The application `main` publication contract and its store: Sanho no longer
+  fast-forwards, pushes, or otherwise moves any application ref, and no longer
+  blocks branch pushes through alias remotes or direct URLs.
+- The dirty-layer capture, throwaway-clone rebase, and pulled-docs baseline
+  machinery. `sanho sync` requires clean docs paths instead.
+- `sanho fix`, `.sanho_pending_fix` handling, the `post-commit` hook, and the
+  `workspace register`/`unregister` commands.
+- Git operation detection. Sanho no longer inspects rebase, merge, cherry-pick,
+  revert, bisect, or sequencer metadata, and no longer blocks or reports on it.
+- The `--socket` global flag, the `SANHO_SOCKET` environment variable, and
+  `socket_path` in the workspace config.
+- The `{"error":{"code":…}}` JSON error document and its machine error codes.
+  Errors are English text on stderr; stdout under `--json` is either a complete
+  document or nothing.
+- The daemon and client Make targets, and the daemon integration and end-to-end
+  suites.
+
+### Compatibility and migration
+
+- **The canonical docs repository is untouched.** Same repository, same linear
+  main history. Only the commit-message convention changes going forward.
+- Legacy `docs-version:` trailers and `[SANHO] Update docs` commits remain valid
+  history. Every path that scans history accepts both trailer keys, so mixed
+  histories need no rewrite and no migration commits.
+- Installing the v0.2 binary routes v0.1-era hooks to it immediately, because
+  hook lines invoke `sanho` by name. v0.2 degrades safely: `pre-commit`,
+  `commit-msg`, and the `post-*` hooks print one migrate hint and exit 0, so
+  commits keep working throughout the transition, while `pre-push` fails closed.
+  No commit is ever blocked by the upgrade.
+- Per machine, per workspace: back up `~/.sanho/state.json` and its `.bak`,
+  finish any v0.1 pull-commit transaction with the v0.1 binary, install v0.2,
+  then run `sanho migrate` in each workspace. `sanho migrate` writes
+  `.sanho.json.bak` and `.sanho_docs_hash.bak` and leaves the legacy hash file
+  in place. It rewrites `~/.sanho/state.json` and its backup into the v2 schema
+  without creating a separate backup of the daemon-era file, which is why the
+  manual copy is required before migrating.
+- Stopping and unloading the v0.1 daemon remains the user's action. `sanho
+  migrate` prints the exact `launchctl bootout` or `systemctl --user disable
+  --now` line and never runs it. The `sanhod` binary can be deleted at leisure.
+- Mixed-version operation in one workspace is not supported and is mechanically
+  prevented. Different machines may temporarily run different versions against
+  the same canonical repository — both versions' publications serialize through
+  git — but that is a transition state, not a supported configuration. Migrate
+  one machine at a time.
+- Automation that branched on the v0.1 error codes, on `pull_commit`,
+  `main_publication`, `head_reconciliation`, or `git_operation` status fields,
+  or on `sanho pull-commit` and `sanho fix` must be updated. The v0.2 stable
+  vocabulary is documented in `docs/cli-json.md`.
+- `sanho version --json` keeps its v0.1 schema, so existing version checks
+  continue to work.
+- Supported operating systems are unchanged: macOS and Linux.
+
 ## v0.1.6 - 2026-08-05
 
 ### Added
