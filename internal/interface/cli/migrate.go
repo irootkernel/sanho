@@ -149,6 +149,14 @@ func runMigrate(cmd *cobra.Command, docsRepoURLFlag string) error {
 		return err
 	}
 
+	preserved, err := preserveLegacyDaemonState()
+	if err != nil {
+		return err
+	}
+	if preserved != "" {
+		writeln(cmd.OutOrStdout(), "sanho: preserved the v0.1 daemon state at "+preserved)
+	}
+
 	file, err := openRegistry()
 	if err != nil {
 		return err
@@ -327,6 +335,52 @@ func swapHooks(ctx context.Context, ws *workspace) error {
 		return err
 	}
 	return ws.repo.InstallHooks(ctx)
+}
+
+// legacyStateBackupName is where preserveLegacyDaemonState keeps the
+// v0.1 daemon's state file.
+const legacyStateBackupName = "state.json.v1.bak"
+
+// preserveLegacyDaemonState copies the v0.1 daemon's ~/.sanho/state.json
+// to state.json.v1.bak before the registry conversion rewrites the file
+// — and its ordinary .bak — with the v2 schema in place. Without this
+// copy, migrate's own conversion would destroy the only rollback source
+// for the daemon state. Idempotent: a state.json that is absent or
+// already v2 leaves nothing to preserve, and an existing v1 backup is
+// never overwritten (a second run sees v2 and does not reach that
+// check). Returns the backup path when a copy was made.
+func preserveLegacyDaemonState() (string, error) {
+	home, err := resolveHome()
+	if err != nil {
+		return "", err
+	}
+	statePath := filepath.Join(home, registry.StateFileName)
+	data, err := os.ReadFile(statePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", fmt.Errorf("read %s for the v0.1 backup: %w", statePath, err)
+	}
+	var versioned struct {
+		Version int `json:"version"`
+	}
+	// The v0.1 daemon schema has no version field; the v2 registry always
+	// writes version 2. Anything unparsable is preserved too — better a
+	// spurious backup than a destroyed one.
+	if json.Unmarshal(data, &versioned) == nil && versioned.Version == 2 {
+		return "", nil
+	}
+	backup := filepath.Join(home, legacyStateBackupName)
+	if _, err := os.Stat(backup); err == nil {
+		return "", nil
+	} else if !os.IsNotExist(err) {
+		return "", fmt.Errorf("inspect %s: %w", backup, err)
+	}
+	if err := os.WriteFile(backup, data, 0600); err != nil {
+		return "", fmt.Errorf("write %s: %w", backup, err)
+	}
+	return backup, nil
 }
 
 // backupFile copies path to path.bak, preserving permissions. An absent

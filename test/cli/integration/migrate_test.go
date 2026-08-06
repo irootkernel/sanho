@@ -129,6 +129,14 @@ func TestMigrateConvertsAV1WorkspaceAndIsIdempotent(t *testing.T) {
 		t.Error("the v0.1 post-commit hook survived migration")
 	}
 
+	// The registry conversion rewrites ~/.sanho/state.json (and its
+	// .bak) with the v2 schema in place, so migrate must first preserve
+	// the v0.1 daemon state as its own backup — otherwise the conversion
+	// destroys the only rollback source for that file.
+	requireContains(t, "migrate", out.stdout, "preserved the v0.1 daemon state")
+	v1Backup := filepath.Join(w.home, "state.json.v1.bak")
+	requireContains(t, "v1 state backup", readFile(t, v1Backup), "project_to_docs_repo")
+
 	// The clone exists and the registry knows the workspace.
 	if !fileExists(t, w.appPath(".git", "sanho", "canonical")) {
 		t.Fatal("the private canonical clone was not created")
@@ -147,11 +155,14 @@ func TestMigrateConvertsAV1WorkspaceAndIsIdempotent(t *testing.T) {
 	}
 	requireContains(t, "push", push.combined(), "published docs")
 
-	// Idempotent: a second run detects the v2 config and exits 0.
+	// Idempotent: a second run detects the v2 config and exits 0, and
+	// the preserved v0.1 state backup is never overwritten (the registry
+	// is v2 by now; overwriting would replace legacy bytes with v2).
 	second := w.sanho(w.app, "migrate")
 	if strings.TrimSpace(second.stdout) != "sanho: already migrated" {
 		t.Fatalf("second migrate said %q, want 'sanho: already migrated'", second.stdout)
 	}
+	requireContains(t, "v1 state backup after rerun", readFile(t, v1Backup), "project_to_docs_repo")
 }
 
 // migrate needs the docs repository URL, which only the daemon knew.
