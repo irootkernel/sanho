@@ -84,11 +84,25 @@ func (a appPort) MergeDocs(ctx context.Context, baseTree, oursTree, theirsTree s
 // direct wsstate call, including ClearBase — removing the base file
 // outright is the only way to express "no base is recorded", since the
 // schema has no representation for an empty OID.
+// statePort is the flow suite's state adapter.
+//
+// It is deliberately the UNGUARDED writer. `interface/cli`'s production
+// adapter puts every base through the §5.7 guard, which is covered end
+// to end by the e2e suite against the real binary; what this suite is
+// for is the flow layer's own decisions — which writes happen, in which
+// order, with which values — and routing them through a guard would mean
+// only the states the guard already believes in could be constructed.
 type statePort struct{ workDir, gitDir string }
 
 func (s statePort) LoadBase() (provenance.Base, bool, error) { return wsstate.LoadBase(s.workDir) }
 
-func (s statePort) SaveBase(base provenance.Base) error { return wsstate.SaveBase(s.workDir, base) }
+func (s statePort) SaveBase(_ context.Context, base provenance.Base) error {
+	return wsstate.SaveBase(s.workDir, base)
+}
+
+func (s statePort) SaveSyncTargetBase(ctx context.Context, base provenance.Base, _ string) error {
+	return s.SaveBase(ctx, base)
+}
 
 func (s statePort) ClearBase() error { return wsstate.ClearBase(s.workDir) }
 
@@ -109,6 +123,7 @@ func (s statePort) LoadSyncNote() (docsync.SyncNote, bool, error) {
 		EntryHead:           note.EntryHead,
 		EntryDocsTree:       note.EntryDocsTree,
 		Conflicts:           note.Conflicts,
+		MergedTree:          note.MergedTree,
 		PreDatesEntryRecord: note.PreDatesEntryRecord(),
 	}, true, nil
 }
@@ -120,6 +135,7 @@ func (s statePort) SaveSyncNote(note docsync.SyncNote) error {
 		StartedAt:     time.Now().UTC(),
 		EntryHead:     note.EntryHead,
 		EntryDocsTree: note.EntryDocsTree,
+		MergedTree:    note.MergedTree,
 		Conflicts:     note.Conflicts,
 	})
 }

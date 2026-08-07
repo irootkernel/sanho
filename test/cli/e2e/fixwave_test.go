@@ -200,6 +200,119 @@ func TestLinkedWorktreeIsManaged(t *testing.T) {
 	}
 }
 
+// --- C3 (v0.2 review wave 4): a linked worktree's hook environment must
+// not leak into other repositories ---------------------------------------
+
+// TestLinkedWorktreePushLeavesTheAppRepositoryUntouched is C3's repro
+// (sanho-v0.2.md §7 C3, gitx.Runner.env()).
+//
+// git exports an absolute GIT_DIR into the environment of every hook it
+// runs inside a LINKED worktree. Before the fix, gitx.Runner inherited
+// that unfiltered, so a git command sanho issued from inside such a hook
+// — even one explicitly rooted at a completely different repository,
+// such as the private canonical clone — silently ran against the linked
+// worktree's repository instead. TestLinkedWorktreeIsManaged (above)
+// already proves publication from a linked worktree still lands the
+// right content in canonical; this test proves the app repository comes
+// out the other side of that same push UNCHANGED — its own `origin`
+// (the code remote, unrelated to canonical) byte-identical, its own
+// `refs/remotes/origin/*` byte-identical — and that a freshness line
+// computed mid-hook names canonical's true distance rather than
+// whatever the app repository's own history happens to say.
+func TestLinkedWorktreePushLeavesTheAppRepositoryUntouched(t *testing.T) {
+	t.Parallel()
+
+	w := newWorld(t, defaultCanonicalDocs())
+	main := w.setup("wt-integrity-main")
+	linked := linkedWorktree(t, main, "wt-integrity-feature")
+
+	// The linked worktree starts from the same recorded base as main, so
+	// canonical's next advance below is a known, exact "1 behind".
+	requireExit(t, "first sync in the linked worktree", linked.run("sync"), 0)
+
+	// The state a pre-fix binary corrupts: the app repository's OWN
+	// "origin" — its code remote, nothing to do with canonical — and its
+	// remote-tracking refs. Read from `main` (the main worktree) so the
+	// comparison does not depend on which worktree's view is asked.
+	remoteBefore := strings.TrimSpace(main.git("config", "--get", "remote.origin.url").stdout)
+	refsBefore := main.git("for-each-ref", "--format=%(refname) %(objectname)", "refs/remotes/origin").stdout
+	// The WHOLE local config, not only the remote URL. C3's misdirection
+	// ran `git remote set-url` against the app repository, but any
+	// clone-scoped `git config` sanho issues could land there the same
+	// way — `sanho.branch`, a fetch refspec, anything the private clone
+	// configures. Comparing the entire local config is what makes the
+	// claim "the application repository is untouched" rather than "this
+	// one key is untouched".
+	configBefore := main.git("config", "--list", "--local").stdout
+
+	// Canonical advances out of band, giving the pre-commit freshness
+	// check below a known, verifiable answer: exactly one commit. The
+	// private canonical clone only learns of it once refreshed — a plain
+	// CLI invocation, not a git hook, so it is unaffected by C3 itself —
+	// and the recorded base is untouched, which is what leaves the
+	// worktree exactly one commit behind for the commit below.
+	w.advanceCanonical(map[string]string{"api.md": "line one\nTHEIRS\n"}, "canonical: their edit")
+	linked.sanho("status", "--refresh")
+
+	// Commit fresh, non-conflicting docs content IN THE LINKED WORKTREE.
+	// This is where `pre-commit`/`commit-msg` fire with git's
+	// hook-exported, worktree-scoped GIT_DIR in the child's environment.
+	linked.writeDocs(map[string]string{"other.md": "from the linked worktree\n"})
+	linked.git("add", "docs/other.md")
+	committed := linked.gitExit("commit", "-m", "docs: edit from the linked worktree")
+	requireExit(t, "commit in the linked worktree", committed, 0)
+
+	// The pre-commit freshness line must name canonical's true distance.
+	// The reviewer's reproduction showed a plausible-looking but WRONG
+	// line here, computed by misdirecting the canonical clone's Runner
+	// at the app repository's own history.
+	requireContains(t, "pre-commit freshness line", committed.combined(),
+		"sanho: docs base is 1 commits behind")
+
+	linkedHead := strings.TrimSpace(linked.git("rev-parse", "HEAD").stdout)
+
+	// Publication itself still succeeds and reaches canonical.
+	push := linked.gitExit("push", "--quiet", "origin", "wt-integrity-feature")
+	requireExit(t, "push from the linked worktree", push, 0)
+	requireContains(t, "push output", push.combined(), "published docs")
+	requireEqual(t, "canonical docs/other.md",
+		w.canonicalFile(w.canonicalHead(), "other.md"), "from the linked worktree\n")
+
+	// The app repository's OWN remote is untouched — byte-identical, not
+	// merely "still a valid URL". A pre-fix binary rewrote it to the
+	// canonical clone's own path (`canonical.reconcileExisting`'s
+	// `git remote set-url origin <canonical-url>`, misdirected).
+	remoteAfter := strings.TrimSpace(main.git("config", "--get", "remote.origin.url").stdout)
+	requireEqual(t, "app repository remote.origin.url", remoteAfter, remoteBefore)
+
+	// The app repository's remote-tracking refs: every PRE-EXISTING ref
+	// is byte-identical to before, and the only addition is exactly the
+	// ordinary tracking ref `git push` itself creates for a branch
+	// pushed for the first time — pointing at the commit this test just
+	// made, in the app's own code remote. A pre-fix binary replaced the
+	// whole set with canonical's own branches instead of adding this one
+	// (sanho-v0.2.md §7 C3's reproduction showed
+	// "refs/remotes/origin/main refs/remotes/origin/wtbranch" — canonical
+	// content under the app's own ref names).
+	wantRefsAfter := refsBefore + "refs/remotes/origin/wt-integrity-feature " + linkedHead + "\n"
+	refsAfter := main.git("for-each-ref", "--format=%(refname) %(objectname)", "refs/remotes/origin").stdout
+	requireEqual(t, "app repository refs/remotes/origin/*", refsAfter, wantRefsAfter)
+
+	// And no configuration of the application repository moved at all.
+	// `git push` itself writes no local config, so this is an exact
+	// equality rather than an allowance for one expected addition.
+	requireEqual(t, "app repository local git config",
+		main.git("config", "--list", "--local").stdout, configBefore)
+
+	// The workspace state the hooks own is still the workspace's: the
+	// canonical clone lives under the common dir and the app repository's
+	// own HEAD is where the user left it in each worktree.
+	requireEqual(t, "main worktree branch",
+		strings.TrimSpace(main.git("rev-parse", "--abbrev-ref", "HEAD").stdout), "main")
+	requireEqual(t, "linked worktree branch",
+		strings.TrimSpace(linked.git("rev-parse", "--abbrev-ref", "HEAD").stdout), "wt-integrity-feature")
+}
+
 // --- F-H7: `init --force` must not destroy uncommitted docs -------------
 
 func TestInitForceRefusesOverUncommittedDocs(t *testing.T) {

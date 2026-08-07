@@ -252,20 +252,25 @@ var closureFixtures = map[string]closureFixture{
 	// doctor/status/init/migrate and in the use-case sentinels, where no
 	// fixture could reach it. Each row below is one message that now has
 	// to survive being run.
-	"push_empty_docs":           reachPushEmptyDocs,
-	"clone_missing":             reachCloneMissing,
-	"doctor_hooks":              reachDoctorHooks,
-	"sync_note_pending":         reachSyncNotePending,
-	"base_needs_sync":           reachBaseNeedsSync,
-	"base_unknown_to_canonical": reachBaseUnknownToCanonical,
-	"status_behind":             reachStatusBehind,
-	"sync_in_progress_command":  reachSyncInProgressCommand,
-	"pull_needs_sync":           reachPullNeedsSync,
-	"sync_unknown_base":         reachSyncUnknownBase,
-	"sync_unreachable":          reachSyncUnreachable,
-	"rebase_onto_healthy":       reachRebaseOntoHealthy,
-	"init_next_steps":           reachInitNextSteps,
-	"project_has_workspaces":    reachProjectHasWorkspaces,
+	"push_empty_docs":   reachPushEmptyDocs,
+	"clone_missing":     reachCloneMissing,
+	"doctor_hooks":      reachDoctorHooks,
+	"sync_note_pending": reachSyncNotePending,
+	"base_needs_sync":   reachBaseNeedsSync,
+	"base_cleared":      reachBaseCleared,
+
+	// The fourth review wave: the two remaining ways a base ends up
+	// ahead of the docs the worktree carries.
+	"sync_continue_foreign_history": reachSyncContinueForeignHistory,
+	"base_unknown_to_canonical":     reachBaseUnknownToCanonical,
+	"status_behind":                 reachStatusBehind,
+	"sync_in_progress_command":      reachSyncInProgressCommand,
+	"pull_needs_sync":               reachPullNeedsSync,
+	"sync_unknown_base":             reachSyncUnknownBase,
+	"sync_unreachable":              reachSyncUnreachable,
+	"rebase_onto_healthy":           reachRebaseOntoHealthy,
+	"init_next_steps":               reachInitNextSteps,
+	"project_has_workspaces":        reachProjectHasWorkspaces,
 }
 
 // --- fixtures ---------------------------------------------------------
@@ -1140,6 +1145,80 @@ func conflictedSync(t *testing.T, w *world) *workspace {
 		t.Fatal("a conflicted sync left no sync note")
 	}
 	return ws
+}
+
+// reachBaseCleared is the fourth review's C2 at the checkout boundary: a
+// branch that carries documents and no provenance whatsoever, which the
+// re-derivation used to leave holding another branch's base.
+func reachBaseCleared(t *testing.T, w *world) closureState {
+	ws := w.newWorkspace("pre-adoption")
+
+	// Documents existed before sanho did, and a long-lived branch was cut
+	// then.
+	ws.writeDocs(map[string]string{"legacy-only.md": "pre-adoption doc\n"})
+	ws.git("add", "-A")
+	ws.git("commit", "-m", "chore: pre-sanho work with docs")
+	ws.git("branch", "legacy")
+
+	ws.sanho("init",
+		"--project", projectName, "--docs-repo-url", w.origin, "--actor-email", actorEmail,
+		"--force", "-y")
+	ws.git("add", "-A")
+	ws.git("commit", "-m", "docs: adopt canonical docs")
+
+	checkout := ws.gitExit("checkout", "--quiet", "legacy")
+	requireExit(t, "checkout the pre-adoption branch", checkout, 0)
+
+	return closureState{
+		ws:     ws,
+		output: checkout.combined(),
+		verify: map[string]func(*testing.T, *workspace){
+			// The advised sync is what re-establishes a base: with none
+			// recorded the merge runs against the empty tree, which is the
+			// union of the branch's documents and canonical's.
+			"sanho sync": func(t *testing.T, ws *workspace) {
+				if !fileExists(t, ws.basePath()) {
+					t.Error("the advised sync established no base")
+				}
+			},
+		},
+	}
+}
+
+// reachSyncContinueForeignHistory is the fourth review's C1: a
+// conflicted sync escaped with a stash, then a checkout onto a branch
+// that took no part in the merge.
+func reachSyncContinueForeignHistory(t *testing.T, w *world) closureState {
+	ws := w.setup("foreign-history")
+
+	// `other` is cut before the docs edit the sync is about.
+	ws.git("branch", "other")
+	ws.commitDocs("docs: my edit", map[string]string{"api.md": "line one\nMINE\n"})
+	w.advanceCanonical(map[string]string{"api.md": "line one\nTHEIRS\n"}, "canonical: their edit")
+	requireContains(t, "sync output", ws.sanho("sync").combined(), "have conflicts")
+
+	ws.git("stash", "push", "--quiet", "--", "docs")
+	ws.git("checkout", "--quiet", "other")
+
+	refused := ws.run("sync", "--continue")
+	requireExit(t, "sync --continue from foreign history", refused, 1)
+
+	return closureState{
+		ws:     ws,
+		output: refused.combined(),
+		verify: map[string]func(*testing.T, *workspace){
+			"sanho sync --abort": func(t *testing.T, ws *workspace) {
+				if fileExists(t, ws.path(".git", "sanho", "sync.json")) {
+					t.Error("abort left the sync note behind")
+				}
+			},
+			"sanho sync": func(t *testing.T, ws *workspace) {
+				// Reconciling on THIS branch is what the message sends the
+				// user to do, and it has to actually reconcile.
+				requireEqual(t, "docs/api.md", ws.readDocs("api.md"), "line one\nTHEIRS\n")
+			},
+		},
+	}
 }
 
 // commitSomeCode makes an ordinary non-docs commit, which is what fires

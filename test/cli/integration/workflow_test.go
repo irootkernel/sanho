@@ -35,7 +35,7 @@ func TestInitFreshOnSeededCanonical(t *testing.T) {
 		"pre-commit":    "sanho hook pre-commit",
 		"commit-msg":    `sanho hook commit-msg "$1"`,
 		"pre-push":      `sanho hook pre-push "$@"`,
-		"post-checkout": "sanho hook post-checkout",
+		"post-checkout": `sanho hook post-checkout "$@"`,
 		"post-merge":    "sanho hook post-merge",
 		"post-rewrite":  `sanho hook post-rewrite "$@"`,
 	}
