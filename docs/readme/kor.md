@@ -278,6 +278,7 @@ push가 충돌로 거절되는 경우도 같은 흐름으로 이어진다.
 
 ```text
 sanho: your docs changes conflict with upstream (base 67c4bbfeada3 → 9a41f2cbbbbb)
+  docs/api.md
 Run 'sanho sync', resolve, commit, then push again.
 error: push rejected — no remote ref was changed
 ```

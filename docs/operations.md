@@ -205,9 +205,14 @@ case 이름은 `up_to_date`, `fast_forward`, `auto_merge`, `unknown_base`다.
 
 ```text
 sanho: your docs changes conflict with upstream (base 67c4bbfeada3 → 9a41f2cbbbbb)
+  docs/api.md
 Run 'sanho sync', resolve, commit, then push again.
 error: push rejected — no remote ref was changed
 ```
+
+충돌한 파일 목록은 거절이 이미 알고 있던 정보다. 목록을 빼면 어느 파일인지
+알아내려고 `sanho sync`를 한 번 돌려 봐야 했다. 파일 단위 정보가 없는
+거절(CAS 재시도 소진 등)은 목록 줄 없이 그대로 출력된다.
 
 **(b) 화해가 필요한 그 밖의 상태.** 사유는 `no_base`(기록된 base 없음)
 또는 `cas_retry_exhausted`(경합에서 3번 연속 패배)다.

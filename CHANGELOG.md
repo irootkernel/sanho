@@ -2,6 +2,58 @@
 
 ## v0.2.0 - 2026-08-07
 
+### Fixed before release (external review wave)
+
+A second, external review of the v0.2 implementation found one critical defect,
+four major ones, and a set of smaller ones. All are fixed on this release; none
+shipped.
+
+- **A stashed conflict is no longer mistaken for a resolved one.** A conflicted
+  `sanho sync` was declared finished as soon as the docs were clean and no file
+  carried a marker — a test that `git stash push -- docs` passes without
+  resolving anything. The sync note was then cleared while the base had already
+  advanced to the merge target, so the next push read it as a fast-forward and
+  republished the pre-merge tree, reverting upstream's work with exit 0 and no
+  message. The sync note now records where HEAD stood when the markers were
+  written, and a sync counts as resolved only when a commit has moved HEAD and
+  its docs tree. The put-aside state gets its own guidance: `pre-commit` reports
+  it and does not block (it is not a reason to stop unrelated work), and
+  `pre-push` refuses.
+- **`sanho sync --abort` survives a damaged sync note.** A `sync.json` that did
+  not parse made every path report the parse error, including the one operation
+  whose contract is that it cannot fail once a note exists — leaving markers in
+  `docs/`, a file nothing could read, and no command able to clear either. The
+  note's existence and its readability are now separate facts: abort restores
+  the docs and clears the note on existence alone, leaves the base where the
+  sync put it (that value lived inside the note), and names
+  `sanho doctor --fix`. `sanho sync`, `sanho pull`, `sanho doctor` and the push
+  boundary route to the abort instead of printing the parse error, and
+  `git commit` is never blocked by it.
+- **The push marker gate is measured against canonical.** It scoped its scan to
+  the diff against the *application remote's* previous tip, which one
+  `git push --no-verify` poisons: the markers reach the code remote without ever
+  passing the gate, and every later push then treats them as vetted history. The
+  baseline is now canonical head's docs tree — a state every publication built by
+  passing this same gate — so there is no way in behind it. An empty or
+  unresolvable baseline still falls back to a full-tree scan.
+- **A conflict rejection names the conflicted files.** Template 3 stated that a
+  conflict existed and left the user to run `sanho sync` to find out where, while
+  the rejection already carried the list.
+- **`sanho doctor` reports a base that history disagrees with.** Base
+  re-derivation is withheld whenever the docs worktree differs from HEAD's, and
+  the resulting inconsistency was promised to be flagged and never was. The new
+  `base-derivation` check warns when re-derivation would have produced a
+  different base (and `--fix` writes it), reports `[info]` when the docs are
+  dirty and the re-derivation was deliberately held back, and stays silent when
+  the base is simply ahead of the stamped one — the ordinary state after a
+  publication. `severity` gains `info`; `warnings` still counts only `warning`.
+- Smaller: the sync-note refusal moved ahead of the canonical clone's creation,
+  so the cheapest rejection no longer pays for a network round trip; `appgit:`
+  and `gitx:` package tags no longer leak into `sanho doctor` output; the
+  `--rebase-onto` empty-tree fallback and the automatic `state.json.v1.bak` are
+  documented as they behave; and the JSON error envelope and the post-migration
+  flow gained end-to-end coverage.
+
 ### Fixed before release (P7 review wave)
 
 An adversarial review of the v0.2 implementation found six correctness defects
@@ -184,13 +236,14 @@ repositories.
   `commit-msg`, and the `post-*` hooks print one migrate hint and exit 0, so
   commits keep working throughout the transition, while `pre-push` fails closed.
   No commit is ever blocked by the upgrade.
-- Per machine, per workspace: back up `~/.sanho/state.json` and its `.bak`,
-  finish any v0.1 pull-commit transaction with the v0.1 binary, install v0.2,
-  then run `sanho migrate` in each workspace. `sanho migrate` writes
-  `.sanho.json.bak` and `.sanho_docs_hash.bak` and leaves the legacy hash file
-  in place. It rewrites `~/.sanho/state.json` and its backup into the v2 schema
-  without creating a separate backup of the daemon-era file, which is why the
-  manual copy is required before migrating.
+- Per machine, per workspace: finish any v0.1 pull-commit transaction with the
+  v0.1 binary, install v0.2, then run `sanho migrate` in each workspace.
+  `sanho migrate` writes `.sanho.json.bak` and `.sanho_docs_hash.bak` and leaves
+  the legacy hash file in place. It rewrites `~/.sanho/state.json` and its `.bak`
+  into the v2 schema, and copies the daemon-era file to
+  `~/.sanho/state.json.v1.bak` before doing so — that copy is what later
+  workspaces read the project-to-docs-repo mapping from once `state.json` itself
+  is v2, so it is made automatically and no manual backup is required.
 - Stopping and unloading the v0.1 daemon remains the user's action. `sanho
   migrate` prints the exact `launchctl bootout` or `systemctl --user disable
   --now` line and never runs it. The `sanhod` binary can be deleted at leisure.

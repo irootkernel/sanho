@@ -138,11 +138,16 @@ v0.2가 분기용으로 보장하는 값은 다음과 같다. 문자열 그대�
 | `diverged` | 양쪽에 서로 다른 commit이 있다. |
 | `unknown` | 이 clone이 두 commit을 배치할 수 없다. 추측하지 않는다. |
 
-**doctor severity**: `ok`, `warning` 두 값뿐이다.
+**doctor severity**: `ok`, `info`, `warning` 세 값이다. `warnings` 필드는
+`warning`만 센다. `info`는 문제의 등급이 아니라 "할 말은 있고 요구할 것은
+없는" 검사를 뜻한다 — 지금은 base 재유도가 §5.10에 따라 의도적으로 보류된
+상태를 보고하는 데 쓴다.
 
 **doctor 검사 이름**: `git`, `workspace-config`, `hooks`, `hooks-fix`,
-`clone`, `canonical-head`, `origin`, `base`, `base-fix`, `registry`, `sync`,
-`docs`. `base-fix`와 `hooks-fix`는 `--fix`로 복구를 시도했을 때만 나타난다.
+`clone`, `canonical-head`, `origin`, `base`, `base-derivation`, `base-fix`,
+`registry`, `sync`, `docs`. `base-fix`와 `hooks-fix`는 `--fix`로 복구를
+시도했을 때만 나타나고, `base-derivation`은 기록된 base와 이력에서 재유도한
+base가 어긋났을 때만 나타난다.
 `origin`은 canonical 저장소에 실제로 닿아 보는 검사이며 경고만 낸다 — 모든
 읽기 경로는 마지막 fetch로 동작하므로, 닿지 않는다는 사실은 보고할 가치가
 있을 뿐 진단 명령을 실패시킬 이유가 아니다.
@@ -162,6 +167,8 @@ sanho: pushed docs still contain conflict markers:
 sanho: canonical repository unreachable (<url>): <원인>
 sanho: canonical history was rewritten; base <oid> is no longer reachable
 sanho: branch <name> carries no docs; publishing it would delete …
+sanho: the sync from <a> to <b> was never resolved by a commit; …
+sanho: the record of the sync in progress is unreadable (<원인>)
 error: push rejected — no remote ref was changed
 ```
 
@@ -383,7 +390,8 @@ commit을 가리킬 수 있으며, 그때 관계는 `unknown`이다.
 ```
 
 `checks`의 순서는 고정이며(`git` → `workspace-config` → `hooks` → `clone`
-[→ `canonical-head`] → `base` [→ `base-fix`] → `registry` → `sync` → `docs`),
+[→ `canonical-head`] → `base` [→ `base-derivation`] [→ `base-fix`] →
+`registry` → `sync` → `docs`),
 `warnings`는 `severity == "warning"`인 항목 수다. `detail`은 사람이 읽는
 문장이므로 **파싱 대상이 아니다.** 분기는 `name`과 `severity`로 한다.
 
