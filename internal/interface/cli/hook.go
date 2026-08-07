@@ -116,31 +116,47 @@ func runPreCommit(cmd *cobra.Command) error {
 // markers" into the more useful "finish or abort the sync". Clearing a
 // finished sync comes first of all, because a resolved sync must stop
 // blocking the very commit that resolves it.
+//
+// Only markers block. A sync that was put aside rather than resolved
+// (ResolutionNotCommitted) leaves no markers behind, so it is reported
+// and the commit proceeds: P2 makes the commit path non-blocking for
+// everything except the two §5.6 gates, and stopping every unrelated
+// commit until a stash is dealt with would punish the wrong action. The
+// state is still refused where it matters — `pre-push`, where the
+// already-advanced base would otherwise republish the pre-merge tree.
 func preCommitGates(ctx context.Context, cmd *cobra.Command, ws *workspace) (blocked bool, err error) {
 	state := ws.statePort()
 	use := &docsync.UseCase{App: ws.appPort(), State: state}
 
-	completed, err := use.CompleteIfResolved(ctx)
+	resolution, err := use.CompleteIfResolved(ctx)
 	if err != nil {
-		return false, fmt.Errorf("check the sync state: %w", err)
-	}
-	if completed {
-		writeln(cmd.ErrOrStderr(), syncCompletedMessage())
+		// A note sanho itself cannot read must never break `git commit`
+		// (P2, Critical C1's failure class): say so, and let the staged
+		// marker gate below answer for the commit's own content.
+		if !errors.Is(err, docsync.ErrSyncNoteCorrupt) {
+			return false, fmt.Errorf("check the sync state: %w", err)
+		}
+		writeln(cmd.ErrOrStderr(), syncNoteCorruptMessage(causeLine(err)))
 	}
 
-	_, _, noteExists, err := state.LoadSyncNote()
-	if err != nil {
-		return false, fmt.Errorf("read the sync state: %w", err)
-	}
-	if noteExists {
-		remaining, err := ws.repo.ScanWorktreeDocsForMarkers(ctx)
-		if err != nil {
-			return false, err
+	switch resolution {
+	case docsync.ResolutionCompleted:
+		writeln(cmd.ErrOrStderr(), syncCompletedMessage())
+	case docsync.ResolutionNotCommitted:
+		note, _, noteErr := state.LoadSyncNote()
+		if noteErr == nil {
+			writeln(cmd.ErrOrStderr(), syncNotCommittedMessage(note.PrevBase.Commit, note.Target.Commit))
+		}
+	case docsync.ResolutionPending:
+		remaining, scanErr := ws.repo.ScanWorktreeDocsForMarkers(ctx)
+		if scanErr != nil {
+			return false, scanErr
 		}
 		if len(remaining) > 0 {
 			writeln(cmd.ErrOrStderr(), unresolvedSyncMessage(ws.config.DocsDir, remaining))
 			return true, nil
 		}
+	case docsync.ResolutionNoSync:
 	}
 
 	staged, err := ws.repo.ScanStagedDocsForMarkers(ctx)
@@ -367,10 +383,19 @@ func runPrePush(cmd *cobra.Command, _ []string) error {
 	}
 
 	state := ws.statePort()
+	// The sync gate, before anything opens the clone.
+	//
 	// A sync that has already been resolved must not reject the push
-	// that carries the resolution.
-	if _, err := (&docsync.UseCase{App: ws.appPort(), State: state}).CompleteIfResolved(ctx); err != nil {
-		return fmt.Errorf("check the sync state: %w", err)
+	// that carries the resolution — and one that has NOT been resolved
+	// must be refused here rather than three steps later, because this
+	// refusal needs nothing but a local file. ensureCanonical creates and
+	// fetches a clone when there is none, so leaving the cheapest
+	// rejection behind it made an already-doomed push pay for a network
+	// round trip first (§5.3's ordering principle).
+	if blocked, err := prePushSyncGate(ctx, cmd, ws, state); err != nil {
+		return err
+	} else if blocked {
+		return errAlreadyReported
 	}
 
 	store, err := ws.ensureCanonical(ctx)
@@ -406,6 +431,49 @@ func runPrePush(cmd *cobra.Command, _ []string) error {
 		recordWorkspaceState(ctx, ws)
 	}
 	return nil
+}
+
+// prePushSyncGate settles the sync note before the push goes anywhere
+// near canonical, and reports whether it refused.
+//
+// Three outcomes reject, each with its own wording, because each is a
+// different state with a different next step. A note still carrying
+// markers is the ordinary in-progress case. A note whose sync was put
+// aside without a resolution commit is the state that used to be cleared
+// silently — and it must be stopped here specifically, since the
+// conflicted sync already advanced the base to the merge target and the
+// push would read that as a fast-forward over upstream's own work. A
+// note that cannot be parsed is refused on its existence alone.
+func prePushSyncGate(ctx context.Context, cmd *cobra.Command, ws *workspace, state statePort) (blocked bool, err error) {
+	stderr := cmd.ErrOrStderr()
+
+	resolution, err := (&docsync.UseCase{App: ws.appPort(), State: state}).CompleteIfResolved(ctx)
+	if err != nil {
+		if !errors.Is(err, docsync.ErrSyncNoteCorrupt) {
+			return false, fmt.Errorf("check the sync state: %w", err)
+		}
+		writeln(stderr, syncNoteCorruptMessage(causeLine(err)))
+		writeln(stderr, msgPushRejectedTrailer)
+		return true, nil
+	}
+
+	switch resolution {
+	case docsync.ResolutionNotCommitted:
+		note, _, noteErr := state.LoadSyncNote()
+		if noteErr != nil {
+			return false, fmt.Errorf("read the sync state: %w", noteErr)
+		}
+		writeln(stderr, syncNotCommittedMessage(note.PrevBase.Commit, note.Target.Commit))
+		writeln(stderr, msgPushRejectedTrailer)
+		return true, nil
+	case docsync.ResolutionPending:
+		writeln(stderr, msgSyncInProgressPush)
+		writeln(stderr, msgPushRejectedTrailer)
+		return true, nil
+	case docsync.ResolutionNoSync, docsync.ResolutionCompleted:
+		return false, nil
+	}
+	return false, nil
 }
 
 // envAllowDocsDeletion is the F-H2 escape hatch: publishing a docs-free
@@ -509,7 +577,7 @@ func reportPushError(cmd *cobra.Command, ws *workspace, err error) error {
 
 	case errors.As(err, &syncErr):
 		if syncErr.Reason == publish.ReasonConflicts {
-			writeln(stderr, pushConflictMessage(syncErr.Base, syncErr.Head))
+			writeln(stderr, pushConflictMessage(syncErr.Base, syncErr.Head, syncErr.Conflicts))
 			break
 		}
 		writeln(stderr, pushSyncRequiredMessage(syncErr.Reason, syncErr.Base, syncErr.Head))

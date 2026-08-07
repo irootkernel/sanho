@@ -190,8 +190,16 @@ func TestRunRejectsCommittedConflictMarkers(t *testing.T) {
 			t.Errorf("message %q does not name %s", err.Error(), path)
 		}
 	}
-	if s.canonical.fetches != 0 {
-		t.Errorf("the marker gate must precede the fetch; fetches = %d", s.canonical.fetches)
+	// The gate now runs *after* the fetch, because its baseline is
+	// canonical head's docs tree — a stale head cannot say what a
+	// publication would introduce. What must still hold is that the
+	// refusal costs nothing beyond that one read: no commit, no push,
+	// nothing written anywhere.
+	if s.canonical.fetches != 1 {
+		t.Errorf("fetches = %d, want exactly the one the gate's baseline needs", s.canonical.fetches)
+	}
+	if s.canonical.pushes != 0 {
+		t.Errorf("a rejected push wrote to canonical; pushes = %d", s.canonical.pushes)
 	}
 }
 
@@ -217,8 +225,8 @@ func TestRunFailsClosedWhenTheMarkerScanFails(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "blob unreadable") {
 		t.Fatalf("error = %v, want the scan failure to fail the gate closed", err)
 	}
-	if s.canonical.fetches != 0 {
-		t.Errorf("a failed gate still reached the network: fetches = %d", s.canonical.fetches)
+	if s.canonical.pushes != 0 {
+		t.Errorf("a failed gate still wrote to canonical: pushes = %d", s.canonical.pushes)
 	}
 }
 

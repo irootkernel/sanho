@@ -82,6 +82,7 @@ type fakeApp struct {
 	*journal
 
 	docsClean    bool
+	headCommit   string
 	headTree     string
 	worktreeTree string
 	emptyTree    string
@@ -106,6 +107,8 @@ func (a *fakeApp) DocsClean(ctx context.Context) (bool, error) {
 	a.record("docs-clean")
 	return a.docsClean, nil
 }
+
+func (a *fakeApp) HeadCommit(ctx context.Context) (string, error) { return a.headCommit, nil }
 
 func (a *fakeApp) HeadDocsTree(ctx context.Context) (string, error) { return a.headTree, nil }
 
@@ -155,18 +158,18 @@ func (a *fakeApp) ScanWorktreeDocsForMarkers(ctx context.Context) ([]string, err
 	return a.markerPaths, nil
 }
 
-// noteRecord is one saved sync note.
-type noteRecord struct{ prev, target provenance.Base }
-
 type fakeState struct {
 	*journal
 
 	base    provenance.Base
 	hasBase bool
-	note    *noteRecord
+	note    *SyncNote
+	// noteErr is returned alongside the note, for the corrupt-file case
+	// the StatePort contract reports as exists=true plus an error.
+	noteErr error
 
 	savedBases  []provenance.Base
-	savedNotes  []noteRecord
+	savedNotes  []SyncNote
 	noteCleared int
 }
 
@@ -187,18 +190,20 @@ func (s *fakeState) ClearBase() error {
 	return nil
 }
 
-func (s *fakeState) LoadSyncNote() (provenance.Base, provenance.Base, bool, error) {
-	if s.note == nil {
-		return provenance.Base{}, provenance.Base{}, false, nil
+func (s *fakeState) LoadSyncNote() (SyncNote, bool, error) {
+	if s.noteErr != nil {
+		return SyncNote{}, true, s.noteErr
 	}
-	return s.note.prev, s.note.target, true, nil
+	if s.note == nil {
+		return SyncNote{}, false, nil
+	}
+	return *s.note, true, nil
 }
 
-func (s *fakeState) SaveSyncNote(prev, target provenance.Base) error {
+func (s *fakeState) SaveSyncNote(note SyncNote) error {
 	s.record("save-note")
-	record := noteRecord{prev: prev, target: target}
-	s.savedNotes = append(s.savedNotes, record)
-	s.note = &record
+	s.savedNotes = append(s.savedNotes, note)
+	s.note = &note
 	return nil
 }
 
@@ -233,6 +238,7 @@ func newFixture() *fixture {
 		app: &fakeApp{
 			journal:      shared,
 			docsClean:    true,
+			headCommit:   commitOID(7),
 			headTree:     treeOID(0),
 			worktreeTree: treeOID(0),
 			emptyTree:    emptyTreeOID,

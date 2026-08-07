@@ -55,16 +55,57 @@ func TestPushRejectionMatchesTemplate3(t *testing.T) {
 	base := "67c4bbfeada37f5dda8fb79aa43216ef062cd8df"
 	head := "9a41f2cbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 
-	got := pushConflictMessage(base, head)
+	got := pushConflictMessage(base, head, []string{"docs/api.md", "docs/schema.md"})
 	want := strings.Join([]string{
 		// §5.9's hygiene rule fixes the OID width at 12; the template's
 		// 7-character example is illustrative.
 		"sanho: your docs changes conflict with upstream (base 67c4bbfeada3 → 9a41f2cbbbbb)",
+		// The conflicted files, indented as in templates 2 and the
+		// marker listing. The rejection already knew them; leaving them
+		// out sent the user to run `sanho sync` just to find out which.
+		"  docs/api.md",
+		"  docs/schema.md",
 		"Run 'sanho sync', resolve, commit, then push again.",
 		"error: push rejected — no remote ref was changed",
 	}, "\n")
 	if got != want {
 		t.Fatalf("pushConflictMessage =\n%s\n\nwant\n%s", got, want)
+	}
+}
+
+// A rejection with no file-level detail — an exhausted CAS budget
+// reaches the same renderer — prints §5.9 template 3 unchanged.
+func TestPushRejectionWithoutFileDetailIsTheBareTemplate(t *testing.T) {
+	got := pushConflictMessage("a", "b", nil)
+	want := strings.Join([]string{
+		"sanho: your docs changes conflict with upstream (base a → b)",
+		"Run 'sanho sync', resolve, commit, then push again.",
+		"error: push rejected — no remote ref was changed",
+	}, "\n")
+	if got != want {
+		t.Fatalf("pushConflictMessage =\n%s\n\nwant\n%s", got, want)
+	}
+}
+
+// The X1 state has to say plainly what it is, because it is the one
+// refusal whose docs look finished.
+func TestSyncNotCommittedNamesBothWaysOut(t *testing.T) {
+	got := syncNotCommittedMessage(sampleBaseOID, sampleHeadOID)
+	for _, want := range []string{
+		"was never resolved by a commit",
+		"sanho sync --abort",
+		"stays in your stash",
+		"67c4bbfeada3",
+		"9a41f2c0e1d2",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("syncNotCommittedMessage =\n%s\nwant it to contain %q", got, want)
+		}
+	}
+	// Template 2's advice is exactly what does NOT work here: there are
+	// no markers left to resolve and nothing staged to commit.
+	if strings.Contains(got, "git add") {
+		t.Errorf("syncNotCommittedMessage =\n%s\nnames a commit that has nothing to commit", got)
 	}
 }
 
@@ -174,7 +215,7 @@ func TestMessagesAreEnglishOnly(t *testing.T) {
 		commitBehindConflicts(1, []string{"docs/a.md"}),
 		commitBehindUnknown(1),
 		syncConflictMessage("docs", []string{"docs/a.md"}),
-		pushConflictMessage("a", "b"),
+		pushConflictMessage("a", "b", []string{"docs/a.md"}),
 		pushSyncRequiredMessage("no_base", "a", "b"),
 		pushMarkersMessage([]string{"docs/a.md"}),
 		pushUnreachableMessage("git@host:docs.git", "connection refused"),
@@ -189,6 +230,9 @@ func TestMessagesAreEnglishOnly(t *testing.T) {
 		baseRederivedMessage("abc"),
 		stagedMarkersMessage([]string{"docs/a.md"}),
 		unresolvedSyncMessage("docs", []string{"docs/a.md"}),
+		syncNotCommittedMessage("a", "b"),
+		syncNoteCorruptMessage("unexpected end of JSON input"),
+		syncAbortDegradedLine(),
 		commitMsgStampWarning("no base"),
 		staleCanonicalLine(time.Hour),
 		registryLockHint("/home/u/.sanho/state.lock"),
@@ -229,7 +273,9 @@ func TestAdvisedCommandsAreRealCommands(t *testing.T) {
 		doctorFixHint,
 		commitBehindClean(1),
 		syncConflictMessage("docs", []string{"docs/a.md"}),
-		pushConflictMessage("a", "b"),
+		pushConflictMessage("a", "b", []string{"docs/a.md"}),
+		syncNotCommittedMessage("a", "b"),
+		syncNoteCorruptMessage("unexpected end of JSON input"),
 		staleCanonicalLine(time.Hour),
 		neverFetchedLine,
 	}

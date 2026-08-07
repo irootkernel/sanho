@@ -197,12 +197,26 @@ func syncConflictMessage(docsDir string, conflicts []string) string {
 
 // --- Template 3: push rejection (§5.9) --------------------------------
 
-// pushConflictMessage renders §5.9 template 3 verbatim for the case
-// ③-conflict rejection.
-func pushConflictMessage(base, head string) string {
-	return fmt.Sprintf("sanho: your docs changes conflict with upstream (base %s → %s)\n"+
-		"Run 'sanho sync', resolve, commit, then push again.\n"+
-		"%s", shortOID(base), shortOID(head), msgPushRejectedTrailer)
+// pushConflictMessage renders §5.9 template 3 for the case ③-conflict
+// rejection, with the conflicted files listed between the state line and
+// the action line.
+//
+// The list is the template's one addition, and it is information the
+// rejection already had: the merge that failed reported exactly which
+// paths conflicted, and dropping them left the user to rediscover by
+// running the very `sanho sync` the next line advises. The indentation
+// matches templates 2 and the marker listing, so all three rejections
+// read the same way. A rejection with no file-level detail (the CAS
+// budget, say) renders the template unchanged.
+func pushConflictMessage(base, head string, files []string) string {
+	var b strings.Builder
+	writef(&b, "sanho: your docs changes conflict with upstream (base %s → %s)\n",
+		shortOID(base), shortOID(head))
+	for _, path := range files {
+		writef(&b, "  %s\n", path)
+	}
+	writef(&b, "Run 'sanho sync', resolve, commit, then push again.\n%s", msgPushRejectedTrailer)
+	return b.String()
 }
 
 // pushSyncRequiredMessage covers the other rejections that route to
@@ -339,6 +353,53 @@ func pulledMessage(target, commit string) string {
 		return fmt.Sprintf("sanho: pulled docs to %s", shortOID(target))
 	}
 	return fmt.Sprintf("sanho: pulled docs to %s (commit %s)", shortOID(target), shortOID(commit))
+}
+
+// syncNotCommittedMessage covers a conflicted sync whose markers are
+// gone from the worktree without a commit having resolved them —
+// `git stash push -- docs`, `git checkout HEAD -- docs`, a revert.
+//
+// The state looks finished and is not, which is why it gets its own
+// wording rather than the in-progress one: there are no markers left to
+// "resolve and commit", so template 2's advice would name a `git commit`
+// with nothing to commit. The two commands here are ordered, and the
+// order is the message: abort first (the stash is untouched by it), then
+// sync again to lay the same conflicts out with the resolution still to
+// make.
+//
+// It is printed by `pre-commit`, which does NOT block on it, and by
+// `pre-push`, which does. The split follows P2 and §5.6: the commit path
+// blocks only for markers, and a sync put aside is no reason to stop
+// unrelated work — while the push boundary is where a base that has
+// already advanced to the merge target would otherwise republish the
+// pre-merge tree.
+func syncNotCommittedMessage(prev, target string) string {
+	return fmt.Sprintf("sanho: the sync from %s to %s was never resolved by a commit; the docs are clean but HEAD has not moved\n"+
+		"Run 'sanho sync --abort' to undo it — anything you stashed stays in your stash — then 'sanho sync' to lay the conflicts out again.",
+		shortOID(prev), shortOID(target))
+}
+
+// syncNoteCorruptMessage covers a sync note that is present and
+// unreadable.
+//
+// It names the abort and nothing else, because the abort is the one
+// operation that needs only the note's *existence*: it restores the docs
+// from HEAD and deletes the file. What it cannot do is put the base back
+// — that value lived inside the note — so the abort itself reports the
+// follow-up rather than this message carrying a second command that has
+// nothing to do until the first one has run.
+func syncNoteCorruptMessage(detail string) string {
+	return fmt.Sprintf("sanho: the record of the sync in progress is unreadable (%s)\n"+
+		"Run 'sanho sync --abort' to restore the docs from HEAD and clear it.", detail)
+}
+
+// syncAbortDegradedLine follows a successful abort over a corrupt note.
+//
+// The base is left where the conflicted sync put it, which is a state
+// history can correct: doctorFixHint is quoted by identity rather than
+// re-worded, so the two places that advise this repair cannot drift.
+func syncAbortDegradedLine() string {
+	return "the sync note could not be read, so the docs base was left as the sync set it; " + doctorFixHint
 }
 
 // syncAbortedMessage reports a completed `sanho sync --abort`.
@@ -752,9 +813,28 @@ var Catalog = []CatalogEntry{
 		ID:           "push_conflict",
 		Source:       "pushConflictMessage",
 		Scenario:     "push_conflict",
-		Sample:       pushConflictMessage(sampleBaseOID, sampleHeadOID),
+		Sample:       pushConflictMessage(sampleBaseOID, sampleHeadOID, []string{"docs/api.md"}),
 		Match:        "your docs changes conflict with upstream",
 		NextCommands: []string{"sanho sync"},
+	},
+	{
+		ID:       "sync_not_committed",
+		Source:   "syncNotCommittedMessage",
+		Scenario: "sync_not_committed",
+		Sample:   syncNotCommittedMessage(sampleBaseOID, sampleHeadOID),
+		Match:    "was never resolved by a commit",
+		// Ordered: the abort is what makes the second command possible,
+		// and the closure fixture runs it as the human half before
+		// `sanho sync` — which refuses while a note exists, by design.
+		NextCommands: []string{"sanho sync --abort", "sanho sync"},
+	},
+	{
+		ID:           "sync_note_corrupt",
+		Source:       "syncNoteCorruptMessage",
+		Scenario:     "sync_note_corrupt",
+		Sample:       syncNoteCorruptMessage("/repo/.git/sanho/sync.json: unexpected end of JSON input"),
+		Match:        "the record of the sync in progress is unreadable",
+		NextCommands: []string{"sanho sync --abort"},
 	},
 	{
 		ID:           "push_sync_required",

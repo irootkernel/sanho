@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/irootkernel/sanho/internal/domain/markers"
+	"github.com/irootkernel/sanho/internal/infra/appgit"
 	"github.com/irootkernel/sanho/internal/infra/gitx"
 )
 
@@ -83,56 +84,128 @@ func TestStagedScanOnAnUnbornHead(t *testing.T) {
 	}
 }
 
-// TestPushScanScopesToTheDiffAgainstTheRemoteTip is F-H4b: what the push
-// introduces is what the push gate reads.
-func TestPushScanScopesToTheDiffAgainstTheRemoteTip(t *testing.T) {
+// TestPushScanScopesToTheDiffAgainstCanonical is F-H4b as the external
+// review corrected it: what a publication introduces is measured
+// against the docs canonical already carries.
+func TestPushScanScopesToTheDiffAgainstCanonical(t *testing.T) {
 	dir, _ := newRepoWithDocs(t)
 	repo := newRepoHandle(t, dir)
 
 	writeFile(t, dir, "docs/legacy.md", []byte(markerText))
 	published := commitAll(t, dir, "docs: markers already upstream")
+	publishedDocs := docsTreeOf(t, repo, published)
 
 	writeFile(t, dir, "docs/new.md", []byte("clean\n"))
 	tip := commitAll(t, dir, "docs: add a clean file")
 
-	// Scoped to the diff: nothing new carries markers.
-	conflicted, err := repo.ScanDocsBlobsSince(context.Background(), published, tip)
+	// Scoped to what canonical does not have: nothing new carries
+	// markers, and the file canonical already publishes is not rescanned.
+	conflicted, err := repo.ScanDocsBlobsAgainst(context.Background(), publishedDocs, tip)
 	if err != nil {
-		t.Fatalf("ScanDocsBlobsSince: %v", err)
+		t.Fatalf("ScanDocsBlobsAgainst: %v", err)
 	}
 	if len(conflicted) != 0 {
-		t.Fatalf("conflicted = %v, want none for the diff-scoped scan", conflicted)
+		t.Fatalf("conflicted = %v, want none for the canonical-scoped scan", conflicted)
 	}
 
-	// With no previous remote tip — a brand-new branch — the whole tree
-	// is read, and the marker is caught. That is the fail-closed half of
-	// the same rule.
-	conflicted, err = repo.ScanDocsBlobsSince(context.Background(), "", tip)
+	// With nothing published — a canonical repository with no commits —
+	// the whole tree is read and the marker is caught. That is the
+	// fail-closed half of the same rule.
+	conflicted, err = repo.ScanDocsBlobsAgainst(context.Background(), "", tip)
 	if err != nil {
-		t.Fatalf("ScanDocsBlobsSince(full tree): %v", err)
+		t.Fatalf("ScanDocsBlobsAgainst(full tree): %v", err)
 	}
 	if len(conflicted) != 1 || conflicted[0] != "docs/legacy.md" {
 		t.Fatalf("conflicted = %v, want the full-tree scan to catch docs/legacy.md", conflicted)
 	}
 }
 
-// TestPushScanFallsBackToTheFullTreeForAnUnknownSince covers a rewritten
-// or pruned remote tip: an OID this repository no longer has cannot be
-// diffed against, so the scan must not silently pass.
-func TestPushScanFallsBackToTheFullTreeForAnUnknownSince(t *testing.T) {
+// TestPushScanCatchesMarkersCanonicalNeverSaw is the reviewer's repro at
+// the unit level.
+//
+// A marker commit that reached the app remote without being published —
+// one `git push --no-verify` — used to sit permanently outside the scan,
+// because the baseline was the app remote's tip rather than canonical's
+// tree. Measured against what canonical actually publishes, it is
+// exactly what the next push would introduce.
+func TestPushScanCatchesMarkersCanonicalNeverSaw(t *testing.T) {
+	dir, _ := newRepoWithDocs(t)
+	repo := newRepoHandle(t, dir)
+
+	// What canonical published, and stopped at.
+	publishedDocs := docsTreeOf(t, repo, gitLine(t, dir, "rev-parse", "HEAD"))
+
+	writeFile(t, dir, "docs/bad.md", []byte(markerText))
+	bypassed := commitAll(t, dir, "docs: markers, committed with --no-verify")
+	writeFile(t, dir, "docs/new.md", []byte("clean\n"))
+	tip := commitAll(t, dir, "docs: an unrelated change")
+
+	conflicted, err := repo.ScanDocsBlobsAgainst(context.Background(), publishedDocs, tip)
+	if err != nil {
+		t.Fatalf("ScanDocsBlobsAgainst: %v", err)
+	}
+	if len(conflicted) != 1 || conflicted[0] != "docs/bad.md" {
+		t.Fatalf("conflicted = %v, want docs/bad.md — the commit canonical never saw", conflicted)
+	}
+
+	// And the old baseline is what let it through: diffed against the
+	// bypassed commit, the marker file is invisible.
+	bypassedDocs := docsTreeOf(t, repo, bypassed)
+	conflicted, err = repo.ScanDocsBlobsAgainst(context.Background(), bypassedDocs, tip)
+	if err != nil {
+		t.Fatalf("ScanDocsBlobsAgainst: %v", err)
+	}
+	if len(conflicted) != 0 {
+		t.Fatalf("conflicted = %v; the fixture no longer demonstrates the old hole", conflicted)
+	}
+}
+
+// TestPushScanFallsBackToTheFullTreeForAnUnknownTree covers a canonical
+// head this repository has never imported: a tree it cannot resolve
+// cannot be diffed against, so the scan must not silently pass.
+func TestPushScanFallsBackToTheFullTreeForAnUnknownTree(t *testing.T) {
 	dir, _ := newRepoWithDocs(t)
 	repo := newRepoHandle(t, dir)
 
 	writeFile(t, dir, "docs/legacy.md", []byte(markerText))
 	tip := commitAll(t, dir, "docs: markers")
 
-	conflicted, err := repo.ScanDocsBlobsSince(context.Background(), strings.Repeat("a", 40), tip)
+	conflicted, err := repo.ScanDocsBlobsAgainst(context.Background(), strings.Repeat("a", 40), tip)
 	if err != nil {
-		t.Fatalf("ScanDocsBlobsSince: %v", err)
+		t.Fatalf("ScanDocsBlobsAgainst: %v", err)
 	}
 	if len(conflicted) != 1 {
-		t.Fatalf("conflicted = %v, want the unknown 'since' to force a full-tree scan", conflicted)
+		t.Fatalf("conflicted = %v, want the unknown tree to force a full-tree scan", conflicted)
 	}
+}
+
+// TestPushScanSkipsATipCanonicalAlreadyCarries is the cheap case: the
+// tip's docs are byte-identical to what is published, so there is
+// nothing to introduce and nothing to read.
+func TestPushScanSkipsATipCanonicalAlreadyCarries(t *testing.T) {
+	dir, _ := newRepoWithDocs(t)
+	repo := newRepoHandle(t, dir)
+
+	tip := gitLine(t, dir, "rev-parse", "HEAD")
+	conflicted, err := repo.ScanDocsBlobsAgainst(context.Background(), docsTreeOf(t, repo, tip), tip)
+	if err != nil {
+		t.Fatalf("ScanDocsBlobsAgainst: %v", err)
+	}
+	if len(conflicted) != 0 {
+		t.Fatalf("conflicted = %v, want none", conflicted)
+	}
+}
+
+// docsTreeOf resolves a commit's docs tree, which is the shape canonical
+// head's own root tree has (canonical commits are docs-only).
+func docsTreeOf(t *testing.T, repo *appgit.Repo, commit string) string {
+	t.Helper()
+
+	tree, err := repo.DocsTreeOf(context.Background(), commit)
+	if err != nil {
+		t.Fatalf("DocsTreeOf(%s): %v", commit, err)
+	}
+	return tree
 }
 
 // --- F-M8: sniff first, size second ------------------------------------
@@ -154,7 +227,7 @@ func TestOversizedBinaryDocsAreSkipped(t *testing.T) {
 	writeFile(t, dir, "docs/asset.bin", blob)
 	tip := commitAll(t, dir, "docs: add a large binary asset")
 
-	conflicted, err := repo.ScanDocsBlobsSince(context.Background(), "", tip)
+	conflicted, err := repo.ScanDocsBlobsAgainst(context.Background(), "", tip)
 	if err != nil {
 		t.Fatalf("a large BINARY doc must not fail the scan: %v", err)
 	}
@@ -172,7 +245,7 @@ func TestOversizedTextDocsStillFailClosed(t *testing.T) {
 	writeFile(t, dir, "docs/huge.md", []byte(strings.Repeat("a", markers.MaxScanSize+1)))
 	tip := commitAll(t, dir, "docs: add a huge text file")
 
-	_, err := repo.ScanDocsBlobsSince(context.Background(), "", tip)
+	_, err := repo.ScanDocsBlobsAgainst(context.Background(), "", tip)
 	if !errors.Is(err, markers.ErrTooLarge) {
 		t.Fatalf("error = %v, want markers.ErrTooLarge", err)
 	}
@@ -204,7 +277,7 @@ func TestGateCostIsProportionalToTheChange(t *testing.T) {
 	tip := commitAll(t, dir, "docs: bulk import")
 
 	started := time.Now()
-	if _, err := repo.ScanDocsBlobsSince(context.Background(), "", tip); err != nil {
+	if _, err := repo.ScanDocsBlobsAgainst(context.Background(), "", tip); err != nil {
 		t.Fatalf("full-tree scan of %d files: %v", files, err)
 	}
 	fullTree := time.Since(started)

@@ -39,6 +39,12 @@ func reportSyncError(cmd *cobra.Command, ws *workspace, err error) error {
 	stderr := cmd.ErrOrStderr()
 
 	switch {
+	// The corrupt note comes before the in-progress case: both describe
+	// a sync that owns the docs worktree, but only one of them can say
+	// which sync, so the unreadable file has to be named first.
+	case errors.Is(err, docsync.ErrSyncNoteCorrupt):
+		writeln(stderr, syncNoteCorruptMessage(errDetail(err, docsync.ErrSyncNoteCorrupt)))
+
 	case errors.Is(err, docsync.ErrSyncInProgress):
 		writeln(stderr, syncInProgressMessage(errDetail(err, docsync.ErrSyncInProgress)))
 
@@ -170,7 +176,7 @@ func machineErrorCode(err error) string {
 	case errors.Is(err, errNotWorkspace):
 		return codeNotInWorkspace
 	case errors.Is(err, docsync.ErrSyncInProgress), errors.Is(err, docsync.ErrNoSyncInProgress),
-		errors.Is(err, publish.ErrSyncInProgress):
+		errors.Is(err, docsync.ErrSyncNoteCorrupt), errors.Is(err, publish.ErrSyncInProgress):
 		return codeSyncInProgress
 	case errors.Is(err, docsync.ErrDocsDirty):
 		return codeDocsDirty
@@ -213,6 +219,18 @@ func writeJSONError(out io.Writer, err error) {
 func userMessage(err error) string {
 	return stripInternalPrefixes(strings.TrimPrefix(err.Error(), errorPrefix))
 }
+
+// causeOf renders an error for a user-facing line: the whole chain, with
+// infra's package tags removed.
+//
+// It is the interpolation to reach for instead of `%v` on an error.
+// `sanho doctor` in particular reports failures it deliberately does not
+// fail on, and printing them raw put `appgit: ` and `gitx: ` in front of
+// sentences a user reads — package names that locate a failure for us
+// and mean nothing to them (§5.9, F-M3). causeLine is the narrower
+// relative: it keeps only the innermost cause, for messages that pair a
+// one-line cause with an action line.
+func causeOf(err error) string { return stripInternalPrefixes(err.Error()) }
 
 // stripInternalPrefixes removes the package tags infra uses to locate
 // its own failures. They are diagnostics for us, not information for the

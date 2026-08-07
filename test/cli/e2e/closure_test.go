@@ -210,6 +210,8 @@ var closureFixtures = map[string]closureFixture{
 	"staged_markers":         reachStagedMarkers,
 	"push_conflict":          reachPushConflict,
 	"push_sync_required":     reachPushSyncRequired,
+	"sync_not_committed":     reachSyncNotCommitted,
+	"sync_note_corrupt":      reachSyncNoteCorrupt,
 	"push_markers":           reachPushMarkers,
 	"canonical_unreachable":  reachCanonicalUnreachable,
 	"history_rewritten":      reachHistoryRewritten,
@@ -514,6 +516,78 @@ func reachPushSyncRequired(t *testing.T, w *world) closureState {
 				if !fileExists(t, ws.basePath()) {
 					t.Error("the advised sync established no base")
 				}
+			},
+		},
+	}
+}
+
+// reachSyncNotCommitted is the external review's Critical: a conflicted
+// sync whose markers were stashed away rather than resolved.
+//
+// The docs are clean, no file carries a marker, and HEAD is exactly
+// where the sync left it — a state that used to be read as "resolved",
+// clearing the note and letting the next push republish the pre-merge
+// tree over upstream's work.
+func reachSyncNotCommitted(t *testing.T, w *world) closureState {
+	ws := conflictedSync(t, w)
+	ws.git("stash", "push", "--quiet", "--", "docs")
+
+	push := ws.push()
+	requireExit(t, "push after stashing the conflict away", push, 1)
+
+	return closureState{
+		ws:     ws,
+		output: push.combined(),
+		prepare: map[string]func(*testing.T, *workspace){
+			// "abort … then 'sanho sync'": the order is the advice, and
+			// sync refuses while a note exists, so the first half is
+			// performed before the second is run.
+			"sanho sync": func(t *testing.T, ws *workspace) {
+				requireExit(t, "the advised abort", ws.run("sync", "--abort"), 0)
+			},
+		},
+		verify: map[string]func(*testing.T, *workspace){
+			"sanho sync --abort": func(t *testing.T, ws *workspace) {
+				if fileExists(t, ws.path(".git", "sanho", "sync.json")) {
+					t.Error("abort left the sync note behind")
+				}
+				requireEqual(t, "docs/api.md", ws.readDocs("api.md"), "line one\nMINE\n")
+				// The stash is untouched, exactly as the message says.
+				requireContains(t, "stash list", ws.git("stash", "list").stdout, "stash@{0}")
+			},
+			"sanho sync": func(t *testing.T, ws *workspace) {
+				// The conflicts are laid out again, with the resolution
+				// still to make — which is what "re-run it" has to mean.
+				requireContains(t, "docs/api.md", ws.readDocs("api.md"), "<<<<<<< sanho-ours")
+				if !fileExists(t, ws.path(".git", "sanho", "sync.json")) {
+					t.Error("the re-run sync left no note")
+				}
+			},
+		},
+	}
+}
+
+// reachSyncNoteCorrupt writes a `sync.json` nothing can parse.
+//
+// The fixture damages the real file rather than simulating the state:
+// the whole claim is that abort needs only the note's *existence*, and
+// only an actually-unreadable file proves it.
+func reachSyncNoteCorrupt(t *testing.T, w *world) closureState {
+	ws := conflictedSync(t, w)
+	writeFile(t, ws.path(".git", "sanho", "sync.json"), "{ this file is not JSON\n")
+
+	out := ws.run("sync")
+	requireExit(t, "sync with a corrupt note", out, 1)
+
+	return closureState{
+		ws:     ws,
+		output: out.combined(),
+		verify: map[string]func(*testing.T, *workspace){
+			"sanho sync --abort": func(t *testing.T, ws *workspace) {
+				if fileExists(t, ws.path(".git", "sanho", "sync.json")) {
+					t.Error("abort left the corrupt sync note behind")
+				}
+				requireEqual(t, "docs/api.md", ws.readDocs("api.md"), "line one\nMINE\n")
 			},
 		},
 	}

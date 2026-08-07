@@ -19,18 +19,28 @@ import (
 	"strings"
 	"time"
 
+	"github.com/irootkernel/sanho/internal/domain/provenance"
 	"github.com/irootkernel/sanho/internal/infra/appgit"
 	"github.com/irootkernel/sanho/internal/infra/canonical"
 	"github.com/irootkernel/sanho/internal/infra/fsx"
 	"github.com/irootkernel/sanho/internal/infra/gitx"
 	"github.com/irootkernel/sanho/internal/infra/registry"
+	"github.com/irootkernel/sanho/internal/usecase/docsync"
 
 	"github.com/spf13/cobra"
 )
 
 // Check severities.
+//
+// severityInfo is neither a pass nor a problem: it reports a state that
+// looks irregular and is not. The base-derivation check is the reason it
+// exists — a base that disagrees with commit history is a warning when
+// re-derivation *would* have run and a plain fact when §5.10
+// deliberately withheld it, and calling both "warning" would train the
+// reader to ignore the one that matters.
 const (
 	severityOK      = "ok"
+	severityInfo    = "info"
 	severityWarning = "warning"
 )
 
@@ -38,15 +48,16 @@ const (
 //
 //	{
 //	  "workspace": "<abs path>",
-//	  "checks": [{"name": "hooks", "severity": "ok" | "warning",
+//	  "checks": [{"name": "hooks", "severity": "ok" | "info" | "warning",
 //	              "detail": "..."}],
 //	  "warnings": 1
 //	}
 //
-// Severity is a two-value vocabulary on purpose: a check either passed
-// or found something the user should look at. A third "error" level
-// would be indistinguishable in practice from a warning, since doctor
-// never stops at the first problem.
+// There is deliberately no "error" level: it would be indistinguishable
+// in practice from a warning, since doctor never stops at the first
+// problem and never fails for having found one. "info" is not a third
+// severity of problem — it marks a check that has something to say and
+// nothing to ask for, and `warnings` counts only "warning".
 type doctorJSON struct {
 	Workspace string      `json:"workspace"`
 	Checks    []checkJSON `json:"checks"`
@@ -64,6 +75,10 @@ type report struct{ checks []checkJSON }
 
 func (r *report) ok(name, format string, args ...any) {
 	r.checks = append(r.checks, checkJSON{Name: name, Severity: severityOK, Detail: fmt.Sprintf(format, args...)})
+}
+
+func (r *report) info(name, format string, args ...any) {
+	r.checks = append(r.checks, checkJSON{Name: name, Severity: severityInfo, Detail: fmt.Sprintf(format, args...)})
 }
 
 func (r *report) warn(name, format string, args ...any) {
@@ -129,7 +144,7 @@ func runDoctor(cmd *cobra.Command, fix, asJSON bool) error {
 func checkGitVersion(ctx context.Context, ws *workspace, out *report) {
 	line, err := gitx.New(ws.root).Line(ctx, "--version")
 	if err != nil {
-		out.warn("git", "could not read the git version: %v", err)
+		out.warn("git", "could not read the git version: %s", causeOf(err))
 		return
 	}
 	out.ok("git", "%s (no minimum is enforced; merges need git 2.38 or newer)", line)
@@ -145,7 +160,7 @@ func checkGitVersion(ctx context.Context, ws *workspace, out *report) {
 func checkHooks(ctx context.Context, ws *workspace, fix bool, out *report) {
 	problems, err := hookProblems(ctx, ws)
 	if err != nil {
-		out.warn("hooks", "could not inspect the hooks directory: %v", err)
+		out.warn("hooks", "could not inspect the hooks directory: %s", causeOf(err))
 		return
 	}
 	if len(problems) == 0 {
@@ -161,11 +176,11 @@ func checkHooks(ctx context.Context, ws *workspace, fix bool, out *report) {
 	// cleared by the removal pass, and installing over it would leave
 	// both (audit L3).
 	if err := ws.repo.RemoveHooks(ctx); err != nil {
-		out.warn("hooks-fix", "could not remove the old hook lines: %v", err)
+		out.warn("hooks-fix", "could not remove the old hook lines: %s", causeOf(err))
 		return
 	}
 	if err := ws.repo.InstallHooks(ctx); err != nil {
-		out.warn("hooks-fix", "could not reinstall the hooks: %v", err)
+		out.warn("hooks-fix", "could not reinstall the hooks: %s", causeOf(err))
 		return
 	}
 	remaining, err := hookProblems(ctx, ws)
@@ -285,19 +300,25 @@ func checkBase(ctx context.Context, ws *workspace, fix bool, out *report) {
 	base, hasBase, err := ws.statePort().LoadBase()
 	switch {
 	case err != nil:
-		out.warn("base", "the base file is unreadable: %v — %s", err, doctorFixHint)
+		out.warn("base", "the base file is unreadable: %s — %s", causeOf(err), doctorFixHint)
 	case !hasBase:
 		out.warn("base", "no docs base is recorded — %s", doctorFixHint)
 	case !base.Valid():
 		out.warn("base", "the recorded base is not a valid OID pair — %s", doctorFixHint)
 	default:
 		out.ok("base", "commit %s, tree %s", shortOID(base.Commit), shortOID(base.Tree))
+		checkBaseDerivation(ctx, ws, base, fix, out)
 		return
 	}
 
-	if !fix {
-		return
+	if fix {
+		repairBase(ctx, ws, out)
 	}
+}
+
+// repairBase re-runs the §5.10 derivation and writes the result,
+// reporting under the `base-fix` name.
+func repairBase(ctx context.Context, ws *workspace, out *report) {
 	derived, found, deriveErr := deriveBase(ctx, ws.root)
 	if deriveErr != nil || !found {
 		out.warn("base-fix", "%s", baseNeedsSyncMessage(fmt.Sprintf(
@@ -305,10 +326,94 @@ func checkBase(ctx context.Context, ws *workspace, fix bool, out *report) {
 		return
 	}
 	if saveErr := ws.statePort().SaveBase(derived); saveErr != nil {
-		out.warn("base-fix", "could not write the base file: %v", saveErr)
+		out.warn("base-fix", "could not write the base file: %s", causeOf(saveErr))
 		return
 	}
 	out.ok("base-fix", "re-derived the base as %s from commit history", shortOID(derived.Commit))
+}
+
+// checkBaseDerivation is the §5.10 promise this report never kept: base
+// re-derivation is deliberately withheld whenever the docs worktree
+// differs from HEAD's, and the comment on rederiveBaseAfterHeadMoved
+// says `sanho doctor` flags the resulting inconsistency. Nothing did.
+//
+// The check compares the recorded base against what re-derivation would
+// pick from commit history, and reads the disagreement three ways.
+//
+//   - The recorded base is a *descendant* of the derived one in
+//     canonical history. Nothing is wrong: publication's base-advance
+//     rule moves the base past the commit the trailers name, as do
+//     `pull` and `sync`, so this is the state of every workspace that
+//     has just published. Silence, which is what §5.6 makes the success
+//     signal.
+//   - The docs worktree differs from HEAD's, so §5.10 step 1 held the
+//     re-derivation back on purpose. That is a fact worth stating and
+//     not a problem: `[info]`.
+//   - Otherwise re-derivation *would* have run and would have produced a
+//     different answer, which means the file and the history disagree
+//     about which canonical state these docs came from: `[warn]`, and
+//     `--fix` writes the derived value.
+func checkBaseDerivation(ctx context.Context, ws *workspace, base provenance.Base, fix bool, out *report) {
+	derived, found, err := deriveBase(ctx, ws.root)
+	if err != nil || !found || derived.Commit == base.Commit {
+		// No provenance in history is checkBase's business under --fix,
+		// not a second finding here.
+		return
+	}
+	if advanced, known := baseIsAheadOf(ctx, ws, derived.Commit, base.Commit); known && advanced {
+		return
+	}
+
+	clean, cleanErr := docsMatchHead(ctx, ws)
+	if cleanErr == nil && !clean {
+		out.info("base-derivation", "the docs worktree differs from HEAD, so the base was not re-derived; "+
+			"history's newest stamped commit names %s, the base file names %s",
+			shortOID(derived.Commit), shortOID(base.Commit))
+		return
+	}
+
+	out.warn("base-derivation", "history's newest stamped commit names base %s, but the base file names %s — %s",
+		shortOID(derived.Commit), shortOID(base.Commit), doctorFixHint)
+	if fix {
+		repairBase(ctx, ws, out)
+	}
+}
+
+// baseIsAheadOf reports whether the recorded base is a descendant of the
+// derived one in canonical history, and whether that could be decided at
+// all. Without a clone there is nothing to decide it against, and the
+// caller then treats the disagreement at face value.
+func baseIsAheadOf(ctx context.Context, ws *workspace, derived, recorded string) (ahead, known bool) {
+	store := canonicalOrNil(ws)
+	if store == nil {
+		return false, false
+	}
+	port := ws.canonicalPort(store)
+	if resolved, err := port.ResolveCommit(ctx, derived); err != nil || !resolved {
+		return false, false
+	}
+	if resolved, err := port.ResolveCommit(ctx, recorded); err != nil || !resolved {
+		return false, false
+	}
+	ancestor, err := port.IsAncestor(ctx, derived, recorded)
+	if err != nil {
+		return false, false
+	}
+	return ancestor, true
+}
+
+// docsMatchHead is §5.10 step 1's own test: the worktree docs hash to
+// exactly what HEAD carries.
+func docsMatchHead(ctx context.Context, ws *workspace) (bool, error) {
+	worktree, err := ws.repo.WorktreeDocsTree(ctx)
+	if err != nil {
+		return false, err
+	}
+	head, err := ws.repo.HeadDocsTree(ctx)
+	if err != nil {
+		return false, err
+	}
+	return worktree == head, nil
 }
 
 // checkRegistry proves the registry is both readable and lockable. The
@@ -317,11 +422,11 @@ func checkBase(ctx context.Context, ws *workspace, fix bool, out *report) {
 func checkRegistry(ctx context.Context, out *report) {
 	file, err := openRegistry()
 	if err != nil {
-		out.warn("registry", "could not open the sanho home: %v", err)
+		out.warn("registry", "could not open the sanho home: %s", causeOf(err))
 		return
 	}
 	if _, err := readRegistry(ctx, file); err != nil {
-		out.warn("registry", "could not read the registry: %v", err)
+		out.warn("registry", "could not read the registry: %s", causeOf(err))
 		return
 	}
 
@@ -340,14 +445,22 @@ func checkRegistry(ctx context.Context, out *report) {
 // check, not an operation waiting for its turn.
 const registryProbeTimeout = 500 * time.Millisecond
 
+// checkSyncNote reports an owed sync.
+//
+// A note that cannot be parsed gets the abort guidance rather than the
+// resolve-or-abort one: there is no "resolve the markers and commit"
+// available when nothing can say what the sync was, and `sanho sync
+// --abort` is the operation that needs only the file's existence.
 func checkSyncNote(ws *workspace, out *report) {
-	prev, target, exists, err := ws.statePort().LoadSyncNote()
+	note, exists, err := ws.statePort().LoadSyncNote()
 	switch {
+	case errors.Is(err, docsync.ErrSyncNoteCorrupt):
+		out.warn("sync", "%s", syncNoteCorruptMessage(errDetail(err, docsync.ErrSyncNoteCorrupt)))
 	case err != nil:
-		out.warn("sync", "%s", syncNotePendingMessage(fmt.Sprintf("the sync note is unreadable: %v", err)))
+		out.warn("sync", "%s", syncNotePendingMessage("the sync note is unreadable: "+causeOf(err)))
 	case exists:
 		out.warn("sync", "%s", syncNotePendingMessage(fmt.Sprintf("a sync from %s to %s is unresolved",
-			shortOID(prev.Commit), shortOID(target.Commit))))
+			shortOID(note.PrevBase.Commit), shortOID(note.Target.Commit))))
 	default:
 		out.ok("sync", "no sync is in progress")
 	}
@@ -386,7 +499,7 @@ func checkDocsInventory(ws *workspace, out *report) {
 		return nil
 	})
 	if walkErr != nil {
-		out.warn("docs", "could not inventory %s: %v", root, walkErr)
+		out.warn("docs", "could not inventory %s: %s", root, causeOf(walkErr))
 		return
 	}
 	out.ok("docs", "%d files, %d bytes, %d symlinks in %s", files, bytes, symlinks, ws.config.DocsDir)
@@ -396,8 +509,11 @@ func renderDoctor(out io.Writer, ws *workspace, result report) {
 	writef(out, "sanho doctor: %s\n\n", ws.root)
 	for _, check := range result.checks {
 		marker := "ok  "
-		if check.Severity == severityWarning {
+		switch check.Severity {
+		case severityWarning:
 			marker = "warn"
+		case severityInfo:
+			marker = "info"
 		}
 		writef(out, "  [%s] %-16s %s\n", marker, check.Name, check.Detail)
 	}

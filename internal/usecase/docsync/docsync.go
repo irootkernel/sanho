@@ -40,6 +40,11 @@ type AppRepoPort interface {
 	// DocsClean reports whether worktree and index are clean for the
 	// docs paths relative to HEAD.
 	DocsClean(ctx context.Context) (bool, error)
+	// HeadCommit returns HEAD's commit OID, or "" for an unborn HEAD.
+	// Sync records it when it materializes conflicts, so that "has this
+	// been resolved?" can be answered by asking whether a commit
+	// happened rather than only by looking at the worktree.
+	HeadCommit(ctx context.Context) (string, error)
 	// HeadDocsTree returns HEAD's docs tree OID (the empty tree for an
 	// unborn HEAD or an absent docs dir).
 	HeadDocsTree(ctx context.Context) (string, error)
@@ -79,9 +84,33 @@ type StatePort interface {
 	// file schema (§5.7) has no representation for an empty commit OID
 	// and reading one back is a corruption error.
 	ClearBase() error
-	LoadSyncNote() (prev provenance.Base, target provenance.Base, exists bool, err error)
-	SaveSyncNote(prev, target provenance.Base) error
+	// LoadSyncNote reports the note and whether one exists. A note that
+	// exists but cannot be read is reported as exists=true with an error
+	// satisfying errors.Is(err, ErrSyncNoteCorrupt); that pairing is what
+	// lets Abort stay infallible over a damaged file.
+	LoadSyncNote() (note SyncNote, exists bool, err error)
+	SaveSyncNote(note SyncNote) error
 	ClearSyncNote() error
+}
+
+// SyncNote is the record a conflicted sync leaves behind: what to
+// restore on abort, what the resolution derives from, and where the
+// worktree stood when the markers were written.
+type SyncNote struct {
+	// PrevBase is the base the sync found, restored by abort.
+	PrevBase provenance.Base
+	// Target is the canonical state the resolution derives from.
+	Target provenance.Base
+	// EntryHead and EntryDocsTree pin the app repo at materialize time.
+	// A resolution is a commit, and a commit moves both; a stash, a
+	// revert, or `git checkout HEAD -- docs` moves neither, which is
+	// exactly the difference CompleteIfResolved has to see.
+	EntryHead     string
+	EntryDocsTree string
+	// PreDatesEntryRecord marks a note written before the two fields
+	// above existed. It cannot prove a resolution happened, so it is
+	// read as unresolved.
+	PreDatesEntryRecord bool
 }
 
 // Status is the outcome class of a sync run.
@@ -163,7 +192,52 @@ var (
 	// ErrRebaseOntoHealthy refuses --rebase-onto when the recorded base
 	// is perfectly reachable and the target merely precedes it (F-M4).
 	ErrRebaseOntoHealthy = errors.New("--rebase-onto targets an ancestor of a healthy base")
+	// ErrSyncNoteCorrupt is the StatePort's contract for "a sync note is
+	// there, and it cannot be read". It is declared here rather than
+	// imported from infra because a use case may not see infra; the CLI
+	// adapter translates the wsstate sentinel into this one.
+	//
+	// Every guard treats it as "a sync is in progress" — the note's
+	// existence is the fact, not its contents — and routes the user to
+	// `sanho sync --abort`, which succeeds over it.
+	ErrSyncNoteCorrupt = errors.New("the record of the sync in progress is unreadable")
 )
+
+// Resolution classifies what CompleteIfResolved found, so that callers
+// can tell "nothing to do" from "still owed" from "owed, and the user
+// probably thinks it is finished".
+type Resolution int
+
+const (
+	// ResolutionNoSync: no note; nothing was owed.
+	ResolutionNoSync Resolution = iota
+	// ResolutionPending: markers remain, or the resolution is edited but
+	// not committed. The ordinary mid-resolution state.
+	ResolutionPending
+	// ResolutionNotCommitted: no markers and clean docs, but HEAD is
+	// exactly where the sync left it — the conflict was put aside
+	// (stashed, reverted, checked out) rather than resolved. The note is
+	// kept and the state gets its own guidance.
+	ResolutionNotCommitted
+	// ResolutionCompleted: the note was cleared by this call.
+	ResolutionCompleted
+)
+
+// String renders the resolution for diagnostics.
+func (r Resolution) String() string {
+	switch r {
+	case ResolutionNoSync:
+		return "no_sync"
+	case ResolutionPending:
+		return "pending"
+	case ResolutionNotCommitted:
+		return "not_committed"
+	case ResolutionCompleted:
+		return "completed"
+	default:
+		return "resolution(" + fmt.Sprint(int(r)) + ")"
+	}
+}
 
 // syncCommitPrefix is the fixed subject of the commit sync and
 // `pull --commit` create (§5.5 steps 5 and the pull contract). It is a
@@ -188,13 +262,8 @@ const shortOIDWidth = 12
 // for states in which sync did nothing.
 func (u *UseCase) Run(ctx context.Context, opts Options) (Result, error) {
 	// Step 1 — a sync already owns the docs worktree.
-	notePrev, noteTarget, noteExists, err := u.State.LoadSyncNote()
-	if err != nil {
-		return Result{}, fmt.Errorf("read sync state: %w", err)
-	}
-	if noteExists {
-		return Result{}, fmt.Errorf("%w: syncing %s to %s",
-			ErrSyncInProgress, shortOID(notePrev.Commit), shortOID(noteTarget.Commit))
+	if err := u.refuseWhileSyncing(); err != nil {
+		return Result{}, err
 	}
 
 	// Step 1 (continued) — docs must be clean. Sync runs at user pace,
@@ -266,10 +335,25 @@ func (u *UseCase) Run(ctx context.Context, opts Options) (Result, error) {
 	// the note before the base means a crash between them leaves the
 	// abort path fully armed with the still-current previous base.
 	if !mergeClean {
+		// HEAD is read *before* the markers land so the note describes
+		// the state the resolution has to move away from. Nothing here
+		// moves HEAD, so reading it after would give the same answer —
+		// but the note's meaning is "where this sync began", and taking
+		// the reading at that point is what makes it so.
+		entryHead, err := u.App.HeadCommit(ctx)
+		if err != nil {
+			return Result{}, fmt.Errorf("read HEAD: %w", err)
+		}
 		if err := u.App.CheckoutDocsTree(ctx, mergedTree); err != nil {
 			return Result{}, fmt.Errorf("write the merged docs: %w", err)
 		}
-		if err := u.State.SaveSyncNote(base, newBase); err != nil {
+		note := SyncNote{
+			PrevBase:      base,
+			Target:        newBase,
+			EntryHead:     entryHead,
+			EntryDocsTree: oursTree,
+		}
+		if err := u.State.SaveSyncNote(note); err != nil {
 			return Result{}, fmt.Errorf("record the sync in progress: %w", err)
 		}
 		if err := u.State.SaveBase(newBase); err != nil {
@@ -312,10 +396,27 @@ func (u *UseCase) Run(ctx context.Context, opts Options) (Result, error) {
 	return Result{Status: StatusSynced, NewBase: newBase, CommitOID: commit}, nil
 }
 
+// AbortResult reports one `sanho sync --abort`.
+type AbortResult struct {
+	// Degraded is set when the note existed but could not be read. The
+	// abort still restored the docs and cleared the note — those need
+	// only the note's existence — but the previous base lives *inside*
+	// the note, so the base file was left where the conflicted sync put
+	// it. `sanho doctor --fix` re-derives it from commit history.
+	Degraded bool
+}
+
 // Abort executes §5.5 step 7. Valid whenever a sync note exists; by
 // construction it cannot fail after its precondition passes (guidance
 // closure, D3) — it moves no ref, creates no commit, and touches only
 // the docs worktree/index and two state files.
+//
+// "Whenever a sync note exists" is meant literally, including when the
+// note is unreadable. Abort is the way *out* of a broken sync state, so
+// a damaged note is precisely the case it must survive: refusing there
+// left a workspace with markers in docs/, a file nothing could parse,
+// and no command that could clear either. Only the two facts the note
+// carries are lost, so the base is left alone and the caller is told.
 //
 // The order is restore docs → restore base → clear the note, and it is
 // chosen so that a crash anywhere in the middle leaves a re-runnable
@@ -323,25 +424,28 @@ func (u *UseCase) Run(ctx context.Context, opts Options) (Result, error) {
 // deleted last, and every step before it is idempotent (a checkout of
 // HEAD's docs, and a write of a value read out of the note). Running
 // `sanho sync --abort` again after an interruption simply redoes them.
-func (u *UseCase) Abort(ctx context.Context) error {
-	prev, _, exists, err := u.State.LoadSyncNote()
-	if err != nil {
-		return fmt.Errorf("read sync state: %w", err)
-	}
-	if !exists {
-		return ErrNoSyncInProgress
+func (u *UseCase) Abort(ctx context.Context) (AbortResult, error) {
+	note, exists, err := u.State.LoadSyncNote()
+	degraded := errors.Is(err, ErrSyncNoteCorrupt)
+	switch {
+	case err != nil && !degraded:
+		return AbortResult{}, fmt.Errorf("read sync state: %w", err)
+	case !exists:
+		return AbortResult{}, ErrNoSyncInProgress
 	}
 
 	if err := u.App.RestoreDocsFromHead(ctx); err != nil {
-		return fmt.Errorf("restore the docs worktree: %w", err)
+		return AbortResult{}, fmt.Errorf("restore the docs worktree: %w", err)
 	}
-	if err := u.restoreBase(prev); err != nil {
-		return err
+	if !degraded {
+		if err := u.restoreBase(note.PrevBase); err != nil {
+			return AbortResult{}, err
+		}
 	}
 	if err := u.State.ClearSyncNote(); err != nil {
-		return fmt.Errorf("clear the sync note: %w", err)
+		return AbortResult{}, fmt.Errorf("clear the sync note: %w", err)
 	}
-	return nil
+	return AbortResult{Degraded: degraded}, nil
 }
 
 // restoreBase puts the base file back the way the aborted sync found
@@ -360,58 +464,115 @@ func (u *UseCase) restoreBase(prev provenance.Base) error {
 }
 
 // CompleteIfResolved clears the sync note once a conflicted sync has
-// actually been resolved, and reports whether it did.
+// actually been resolved, and reports what it found.
 //
 // Resolution is the standard git idiom — edit, `git add`, `git commit`
 // — so nothing in this package observes it happening. The hooks call
-// this afterwards (P3b) and it decides from the state alone: a note
-// exists, no docs worktree file still carries markers, and the docs are
-// clean relative to HEAD, i.e. the resolution has been committed rather
-// than merely edited. Anything short of that returns false with no
-// error and no state change, because "not finished yet" is not a
-// failure.
-func (u *UseCase) CompleteIfResolved(ctx context.Context) (bool, error) {
-	_, _, exists, err := u.State.LoadSyncNote()
+// this afterwards (P3b) and it decides from the state alone.
+//
+// Three conditions, and the third is the one that matters. No worktree
+// file still carries markers; the docs are clean relative to HEAD, so
+// the resolution was committed rather than merely edited; and **a
+// commit really happened** — HEAD has moved off where the sync left it,
+// carrying a different docs tree.
+//
+// Without that third condition the test is passed by doing nothing at
+// all. `git stash push -- docs` leaves no markers and clean docs, and so
+// does `git checkout HEAD -- docs`; the note was then cleared while the
+// conflict stood unresolved. That was not merely untidy: a conflicted
+// sync has already advanced the base to the merge target, so the very
+// next push saw base == canonical head, took it for a fast-forward, and
+// republished the pre-merge tree — upstream's work reverted, exit 0, no
+// message. The state that produces it is reported as
+// ResolutionNotCommitted, the note is kept, and the caller says so.
+//
+// Requiring the docs *tree* to have moved as well as HEAD is what keeps
+// an unrelated commit from standing in for the resolution. A genuine
+// resolution cannot leave the docs tree unchanged: the markers are in
+// the worktree, so an unchanged tree means nothing was staged and git
+// refuses the commit outright.
+func (u *UseCase) CompleteIfResolved(ctx context.Context) (Resolution, error) {
+	note, exists, err := u.State.LoadSyncNote()
 	if err != nil {
-		return false, fmt.Errorf("read sync state: %w", err)
+		return ResolutionNoSync, fmt.Errorf("read sync state: %w", err)
 	}
 	if !exists {
-		return false, nil
+		return ResolutionNoSync, nil
 	}
 
 	conflicted, err := u.App.ScanWorktreeDocsForMarkers(ctx)
 	if err != nil {
-		return false, fmt.Errorf("scan docs for conflict markers: %w", err)
+		return ResolutionNoSync, fmt.Errorf("scan docs for conflict markers: %w", err)
 	}
 	if len(conflicted) > 0 {
-		return false, nil
+		return ResolutionPending, nil
 	}
 
 	clean, err := u.App.DocsClean(ctx)
 	if err != nil {
-		return false, fmt.Errorf("read docs status: %w", err)
+		return ResolutionNoSync, fmt.Errorf("read docs status: %w", err)
 	}
 	if !clean {
-		return false, nil
+		return ResolutionPending, nil
+	}
+
+	committed, err := u.resolutionWasCommitted(ctx, note)
+	if err != nil {
+		return ResolutionNoSync, err
+	}
+	if !committed {
+		return ResolutionNotCommitted, nil
 	}
 
 	if err := u.State.ClearSyncNote(); err != nil {
-		return false, fmt.Errorf("clear the sync note: %w", err)
+		return ResolutionNoSync, fmt.Errorf("clear the sync note: %w", err)
 	}
-	return true, nil
+	return ResolutionCompleted, nil
+}
+
+// resolutionWasCommitted reports whether HEAD has moved off the state
+// the sync recorded when it wrote the markers.
+func (u *UseCase) resolutionWasCommitted(ctx context.Context, note SyncNote) (bool, error) {
+	if note.PreDatesEntryRecord {
+		return false, nil
+	}
+	head, err := u.App.HeadCommit(ctx)
+	if err != nil {
+		return false, fmt.Errorf("read HEAD: %w", err)
+	}
+	if head == note.EntryHead {
+		return false, nil
+	}
+	headTree, err := u.App.HeadDocsTree(ctx)
+	if err != nil {
+		return false, fmt.Errorf("read the docs tree of HEAD: %w", err)
+	}
+	return headTree != note.EntryDocsTree, nil
+}
+
+// refuseWhileSyncing is the shared step-1 guard of Run and Pull: an
+// unfinished sync owns the docs worktree, and a note that cannot be read
+// owns it just as much as one that can.
+func (u *UseCase) refuseWhileSyncing() error {
+	note, exists, err := u.State.LoadSyncNote()
+	switch {
+	case errors.Is(err, ErrSyncNoteCorrupt):
+		return err
+	case err != nil:
+		return fmt.Errorf("read sync state: %w", err)
+	case exists:
+		return fmt.Errorf("%w: syncing %s to %s",
+			ErrSyncInProgress, shortOID(note.PrevBase.Commit), shortOID(note.Target.Commit))
+	}
+	return nil
 }
 
 // Pull executes `sanho pull` (§5.5): fast-forward-only consume. It
 // refuses when local docs are edited relative to the base and points at
 // sync; withCommit records the update as a sync-style commit.
 func (u *UseCase) Pull(ctx context.Context, withCommit bool) (Result, error) {
-	notePrev, noteTarget, noteExists, err := u.State.LoadSyncNote()
-	if err != nil {
-		return Result{}, fmt.Errorf("read sync state: %w", err)
-	}
-	if noteExists {
-		return Result{}, fmt.Errorf("%w: syncing %s to %s",
-			ErrSyncInProgress, shortOID(notePrev.Commit), shortOID(noteTarget.Commit))
+	if err := u.refuseWhileSyncing(); err != nil {
+		return Result{}, err
 	}
 
 	// `pull` replaces the docs worktree AND the docs index entries, so

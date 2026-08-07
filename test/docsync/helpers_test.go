@@ -16,6 +16,7 @@ package docsync_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -91,19 +92,33 @@ func (s statePort) SaveBase(base provenance.Base) error { return wsstate.SaveBas
 
 func (s statePort) ClearBase() error { return wsstate.ClearBase(s.workDir) }
 
-func (s statePort) LoadSyncNote() (provenance.Base, provenance.Base, bool, error) {
+func (s statePort) LoadSyncNote() (docsync.SyncNote, bool, error) {
 	note, ok, err := wsstate.LoadSyncNote(s.gitDir)
-	if err != nil || !ok {
-		return provenance.Base{}, provenance.Base{}, false, err
+	switch {
+	case errors.Is(err, wsstate.ErrSyncNoteCorrupt):
+		// The production adapter's contract: a note that cannot be parsed
+		// still exists, and the sentinel crosses the layer boundary as
+		// the use case's own.
+		return docsync.SyncNote{}, true, fmt.Errorf("%w: %v", docsync.ErrSyncNoteCorrupt, err)
+	case err != nil || !ok:
+		return docsync.SyncNote{}, false, err
 	}
-	return note.PrevBase, note.Target, true, nil
+	return docsync.SyncNote{
+		PrevBase:            note.PrevBase,
+		Target:              note.Target,
+		EntryHead:           note.EntryHead,
+		EntryDocsTree:       note.EntryDocsTree,
+		PreDatesEntryRecord: note.PreDatesEntryRecord(),
+	}, true, nil
 }
 
-func (s statePort) SaveSyncNote(prev, target provenance.Base) error {
+func (s statePort) SaveSyncNote(note docsync.SyncNote) error {
 	return wsstate.SaveSyncNote(s.gitDir, wsstate.SyncNote{
-		PrevBase:  prev,
-		Target:    target,
-		StartedAt: time.Now().UTC(),
+		PrevBase:      note.PrevBase,
+		Target:        note.Target,
+		StartedAt:     time.Now().UTC(),
+		EntryHead:     note.EntryHead,
+		EntryDocsTree: note.EntryDocsTree,
 	})
 }
 

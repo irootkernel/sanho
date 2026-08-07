@@ -30,6 +30,7 @@ import (
 	"github.com/irootkernel/sanho/internal/infra/gitx"
 	"github.com/irootkernel/sanho/internal/infra/registry"
 	"github.com/irootkernel/sanho/internal/infra/wsstate"
+	"github.com/irootkernel/sanho/internal/usecase/docsync"
 )
 
 // defaultHomeDirName is the sanho home directory name under the user's
@@ -279,27 +280,54 @@ func (s statePort) SaveBase(base provenance.Base) error { return wsstate.SaveBas
 
 func (s statePort) ClearBase() error { return wsstate.ClearBase(s.workDir) }
 
-func (s statePort) LoadSyncNote() (provenance.Base, provenance.Base, bool, error) {
+// LoadSyncNote adapts the wsstate note to the use-case one, and
+// translates the corrupt-file case across the layer boundary.
+//
+// A use case may not import infra, so wsstate.ErrSyncNoteCorrupt cannot
+// travel as itself; this is the one place that sees both sides, so it
+// re-raises the condition as docsync.ErrSyncNoteCorrupt with the file
+// detail attached. exists stays true: a note that cannot be parsed is
+// still a note, and `sanho sync --abort` must be able to clear it.
+func (s statePort) LoadSyncNote() (docsync.SyncNote, bool, error) {
 	note, ok, err := wsstate.LoadSyncNote(s.gitDir)
-	if err != nil || !ok {
-		return provenance.Base{}, provenance.Base{}, false, err
+	switch {
+	case errors.Is(err, wsstate.ErrSyncNoteCorrupt):
+		return docsync.SyncNote{}, true, fmt.Errorf("%w: %s",
+			docsync.ErrSyncNoteCorrupt, errDetail(err, wsstate.ErrSyncNoteCorrupt))
+	case err != nil || !ok:
+		return docsync.SyncNote{}, false, err
 	}
-	return note.PrevBase, note.Target, true, nil
+	return docsync.SyncNote{
+		PrevBase:            note.PrevBase,
+		Target:              note.Target,
+		EntryHead:           note.EntryHead,
+		EntryDocsTree:       note.EntryDocsTree,
+		PreDatesEntryRecord: note.PreDatesEntryRecord(),
+	}, true, nil
 }
 
-func (s statePort) SaveSyncNote(prev, target provenance.Base) error {
+func (s statePort) SaveSyncNote(note docsync.SyncNote) error {
 	return wsstate.SaveSyncNote(s.gitDir, wsstate.SyncNote{
-		PrevBase:  prev,
-		Target:    target,
-		StartedAt: time.Now().UTC(),
+		PrevBase:      note.PrevBase,
+		Target:        note.Target,
+		StartedAt:     time.Now().UTC(),
+		EntryHead:     note.EntryHead,
+		EntryDocsTree: note.EntryDocsTree,
 	})
 }
 
 func (s statePort) ClearSyncNote() error { return wsstate.ClearSyncNote(s.gitDir) }
 
-// SyncInProgress is publication's slice of the same state.
+// SyncInProgress is publication's slice of the same state, and it
+// answers on existence alone: a note that cannot be parsed still means a
+// sync owns the docs worktree, so publication must still refuse. The
+// reason it cannot be read is the CLI's to report, from the richer
+// LoadSyncNote above.
 func (s statePort) SyncInProgress() (bool, error) {
 	_, ok, err := wsstate.LoadSyncNote(s.gitDir)
+	if errors.Is(err, wsstate.ErrSyncNoteCorrupt) {
+		return true, nil
+	}
 	return ok, err
 }
 

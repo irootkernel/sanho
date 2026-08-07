@@ -102,12 +102,15 @@ func runSync(cmd *cobra.Command, abort bool, rebaseOnto string, asJSON bool) err
 // runSyncAbort implements §5.5 step 7. Abort needs no network and no
 // canonical clone: it restores the docs worktree from HEAD and puts the
 // base file back, which is why it cannot fail once a note exists
-// (guidance closure by construction, D3).
+// (guidance closure by construction, D3) — including when the note
+// itself is unreadable, in which case the base is the one thing it
+// cannot restore and the follow-up repair is named.
 func runSyncAbort(cmd *cobra.Command, ws *workspace, asJSON bool) error {
 	ctx := cmd.Context()
 	use := &docsync.UseCase{App: ws.appPort(), State: ws.statePort()}
 
-	if err := use.Abort(ctx); err != nil {
+	result, err := use.Abort(ctx)
+	if err != nil {
 		return finishCommand(cmd, ws, asJSON, err)
 	}
 	recordWorkspaceState(ctx, ws)
@@ -116,6 +119,9 @@ func runSyncAbort(cmd *cobra.Command, ws *workspace, asJSON bool) error {
 		return writeJSON(cmd.OutOrStdout(), syncJSON{Status: statusAborted, Conflicts: []string{}})
 	}
 	writeln(cmd.OutOrStdout(), syncAbortedMessage(untrackedDocs(ctx, ws)))
+	if result.Degraded {
+		writeln(cmd.ErrOrStderr(), syncAbortDegradedLine())
+	}
 	return nil
 }
 

@@ -65,14 +65,17 @@ type AppRepoPort interface {
 	// DocsTreeOf returns the docs tree OID of a commit (empty-tree OID
 	// when the docs dir is absent).
 	DocsTreeOf(ctx context.Context, commit string) (string, error)
-	// ScanDocsBlobsSince scans the docs blobs a push would INTRODUCE
-	// (§5.4 detector); returns conflicted paths. Unreadable blobs error.
+	// ScanDocsBlobsAgainst scans the docs blobs a publication would
+	// INTRODUCE into canonical (§5.4 detector); returns conflicted paths.
+	// Unreadable blobs error.
 	//
-	// since is the branch's previous remote tip, or "" for a branch the
-	// remote has never seen — in which case the whole tree is scanned.
-	// Scoping to the diff is what keeps the gate proportional to the
-	// push instead of to the docs directory (F-H4b).
-	ScanDocsBlobsSince(ctx context.Context, since, commit string) ([]string, error)
+	// publishedDocsTree is canonical head's docs tree — the state this
+	// gate has already passed, by induction over every publication that
+	// built it. Only content differing from it is scanned, which keeps
+	// the gate proportional to the publication instead of to the docs
+	// directory (F-H4b) without leaving a way in behind it. An empty
+	// tree argument means "nothing published yet" and scans everything.
+	ScanDocsBlobsAgainst(ctx context.Context, publishedDocsTree, commit string) ([]string, error)
 	// DocsCommitSubjects lists subjects of commits since base that
 	// touched docs, oldest first (canonical commit body).
 	DocsCommitSubjects(ctx context.Context, base, tip string) ([]string, error)
@@ -320,16 +323,28 @@ func (u *UseCase) Run(ctx context.Context, updates []RefUpdate) (Outcome, error)
 		return Outcome{}, ErrSyncInProgress
 	}
 
-	// Step 3 — marker gate on every pushed tip, before any network work,
-	// so a rejected push costs nothing.
-	if err := u.gateMarkers(ctx, candidates); err != nil {
-		return Outcome{}, err
-	}
-
-	// Step 4 — fetch. Write paths fail closed on an unreachable
+	// Step 3 — fetch. Write paths fail closed on an unreachable
 	// canonical (§5.2); the port's ErrUnreachable travels up intact.
 	if err := u.Canonical.Fetch(ctx); err != nil {
 		return Outcome{}, fmt.Errorf("refresh canonical repository: %w", err)
+	}
+
+	// Step 4 — marker gate on every pushed tip.
+	//
+	// It runs after the fetch, which reverses §5.3's listed order, and
+	// the reason is the gate's baseline: what a push introduces is
+	// measured against the docs canonical *already publishes*, so the
+	// gate needs a current canonical head to be sound at all. The
+	// cheap-rejection principle the old order served is kept where it
+	// belongs — the sync-note refusal, which needs nothing but a local
+	// file, is made at the hook boundary before the clone is even
+	// opened.
+	gateSnapshot, err := u.canonicalSnapshot(ctx)
+	if err != nil {
+		return Outcome{}, err
+	}
+	if err := u.gateMarkers(ctx, candidates, gateSnapshot.headTree); err != nil {
+		return Outcome{}, err
 	}
 
 	// Step 5 — resolve docs trees and deduplicate. Identical trees
@@ -590,24 +605,22 @@ func isZeroOID(oid string) bool {
 	return strings.Trim(oid, "0") == ""
 }
 
-func (u *UseCase) gateMarkers(ctx context.Context, updates []RefUpdate) error {
+// gateMarkers refuses any pushed tip that would introduce docs carrying
+// unresolved conflict markers into canonical (§5.3 step 3).
+//
+// The baseline is canonical head's docs tree, one value for the whole
+// push, so a tip is scanned exactly once however many refs point at it —
+// unlike the old per-(remote tip, tip) keying, the question no longer
+// depends on which remote the ref is going to.
+func (u *UseCase) gateMarkers(ctx context.Context, updates []RefUpdate, publishedDocsTree string) error {
 	scanned := make(map[string]bool, len(updates))
 	for _, update := range updates {
-		since := update.RemoteOID
-		if isZeroOID(since) {
-			since = ""
-		}
-		// One scan per (previous remote tip, tip) pair: the same tip
-		// pushed to two remotes with different previous states is two
-		// different diffs, and only re-scanning both keeps the gate
-		// honest.
-		key := since + ".." + update.LocalOID
-		if scanned[key] {
+		if scanned[update.LocalOID] {
 			continue
 		}
-		scanned[key] = true
+		scanned[update.LocalOID] = true
 
-		paths, err := u.App.ScanDocsBlobsSince(ctx, since, update.LocalOID)
+		paths, err := u.App.ScanDocsBlobsAgainst(ctx, publishedDocsTree, update.LocalOID)
 		if err != nil {
 			return fmt.Errorf("scan docs of %s for conflict markers: %w", shortOID(update.LocalOID), err)
 		}

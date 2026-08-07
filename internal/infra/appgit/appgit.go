@@ -130,6 +130,22 @@ func (r *Repo) DocsTreeOf(ctx context.Context, commit string) (string, error) {
 	return r.EmptyTree(ctx)
 }
 
+// HeadCommit returns HEAD's commit OID, or "" when HEAD is unborn.
+//
+// An unborn HEAD is an ordinary state (a repository whose first commit
+// has not been made), not a failure, so it is reported as the absence of
+// a commit rather than as an error.
+func (r *Repo) HeadCommit(ctx context.Context) (string, error) {
+	res, err := r.git.RunExit(ctx, "rev-parse", "--verify", "--quiet", "HEAD^{commit}")
+	if err != nil {
+		return "", fmt.Errorf("appgit: resolve HEAD in %s: %w", r.workDir, err)
+	}
+	if res.ExitCode != 0 {
+		return "", nil
+	}
+	return firstLine(res.Stdout), nil
+}
+
 func (r *Repo) commitExists(ctx context.Context, commit string) (bool, error) {
 	res, err := r.git.RunExit(ctx, "cat-file", "-e", commit+"^{commit}")
 	if err != nil {
@@ -315,27 +331,40 @@ func parseLsFilesStageEntry(record string) (lsFilesStageEntry, error) {
 // swallowed. Symlink and gitlink entries are skipped — their blob
 // content is a path, not text that can carry markers.
 func (r *Repo) ScanDocsBlobsForMarkers(ctx context.Context, commit string) ([]string, error) {
-	return r.ScanDocsBlobsSince(ctx, "", commit)
+	entries, err := r.allDocsBlobs(ctx, commit)
+	if err != nil {
+		return nil, err
+	}
+	return r.scanBlobs(ctx, entries, commit)
 }
 
-// ScanDocsBlobsSince is the push-gate scan of §5.3 step 3, scoped to
-// what the push would actually introduce (F-H4b).
+// ScanDocsBlobsAgainst is the push-gate scan of §5.3 step 3, scoped to
+// what publication would actually introduce *into canonical*.
 //
-// since is the branch's previous remote tip. When it resolves, only the
-// docs files that DIFFER between it and the tip are scanned: everything
-// else was in the tree the previous push published, and a push carrying
-// markers is rejected, so anything already upstream passed this same
-// gate. When since is empty or unknown to this repository — a brand-new
-// branch, a rewritten history, a first push after installing sanho —
-// the whole tree is scanned, which is the fail-closed answer whenever
-// the induction cannot be relied on.
+// publishedDocsTree is the docs tree canonical head already carries.
+// Only the docs files whose content differs between it and the tip's
+// docs tree are scanned, and that baseline is what makes the induction
+// sound: canonical head is, by construction, a state this gate passed —
+// every commit on it was written by a publication that ran this scan
+// first. Nothing can put content there behind the gate's back.
+//
+// The previous baseline, the *app remote's* last tip, had no such
+// property. One `git push --no-verify` puts a marker-carrying commit on
+// the code remote without publishing it, and from then on every push
+// diffed against a tip that had never been vetted: the markers sat
+// permanently outside the scan and were published silently on the next
+// ordinary push. Where the induction cannot be relied on the answer is a
+// full-tree scan, and that is what an empty or unresolvable
+// publishedDocsTree falls back to — the bootstrap case (nothing
+// published yet) and the case where canonical's tree object has not been
+// imported into this repository.
 //
 // The cost this removes is real: the full-tree scan ran one `cat-file
 // -s` plus one `cat-file blob` per docs file on every push. What
 // replaces it is one `cat-file --batch-check` and one `cat-file --batch`
 // for the whole set.
-func (r *Repo) ScanDocsBlobsSince(ctx context.Context, since, commit string) ([]string, error) {
-	entries, err := r.docsBlobsToScan(ctx, since, commit)
+func (r *Repo) ScanDocsBlobsAgainst(ctx context.Context, publishedDocsTree, commit string) ([]string, error) {
+	entries, err := r.docsBlobsToScan(ctx, publishedDocsTree, commit)
 	if err != nil {
 		return nil, err
 	}
@@ -343,29 +372,65 @@ func (r *Repo) ScanDocsBlobsSince(ctx context.Context, since, commit string) ([]
 }
 
 // docsBlobsToScan lists the blobs one push-gate scan must read.
-func (r *Repo) docsBlobsToScan(ctx context.Context, since, commit string) ([]scanTarget, error) {
-	if since != "" {
-		usable, err := r.commitExists(ctx, since)
+func (r *Repo) docsBlobsToScan(ctx context.Context, publishedDocsTree, commit string) ([]scanTarget, error) {
+	if publishedDocsTree != "" {
+		usable, err := r.treeExists(ctx, publishedDocsTree)
 		if err != nil {
 			return nil, err
 		}
 		if usable {
-			return r.changedDocsBlobs(ctx, since, commit)
+			return r.docsBlobsAddedTo(ctx, publishedDocsTree, commit)
 		}
 	}
 	return r.allDocsBlobs(ctx, commit)
 }
 
-// changedDocsBlobs lists the docs blobs the tip adds or changes relative
-// to since. `diff-tree --raw` hands over the destination object id
-// directly, so no second lookup is needed to address the content.
-func (r *Repo) changedDocsBlobs(ctx context.Context, since, commit string) ([]scanTarget, error) {
-	res, err := r.git.Run(ctx, "diff-tree", "-r", "-z", "--no-renames",
-		"--diff-filter=ACMRT", since, commit, "--", r.docsDir)
+// docsBlobsAddedTo lists the docs blobs the tip introduces relative to a
+// published docs tree.
+//
+// Both sides are TREES, not commits, and that is what lets the app
+// repository answer a question about canonical: canonical commits are
+// docs-only, so their root tree *is* a docs tree, directly comparable
+// with the tip's `<commit>:<docsDir>`. `diff-tree --raw` hands over the
+// destination object id, so no second lookup is needed to address the
+// content — and the paths come out relative to the tree root, so they
+// are prefixed back to repository-relative form, which is what the
+// scanners and §5.9's `docs/api.md` rendering both use.
+func (r *Repo) docsBlobsAddedTo(ctx context.Context, publishedDocsTree, commit string) ([]scanTarget, error) {
+	tipDocsTree, err := r.DocsTreeOf(ctx, commit)
 	if err != nil {
-		return nil, fmt.Errorf("appgit: diff docs of %s..%s: %w", since, commit, err)
+		return nil, err
 	}
-	return parseDiffTreeRaw(string(res.Stdout))
+	if tipDocsTree == publishedDocsTree {
+		return nil, nil
+	}
+
+	res, err := r.git.Run(ctx, "diff-tree", "-r", "-z", "--no-renames",
+		"--diff-filter=ACMRT", publishedDocsTree, tipDocsTree)
+	if err != nil {
+		return nil, fmt.Errorf("appgit: diff docs trees %s..%s: %w", publishedDocsTree, tipDocsTree, err)
+	}
+	targets, err := parseDiffTreeRaw(string(res.Stdout))
+	if err != nil {
+		return nil, err
+	}
+	for i := range targets {
+		targets[i].path = r.docsDir + "/" + targets[i].path
+	}
+	return targets, nil
+}
+
+// treeExists reports whether a tree object is present in this
+// repository. Canonical's head tree usually is — git objects are
+// content-addressed, so a workspace holding the same docs holds the same
+// tree — but a workspace that has not synced a newer canonical does not,
+// and the gate must notice rather than fail.
+func (r *Repo) treeExists(ctx context.Context, tree string) (bool, error) {
+	res, err := r.git.RunExit(ctx, "cat-file", "-e", tree+"^{tree}")
+	if err != nil {
+		return false, fmt.Errorf("appgit: resolve tree %s in %s: %w", tree, r.workDir, err)
+	}
+	return res.ExitCode == 0, nil
 }
 
 // allDocsBlobs lists every docs blob of a commit.

@@ -269,9 +269,9 @@ func (a *fakeApp) DocsTreeOf(ctx context.Context, commit string) (string, error)
 	return tree, nil
 }
 
-func (a *fakeApp) ScanDocsBlobsSince(ctx context.Context, since, commit string) ([]string, error) {
+func (a *fakeApp) ScanDocsBlobsAgainst(ctx context.Context, publishedDocsTree, commit string) ([]string, error) {
 	a.scanned = append(a.scanned, commit)
-	a.scanRanges = append(a.scanRanges, since+".."+commit)
+	a.scanRanges = append(a.scanRanges, publishedDocsTree+".."+commit)
 	if a.markerErr != nil {
 		return nil, a.markerErr
 	}

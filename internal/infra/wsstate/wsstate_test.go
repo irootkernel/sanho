@@ -414,9 +414,11 @@ func TestSyncNoteLifecycle(t *testing.T) {
 	}
 
 	note := wsstate.SyncNote{
-		PrevBase:  provenance.Base{Commit: "1111111111111111111111111111111111111a", Tree: "2222222222222222222222222222222222222b"},
-		Target:    provenance.Base{Commit: "3333333333333333333333333333333333333c", Tree: "4444444444444444444444444444444444444d"},
-		StartedAt: time.Now().UTC(),
+		PrevBase:      provenance.Base{Commit: "1111111111111111111111111111111111111a", Tree: "2222222222222222222222222222222222222b"},
+		Target:        provenance.Base{Commit: "3333333333333333333333333333333333333c", Tree: "4444444444444444444444444444444444444d"},
+		StartedAt:     time.Now().UTC(),
+		EntryHead:     "5555555555555555555555555555555555555e",
+		EntryDocsTree: "6666666666666666666666666666666666666f",
 	}
 	if err := wsstate.SaveSyncNote(gitDir, note); err != nil {
 		t.Fatalf("SaveSyncNote() error = %v", err)
@@ -437,6 +439,16 @@ func TestSyncNoteLifecycle(t *testing.T) {
 	}
 	if !got.StartedAt.Equal(note.StartedAt) {
 		t.Fatalf("StartedAt = %v, want %v", got.StartedAt, note.StartedAt)
+	}
+	// The two fields that make "was this sync resolved?" answerable
+	// survive the round trip, and a note that carries them is not read as
+	// one written before they existed.
+	if got.EntryHead != note.EntryHead || got.EntryDocsTree != note.EntryDocsTree {
+		t.Fatalf("entry record = (%s, %s), want (%s, %s)",
+			got.EntryHead, got.EntryDocsTree, note.EntryHead, note.EntryDocsTree)
+	}
+	if got.PreDatesEntryRecord() {
+		t.Fatal("a note carrying an entry record reports itself as predating one")
 	}
 
 	// Parent directory must be created privately.
@@ -471,7 +483,15 @@ func TestClearSyncNote_AbsentIsNoop(t *testing.T) {
 	}
 }
 
-func TestLoadSyncNote_CorruptJSONErrors(t *testing.T) {
+// TestLoadSyncNote_CorruptJSONExistsAndErrors pins the pairing the
+// external review's second finding turned on: a note that cannot be
+// parsed is still a note.
+//
+// Reporting ok=false made `sanho sync --abort` refuse — "no sync is in
+// progress" — over a workspace that plainly had one, with markers in
+// docs/ and no command able to clear either. Existence and readability
+// are separate facts, and only the first one abort needs.
+func TestLoadSyncNote_CorruptJSONExistsAndErrors(t *testing.T) {
 	gitDir := t.TempDir()
 	path := filepath.Join(gitDir, "sanho", "sync.json")
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
@@ -480,11 +500,34 @@ func TestLoadSyncNote_CorruptJSONErrors(t *testing.T) {
 	writeFile(t, path, "{not valid json")
 
 	_, ok, err := wsstate.LoadSyncNote(gitDir)
-	if ok {
-		t.Fatal("LoadSyncNote() ok = true, want false on corrupt JSON")
+	if !ok {
+		t.Error("LoadSyncNote() ok = false on corrupt JSON; the note is there")
 	}
-	if err == nil {
-		t.Fatal("LoadSyncNote() error = nil, want error on corrupt JSON")
+	if !errors.Is(err, wsstate.ErrSyncNoteCorrupt) {
+		t.Fatalf("LoadSyncNote() error = %v, want ErrSyncNoteCorrupt", err)
+	}
+	if !strings.Contains(err.Error(), path) {
+		t.Errorf("error = %v, want it to name the offending file", err)
+	}
+}
+
+// TestSyncNotePreDatesEntryRecord: a note written before entry_head and
+// entry_docs_tree existed cannot prove a resolution commit happened, and
+// says so.
+func TestSyncNotePreDatesEntryRecord(t *testing.T) {
+	gitDir := t.TempDir()
+	path := filepath.Join(gitDir, "sanho", "sync.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	writeFile(t, path, `{"prev_base":{"commit":"a","tree":""},"target":{"commit":"b","tree":""}}`)
+
+	note, ok, err := wsstate.LoadSyncNote(gitDir)
+	if err != nil || !ok {
+		t.Fatalf("LoadSyncNote() = (%v, %v), want a readable note", ok, err)
+	}
+	if !note.PreDatesEntryRecord() {
+		t.Fatal("a note with neither entry field did not report itself as predating the record")
 	}
 }
 

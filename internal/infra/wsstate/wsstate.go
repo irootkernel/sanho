@@ -60,6 +60,13 @@ var (
 	// ErrConfigCorrupt covers a `.sanho.json` that parses as JSON but is
 	// neither a v0.1 config nor a v2 one (F-L7).
 	ErrConfigCorrupt = errors.New("workspace config is corrupt")
+	// ErrSyncNoteCorrupt covers a sync note that is present but does not
+	// parse. It is distinct from a read failure for one reason: the note's
+	// *existence* is the fact `sanho sync --abort` needs, and abort's
+	// contract is that it cannot fail once a note exists. Classifying the
+	// parse failure lets the abort path proceed on existence alone and
+	// degrade gracefully over the contents it could not read.
+	ErrSyncNoteCorrupt = errors.New("sync note is corrupt")
 )
 
 // Config is the v2 workspace configuration.
@@ -268,10 +275,36 @@ func ClearBase(workDir string) error {
 }
 
 // SyncNote records an in-progress conflicted sync (§5.5).
+//
+// EntryHead and EntryDocsTree are what make "has this sync been
+// resolved?" answerable. Resolution is ordinary git work that sanho does
+// not observe, so it is judged after the fact from the state — and
+// "no markers left, docs clean relative to HEAD" is a test that
+// `git stash push -- docs` passes without resolving anything. Recording
+// where HEAD stood when the markers were written turns the question into
+// "did a commit actually happen on top of this", which a stash, a
+// `git checkout HEAD -- docs`, or a revert cannot fake.
 type SyncNote struct {
 	PrevBase  provenance.Base `json:"prev_base"`
 	Target    provenance.Base `json:"target"`
 	StartedAt time.Time       `json:"started_at"`
+	// EntryHead is the app repo's HEAD commit when the conflicted merge
+	// was materialized. Empty means HEAD was unborn then — the note is
+	// still identifiable as current by EntryDocsTree, which is a real
+	// OID (the empty tree) even for an unborn HEAD.
+	EntryHead string `json:"entry_head"`
+	// EntryDocsTree is HEAD's docs tree at the same moment.
+	EntryDocsTree string `json:"entry_docs_tree"`
+}
+
+// PreDatesEntryRecord reports a note written before entry_head and
+// entry_docs_tree existed. Such a note carries no proof that a
+// resolution commit happened, so every reader must treat it as
+// unresolved — conservative in the only direction that cannot lose data,
+// and reachable in practice only from a workspace left mid-sync across a
+// sanho upgrade.
+func (n SyncNote) PreDatesEntryRecord() bool {
+	return n.EntryHead == "" && n.EntryDocsTree == ""
 }
 
 func syncNotePath(gitDir string) string {
@@ -280,6 +313,13 @@ func syncNotePath(gitDir string) string {
 
 // LoadSyncNote returns the note and ok=false when absent. gitDir is the
 // app repo's resolved git dir (worktree-private).
+//
+// A note that is present but unparseable is reported as ok=**true** with
+// ErrSyncNoteCorrupt. Existence and readability are separate facts here:
+// a corrupt note still means a sync owns the docs worktree, so every
+// gate must keep refusing — and `sanho sync --abort`, whose whole
+// contract is that it cannot fail once a note exists, must still be able
+// to clear it.
 func LoadSyncNote(gitDir string) (SyncNote, bool, error) {
 	path := syncNotePath(gitDir)
 	data, err := os.ReadFile(path)
@@ -287,7 +327,7 @@ func LoadSyncNote(gitDir string) (SyncNote, bool, error) {
 	case err == nil:
 		var n SyncNote
 		if jsonErr := json.Unmarshal(data, &n); jsonErr != nil {
-			return SyncNote{}, false, fmt.Errorf("parse sync note %s: %w", path, jsonErr)
+			return SyncNote{}, true, fmt.Errorf("%w: %s: %v", ErrSyncNoteCorrupt, path, jsonErr)
 		}
 		return n, true, nil
 	case os.IsNotExist(err):

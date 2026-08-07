@@ -225,9 +225,16 @@ func TestSyncConflictThenResolve(t *testing.T) {
 		t.Fatalf("a conflicted sync committed (%s -> %s)", before, head)
 	}
 
+	// The note records where the workspace stood, so that "was this
+	// resolved?" can be answered by a commit having happened rather than
+	// by the worktree merely looking tidy.
+	if note.EntryHead != before {
+		t.Fatalf("note entry_head = %s, want the pre-sync HEAD %s", note.EntryHead, before)
+	}
+
 	// Not finished yet: markers are still there.
-	if done, err := f.use.CompleteIfResolved(context.Background()); err != nil || done {
-		t.Fatalf("CompleteIfResolved = (%v, %v) with markers present, want (false, nil)", done, err)
+	if got, err := f.use.CompleteIfResolved(context.Background()); err != nil || got != docsync.ResolutionPending {
+		t.Fatalf("CompleteIfResolved = (%v, %v) with markers present, want (pending, nil)", got, err)
 	}
 
 	// Resolve the standard git way.
@@ -238,8 +245,8 @@ func TestSyncConflictThenResolve(t *testing.T) {
 	gitRun(t, f.appDir, "add", "--", docsDir)
 
 	// Still not finished: resolved but uncommitted.
-	if done, err := f.use.CompleteIfResolved(context.Background()); err != nil || done {
-		t.Fatalf("CompleteIfResolved = (%v, %v) before the commit, want (false, nil)", done, err)
+	if got, err := f.use.CompleteIfResolved(context.Background()); err != nil || got != docsync.ResolutionPending {
+		t.Fatalf("CompleteIfResolved = (%v, %v) before the commit, want (pending, nil)", got, err)
 	}
 
 	gitRun(t, f.appDir, "commit", "--quiet", "-m", "docs: resolve the sync conflict")
@@ -248,8 +255,8 @@ func TestSyncConflictThenResolve(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CompleteIfResolved: %v", err)
 	}
-	if !done {
-		t.Fatal("CompleteIfResolved = false after a committed resolution")
+	if done != docsync.ResolutionCompleted {
+		t.Fatalf("CompleteIfResolved = %v after a committed resolution, want completed", done)
 	}
 	if _, ok := f.note(t); ok {
 		t.Fatal("the sync note survived the resolution")
@@ -292,7 +299,7 @@ func TestSyncConflictThenAbort(t *testing.T) {
 		t.Fatal("the conflicted merge did not apply the upstream deletion")
 	}
 
-	if err := f.use.Abort(context.Background()); err != nil {
+	if _, err := f.use.Abort(context.Background()); err != nil {
 		t.Fatalf("Abort: %v", err)
 	}
 
@@ -310,7 +317,7 @@ func TestSyncConflictThenAbort(t *testing.T) {
 		t.Fatalf("status after abort = %q, want %q", status, statusBefore)
 	}
 
-	if err := f.use.Abort(context.Background()); !errors.Is(err, docsync.ErrNoSyncInProgress) {
+	if _, err := f.use.Abort(context.Background()); !errors.Is(err, docsync.ErrNoSyncInProgress) {
 		t.Fatalf("second Abort = %v, want ErrNoSyncInProgress", err)
 	}
 }
@@ -371,7 +378,7 @@ func TestSyncWithoutARecordedBase(t *testing.T) {
 
 		// And the abort out of that state restores "no base recorded"
 		// rather than writing an unreadable empty one.
-		if err := f.use.Abort(context.Background()); err != nil {
+		if _, err := f.use.Abort(context.Background()); err != nil {
 			t.Fatalf("Abort: %v", err)
 		}
 		if f.hasBase(t) {
