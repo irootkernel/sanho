@@ -356,8 +356,9 @@ func pulledMessage(target, commit string) string {
 }
 
 // syncNotCommittedMessage covers a conflicted sync whose markers are
-// gone from the worktree without a commit having resolved them —
-// `git stash push -- docs`, `git checkout HEAD -- docs`, a revert.
+// gone from the worktree without a commit having settled them —
+// `git stash push -- docs`, `git checkout HEAD -- docs`, a revert, or a
+// commit that changed some other document entirely.
 //
 // The state looks finished and is not, which is why it gets its own
 // wording rather than the in-progress one: there are no markers left to
@@ -367,14 +368,19 @@ func pulledMessage(target, commit string) string {
 // sync again to lay the same conflicts out with the resolution still to
 // make.
 //
+// The second clause states the actual criterion rather than one symptom
+// of it. "The docs are clean but HEAD has not moved" was true of the
+// stash and false of everything else that reaches this line — a commit
+// made while the conflict was set aside moves HEAD, and the docs are not
+// clean while it is being prepared.
+//
 // It is printed by `pre-commit`, which does NOT block on it, and by
 // `pre-push`, which does. The split follows P2 and §5.6: the commit path
 // blocks only for markers, and a sync put aside is no reason to stop
-// unrelated work — while the push boundary is where a base that has
-// already advanced to the merge target would otherwise republish the
-// pre-merge tree.
+// unrelated work — while the push boundary is where local work becomes
+// shared.
 func syncNotCommittedMessage(prev, target string) string {
-	return fmt.Sprintf("sanho: the sync from %s to %s was never resolved by a commit; the docs are clean but HEAD has not moved\n"+
+	return fmt.Sprintf("sanho: the sync from %s to %s was never resolved by a commit; no commit has changed the files it conflicted on\n"+
 		"Run 'sanho sync --abort' to undo it — anything you stashed stays in your stash — then 'sanho sync' to lay the conflicts out again.",
 		shortOID(prev), shortOID(target))
 }
@@ -391,15 +397,6 @@ func syncNotCommittedMessage(prev, target string) string {
 func syncNoteCorruptMessage(detail string) string {
 	return fmt.Sprintf("sanho: the record of the sync in progress is unreadable (%s)\n"+
 		"Run 'sanho sync --abort' to restore the docs from HEAD and clear it.", detail)
-}
-
-// syncAbortDegradedLine follows a successful abort over a corrupt note.
-//
-// The base is left where the conflicted sync put it, which is a state
-// history can correct: doctorFixHint is quoted by identity rather than
-// re-worded, so the two places that advise this repair cannot drift.
-func syncAbortDegradedLine() string {
-	return "the sync note could not be read, so the docs base was left as the sync set it; " + doctorFixHint
 }
 
 // syncAbortedMessage reports a completed `sanho sync --abort`.
@@ -822,7 +819,7 @@ var Catalog = []CatalogEntry{
 		Source:   "syncNotCommittedMessage",
 		Scenario: "sync_not_committed",
 		Sample:   syncNotCommittedMessage(sampleBaseOID, sampleHeadOID),
-		Match:    "was never resolved by a commit",
+		Match:    "no commit has changed the files it conflicted on",
 		// Ordered: the abort is what makes the second command possible,
 		// and the closure fixture runs it as the human half before
 		// `sanho sync` — which refuses while a note exists, by design.

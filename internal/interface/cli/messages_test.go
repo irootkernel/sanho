@@ -232,7 +232,6 @@ func TestMessagesAreEnglishOnly(t *testing.T) {
 		unresolvedSyncMessage("docs", []string{"docs/a.md"}),
 		syncNotCommittedMessage("a", "b"),
 		syncNoteCorruptMessage("unexpected end of JSON input"),
-		syncAbortDegradedLine(),
 		commitMsgStampWarning("no base"),
 		staleCanonicalLine(time.Hour),
 		registryLockHint("/home/u/.sanho/state.lock"),

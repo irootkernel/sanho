@@ -108,14 +108,34 @@ var trailerKeys = []string{
 // base file actually moved, so the hooks stay silent in the ordinary
 // case.
 //
-// Two states leave the base untouched, and both are spec rules rather
-// than caution. History with no stamped commit has nothing to adopt.
-// And a docs worktree that differs from HEAD's docs carries uncommitted
-// edits that survived the checkout — the base answers "which canonical
-// state do the *worktree* docs derive from" (§5.7 invariant), so a base
-// derived from HEAD's history would describe content the worktree does
-// not have. `sanho doctor` flags any resulting inconsistency.
+// Three states leave the base untouched, and all three are spec rules
+// rather than caution. History with no stamped commit has nothing to
+// adopt. A docs worktree that differs from HEAD's docs carries
+// uncommitted edits that survived the checkout — the base answers "which
+// canonical state do the *worktree* docs derive from" (§5.7 invariant),
+// so a base derived from HEAD's history would describe content the
+// worktree does not have; `sanho doctor` flags any resulting
+// inconsistency.
+//
+// And an unfinished sync owns the base outright. It leaves the base at
+// the pre-sync value on purpose and adopts the merge target only when
+// the resolution is confirmed, so a re-derivation in that window would
+// be a third party writing the one file the sync is holding still.
+// Concretely it would adopt whatever the newest stamped commit says —
+// including the target stamped by a resolution the note has not
+// confirmed yet, or by a commit made while the conflict was set aside —
+// and put the base on canonical head with pre-merge docs beneath it.
+// Nothing is lost by standing down: the note survives every checkout,
+// and the next hook that settles it writes the base.
 func rederiveBaseAfterHeadMoved(ctx context.Context, ws *workspace) (provenance.Base, bool, error) {
+	if _, syncing, err := ws.statePort().LoadSyncNote(); syncing || err != nil {
+		// Existence is the fact that matters, and an unreadable note has
+		// it. A note that could not even be looked at is the same answer
+		// for a weaker reason: the sync state is unknown, and writing the
+		// base is not something to do while it is.
+		return provenance.Base{}, false, nil //nolint:nilerr // an unfinished sync owns the base; a hook is not the place to argue
+	}
+
 	worktreeTree, err := ws.repo.WorktreeDocsTree(ctx)
 	if err != nil {
 		return provenance.Base{}, false, err

@@ -295,6 +295,11 @@ type SyncNote struct {
 	EntryHead string `json:"entry_head"`
 	// EntryDocsTree is HEAD's docs tree at the same moment.
 	EntryDocsTree string `json:"entry_docs_tree"`
+	// Conflicts are the docs paths the merge could not settle,
+	// repository-relative. They are what makes the resolution test
+	// discriminating: a resolution is a commit that changed one of
+	// *these* paths, not merely a commit that changed some doc.
+	Conflicts []string `json:"conflicts"`
 }
 
 // PreDatesEntryRecord reports a note written before entry_head and

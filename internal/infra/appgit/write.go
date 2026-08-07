@@ -115,6 +115,58 @@ func (r *Repo) CommitTree(ctx context.Context, commit string) (string, error) {
 	return tree, nil
 }
 
+// DocsPathsChangedBetween reports whether any of paths differs between
+// two docs trees.
+//
+// It is the question "has this sync been resolved?" reduced to something
+// git can answer: the sync note records which paths the merge conflicted
+// on, and a resolution is a commit that changed at least one of them.
+// Asking only whether the docs tree moved at all is passed by any docs
+// commit, which is how an unrelated note file came to stand in for a
+// resolution.
+//
+// Both arguments are *docs* trees, so the recorded repository-relative
+// paths (`docs/api.md`) are reduced to the tree-relative ones git wants
+// (`api.md`) here rather than by every caller. A path is matched
+// literally: a docs file called `a*.md` has to match itself and nothing
+// else. The empty answers — no paths, an unrecorded tree, two identical
+// trees — are all "nothing changed", which is the reading that keeps a
+// caller from mistaking an absent fact for a resolution.
+func (r *Repo) DocsPathsChangedBetween(ctx context.Context, fromTree, toTree string, paths []string) (bool, error) {
+	if fromTree == "" || toTree == "" || len(paths) == 0 {
+		return false, nil
+	}
+	if fromTree == toTree {
+		return false, nil
+	}
+
+	prefix := r.docsDir + "/"
+	relative := make([]string, 0, len(paths))
+	for _, path := range paths {
+		name := strings.TrimPrefix(path, prefix)
+		if name == "" {
+			continue
+		}
+		relative = append(relative, name)
+	}
+
+	for batch := range batches(relative) {
+		args := []string{"diff-tree", "-r", "-z", "--name-only", fromTree, toTree, "--"}
+		for _, name := range batch {
+			args = append(args, literalPathspec(name))
+		}
+		res, err := r.git.Run(ctx, args...)
+		if err != nil {
+			return false, fmt.Errorf("appgit: diff docs trees %s..%s in %s: %w",
+				fromTree, toTree, r.workDir, err)
+		}
+		if len(splitNULPaths(res.Stdout)) > 0 {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // CheckoutDocsTree materializes tree — a *docs* tree, whose entries are
 // relative to the docs directory — into the worktree and the index,
 // touching no path outside the docs directory. Files the index holds

@@ -524,10 +524,13 @@ func reachPushSyncRequired(t *testing.T, w *world) closureState {
 // reachSyncNotCommitted is the external review's Critical: a conflicted
 // sync whose markers were stashed away rather than resolved.
 //
-// The docs are clean, no file carries a marker, and HEAD is exactly
-// where the sync left it — a state that used to be read as "resolved",
-// clearing the note and letting the next push republish the pre-merge
-// tree over upstream's work.
+// The docs are clean, no file carries a marker, and nothing has been
+// committed to the file the merge conflicted on — the state that used to
+// be read as "resolved", clearing the note and letting the next push
+// republish the pre-merge tree over upstream's work. The stash is the
+// simplest way in; the second review wave widened the same message to
+// every unfinished sync with no markers left, including the one reached
+// by committing an unrelated document (see syncwindow_test.go).
 func reachSyncNotCommitted(t *testing.T, w *world) closureState {
 	ws := conflictedSync(t, w)
 	ws.git("stash", "push", "--quiet", "--", "docs")

@@ -167,9 +167,10 @@ func TestSyncThreeWayMerge(t *testing.T) {
 
 // TestSyncConflictThenResolve walks §5.5 step 6 and the resolution that
 // follows it: markers land in the worktree with ref labels, the note
-// records where the sync came from and where it is going, the base is
-// already the target, nothing is committed, and no error is returned.
-// Then the user resolves the standard git way and the note clears.
+// records where the sync came from, where it is going and what it could
+// not settle, **the base does not move**, nothing is committed, and no
+// error is returned. Then the user resolves the standard git way, the
+// note clears, and the base adopts the target at that moment.
 func TestSyncConflictThenResolve(t *testing.T) {
 	f := newFlow(t,
 		map[string]string{"a.md": hunkFile("A", "B", "C"), "b.md": hunkFile("A", "B", "C")},
@@ -218,8 +219,13 @@ func TestSyncConflictThenResolve(t *testing.T) {
 	if note.Target != wantTarget {
 		t.Fatalf("note target = %+v, want %+v", note.Target, wantTarget)
 	}
-	if got := f.base(t); got != wantTarget {
-		t.Fatalf("base file = %+v, want the target %+v", got, wantTarget)
+	// The window's whole safety property: while the resolution is owed,
+	// the base still answers for the docs the worktree derives from,
+	// which are the PRE-merge ones. A base sitting on the merge target
+	// here is the state that let a lost note become a fast-forward over
+	// upstream's work.
+	if got := f.base(t); got != previous {
+		t.Fatalf("base file during the conflict window = %+v, want the previous base %+v", got, previous)
 	}
 	if head := f.head(t); head != before {
 		t.Fatalf("a conflicted sync committed (%s -> %s)", before, head)
@@ -227,9 +233,13 @@ func TestSyncConflictThenResolve(t *testing.T) {
 
 	// The note records where the workspace stood, so that "was this
 	// resolved?" can be answered by a commit having happened rather than
-	// by the worktree merely looking tidy.
+	// by the worktree merely looking tidy — and which paths that commit
+	// has to touch for it to count.
 	if note.EntryHead != before {
 		t.Fatalf("note entry_head = %s, want the pre-sync HEAD %s", note.EntryHead, before)
+	}
+	if want := []string{docsDir + "/a.md", docsDir + "/b.md"}; strings.Join(note.Conflicts, ",") != strings.Join(want, ",") {
+		t.Fatalf("note conflicts = %v, want %v", note.Conflicts, want)
 	}
 
 	// Not finished yet: markers are still there.
@@ -244,9 +254,13 @@ func TestSyncConflictThenResolve(t *testing.T) {
 	})
 	gitRun(t, f.appDir, "add", "--", docsDir)
 
-	// Still not finished: resolved but uncommitted.
+	// Still not finished: resolved but uncommitted — and the base has
+	// still not moved, because nothing has confirmed the resolution.
 	if got, err := f.use.CompleteIfResolved(context.Background()); err != nil || got != docsync.ResolutionPending {
 		t.Fatalf("CompleteIfResolved = (%v, %v) before the commit, want (pending, nil)", got, err)
+	}
+	if got := f.base(t); got != previous {
+		t.Fatalf("base file before the resolution commit = %+v, want the previous base %+v", got, previous)
 	}
 
 	gitRun(t, f.appDir, "commit", "--quiet", "-m", "docs: resolve the sync conflict")
@@ -260,6 +274,56 @@ func TestSyncConflictThenResolve(t *testing.T) {
 	}
 	if _, ok := f.note(t); ok {
 		t.Fatal("the sync note survived the resolution")
+	}
+	// And the base moves exactly here: the resolution is the moment the
+	// worktree docs start deriving from the target.
+	if got := f.base(t); got != wantTarget {
+		t.Fatalf("base file after the confirmed resolution = %+v, want the target %+v", got, wantTarget)
+	}
+}
+
+// TestAnUnrelatedDocsCommitLeavesTheSyncOwed is the same window seen
+// from the path the re-review found: a commit that moves HEAD and the
+// docs tree without touching anything the sync conflicted on.
+//
+// The previous completion test asked only that HEAD and its docs tree
+// had moved, which any docs commit does. The note records the conflicted
+// paths precisely so that the question can be the one that matters — has
+// the conflict been dealt with — and an unrelated document cannot answer
+// it.
+func TestAnUnrelatedDocsCommitLeavesTheSyncOwed(t *testing.T) {
+	f := newFlow(t,
+		map[string]string{"a.md": "canonical\n"},
+		map[string]string{"a.md": "canonical\n"},
+	)
+	previous := f.adoptCanonicalHeadAsBase(t)
+
+	f.upstream(t, map[string]string{"a.md": "upstream\n"})
+	f.writeDocs(t, map[string]string{"a.md": "local\n"})
+	f.commitAll(t, "docs: local edit")
+
+	if result := f.sync(t, docsync.Options{}); result.Status != docsync.StatusConflicts {
+		t.Fatalf("status = %v, want conflicts", result.Status)
+	}
+
+	// Put the conflict aside the way a stash does — worktree and index
+	// back to HEAD — then commit an entirely unrelated document.
+	gitRun(t, f.appDir, "checkout", "HEAD", "--", docsDir)
+	writeFile(t, f.appDir, docsDir+"/notes.md", "an unrelated note\n")
+	f.commitAll(t, "docs: an unrelated note")
+
+	got, err := f.use.CompleteIfResolved(context.Background())
+	if err != nil {
+		t.Fatalf("CompleteIfResolved: %v", err)
+	}
+	if got != docsync.ResolutionNotCommitted {
+		t.Fatalf("CompleteIfResolved = %v after an unrelated docs commit, want not_committed", got)
+	}
+	if _, ok := f.note(t); !ok {
+		t.Fatal("an unrelated docs commit cleared the sync note")
+	}
+	if base := f.base(t); base != previous {
+		t.Fatalf("base file = %+v, want the previous base %+v", base, previous)
 	}
 }
 
@@ -537,6 +601,63 @@ func TestSyncRebaseOnto(t *testing.T) {
 			t.Fatalf("error = %v, want ErrUnknownTarget", err)
 		}
 	})
+}
+
+// TestRebaseOntoRevivesDocsCanonicalDeleted runs the documented cost of
+// the empty-tree fallback, rather than only asserting that the fallback
+// happens.
+//
+// When the recorded base cannot be anchored anywhere in canonical
+// history and the user names an explicit target, the merge base is the
+// empty tree — the honest ancestor when the two histories share nothing.
+// A merge on an empty base is the union of both sides, and a union has
+// no way to tell "upstream deleted this" from "we added it". So a
+// document canonical deleted, still present locally, comes back.
+//
+// docs/architecture.md states that plainly and tells the reader to
+// delete and commit if the revival is unwanted. This test is what keeps
+// the statement true: the behavior is a consequence of a deliberate
+// choice, and a silent change to it would be a silent change to what the
+// documentation promises.
+func TestRebaseOntoRevivesDocsCanonicalDeleted(t *testing.T) {
+	f := newFlow(t,
+		map[string]string{"keep.md": "keep\n", "removed.md": "upstream removed this\n"},
+		map[string]string{"keep.md": "keep\n", "removed.md": "upstream removed this\n"},
+	)
+	f.adoptCanonicalHeadAsBase(t)
+
+	// Canonical is replaced wholesale, and the replacement no longer
+	// carries removed.md. Nothing in the new history holds the recorded
+	// docs tree, so there is nothing to re-anchor by.
+	f.rewriteCanonical(t, map[string]string{"keep.md": "keep\n", "fresh.md": "a new document\n"}, nil)
+	target, _ := f.canonicalHead(t)
+
+	// Without a target the sync refuses, and its guidance names exactly
+	// the command run below (D3).
+	if err := f.syncErr(t, docsync.Options{}); !errors.Is(err, docsync.ErrUnknownBase) {
+		t.Fatalf("error = %v, want ErrUnknownBase", err)
+	}
+
+	result := f.sync(t, docsync.Options{RebaseOnto: target})
+	if result.Status != docsync.StatusSynced {
+		t.Fatalf("status = %v, want synced", result.Status)
+	}
+
+	// The union: canonical's new document arrives, the local copy of the
+	// deleted one survives, and nothing was lost in either direction.
+	requireDocs(t, f, map[string]string{
+		"keep.md":    "keep\n",
+		"fresh.md":   "a new document\n",
+		"removed.md": "upstream removed this\n",
+	})
+	if got := f.base(t).Commit; got != target {
+		t.Fatalf("base commit = %s, want the requested target %s", got, target)
+	}
+
+	// And the documented way to finish the job: delete it and commit.
+	f.writeDocs(t, map[string]string{"keep.md": "keep\n", "fresh.md": "a new document\n"})
+	f.commitAll(t, "docs: drop the document canonical removed")
+	requireDocs(t, f, map[string]string{"keep.md": "keep\n", "fresh.md": "a new document\n"})
 }
 
 // TestSyncAppliesUpstreamDeletions: a file upstream deleted has to

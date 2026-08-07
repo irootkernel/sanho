@@ -98,10 +98,22 @@ func runPreCommit(cmd *cobra.Command) error {
 		return nil
 	}
 
-	if blocked, err := preCommitGates(ctx, cmd, ws); err != nil {
+	blocked, syncOwed, err := preCommitGates(ctx, cmd, ws)
+	switch {
+	case err != nil:
 		return err
-	} else if blocked {
+	case blocked:
 		return errAlreadyReported
+	case syncOwed:
+		// The freshness warning is suppressed for the duration of an
+		// unfinished sync, and only there. The base deliberately stays at
+		// the pre-sync value until the resolution is confirmed, so the
+		// workspace *is* behind canonical for the whole window and would
+		// say so on every commit — under a notice that already describes
+		// the same fact more usefully and names the way out. Two lines
+		// about one state, one of them advising a `sanho sync` that
+		// refuses while a note exists, is worse than one.
+		return nil
 	}
 
 	warnStaleBase(ctx, cmd, ws)
@@ -109,7 +121,8 @@ func runPreCommit(cmd *cobra.Command) error {
 }
 
 // preCommitGates runs the two conditions §5.6 lets block a commit, in
-// the order that makes the state describe itself correctly.
+// the order that makes the state describe itself correctly, and reports
+// whether a sync is still owed at the end of it.
 //
 // The sync note comes first: an unresolved sync leaves markers in the
 // worktree by construction, so checking it first turns "you have
@@ -118,13 +131,20 @@ func runPreCommit(cmd *cobra.Command) error {
 // blocking the very commit that resolves it.
 //
 // Only markers block. A sync that was put aside rather than resolved
-// (ResolutionNotCommitted) leaves no markers behind, so it is reported
-// and the commit proceeds: P2 makes the commit path non-blocking for
-// everything except the two §5.6 gates, and stopping every unrelated
-// commit until a stash is dealt with would punish the wrong action. The
-// state is still refused where it matters — `pre-push`, where the
-// already-advanced base would otherwise republish the pre-merge tree.
-func preCommitGates(ctx context.Context, cmd *cobra.Command, ws *workspace) (blocked bool, err error) {
+// leaves no markers behind, so it is reported and the commit proceeds:
+// P2 makes the commit path non-blocking for everything except the two
+// §5.6 gates, and stopping every unrelated commit until a stash is dealt
+// with would punish the wrong action. The state is refused where it
+// matters — `pre-push`, where shared state is created.
+//
+// The reporting is deliberately wider than the state that names it.
+// ResolutionNotCommitted is the tidy case (docs clean, HEAD unmoved),
+// but the commit that made the window dangerous was made while the docs
+// were *dirty* for an unrelated reason, which classifies as
+// ResolutionPending and printed nothing at all. Any unfinished sync with
+// no markers left in the worktree now says so, unless the commit being
+// prepared is itself carrying the resolution.
+func preCommitGates(ctx context.Context, cmd *cobra.Command, ws *workspace) (blocked, syncOwed bool, err error) {
 	state := ws.statePort()
 	use := &docsync.UseCase{App: ws.appPort(), State: state}
 
@@ -134,40 +154,89 @@ func preCommitGates(ctx context.Context, cmd *cobra.Command, ws *workspace) (blo
 		// (P2, Critical C1's failure class): say so, and let the staged
 		// marker gate below answer for the commit's own content.
 		if !errors.Is(err, docsync.ErrSyncNoteCorrupt) {
-			return false, fmt.Errorf("check the sync state: %w", err)
+			return false, false, fmt.Errorf("check the sync state: %w", err)
 		}
 		writeln(cmd.ErrOrStderr(), syncNoteCorruptMessage(causeLine(err)))
+		syncOwed = true
 	}
 
 	switch resolution {
 	case docsync.ResolutionCompleted:
 		writeln(cmd.ErrOrStderr(), syncCompletedMessage())
-	case docsync.ResolutionNotCommitted:
-		note, _, noteErr := state.LoadSyncNote()
-		if noteErr == nil {
-			writeln(cmd.ErrOrStderr(), syncNotCommittedMessage(note.PrevBase.Commit, note.Target.Commit))
-		}
-	case docsync.ResolutionPending:
+	case docsync.ResolutionNotCommitted, docsync.ResolutionPending:
+		syncOwed = true
 		remaining, scanErr := ws.repo.ScanWorktreeDocsForMarkers(ctx)
 		if scanErr != nil {
-			return false, scanErr
+			return false, syncOwed, scanErr
 		}
 		if len(remaining) > 0 {
 			writeln(cmd.ErrOrStderr(), unresolvedSyncMessage(ws.config.DocsDir, remaining))
-			return true, nil
+			return true, syncOwed, nil
 		}
+		reportOwedSync(ctx, cmd, ws, state)
 	case docsync.ResolutionNoSync:
 	}
 
 	staged, err := ws.repo.ScanStagedDocsForMarkers(ctx)
 	if err != nil {
-		return false, err
+		return false, syncOwed, err
 	}
 	if len(staged) > 0 {
 		writeln(cmd.ErrOrStderr(), stagedMarkersMessage(staged))
-		return true, nil
+		return true, syncOwed, nil
 	}
-	return false, nil
+	return false, syncOwed, nil
+}
+
+// reportOwedSync prints the "still owed a resolution" notice for a sync
+// whose markers are gone from the worktree, and stays quiet when the
+// commit being prepared is the resolution.
+//
+// The staged docs tree is what separates the two. A commit that changes
+// one of the paths the merge conflicted on is the resolution arriving —
+// the note is cleared by the next hook that runs, once the commit
+// actually exists — and telling the user their sync was "never resolved
+// by a commit" at exactly that moment would be false and would name an
+// abort that throws the work away. A commit that leaves every conflicted
+// path alone is the state this notice exists for.
+func reportOwedSync(ctx context.Context, cmd *cobra.Command, ws *workspace, state statePort) {
+	note, exists, err := state.LoadSyncNote()
+	if err != nil || !exists {
+		// An unreadable note has already been reported by the caller, and
+		// a note that vanished between the two reads owes nothing.
+		return
+	}
+	if resolutionIsStaged(ctx, ws, note) {
+		return
+	}
+	writeln(cmd.ErrOrStderr(), syncNotCommittedMessage(note.PrevBase.Commit, note.Target.Commit))
+}
+
+// resolutionIsStaged reports whether the index already carries a change
+// to one of the sync's conflicted paths.
+//
+// It is CompleteIfResolved's own test moved one step earlier: that one
+// asks whether HEAD settled the conflict, this one asks whether the
+// commit about to be made will. Every failure is answered "no", which
+// costs at most a notice the user did not need — the commit path may
+// never fail for a question sanho could not answer (P2), and nothing
+// here opens a network connection.
+func resolutionIsStaged(ctx context.Context, ws *workspace, note docsync.SyncNote) bool {
+	indexTree, err := ws.repo.IndexDocsTree(ctx)
+	if err != nil {
+		return false
+	}
+	return stagedTreeSettles(ctx, ws, note, indexTree)
+}
+
+// stagedTreeSettles is resolutionIsStaged over an already-resolved index
+// tree, for the caller that has one.
+func stagedTreeSettles(ctx context.Context, ws *workspace, note docsync.SyncNote, indexTree string) bool {
+	staged, err := ws.repo.DocsPathsChangedBetween(ctx, note.EntryDocsTree, indexTree, note.Conflicts)
+	if err != nil {
+		return false
+	}
+	return staged
 }
 
 // warnStaleBase is §5.6 step 2: a single informational line when the
@@ -259,9 +328,9 @@ func stampCommitMessage(ctx context.Context, ws *workspace, messagePath string) 
 		return nil
 	}
 
-	base, hasBase, err := ws.statePort().LoadBase()
+	base, hasBase, err := stampBase(ctx, ws, inputs.IndexDocsTree)
 	if err != nil {
-		return fmt.Errorf("read the base file: %w", err)
+		return err
 	}
 	if !hasBase {
 		return errors.New("no docs base is recorded")
@@ -273,6 +342,44 @@ func stampCommitMessage(ctx context.Context, ws *workspace, messagePath string) 
 	// Atomic: a truncated COMMIT_EDITMSG is a commit message the user
 	// loses, and this runs inside the commit git is about to make (F-L4).
 	return fsx.WriteFileAtomic(messagePath, appendTrailers(message, base.Trailers()), 0644)
+}
+
+// stampBase answers which canonical state the commit being made derives
+// its docs from — the value the `docs-base` trailer records.
+//
+// Ordinarily that is the base file, and during an unfinished sync it
+// still is. The exception is the commit that RESOLVES the sync: its docs
+// carry content merged from the target, so the target is what it derives
+// from, and stamping the pre-sync base would be both untrue and harmful
+// — a later checkout re-derives the base from the newest stamped commit,
+// which would wind it back behind content the workspace already has and
+// make the next push report a conflict nobody created.
+//
+// The converse matters just as much. A commit made during the window
+// that leaves every conflicted path alone (the unrelated-note commit
+// that started this whole investigation) derives from the pre-sync base,
+// and stamping the target on it would let that same re-derivation put
+// the base on canonical head with pre-merge docs beneath it — the
+// dangerous state, reintroduced through the trailer.
+//
+// It is entirely local: one state file and one `git diff-tree`. §5.1's
+// no-network contract for the commit path is untouched.
+//
+// indexTree is the docs tree the commit will carry — the same value
+// ShouldStamp has just judged, passed in rather than re-read so that the
+// decision to stamp and the value stamped describe one tree.
+func stampBase(ctx context.Context, ws *workspace, indexTree string) (provenance.Base, bool, error) {
+	state := ws.statePort()
+	note, exists, noteErr := state.LoadSyncNote()
+	if noteErr == nil && exists && stagedTreeSettles(ctx, ws, note, indexTree) {
+		return note.Target, true, nil
+	}
+
+	base, hasBase, err := state.LoadBase()
+	if err != nil {
+		return provenance.Base{}, false, fmt.Errorf("read the base file: %w", err)
+	}
+	return base, hasBase, nil
 }
 
 // stampInputs gathers the three trees §5.1's stamping rule compares.
@@ -440,10 +547,15 @@ func runPrePush(cmd *cobra.Command, _ []string) error {
 // different state with a different next step. A note still carrying
 // markers is the ordinary in-progress case. A note whose sync was put
 // aside without a resolution commit is the state that used to be cleared
-// silently — and it must be stopped here specifically, since the
-// conflicted sync already advanced the base to the merge target and the
-// push would read that as a fast-forward over upstream's own work. A
-// note that cannot be parsed is refused on its existence alone.
+// silently. A note that cannot be parsed is refused on its existence
+// alone.
+//
+// All three are refusals of a half-finished reconciliation, not of a
+// dangerous base: the base now stays at the pre-sync value for the whole
+// window, so a push that slipped past this gate would be evaluated
+// against real history rather than mistaken for a fast-forward. That is
+// the point of the ordering — this gate decides what the user is told,
+// and the base decides what is at stake if it is ever wrong.
 func prePushSyncGate(ctx context.Context, cmd *cobra.Command, ws *workspace, state statePort) (blocked bool, err error) {
 	stderr := cmd.ErrOrStderr()
 

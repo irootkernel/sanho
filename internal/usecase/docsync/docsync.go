@@ -61,6 +61,12 @@ type AppRepoPort interface {
 	// MergeDocs runs the §5.4 tree merge in the app repo and returns the
 	// result tree, conflict list, and cleanliness.
 	MergeDocs(ctx context.Context, baseTree, oursTree, theirsTree string) (tree string, conflicts []string, clean bool, err error)
+	// DocsPathsChangedBetween reports whether any of paths (docs paths as
+	// the merge reported them) differs between two docs trees. It is the
+	// whole of "has this sync been resolved?": the note records what the
+	// merge conflicted on, and only a commit that moved one of those
+	// paths can have settled it.
+	DocsPathsChangedBetween(ctx context.Context, fromTree, toTree string, paths []string) (bool, error)
 	// CheckoutDocsTree materializes tree into the docs worktree and
 	// index (docs paths only).
 	CheckoutDocsTree(ctx context.Context, tree string) error
@@ -94,12 +100,19 @@ type StatePort interface {
 }
 
 // SyncNote is the record a conflicted sync leaves behind: what to
-// restore on abort, what the resolution derives from, and where the
-// worktree stood when the markers were written.
+// restore on abort, what the resolution derives from, where the worktree
+// stood when the markers were written, and what the merge could not
+// settle.
+//
+// It is also, for as long as it exists, the *only* record of the merge
+// target: the base file is deliberately left where the sync found it
+// until a resolution is confirmed (see Run's conflict branch), so the
+// note carries the value the base will eventually take.
 type SyncNote struct {
 	// PrevBase is the base the sync found, restored by abort.
 	PrevBase provenance.Base
-	// Target is the canonical state the resolution derives from.
+	// Target is the canonical state the resolution derives from, and the
+	// base the workspace adopts once the resolution is confirmed.
 	Target provenance.Base
 	// EntryHead and EntryDocsTree pin the app repo at materialize time.
 	// A resolution is a commit, and a commit moves both; a stash, a
@@ -107,9 +120,13 @@ type SyncNote struct {
 	// exactly the difference CompleteIfResolved has to see.
 	EntryHead     string
 	EntryDocsTree string
-	// PreDatesEntryRecord marks a note written before the two fields
-	// above existed. It cannot prove a resolution happened, so it is
-	// read as unresolved.
+	// Conflicts are the docs paths the merge left conflicted,
+	// repository-relative. A resolution has to have changed one of them
+	// — "the docs tree moved" is passed by any docs commit at all.
+	Conflicts []string
+	// PreDatesEntryRecord marks a note written before the entry fields
+	// existed. It cannot prove a resolution happened, so it is read as
+	// unresolved.
 	PreDatesEntryRecord bool
 }
 
@@ -144,6 +161,12 @@ type Result struct {
 	// base already recorded, so renderers always have an OID to name —
 	// with one exception: an empty canonical repository has no commit to
 	// name, so a StatusUpToDate run against one leaves NewBase zero.
+	//
+	// On StatusConflicts it names the merge TARGET, which the base file
+	// has deliberately not adopted yet: the conflicted run records it in
+	// the sync note and the base moves only once the resolution is
+	// confirmed. Renderers of that status say "merged with upstream", not
+	// "the base is now X", so the distinction stays visible to a reader.
 	NewBase provenance.Base
 	// Conflicts lists conflicted docs paths when StatusConflicts.
 	Conflicts []string
@@ -327,13 +350,23 @@ func (u *UseCase) Run(ctx context.Context, opts Options) (Result, error) {
 
 	// Step 6 — conflicted.
 	//
-	// Ordering: the markers go into the worktree first, then the note,
-	// then the base. The note is the record that a resolution is owed,
-	// and the base moves to the target because the resolution — once
-	// made — derives from the target (§5.5 step 6), which is what makes
-	// the eventual resolution commit stamp the right docs-base. Writing
-	// the note before the base means a crash between them leaves the
-	// abort path fully armed with the still-current previous base.
+	// The markers go into the worktree, then the note is written, and
+	// **the base is not touched at all.**
+	//
+	// Moving the base to the merge target here was the structural defect
+	// of the first cut. For as long as the resolution was owed, the
+	// workspace held base == canonical head while the docs worktree still
+	// carried pre-merge content — so anything that made the note stop
+	// counting (a stash the completion test misread, a damaged note the
+	// abort could only delete) handed the next push a fast-forward and it
+	// republished the pre-merge tree over upstream's work, at exit 0.
+	//
+	// Nothing is lost by waiting: the note carries Target, so the value
+	// is still recorded, and the base keeps answering the question it is
+	// defined by (§5.7) — which canonical state the *worktree* docs
+	// derive from — which during the window is still the previous base.
+	// CompleteIfResolved adopts Target the moment a resolution is
+	// confirmed.
 	if !mergeClean {
 		// HEAD is read *before* the markers land so the note describes
 		// the state the resolution has to move away from. Nothing here
@@ -352,12 +385,10 @@ func (u *UseCase) Run(ctx context.Context, opts Options) (Result, error) {
 			Target:        newBase,
 			EntryHead:     entryHead,
 			EntryDocsTree: oursTree,
+			Conflicts:     conflicts,
 		}
 		if err := u.State.SaveSyncNote(note); err != nil {
 			return Result{}, fmt.Errorf("record the sync in progress: %w", err)
-		}
-		if err := u.State.SaveBase(newBase); err != nil {
-			return Result{}, fmt.Errorf("record new base: %w", err)
 		}
 		return Result{Status: StatusConflicts, NewBase: newBase, Conflicts: conflicts}, nil
 	}
@@ -396,15 +427,17 @@ func (u *UseCase) Run(ctx context.Context, opts Options) (Result, error) {
 	return Result{Status: StatusSynced, NewBase: newBase, CommitOID: commit}, nil
 }
 
-// AbortResult reports one `sanho sync --abort`.
-type AbortResult struct {
-	// Degraded is set when the note existed but could not be read. The
-	// abort still restored the docs and cleared the note — those need
-	// only the note's existence — but the previous base lives *inside*
-	// the note, so the base file was left where the conflicted sync put
-	// it. `sanho doctor --fix` re-derives it from commit history.
-	Degraded bool
-}
+// AbortResult reports one `sanho sync --abort`. It carries nothing:
+// abort restores the docs, puts the base back, and drops the note, and
+// there is no partial outcome left to describe.
+//
+// It used to carry a Degraded flag for the unreadable-note case, because
+// the previous base lived inside the note and a conflicted sync had
+// already moved the base file to the merge target — so an abort over a
+// damaged note left the base on the target with pre-merge docs beneath
+// it, and had to say so. The conflicted sync no longer moves the base,
+// so that abort has nothing to restore and nothing to confess.
+type AbortResult struct{}
 
 // Abort executes §5.5 step 7. Valid whenever a sync note exists; by
 // construction it cannot fail after its precondition passes (guidance
@@ -415,8 +448,14 @@ type AbortResult struct {
 // note is unreadable. Abort is the way *out* of a broken sync state, so
 // a damaged note is precisely the case it must survive: refusing there
 // left a workspace with markers in docs/, a file nothing could parse,
-// and no command that could clear either. Only the two facts the note
-// carries are lost, so the base is left alone and the caller is told.
+// and no command that could clear either.
+//
+// An unreadable note is now lossless as well as survivable. Nothing in
+// it has to be applied: the conflicted sync left the base where it found
+// it, so restoring the docs from HEAD and deleting the file puts the
+// workspace back exactly where it started. What the base write below is
+// still for is the *asymmetric* pair of cases the note can describe when
+// it can be read — see restoreBase.
 //
 // The order is restore docs → restore base → clear the note, and it is
 // chosen so that a crash anywhere in the middle leaves a re-runnable
@@ -426,9 +465,9 @@ type AbortResult struct {
 // `sanho sync --abort` again after an interruption simply redoes them.
 func (u *UseCase) Abort(ctx context.Context) (AbortResult, error) {
 	note, exists, err := u.State.LoadSyncNote()
-	degraded := errors.Is(err, ErrSyncNoteCorrupt)
+	unreadable := errors.Is(err, ErrSyncNoteCorrupt)
 	switch {
-	case err != nil && !degraded:
+	case err != nil && !unreadable:
 		return AbortResult{}, fmt.Errorf("read sync state: %w", err)
 	case !exists:
 		return AbortResult{}, ErrNoSyncInProgress
@@ -437,20 +476,35 @@ func (u *UseCase) Abort(ctx context.Context) (AbortResult, error) {
 	if err := u.App.RestoreDocsFromHead(ctx); err != nil {
 		return AbortResult{}, fmt.Errorf("restore the docs worktree: %w", err)
 	}
-	if !degraded {
-		if err := u.restoreBase(note.PrevBase); err != nil {
+	if !unreadable {
+		if err := u.restoreBase(note); err != nil {
 			return AbortResult{}, err
 		}
 	}
 	if err := u.State.ClearSyncNote(); err != nil {
 		return AbortResult{}, fmt.Errorf("clear the sync note: %w", err)
 	}
-	return AbortResult{Degraded: degraded}, nil
+	return AbortResult{}, nil
 }
 
-// restoreBase puts the base file back the way the aborted sync found
-// it, including the case where it found nothing at all.
-func (u *UseCase) restoreBase(prev provenance.Base) error {
+// restoreBase puts the base file back the way the aborted sync found it.
+//
+// A sync written by *this* version left the base alone, so this is
+// ordinarily an idempotent rewrite of the value already on disk. It is
+// kept for the two cases where it is not:
+//
+//   - A note written before the base advance was deferred
+//     (PreDatesEntryRecord). That binary moved the base to the merge
+//     target when it materialized the markers, so a workspace left
+//     mid-sync across the upgrade really does need PrevBase written
+//     back. This is the one asymmetry between old and new notes, and it
+//     runs in the only direction that cannot lose data.
+//   - A sync entered with no base at all. PrevBase is then the zero
+//     value, which is not a writable one — the base file schema has no
+//     representation for an empty commit OID and reading one back is a
+//     corruption error — so "forget the base" has to be a removal.
+func (u *UseCase) restoreBase(note SyncNote) error {
+	prev := note.PrevBase
 	if prev.IsZero() {
 		if err := u.State.ClearBase(); err != nil {
 			return fmt.Errorf("remove the base file: %w", err)
@@ -472,25 +526,36 @@ func (u *UseCase) restoreBase(prev provenance.Base) error {
 //
 // Three conditions, and the third is the one that matters. No worktree
 // file still carries markers; the docs are clean relative to HEAD, so
-// the resolution was committed rather than merely edited; and **a
-// commit really happened** — HEAD has moved off where the sync left it,
-// carrying a different docs tree.
+// the resolution was committed rather than merely edited; and **a commit
+// really settled the conflict** — HEAD has moved off where the sync left
+// it, and at least one of the paths the merge conflicted on changed with
+// it.
 //
 // Without that third condition the test is passed by doing nothing at
 // all. `git stash push -- docs` leaves no markers and clean docs, and so
 // does `git checkout HEAD -- docs`; the note was then cleared while the
-// conflict stood unresolved. That was not merely untidy: a conflicted
-// sync has already advanced the base to the merge target, so the very
-// next push saw base == canonical head, took it for a fast-forward, and
-// republished the pre-merge tree — upstream's work reverted, exit 0, no
-// message. The state that produces it is reported as
-// ResolutionNotCommitted, the note is kept, and the caller says so.
+// conflict stood unresolved, and the next push republished the pre-merge
+// tree — upstream's work reverted, exit 0, no message. That state is
+// reported as ResolutionNotCommitted, the note is kept, and the caller
+// says so.
 //
-// Requiring the docs *tree* to have moved as well as HEAD is what keeps
-// an unrelated commit from standing in for the resolution. A genuine
-// resolution cannot leave the docs tree unchanged: the markers are in
-// the worktree, so an unchanged tree means nothing was staged and git
-// refuses the commit outright.
+// Asking about the *conflicted paths* rather than about the docs tree as
+// a whole is what the second review wave added, and it is not a
+// refinement of degree. "The docs tree moved" is passed by any docs
+// commit whatsoever: stash the markers, commit an unrelated note, and
+// the sync was declared resolved. Only a change to a path the merge
+// could not settle can be the resolution of that merge.
+//
+// A resolution that keeps every conflicted path exactly as it was —
+// taking "ours" wholesale, byte for byte — therefore does not register,
+// and that is deliberate. It is indistinguishable from putting the
+// conflict aside, so it is read the conservative way and the user is
+// pointed at `sanho sync --abort` followed by `sanho sync`, which
+// re-lays the same conflicts with the resolution still to make.
+//
+// Confirming the resolution is also what moves the base: the note holds
+// the merge target precisely because the base file does not adopt it
+// until this point.
 func (u *UseCase) CompleteIfResolved(ctx context.Context) (Resolution, error) {
 	note, exists, err := u.State.LoadSyncNote()
 	if err != nil {
@@ -524,14 +589,36 @@ func (u *UseCase) CompleteIfResolved(ctx context.Context) (Resolution, error) {
 		return ResolutionNotCommitted, nil
 	}
 
+	// The base moves first and the note is dropped second, keeping the
+	// invariant the whole window rests on: the note is the evidence that
+	// a base advance is still owed, so it outlives every step that owes
+	// it. A crash between the two leaves a note whose conditions are
+	// still satisfied, and the next hook redoes both.
+	if err := u.State.SaveBase(note.Target); err != nil {
+		return ResolutionNoSync, fmt.Errorf("record new base: %w", err)
+	}
 	if err := u.State.ClearSyncNote(); err != nil {
 		return ResolutionNoSync, fmt.Errorf("clear the sync note: %w", err)
 	}
 	return ResolutionCompleted, nil
 }
 
-// resolutionWasCommitted reports whether HEAD has moved off the state
-// the sync recorded when it wrote the markers.
+// resolutionWasCommitted reports whether a commit has settled the
+// conflict the sync recorded.
+//
+// Two facts have to hold, and the second is the discriminating one. HEAD
+// has moved off the commit the sync was materialized on — a stash, a
+// revert and a `git checkout HEAD -- docs` all leave it exactly where it
+// was — and one of the conflicted paths differs between the docs tree
+// that HEAD carried then and the one it carries now.
+//
+// A note with no conflicted paths recorded cannot answer the second
+// question, so it answers "not resolved". That is the safe direction:
+// the workspace is never wedged by it (`sanho sync --abort` clears any
+// note at all, losing nothing), while the other direction is exactly the
+// failure this test exists to prevent. It is reachable only for a note
+// written by an older build, or for a merge git reported as conflicted
+// while naming no path.
 func (u *UseCase) resolutionWasCommitted(ctx context.Context, note SyncNote) (bool, error) {
 	if note.PreDatesEntryRecord {
 		return false, nil
@@ -547,7 +634,11 @@ func (u *UseCase) resolutionWasCommitted(ctx context.Context, note SyncNote) (bo
 	if err != nil {
 		return false, fmt.Errorf("read the docs tree of HEAD: %w", err)
 	}
-	return headTree != note.EntryDocsTree, nil
+	settled, err := u.App.DocsPathsChangedBetween(ctx, note.EntryDocsTree, headTree, note.Conflicts)
+	if err != nil {
+		return false, fmt.Errorf("compare the conflicted docs paths: %w", err)
+	}
+	return settled, nil
 }
 
 // refuseWhileSyncing is the shared step-1 guard of Run and Pull: an

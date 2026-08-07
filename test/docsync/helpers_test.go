@@ -108,6 +108,7 @@ func (s statePort) LoadSyncNote() (docsync.SyncNote, bool, error) {
 		Target:              note.Target,
 		EntryHead:           note.EntryHead,
 		EntryDocsTree:       note.EntryDocsTree,
+		Conflicts:           note.Conflicts,
 		PreDatesEntryRecord: note.PreDatesEntryRecord(),
 	}, true, nil
 }
@@ -119,6 +120,7 @@ func (s statePort) SaveSyncNote(note docsync.SyncNote) error {
 		StartedAt:     time.Now().UTC(),
 		EntryHead:     note.EntryHead,
 		EntryDocsTree: note.EntryDocsTree,
+		Conflicts:     note.Conflicts,
 	})
 }
 

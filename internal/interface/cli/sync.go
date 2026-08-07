@@ -103,14 +103,14 @@ func runSync(cmd *cobra.Command, abort bool, rebaseOnto string, asJSON bool) err
 // canonical clone: it restores the docs worktree from HEAD and puts the
 // base file back, which is why it cannot fail once a note exists
 // (guidance closure by construction, D3) — including when the note
-// itself is unreadable, in which case the base is the one thing it
-// cannot restore and the follow-up repair is named.
+// itself is unreadable, which is now lossless too: the conflicted sync
+// left the base where it found it, so there is nothing an unread note
+// could have told the abort to restore.
 func runSyncAbort(cmd *cobra.Command, ws *workspace, asJSON bool) error {
 	ctx := cmd.Context()
 	use := &docsync.UseCase{App: ws.appPort(), State: ws.statePort()}
 
-	result, err := use.Abort(ctx)
-	if err != nil {
+	if _, err := use.Abort(ctx); err != nil {
 		return finishCommand(cmd, ws, asJSON, err)
 	}
 	recordWorkspaceState(ctx, ws)
@@ -119,9 +119,6 @@ func runSyncAbort(cmd *cobra.Command, ws *workspace, asJSON bool) error {
 		return writeJSON(cmd.OutOrStdout(), syncJSON{Status: statusAborted, Conflicts: []string{}})
 	}
 	writeln(cmd.OutOrStdout(), syncAbortedMessage(untrackedDocs(ctx, ws)))
-	if result.Degraded {
-		writeln(cmd.ErrOrStderr(), syncAbortDegradedLine())
-	}
 	return nil
 }
 

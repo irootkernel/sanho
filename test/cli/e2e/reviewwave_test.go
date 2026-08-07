@@ -9,11 +9,17 @@ package e2e
 // black-box tests against the real binary and real git.
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/irootkernel/sanho/internal/infra/fsx"
+	"github.com/irootkernel/sanho/internal/infra/registry"
 )
 
 // markerDoc is a docs file carrying an unresolved conflict, in the §5.4
@@ -215,15 +221,25 @@ func TestAbortSucceedsWithACorruptSyncNote(t *testing.T) {
 	requireExit(t, "push with a corrupt note", push, 1)
 	requireContains(t, "push rejection", push.combined(), "record of the sync in progress is unreadable")
 
-	// The advised abort works, degraded: docs restored, note gone,
-	// and the base left where the sync put it with `doctor --fix` named.
+	// The advised abort works, and it is now lossless: docs restored,
+	// note gone, and nothing left owing. The follow-up repair line it
+	// used to print described a base the conflicted sync had moved to the
+	// merge target and the unreadable note could no longer restore — a
+	// sync no longer moves it, so there is nothing to confess and nothing
+	// for `sanho doctor --fix` to correct.
 	abort := ws.run("sync", "--abort")
 	requireExit(t, "abort with a corrupt note", abort, 0)
-	requireContains(t, "abort output", abort.combined(), "sanho doctor --fix")
+	requireNotContains(t, "abort output", abort.combined(), "the docs base was left as the sync set it")
 	if fileExists(t, ws.path(".git", "sanho", "sync.json")) {
 		t.Error("abort left the corrupt sync note behind")
 	}
 	requireEqual(t, "docs/api.md after abort", ws.readDocs("api.md"), "line one\nMINE\n")
+
+	// Guidance closure for the state that replaces it: nothing is owed,
+	// so `sanho doctor` finds nothing to warn about.
+	healthy := ws.run("doctor")
+	requireExit(t, "doctor after the abort", healthy, 0)
+	requireContains(t, "doctor after the abort", healthy.combined(), "no problems found")
 }
 
 // TestACorruptSyncNoteDoesNotBreakCommits is the P2 half of X2.
@@ -440,6 +456,41 @@ func TestDoctorIsSilentAboutABaseAPublicationAdvanced(t *testing.T) {
 	requireContains(t, "doctor", report.combined(), "no problems found")
 }
 
+// TestDoctorReportsFailuresWithoutInternalPackageTags is F-M3 measured
+// rather than asserted in a unit test.
+//
+// `sanho doctor` reports failures it deliberately does not fail on, and
+// it renders every one of them through causeOf, whose whole job is to
+// strip the package tags infra uses to locate its own errors. §5.9
+// forbids those tags at user level: `appgit: ` and `gitx: ` say where in
+// sanho a failure happened, which is information for us and noise for
+// the reader.
+//
+// The fixture makes a hook a symbolic link, which appgit refuses to read
+// (F-L1) with a message that carries its own tag. The check's wording
+// then has to survive the trip out.
+func TestDoctorReportsFailuresWithoutInternalPackageTags(t *testing.T) {
+	t.Parallel()
+
+	w := newWorld(t, defaultCanonicalDocs())
+	ws := w.setup("prefix-free")
+
+	elsewhere := ws.path("shared-pre-commit")
+	writeExecutable(t, elsewhere, "#!/bin/sh\nexit 0\n")
+	removeFile(t, ws.hookPath("pre-commit"))
+	if err := os.Symlink(elsewhere, ws.hookPath("pre-commit")); err != nil {
+		t.Fatalf("symlink the hook: %v", err)
+	}
+
+	report := ws.run("doctor")
+	requireExit(t, "doctor with a symlinked hook", report, 0)
+	requireContains(t, "doctor", report.combined(), "could not inspect the hooks directory")
+	requireContains(t, "doctor", report.combined(), "the hook path is a symbolic link")
+	for _, tag := range []string{"appgit: ", "canonical: ", "gitx: ", "fsx: "} {
+		requireNotContains(t, "doctor", report.combined(), tag)
+	}
+}
+
 // --- m1: the cheapest rejection comes first -----------------------------
 
 // TestSyncNoteRejectionPrecedesTheClone pins the §5.3 ordering
@@ -472,6 +523,20 @@ func TestSyncNoteRejectionPrecedesTheClone(t *testing.T) {
 // TestJSONErrorEnvelopeCoversTheRepresentativeCodes widens the §5.8
 // envelope coverage past not_in_workspace: an agent branches on `code`,
 // so each code an ordinary session can hit needs a test that produces it.
+//
+// Three of the §5.8 vocabulary are deliberately absent, and their
+// absence is a fact about the surface rather than a gap in the table:
+//
+//	markers_present  raised only by publication, which runs inside
+//	                 `pre-push`. A hook has no --json.
+//	too_large        raised only by the marker scanners, which run in the
+//	                 same hooks and in publication. `sanho sync` and
+//	                 `sanho pull` never scan; the sync/pull renderer's
+//	                 branch for it is defensive.
+//	internal         the default for an error nothing recognizes, so
+//	                 producing it on purpose would mean introducing a bug
+//	                 to assert it. Everything reachable is mapped, which
+//	                 is what makes `internal` meaningful when it appears.
 func TestJSONErrorEnvelopeCoversTheRepresentativeCodes(t *testing.T) {
 	t.Parallel()
 
@@ -479,6 +544,9 @@ func TestJSONErrorEnvelopeCoversTheRepresentativeCodes(t *testing.T) {
 		name string
 		code string
 		args []string
+		// build makes the workspace the command runs in; nil means an
+		// ordinary initialized one.
+		build func(t *testing.T, w *world) *workspace
 		// reach puts the workspace into the state, and returns nothing:
 		// the command under test is `args`.
 		reach func(t *testing.T, w *world, ws *workspace)
@@ -519,6 +587,54 @@ func TestJSONErrorEnvelopeCoversTheRepresentativeCodes(t *testing.T) {
 				ws.writeDocs(map[string]string{"api.md": "line one\nuncommitted\n"})
 			},
 		},
+		{
+			// §8's degradation, machine-readable: a v0.1 workspace refuses
+			// every command but `migrate`, and an agent must be able to see
+			// that it is the layout rather than the request.
+			name:  "v1_workspace",
+			code:  "v1_workspace",
+			args:  []string{"sync", "--json"},
+			build: func(t *testing.T, w *world) *workspace { return w.newWorkspace("v1-envelope") },
+			reach: func(t *testing.T, w *world, ws *workspace) {
+				base := w.canonicalHead()
+				ws.writeDocs(map[string]string{"api.md": "line one\nline two\n"})
+				ws.git("add", "-A")
+				ws.git("commit", "-m", "docs: adopt canonical\n\ndocs-version: "+base)
+				seedV1Workspace(t, ws, base, true)
+			},
+		},
+		{
+			// --rebase-onto pointed at something canonical has never had.
+			name:  "unknown_target",
+			code:  "unknown_target",
+			args:  []string{"sync", "--rebase-onto", strings.Repeat("b", 40), "--json"},
+			reach: func(t *testing.T, w *world, ws *workspace) {},
+		},
+		{
+			// The recorded base, and its docs tree, are both gone from
+			// canonical history.
+			name: "history_rewritten",
+			code: "history_rewritten",
+			args: []string{"sync", "--json"},
+			reach: func(t *testing.T, w *world, ws *workspace) {
+				ws.commitDocs("docs: my edit", map[string]string{"api.md": "line one\nmine\n"})
+				w.rewriteCanonical(
+					map[string]string{"handbook.md": "an entirely new canonical\n"},
+					"canonical: rewritten history", true)
+			},
+		},
+		{
+			// Somebody else holds the registry flock. The code has to be
+			// the lock timeout and not `internal`: one says "wait", the
+			// other says "sanho has a bug".
+			name: "registry_lock_timeout",
+			code: "registry_lock_timeout",
+			args: []string{"state", "--json"},
+			reach: func(t *testing.T, w *world, ws *workspace) {
+				release := holdRegistryLock(t, w)
+				t.Cleanup(release)
+			},
+		},
 	}
 
 	for _, test := range tests {
@@ -526,7 +642,11 @@ func TestJSONErrorEnvelopeCoversTheRepresentativeCodes(t *testing.T) {
 			t.Parallel()
 
 			w := newWorld(t, defaultCanonicalDocs())
-			ws := w.setup(test.name)
+			build := test.build
+			if build == nil {
+				build = func(t *testing.T, w *world) *workspace { return w.setup(test.name) }
+			}
+			ws := build(t, w)
 			test.reach(t, w, ws)
 
 			res := ws.run(test.args...)
@@ -552,6 +672,36 @@ func TestJSONErrorEnvelopeCoversTheRepresentativeCodes(t *testing.T) {
 			}
 		})
 	}
+}
+
+// holdRegistryLock takes the registry flock in the test process and
+// holds it until the returned function is called.
+//
+// It uses sanho's own locking primitive rather than a hand-rolled
+// syscall, which is the point: the claim is that a *second* holder makes
+// the CLI time out, and only the same flock semantics prove it. Nothing
+// about the workspace changes — the lock is the whole fixture.
+func holdRegistryLock(t *testing.T, w *world) (release func()) {
+	t.Helper()
+
+	lockPath := filepath.Join(w.home, registry.LockFileName)
+	held := make(chan struct{})
+	done := make(chan struct{})
+
+	go func() {
+		_ = fsx.WithFlock(context.Background(), lockPath, func() error {
+			close(held)
+			<-done
+			return nil
+		})
+	}()
+
+	select {
+	case <-held:
+	case <-time.After(fsx.DefaultLockTimeout):
+		t.Fatal("could not take the registry lock")
+	}
+	return func() { close(done) }
 }
 
 // TestMigratedWorkspaceSyncsPullsAndPushes is the missing end-to-end

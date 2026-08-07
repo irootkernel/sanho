@@ -122,13 +122,28 @@ func registryError(err error) error {
 	case err == nil:
 		return nil
 	case errors.Is(err, fsx.ErrLockTimeout):
-		return errors.New(registryLockHint(errDetail(err, fsx.ErrLockTimeout)))
+		return &lockTimeoutError{hint: registryLockHint(errDetail(err, fsx.ErrLockTimeout))}
 	case errors.Is(err, registry.ErrLegacyState):
 		return errors.New(msgMigrateRequired)
 	default:
 		return err
 	}
 }
+
+// lockTimeoutError carries the §5.9 wording without dropping the §5.8
+// identity.
+//
+// Replacing the error with a plain errors.New(hint) reported the right
+// sentence and the wrong code: nothing satisfied errors.Is(…,
+// ErrLockTimeout) any more, so `--json` labelled a perfectly ordinary
+// "somebody else holds the lock" as `internal` — the one code that means
+// "sanho has a bug". Unwrap keeps the sentinel reachable while Error
+// stays the line a user reads.
+type lockTimeoutError struct{ hint string }
+
+func (e *lockTimeoutError) Error() string { return e.hint }
+
+func (e *lockTimeoutError) Unwrap() error { return fsx.ErrLockTimeout }
 
 // --- machine-readable errors (§5.8, F-M9) ------------------------------
 

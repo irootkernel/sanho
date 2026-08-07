@@ -95,13 +95,23 @@ type fakeApp struct {
 
 	markerPaths []string
 
+	// changedPaths are the docs paths DocsPathsChangedBetween reports as
+	// different; diffErr makes the comparison itself fail.
+	changedPaths map[string]bool
+	diffErr      error
+
 	commitOID string
 
 	mergeCalls     []mergeCall
 	checkedOut     []string
 	restores       int
 	commitMessages []string
+	diffCalls      []diffCall
 }
+
+// diffCall records one DocsPathsChangedBetween invocation, so a test can
+// assert which trees were compared over which paths.
+type diffCall struct{ from, to, paths string }
 
 func (a *fakeApp) DocsClean(ctx context.Context) (bool, error) {
 	a.record("docs-clean")
@@ -156,6 +166,28 @@ func (a *fakeApp) CommitDocs(ctx context.Context, message string) (string, error
 func (a *fakeApp) ScanWorktreeDocsForMarkers(ctx context.Context) ([]string, error) {
 	a.record("scan")
 	return a.markerPaths, nil
+}
+
+// DocsPathsChangedBetween stands in for `git diff-tree` limited to the
+// note's conflicted paths. changedPaths is the set of paths this fake
+// considers different between ANY two distinct trees, which is all the
+// orchestration under test needs: whether the answer is yes or no, not
+// how git arrives at it.
+func (a *fakeApp) DocsPathsChangedBetween(ctx context.Context, fromTree, toTree string, paths []string) (bool, error) {
+	a.record("diff-paths")
+	a.diffCalls = append(a.diffCalls, diffCall{from: fromTree, to: toTree, paths: strings.Join(paths, ",")})
+	if a.diffErr != nil {
+		return false, a.diffErr
+	}
+	if fromTree == "" || toTree == "" || fromTree == toTree {
+		return false, nil
+	}
+	for _, path := range paths {
+		if a.changedPaths[path] {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 type fakeState struct {

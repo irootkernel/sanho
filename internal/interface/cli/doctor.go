@@ -353,7 +353,18 @@ func repairBase(ctx context.Context, ws *workspace, out *report) {
 //     different answer, which means the file and the history disagree
 //     about which canonical state these docs came from: `[warn]`, and
 //     `--fix` writes the derived value.
+//
+// A fourth state is not read at all: an unfinished sync owns the base
+// and holds it at the pre-sync value until the resolution is confirmed,
+// so between a resolution commit and the hook that settles it the file
+// and the newest trailer disagree by design. The sync check reports that
+// state on its own terms, and `--fix` here would only race ahead to the
+// value the note is about to write anyway.
 func checkBaseDerivation(ctx context.Context, ws *workspace, base provenance.Base, fix bool, out *report) {
+	if _, syncing, noteErr := ws.statePort().LoadSyncNote(); syncing || noteErr != nil {
+		return
+	}
+
 	derived, found, err := deriveBase(ctx, ws.root)
 	if err != nil || !found || derived.Commit == base.Commit {
 		// No provenance in history is checkBase's business under --fix,

@@ -138,6 +138,16 @@ func TestRunIgnoresNonBranchAndDeletedRefs(t *testing.T) {
 
 // --- Step 2: sync-in-progress gate -----------------------------------
 
+// TestRunRejectsWhileASyncIsInProgress is publication's own defense, and
+// it answers on the note's EXISTENCE — never on what the note says, or
+// on where the base happens to point.
+//
+// That independence is what the deferred base advance leans on: the base
+// no longer moves to the merge target while a resolution is owed, so a
+// push during the window is now decided against real history rather than
+// mistaken for a fast-forward. This gate is the layer above that, and it
+// is asserted here rather than assumed, together with the fact that it
+// writes nothing at all on the way out.
 func TestRunRejectsWhileASyncIsInProgress(t *testing.T) {
 	s := newScenario(t)
 	s.state.inSync = true
@@ -151,6 +161,12 @@ func TestRunRejectsWhileASyncIsInProgress(t *testing.T) {
 	}
 	if len(s.app.scanned) != 0 {
 		t.Errorf("the sync gate must precede the marker scan; scanned %v", s.app.scanned)
+	}
+	if s.canonical.pushes != 0 || len(s.canonical.published) != 0 {
+		t.Errorf("a refused push published: pushes=%d published=%v", s.canonical.pushes, s.canonical.published)
+	}
+	if len(s.state.saved) != 0 {
+		t.Errorf("a refused push moved the base: %v", s.state.saved)
 	}
 }
 
