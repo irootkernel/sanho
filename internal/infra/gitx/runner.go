@@ -65,6 +65,37 @@ func WithNetwork() Option { return func(r *Runner) { r.network = true } }
 // commit-tree). GIT_TERMINAL_PROMPT=0 is always set regardless.
 func WithEnv(kv ...string) Option { return func(r *Runner) { r.extraEnv = append(r.extraEnv, kv...) } }
 
+// WithInheritedIndexFile passes this process's own GIT_INDEX_FILE
+// through to the child EXPLICITLY, and is a no-op when the variable is
+// unset.
+//
+// It exists so that the one repository-scoped variable sanho genuinely
+// depends on is named at a call site instead of arriving by luck.
+// Git runs the hooks of a PARTIAL commit (`git commit -- docs`) with
+// GIT_INDEX_FILE pointing at a temporary index holding exactly what that
+// commit will contain, and the commit path reads it: the §5.1 provenance
+// stamp hashes the staged docs tree, and the §5.6 marker gate scans the
+// staged diff. Both must see the in-flight index rather than
+// `$GIT_DIR/index`, which for a pathspec commit describes something
+// else.
+//
+// Attaching it here is what let scrubbedEnvVars grow to cover
+// GIT_INDEX_FILE like every other repository-identity variable: the
+// inheritance is now a decision made by the workspace that needs it,
+// and every OTHER git invocation sanho makes — every command against the
+// private canonical clone above all — is free of it.
+func WithInheritedIndexFile() Option {
+	return func(r *Runner) {
+		if value, ok := os.LookupEnv(indexFileEnvVar); ok {
+			r.extraEnv = append(r.extraEnv, indexFileEnvVar+"="+value)
+		}
+	}
+}
+
+// indexFileEnvVar is the variable WithInheritedIndexFile forwards and
+// scrubbedEnvVars removes from the inherited environment.
+const indexFileEnvVar = "GIT_INDEX_FILE"
+
 // New returns a Runner rooted at dir ("" = process cwd).
 func New(dir string, opts ...Option) *Runner {
 	r := &Runner{dir: dir, timeout: DefaultTimeout}
@@ -125,15 +156,99 @@ func (e *ExitError) Error() string {
 	return fmt.Sprintf("git %v: exit %d: %s", e.Args, e.Result.ExitCode, e.Result.Stderr)
 }
 
+// scrubbedEnvVars are the git environment variables that pin a command
+// to a specific repository, worktree, or object database. Every Runner
+// names its target repository explicitly — its dir, handed to
+// exec.Cmd.Dir — so none of these may be inherited from the parent
+// process: an inherited value silently redirects a command aimed at
+// r.dir onto whatever repository the value actually names, and r.dir
+// itself has no say in the matter (confirmed on git 2.50.1: even an
+// explicit `-C <dir>` loses to an inherited GIT_DIR).
+//
+// The concrete danger this closes: git exports an absolute GIT_DIR into
+// the environment of every hook it runs inside a LINKED WORKTREE
+// (verified on git 2.50.1: a hook in the main worktree exports none of
+// these; one in a linked worktree exports
+// GIT_DIR=<repo>/.git/worktrees/<name>). Before this scrub, env()
+// inherited os.Environ() unfiltered, so a git command sanho issued from
+// inside such a hook — even one explicitly rooted via dir at a wholly
+// different repository, such as the private canonical clone — silently
+// ran against the linked worktree's repository instead. The observed
+// consequence: `canonical.reconcileExisting`'s
+// `git remote set-url origin <canonical-url>`, meant for the canonical
+// clone, ran against the APPLICATION repository instead — permanently
+// rewriting the user's own `origin` to the docs clone's URL and
+// replacing their `refs/remotes/origin/*` with canonical's — and the
+// pre-commit freshness check silently reported distances read from the
+// application repository's own history.
+//
+// GIT_INDEX_FILE is on this list too, and its history is worth stating
+// because it was the one exception for a while.
+//
+// It is exactly as repository-scoped as GIT_DIR, and git exports it into
+// the same linked-worktree hook environments. It also has a live,
+// load-bearing, same-repository use: `git commit -- docs` — sanho's own
+// primary write path — is a PARTIAL commit, so git builds a temporary
+// index for it and points the hooks' GIT_INDEX_FILE at that temporary
+// index, specifically so they see what the commit will actually contain.
+// The §5.1 provenance stamp and the §5.6 staged-marker gate both read it.
+// Scrubbing it blindly was tried and measured: every `sanho sync` commit
+// silently stopped carrying its `docs-base` trailer, because the
+// now-index-file-less write-tree inside the hook read a different index
+// or errored, and commit-msg's stamping is fail-open by design (§5.1:
+// "a commit is worth more than a stamp") — no error, no warning, just a
+// commit with no base to re-derive from later.
+//
+// The resolution is not an exception but an EXPLICIT pass-through: the
+// application-repository runner is built with WithInheritedIndexFile,
+// which names the value at the one call site that needs it, and every
+// other invocation — every command against the private canonical clone
+// above all — runs with it scrubbed like everything else. The dependency
+// is the same; what changed is that it is now written down and typed
+// rather than arriving because nobody removed it.
+var scrubbedEnvVars = map[string]bool{
+	"GIT_DIR":                          true,
+	"GIT_WORK_TREE":                    true,
+	indexFileEnvVar:                    true,
+	"GIT_COMMON_DIR":                   true,
+	"GIT_OBJECT_DIRECTORY":             true,
+	"GIT_ALTERNATE_OBJECT_DIRECTORIES": true,
+	"GIT_PREFIX":                       true,
+	"GIT_CEILING_DIRECTORIES":          true,
+	"GIT_QUARANTINE_PATH":              true,
+	"GIT_NAMESPACE":                    true,
+	"GIT_GRAFT_FILE":                   true,
+}
+
+// scrubRepoScopedEnv returns environ with every repository-scoping
+// variable named in scrubbedEnvVars removed, preserving the relative
+// order of what remains.
+func scrubRepoScopedEnv(environ []string) []string {
+	scrubbed := make([]string, 0, len(environ))
+	for _, kv := range environ {
+		key, _, _ := strings.Cut(kv, "=")
+		if scrubbedEnvVars[key] {
+			continue
+		}
+		scrubbed = append(scrubbed, kv)
+	}
+	return scrubbed
+}
+
 // env builds the child process environment: the inherited process
-// environment, then the non-interactive policy variables, then any
-// WithEnv extras, in that order. exec.Cmd deduplicates a command's Env
-// in favor of the last occurrence of each key, so this ordering lets
-// the policy variables win over any conflicting inherited value (e.g. a
-// developer's own GIT_SSH_COMMAND), regardless of whether a duplicate
-// key happens to appear earlier in os.Environ().
+// environment with every variable in scrubbedEnvVars stripped, then the
+// non-interactive policy variables, then any WithEnv extras, in that
+// order. exec.Cmd deduplicates a command's Env in favor
+// of the last occurrence of each key, so this ordering lets the policy
+// variables win over any conflicting inherited value (e.g. a developer's
+// own GIT_SSH_COMMAND) and lets a caller's own WithEnv setting win over
+// both — including a WithEnv-supplied GIT_INDEX_FILE overriding an
+// inherited one, which is what keeps the scratch-index callers
+// (appgit.WorktreeDocsTree and its test-side equivalents) correct —
+// regardless of whether a duplicate key happens to appear earlier in
+// os.Environ().
 func (r *Runner) env() []string {
-	env := append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	env := append(scrubRepoScopedEnv(os.Environ()), "GIT_TERMINAL_PROMPT=0")
 	if r.network {
 		connectSecs := int(NetworkConnectTimeout / time.Second)
 		env = append(env, fmt.Sprintf("GIT_SSH_COMMAND=ssh -o BatchMode=yes -o ConnectTimeout=%d", connectSecs))

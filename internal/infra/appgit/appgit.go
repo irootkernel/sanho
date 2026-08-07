@@ -28,6 +28,7 @@ import (
 	"sync"
 
 	"github.com/irootkernel/sanho/internal/domain/markers"
+	"github.com/irootkernel/sanho/internal/domain/provenance"
 	"github.com/irootkernel/sanho/internal/infra/gitx"
 )
 
@@ -152,6 +153,116 @@ func (r *Repo) commitExists(ctx context.Context, commit string) (bool, error) {
 		return false, fmt.Errorf("appgit: resolve commit %s in %s: %w", commit, r.workDir, err)
 	}
 	return res.ExitCode == 0, nil
+}
+
+// IsAncestor reports whether a is b or an ancestor of it, in THIS
+// repository's history. It is entirely local — no clone, no network —
+// which is what lets `sanho sync --continue` ask "did this sync begin on
+// the history I am standing on?" from an offline machine.
+//
+// A commit either side does not resolve is reported as "not an
+// ancestor" rather than as an error: the callers all treat an
+// unanswerable ancestry question as a failed proof, and an OID that is
+// not in this repository is exactly that.
+func (r *Repo) IsAncestor(ctx context.Context, a, b string) (bool, error) {
+	if a == "" || b == "" {
+		return false, nil
+	}
+	res, err := r.git.RunExit(ctx, "merge-base", "--is-ancestor", a, b)
+	if err != nil {
+		return false, fmt.Errorf("appgit: ancestry check %s..%s in %s: %w", a, b, r.workDir, err)
+	}
+	switch res.ExitCode {
+	case 0:
+		return true, nil
+	case 1:
+		return false, nil
+	default:
+		// git exits 128 for an OID it cannot resolve, which is a missing
+		// object rather than a broken repository.
+		return false, nil
+	}
+}
+
+// CommitTrailers walks tip's history newest-first, bounded by maxCount,
+// and returns each commit's parsed provenance trailers (§5.10).
+//
+// It is the one implementation of the history scan: base re-derivation
+// asks it about HEAD, and the publication gate asks it about a pushed
+// tip, so the two can never disagree about what a branch's provenance
+// says. An unborn or unresolvable tip yields no commits and no error —
+// there is simply nothing stamped to read.
+func (r *Repo) CommitTrailers(ctx context.Context, tip string, maxCount int) ([]provenance.CommitTrailers, error) {
+	res, err := r.git.RunExit(ctx, "log",
+		"--max-count="+strconv.Itoa(maxCount),
+		"--format="+commitRecordFormat, tip)
+	if err != nil {
+		return nil, fmt.Errorf("appgit: read commit trailers of %s in %s: %w", tip, r.workDir, err)
+	}
+	if res.ExitCode != 0 {
+		return nil, nil
+	}
+	return parseCommitTrailers(string(res.Stdout)), nil
+}
+
+// commitRecordFormat emits, per commit, the OID, a newline, the raw
+// message, and a NUL terminator. commitRecordSeparator is that
+// terminator as the parser sees it.
+//
+// The format asks git for the NUL with its own `%x00` escape rather than
+// embedding a literal one, because a literal NUL in an argv string is
+// the C string terminator: exec would silently truncate the format there
+// and every commit would run together with no separator at all.
+const (
+	commitRecordFormat    = "%H%n%B%x00"
+	commitRecordSeparator = "\x00"
+)
+
+// trailerKeys are the keys the scan accepts, in priority order.
+var trailerKeys = []string{
+	provenance.TrailerBase,
+	provenance.TrailerBaseTree,
+	provenance.LegacyTrailerVersion,
+}
+
+// parseCommitTrailers turns the log output into one CommitTrailers per
+// commit, newest first.
+//
+// The parse is deliberately simple: a trailer is a line that starts with
+// one of the three keys followed by a colon. Git's own trailer rules are
+// richer (block detection, folding, separators), but a stricter parser
+// would reject trailers that a looser one accepts, and these values are
+// a recovery source rather than a gate input (§5.1) — reading one that
+// git would not call a trailer is harmless, while missing one that git
+// would costs a recoverable base.
+func parseCommitTrailers(out string) []provenance.CommitTrailers {
+	var commits []provenance.CommitTrailers
+
+	for _, record := range strings.Split(out, commitRecordSeparator) {
+		record = strings.TrimLeft(record, "\n")
+		if strings.TrimSpace(record) == "" {
+			continue
+		}
+		header, body, _ := strings.Cut(record, "\n")
+
+		commit := provenance.CommitTrailers{
+			Commit: strings.TrimSpace(header),
+			Values: map[string][]string{},
+		}
+		for _, line := range strings.Split(body, "\n") {
+			line = strings.TrimRight(line, "\r")
+			for _, key := range trailerKeys {
+				value, ok := strings.CutPrefix(line, key+":")
+				if !ok {
+					continue
+				}
+				commit.Values[key] = append(commit.Values[key], strings.TrimSpace(value))
+				break
+			}
+		}
+		commits = append(commits, commit)
+	}
+	return commits
 }
 
 // IndexDocsTree returns the docs tree OID of the CURRENT index — the
@@ -322,22 +433,6 @@ func parseLsFilesStageEntry(record string) (lsFilesStageEntry, error) {
 	return lsFilesStageEntry{mode: fields[0], object: fields[1], stage: stage, path: path}, nil
 }
 
-// ScanDocsBlobsForMarkers scans a commit's docs blobs (§5.4 detector);
-// returns conflicted paths. Unreadable blobs error.
-//
-// The gate is fail-closed in both directions the v0.1 detector got wrong
-// (audit H2): oversized text is an error naming the file rather than a
-// silent pass, and any read failure propagates instead of being
-// swallowed. Symlink and gitlink entries are skipped — their blob
-// content is a path, not text that can carry markers.
-func (r *Repo) ScanDocsBlobsForMarkers(ctx context.Context, commit string) ([]string, error) {
-	entries, err := r.allDocsBlobs(ctx, commit)
-	if err != nil {
-		return nil, err
-	}
-	return r.scanBlobs(ctx, entries, commit)
-}
-
 // ScanDocsBlobsAgainst is the push-gate scan of §5.3 step 3, scoped to
 // what publication would actually introduce *into canonical*.
 //
@@ -374,7 +469,7 @@ func (r *Repo) ScanDocsBlobsAgainst(ctx context.Context, publishedDocsTree, comm
 // docsBlobsToScan lists the blobs one push-gate scan must read.
 func (r *Repo) docsBlobsToScan(ctx context.Context, publishedDocsTree, commit string) ([]scanTarget, error) {
 	if publishedDocsTree != "" {
-		usable, err := r.treeExists(ctx, publishedDocsTree)
+		usable, err := r.TreeExists(ctx, publishedDocsTree)
 		if err != nil {
 			return nil, err
 		}
@@ -420,12 +515,12 @@ func (r *Repo) docsBlobsAddedTo(ctx context.Context, publishedDocsTree, commit s
 	return targets, nil
 }
 
-// treeExists reports whether a tree object is present in this
+// TreeExists reports whether a tree object is present in this
 // repository. Canonical's head tree usually is — git objects are
 // content-addressed, so a workspace holding the same docs holds the same
 // tree — but a workspace that has not synced a newer canonical does not,
 // and the gate must notice rather than fail.
-func (r *Repo) treeExists(ctx context.Context, tree string) (bool, error) {
+func (r *Repo) TreeExists(ctx context.Context, tree string) (bool, error) {
 	res, err := r.git.RunExit(ctx, "cat-file", "-e", tree+"^{tree}")
 	if err != nil {
 		return false, fmt.Errorf("appgit: resolve tree %s in %s: %w", tree, r.workDir, err)
@@ -541,8 +636,8 @@ func (r *Repo) batchSizes(ctx context.Context, targets []scanTarget) (map[string
 	}
 	for _, target := range targets {
 		if _, ok := sizes[target.object]; !ok {
-			return nil, fmt.Errorf("appgit: object %s for %s is missing from %s",
-				target.object, target.path, r.workDir)
+			return nil, fmt.Errorf("appgit: docs object for %s (%s) is missing from %s",
+				target.path, target.object, r.workDir)
 		}
 	}
 	return sizes, nil
@@ -563,7 +658,30 @@ func (r *Repo) batchContents(ctx context.Context, targets []scanTarget) (map[str
 	if err != nil {
 		return nil, fmt.Errorf("appgit: read docs objects in %s: %w", r.workDir, err)
 	}
-	return parseCatFileBatch(res.Stdout, r.workDir)
+	return parseCatFileBatch(res.Stdout, r.workDir, pathsByObject(targets))
+}
+
+// pathsByObject maps each requested object back to a docs path, so a
+// failure names the file the user can act on rather than an OID they
+// cannot. One blob can sit at two paths; the first is enough to make the
+// message useful.
+func pathsByObject(targets []scanTarget) map[string]string {
+	paths := make(map[string]string, len(targets))
+	for _, target := range targets {
+		if _, seen := paths[target.object]; !seen {
+			paths[target.object] = target.path
+		}
+	}
+	return paths
+}
+
+// describeObject names an object the way a user can act on: its docs
+// path when one is known, and the OID otherwise.
+func describeObject(object string, paths map[string]string) string {
+	if path, ok := paths[object]; ok {
+		return path + " (" + object + ")"
+	}
+	return object
 }
 
 // sniffBinary reads only the leading bytes of one object, which is all
@@ -596,7 +714,7 @@ func objectRequestStream(targets []scanTarget) io.Reader {
 }
 
 // parseCatFileBatch splits a `git cat-file --batch` stream into objects.
-func parseCatFileBatch(stream []byte, workDir string) (map[string][]byte, error) {
+func parseCatFileBatch(stream []byte, workDir string, paths map[string]string) (map[string][]byte, error) {
 	contents := make(map[string][]byte)
 
 	for offset := 0; offset < len(stream); {
@@ -609,7 +727,8 @@ func parseCatFileBatch(stream []byte, workDir string) (map[string][]byte, error)
 
 		fields := strings.Fields(header)
 		if len(fields) == 2 && fields[1] == "missing" {
-			return nil, fmt.Errorf("appgit: object %s is missing from %s", fields[0], workDir)
+			return nil, fmt.Errorf("appgit: docs object %s is missing from %s",
+				describeObject(fields[0], paths), workDir)
 		}
 		if len(fields) != 3 {
 			return nil, fmt.Errorf("appgit: unreadable cat-file header %q in %s", header, workDir)
@@ -619,7 +738,8 @@ func parseCatFileBatch(stream []byte, workDir string) (map[string][]byte, error)
 			return nil, fmt.Errorf("appgit: unreadable cat-file size in %q in %s", header, workDir)
 		}
 		if offset+size > len(stream) {
-			return nil, fmt.Errorf("appgit: truncated cat-file content for %s in %s", fields[0], workDir)
+			return nil, fmt.Errorf("appgit: truncated cat-file content for %s in %s",
+				describeObject(fields[0], paths), workDir)
 		}
 		contents[fields[0]] = stream[offset : offset+size]
 		// The content is followed by a single LF the size does not count.

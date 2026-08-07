@@ -167,6 +167,26 @@ func (r *Repo) DocsPathsChangedBetween(ctx context.Context, fromTree, toTree str
 	return false, nil
 }
 
+// DocsTreeDifferences counts the paths that differ between two docs
+// trees, whatever they are.
+//
+// It answers a reporting question rather than a gate one: `sanho sync
+// --continue` completes a sync whose merge result the worktree may no
+// longer resemble, and the user is told how far it drifted rather than
+// left to assume the merge is what was adopted. Two identical trees, or
+// an unrecorded one, are "no difference" — the reading that keeps a
+// missing fact from being reported as a change.
+func (r *Repo) DocsTreeDifferences(ctx context.Context, fromTree, toTree string) (int, error) {
+	if fromTree == "" || toTree == "" || fromTree == toTree {
+		return 0, nil
+	}
+	res, err := r.git.Run(ctx, "diff-tree", "-r", "-z", "--name-only", fromTree, toTree)
+	if err != nil {
+		return 0, fmt.Errorf("appgit: diff docs trees %s..%s in %s: %w", fromTree, toTree, r.workDir, err)
+	}
+	return len(splitNULPaths(res.Stdout)), nil
+}
+
 // CheckoutDocsTree materializes tree — a *docs* tree, whose entries are
 // relative to the docs directory — into the worktree and the index,
 // touching no path outside the docs directory. Files the index holds

@@ -186,7 +186,7 @@ func TestScanDocsBlobsForMarkers(t *testing.T) {
 	head := commitAll(t, dir, "docs: with markers")
 
 	repo := newRepoHandle(t, dir)
-	got, err := repo.ScanDocsBlobsForMarkers(context.Background(), head)
+	got, err := repo.ScanDocsBlobsAgainst(context.Background(), "", head)
 	if err != nil {
 		t.Fatalf("ScanDocsBlobsForMarkers: %v", err)
 	}
@@ -200,7 +200,7 @@ func TestScanDocsBlobsForMarkersOnCleanDocs(t *testing.T) {
 	dir, head := newRepoWithDocs(t)
 	repo := newRepoHandle(t, dir)
 
-	got, err := repo.ScanDocsBlobsForMarkers(context.Background(), head)
+	got, err := repo.ScanDocsBlobsAgainst(context.Background(), "", head)
 	if err != nil {
 		t.Fatalf("ScanDocsBlobsForMarkers: %v", err)
 	}
@@ -220,7 +220,7 @@ func TestScanDocsBlobsForMarkersSkipsSymlinks(t *testing.T) {
 	head := commitAll(t, dir, "docs: with symlink")
 
 	repo := newRepoHandle(t, dir)
-	got, err := repo.ScanDocsBlobsForMarkers(context.Background(), head)
+	got, err := repo.ScanDocsBlobsAgainst(context.Background(), "", head)
 	if err != nil {
 		t.Fatalf("ScanDocsBlobsForMarkers: %v", err)
 	}
@@ -241,7 +241,7 @@ func TestScanDocsBlobsForMarkersFailsOnOversizedBlob(t *testing.T) {
 	head := commitAll(t, dir, "docs: huge")
 
 	repo := newRepoHandle(t, dir)
-	_, err := repo.ScanDocsBlobsForMarkers(context.Background(), head)
+	_, err := repo.ScanDocsBlobsAgainst(context.Background(), "", head)
 	if err == nil {
 		t.Fatal("an oversized docs blob passed the gate")
 	}
@@ -486,6 +486,68 @@ func TestWorktreeDocsTreeLeavesTheRealIndexAlone(t *testing.T) {
 	}
 	if after := gitLine(t, dir, "rev-parse", "--verify", ":src/staged.go"); after != beforeIndex {
 		t.Fatalf("staged blob changed from %s to %s", beforeIndex, after)
+	}
+}
+
+// TestWorktreeDocsTreeIgnoresAHostileInheritedIndexFile is the appgit
+// side of the C3 fix (sanho-v0.2.md §7 C3, gitx.Runner.env()).
+//
+// GIT_INDEX_FILE is scrubbed from the inherited environment like every
+// other repository-identity variable, and the one caller that needs it —
+// the application repository's runner, whose commit hooks read a partial
+// commit's temporary index — asks for it explicitly with
+// gitx.WithInheritedIndexFile. A Repo built the ordinary way therefore
+// carries the ambient value on purpose, which is what makes
+// WorktreeDocsTree's OWN explicit redirect load-bearing: the inherited
+// value can be genuinely present and pointing somewhere real when
+// WorktreeDocsTree runs, and its gitx.WithEnv setting is the only thing
+// standing between that and a scratch-index computation that reads — or
+// writes — the wrong file.
+//
+// The hostile value here is about as real as it gets: a second,
+// unrelated repository's own live index. WorktreeDocsTree must still
+// produce the worktree's true docs tree, and must never open that other
+// repository's index at all — not to read it, and, more importantly,
+// never to write into it.
+func TestWorktreeDocsTreeIgnoresAHostileInheritedIndexFile(t *testing.T) {
+	dir, _ := newRepoWithDocs(t)
+	writeFile(t, dir, "docs/a.md", []byte("alpha changed under a hostile GIT_INDEX_FILE\n"))
+
+	other, _ := newRepoWithDocs(t)
+	otherIndexPath := filepath.Join(other, ".git", "index")
+	otherIndexBefore, err := os.ReadFile(otherIndexPath)
+	if err != nil {
+		t.Fatalf("read the other repository's index: %v", err)
+	}
+	t.Setenv("GIT_INDEX_FILE", otherIndexPath)
+	// Built AFTER the hostile value is in the environment, and asking for
+	// it explicitly — the shape the workspace's own runner has, and the
+	// only shape in which the ambient value reaches git at all.
+	repo := appgit.New(dir, appgit.DefaultDocsDir, gitx.New(dir, gitx.WithInheritedIndexFile()))
+
+	got, err := repo.WorktreeDocsTree(context.Background())
+	if err != nil {
+		t.Fatalf("WorktreeDocsTree: %v", err)
+	}
+	want := buildDocsTree(t, dir, map[string]blobSpec{
+		"a.md":        regular("alpha changed under a hostile GIT_INDEX_FILE\n"),
+		"nested/b.md": regular("beta\n"),
+	})
+	if got != want {
+		listing := gitRun(t, dir, "ls-tree", "-r", got)
+		t.Fatalf("WorktreeDocsTree = %s, want %s (the worktree's own docs, not anything derived "+
+			"from the hostile index)\ngot tree:\n%s", got, want, listing)
+	}
+
+	// The hostile file itself was never opened for writing: a
+	// scratch-index bug that lost the ordering race would corrupt an
+	// entirely unrelated repository, not merely misread its own.
+	otherIndexAfter, err := os.ReadFile(otherIndexPath)
+	if err != nil {
+		t.Fatalf("read the other repository's index after: %v", err)
+	}
+	if string(otherIndexBefore) != string(otherIndexAfter) {
+		t.Fatal("the hostile repository's own index changed; WorktreeDocsTree wrote through the inherited GIT_INDEX_FILE")
 	}
 }
 

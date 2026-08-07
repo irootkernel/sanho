@@ -387,6 +387,189 @@ func TestEnvironmentPolicy(t *testing.T) {
 			t.Errorf("GITX_TEST_EXTRA = %q, want %q", got, "present")
 		}
 	})
+
+	// repoScopedVars is deliberately spelled out again here, independent
+	// of the package's own scrubbedEnvVars, so a future shrink of that
+	// list shows up as a failing assertion here rather than a silently
+	// smaller thing this test iterates over (sanho-v0.2.md §7 C3).
+	//
+	// GIT_INDEX_FILE is here too. It used to be the one exception,
+	// inherited silently because appgit's commit path needs a partial
+	// commit's temporary index; it is now scrubbed like the rest and
+	// passed through EXPLICITLY by WithInheritedIndexFile at the one call
+	// site that needs it (see the two subtests below).
+	repoScopedVars := []string{
+		"GIT_DIR",
+		"GIT_WORK_TREE",
+		"GIT_INDEX_FILE",
+		"GIT_COMMON_DIR",
+		"GIT_OBJECT_DIRECTORY",
+		"GIT_ALTERNATE_OBJECT_DIRECTORIES",
+		"GIT_PREFIX",
+		"GIT_CEILING_DIRECTORIES",
+		"GIT_QUARANTINE_PATH",
+		"GIT_NAMESPACE",
+		"GIT_GRAFT_FILE",
+	}
+
+	t.Run("repository-scoping variables inherited from the environment are stripped", func(t *testing.T) {
+		const hostile = "/hostile/value/from/some/other/repository"
+		for _, key := range repoScopedVars {
+			t.Setenv(key, hostile)
+		}
+		r := New(dir)
+		res, err := r.Run(ctx, "-c", dumpAlias, "dumpenv")
+		if err != nil {
+			t.Fatalf("Run: unexpected error: %v", err)
+		}
+		env := parseEnvDump(res.Stdout)
+		for _, key := range repoScopedVars {
+			got, present := env[key]
+			switch {
+			case key == "GIT_PREFIX":
+				// GIT_PREFIX is special: git itself re-sets it (to "",
+				// i.e. "no subdirectory prefix") for any external
+				// command it spawns — the `!env` alias here included —
+				// regardless of what env the parent `git` process
+				// received. So it can never come back fully absent
+				// through this dump technique; what matters is that the
+				// INHERITED hostile value did not survive.
+				if got == hostile {
+					t.Errorf("GIT_PREFIX carried the inherited hostile value %q through to the child", got)
+				}
+			case present:
+				t.Errorf("%s unexpectedly present in the child environment: %q", key, got)
+			}
+		}
+	})
+
+	t.Run("WithInheritedIndexFile passes GIT_INDEX_FILE through explicitly", func(t *testing.T) {
+		// The application-repository runner depends on exactly this: git
+		// points GIT_INDEX_FILE at a partial commit's temporary index for
+		// the hooks of that commit (CommitDocs always commits `-- docs`,
+		// i.e. always partially), and both the §5.1 provenance stamp and
+		// the §5.6 staged-marker gate inside those hooks have to see that
+		// same temporary index rather than the persisted one. Scrubbing
+		// it with nothing in its place was tried and measured: every
+		// `sanho sync` commit silently stopped carrying its docs-base
+		// trailer. This is the regression guard for the replacement.
+		want := filepath.Join(t.TempDir(), "some-repositorys-real-index")
+		t.Setenv("GIT_INDEX_FILE", want)
+		r := New(dir, WithInheritedIndexFile())
+		res, err := r.Run(ctx, "-c", dumpAlias, "dumpenv")
+		if err != nil {
+			t.Fatalf("Run: unexpected error: %v", err)
+		}
+		env := parseEnvDump(res.Stdout)
+		if got := env["GIT_INDEX_FILE"]; got != want {
+			t.Errorf("GIT_INDEX_FILE = %q, want the explicitly forwarded value %q", got, want)
+		}
+	})
+
+	t.Run("a runner that does not ask for it does not get GIT_INDEX_FILE", func(t *testing.T) {
+		// The half that makes the pass-through a policy rather than a
+		// courtesy: every runner sanho builds against the private
+		// canonical clone, or against anything but the application
+		// repository, must run with no index redirection at all — even
+		// inside a hook whose environment carries one.
+		t.Setenv("GIT_INDEX_FILE", filepath.Join(t.TempDir(), "some-other-repositorys-index"))
+		r := New(dir)
+		res, err := r.Run(ctx, "-c", dumpAlias, "dumpenv")
+		if err != nil {
+			t.Fatalf("Run: unexpected error: %v", err)
+		}
+		if got, present := parseEnvDump(res.Stdout)["GIT_INDEX_FILE"]; present {
+			t.Errorf("GIT_INDEX_FILE = %q leaked into a runner that never asked for it", got)
+		}
+	})
+
+	t.Run("WithInheritedIndexFile is a no-op when nothing is set", func(t *testing.T) {
+		t.Setenv("GIT_INDEX_FILE", "")
+		if err := os.Unsetenv("GIT_INDEX_FILE"); err != nil {
+			t.Fatalf("unset GIT_INDEX_FILE: %v", err)
+		}
+		r := New(dir, WithInheritedIndexFile())
+		res, err := r.Run(ctx, "-c", dumpAlias, "dumpenv")
+		if err != nil {
+			t.Fatalf("Run: unexpected error: %v", err)
+		}
+		if got, present := parseEnvDump(res.Stdout)["GIT_INDEX_FILE"]; present {
+			t.Errorf("GIT_INDEX_FILE = %q appeared with nothing to forward", got)
+		}
+	})
+
+	t.Run("an explicit WithEnv GIT_INDEX_FILE overrides an inherited one", func(t *testing.T) {
+		// The scratch-index callers (appgit.WorktreeDocsTree and its
+		// test-side equivalents) set GIT_INDEX_FILE deliberately via
+		// WithEnv to a fresh scratch path; that explicit setting must
+		// still win over whatever this process happens to have
+		// inherited, hostile or not.
+		t.Setenv("GIT_INDEX_FILE", "/hostile/inherited/index")
+		want := filepath.Join(t.TempDir(), "scratch-index")
+		r := New(dir, WithInheritedIndexFile(), WithEnv("GIT_INDEX_FILE="+want))
+		res, err := r.Run(ctx, "-c", dumpAlias, "dumpenv")
+		if err != nil {
+			t.Fatalf("Run: unexpected error: %v", err)
+		}
+		env := parseEnvDump(res.Stdout)
+		if got := env["GIT_INDEX_FILE"]; got != want {
+			t.Errorf("GIT_INDEX_FILE = %q, want the explicit WithEnv value %q", got, want)
+		}
+	})
+}
+
+// TestEnvironmentPolicy_InheritedRepoScopeDoesNotRedirectTheRunner is the
+// functional half of the C3 fix: not just that the hostile variable is
+// absent from a dumped environment, but that a Runner rooted at one
+// repository keeps operating on THAT repository — never on whatever
+// repository an inherited, hook-exported value happens to name.
+//
+// The scenario is git 2.50.1's own behavior, verified in sanho-v0.2.md
+// §7 C3: git exports an absolute GIT_DIR (and friends) into the
+// environment of hooks it runs inside a linked worktree. repoB stands in
+// for that other repository — e.g. the application repository whose
+// linked worktree exported the value — and repoA is this Runner's own,
+// explicitly configured target, e.g. the private canonical clone.
+func TestEnvironmentPolicy_InheritedRepoScopeDoesNotRedirectTheRunner(t *testing.T) {
+	ctx := t.Context()
+	repoA := newFixtureRepo(t)
+	repoB := newFixtureRepo(t)
+
+	t.Run("GIT_DIR", func(t *testing.T) {
+		t.Setenv("GIT_DIR", filepath.Join(repoB, ".git"))
+		r := New(repoA)
+		got, err := r.Line(ctx, "rev-parse", "--absolute-git-dir")
+		if err != nil {
+			t.Fatalf("rev-parse --absolute-git-dir: unexpected error: %v", err)
+		}
+		if !sameDir(t, got, filepath.Join(repoA, ".git")) {
+			t.Errorf("--absolute-git-dir = %q, want repoA's .git (%s), not repoB's", got, repoA)
+		}
+	})
+
+	t.Run("GIT_WORK_TREE", func(t *testing.T) {
+		t.Setenv("GIT_WORK_TREE", repoB)
+		r := New(repoA)
+		got, err := r.Line(ctx, "rev-parse", "--show-toplevel")
+		if err != nil {
+			t.Fatalf("rev-parse --show-toplevel: unexpected error: %v", err)
+		}
+		if !sameDir(t, got, repoA) {
+			t.Errorf("--show-toplevel = %q, want repoA (%s), not repoB", got, repoA)
+		}
+	})
+
+	t.Run("GIT_COMMON_DIR", func(t *testing.T) {
+		t.Setenv("GIT_COMMON_DIR", filepath.Join(repoB, ".git"))
+		r := New(repoA)
+		got, err := r.Line(ctx, "rev-parse", "--path-format=absolute", "--git-common-dir")
+		if err != nil {
+			t.Fatalf("rev-parse --git-common-dir: unexpected error: %v", err)
+		}
+		if !sameDir(t, got, filepath.Join(repoA, ".git")) {
+			t.Errorf("--git-common-dir = %q, want repoA's .git (%s), not repoB's", got, repoA)
+		}
+	})
 }
 
 func TestRun_Timeout(t *testing.T) {

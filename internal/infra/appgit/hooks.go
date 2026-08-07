@@ -53,15 +53,24 @@ type Hook struct {
 
 // Hooks is the §5.10 inventory, in table order. The quoted argument
 // forms are git's own hook contracts, not decoration: `commit-msg`
-// receives the message file as $1, and `pre-push` and `post-rewrite`
-// receive their arguments as "$@". `post-commit` is deliberately absent
-// — commits do not move the base (§5.7 invariant), so v0.2 removed it.
+// receives the message file as $1, and `pre-push`, `post-checkout` and
+// `post-rewrite` receive their arguments as "$@". `post-commit` is
+// deliberately absent — commits do not move the base (§5.7 invariant),
+// so v0.2 removed it.
+//
+// `post-checkout` gained its "$@" in the fourth review wave. Git's third
+// argument is 1 for a branch checkout and 0 for a FILE checkout, and
+// `git checkout -- docs/api.md` moves no ref at all — so there is no
+// HEAD movement to re-derive from, and restoring one document is exactly
+// the state §5.10 step 1 stands down for. Without the arguments the hook
+// could not tell the two apart and re-ran the whole derivation for a
+// command that changed no history.
 func Hooks() []Hook {
 	return []Hook{
 		{Name: "pre-commit", Line: "sanho hook pre-commit"},
 		{Name: "commit-msg", Line: `sanho hook commit-msg "$1"`},
 		{Name: "pre-push", Line: `sanho hook pre-push "$@"`},
-		{Name: "post-checkout", Line: "sanho hook post-checkout"},
+		{Name: "post-checkout", Line: `sanho hook post-checkout "$@"`},
 		{Name: "post-merge", Line: "sanho hook post-merge"},
 		{Name: "post-rewrite", Line: `sanho hook post-rewrite "$@"`},
 	}
@@ -81,6 +90,11 @@ var legacyHooks = []Hook{
 	{Name: "commit-msg", Line: `sanho hook commit-msg "$1"`},
 	{Name: "pre-push", Line: `sanho hook pre-push "$@"`},
 	{Name: "pre-push", Line: "sanho hook pre-push"},
+	{Name: "post-checkout", Line: `sanho hook post-checkout "$@"`},
+	// The argument-less form every install before the fourth review wave
+	// wrote. Exact-line matching removes both independently, so a
+	// workspace that has not been repaired yet still comes out with
+	// exactly one line rather than two near-duplicates (audit L3).
 	{Name: "post-checkout", Line: "sanho hook post-checkout"},
 	{Name: "post-merge", Line: "sanho hook post-merge"},
 	{Name: "post-rewrite", Line: `sanho hook post-rewrite "$@"`},
