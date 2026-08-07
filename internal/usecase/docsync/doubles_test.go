@@ -199,6 +199,9 @@ type fakeState struct {
 	// noteErr is returned alongside the note, for the corrupt-file case
 	// the StatePort contract reports as exists=true plus an error.
 	noteErr error
+	// saveBaseErr makes the base write fail, which is how the ordering
+	// tests simulate a crash between the two writes of a completion.
+	saveBaseErr error
 
 	savedBases  []provenance.Base
 	savedNotes  []SyncNote
@@ -211,6 +214,9 @@ func (s *fakeState) LoadBase() (provenance.Base, bool, error) {
 
 func (s *fakeState) SaveBase(base provenance.Base) error {
 	s.record("save-base")
+	if s.saveBaseErr != nil {
+		return s.saveBaseErr
+	}
 	s.savedBases = append(s.savedBases, base)
 	s.base, s.hasBase = base, true
 	return nil

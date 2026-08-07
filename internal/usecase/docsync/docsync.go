@@ -1,14 +1,29 @@
 // Package docsync orchestrates the consume/reconcile flows of sanho
-// v0.2 (sanho-v0.2.md §5.5): `sanho sync`, `sanho sync --abort`,
-// `sanho sync --rebase-onto`, and `sanho pull`. Mechanics live behind
-// ports implemented by infra (canonical, wsstate, app-repo git);
-// decisions live in domain.
+// v0.2 (sanho-v0.2.md §5.5): `sanho sync`, `sanho sync --continue`,
+// `sanho sync --abort`, `sanho sync --rebase-onto`, and `sanho pull`.
+// Mechanics live behind ports implemented by infra (canonical, wsstate,
+// app-repo git); decisions live in domain.
+//
+// One invariant governs every base write in this package, and it is the
+// reason the flow looks the way it does:
+//
+//	A recorded base may never be ahead of the docs the worktree
+//	carries; where the two cannot both be established, the older
+//	value wins.
+//
+// A base that is too old costs a merge — publication reconciles against
+// real history and, at worst, reports a conflict. A base that is too new
+// costs upstream's work: the next push is evaluated as a fast-forward
+// and republishes whatever the worktree happens to hold. The two
+// failures are not comparable, so every decision here is resolved
+// toward the older value.
 package docsync
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/irootkernel/sanho/internal/domain/provenance"
 	pubdom "github.com/irootkernel/sanho/internal/domain/publish"
@@ -41,9 +56,9 @@ type AppRepoPort interface {
 	// docs paths relative to HEAD.
 	DocsClean(ctx context.Context) (bool, error)
 	// HeadCommit returns HEAD's commit OID, or "" for an unborn HEAD.
-	// Sync records it when it materializes conflicts, so that "has this
-	// been resolved?" can be answered by asking whether a commit
-	// happened rather than only by looking at the worktree.
+	// Sync records it when it materializes conflicts, so that the
+	// reporting can tell "a commit happened here" from "the worktree
+	// merely looks tidy".
 	HeadCommit(ctx context.Context) (string, error)
 	// HeadDocsTree returns HEAD's docs tree OID (the empty tree for an
 	// unborn HEAD or an absent docs dir).
@@ -62,10 +77,10 @@ type AppRepoPort interface {
 	// result tree, conflict list, and cleanliness.
 	MergeDocs(ctx context.Context, baseTree, oursTree, theirsTree string) (tree string, conflicts []string, clean bool, err error)
 	// DocsPathsChangedBetween reports whether any of paths (docs paths as
-	// the merge reported them) differs between two docs trees. It is the
-	// whole of "has this sync been resolved?": the note records what the
-	// merge conflicted on, and only a commit that moved one of those
-	// paths can have settled it.
+	// the merge reported them) differs between two docs trees. It is how
+	// the *reporting* tells "a commit went near this conflict" from "the
+	// conflict was put aside" — never how a sync is completed, which is
+	// an explicit act (see Continue).
 	DocsPathsChangedBetween(ctx context.Context, fromTree, toTree string, paths []string) (bool, error)
 	// CheckoutDocsTree materializes tree into the docs worktree and
 	// index (docs paths only).
@@ -104,29 +119,37 @@ type StatePort interface {
 // stood when the markers were written, and what the merge could not
 // settle.
 //
+// Its existence is the whole of "a sync is unfinished". Two commands
+// delete it — `sanho sync --continue` and `sanho sync --abort` — and
+// nothing else, including every hook, may write or clear it.
+//
 // It is also, for as long as it exists, the *only* record of the merge
 // target: the base file is deliberately left where the sync found it
-// until a resolution is confirmed (see Run's conflict branch), so the
+// until the user completes the sync (see Run's conflict branch), so the
 // note carries the value the base will eventually take.
 type SyncNote struct {
 	// PrevBase is the base the sync found, restored by abort.
 	PrevBase provenance.Base
 	// Target is the canonical state the resolution derives from, and the
-	// base the workspace adopts once the resolution is confirmed.
+	// base the workspace adopts when `--continue` completes the sync.
 	Target provenance.Base
 	// EntryHead and EntryDocsTree pin the app repo at materialize time.
 	// A resolution is a commit, and a commit moves both; a stash, a
-	// revert, or `git checkout HEAD -- docs` moves neither, which is
-	// exactly the difference CompleteIfResolved has to see.
+	// revert, or `git checkout HEAD -- docs` moves neither.
+	//
+	// They describe the window rather than decide it. Nothing completes a
+	// sync but `--continue`; these two fields let the *reporting* say
+	// which unfinished state a workspace is in, which is a different job
+	// and one that may be answered wrongly without costing anything.
 	EntryHead     string
 	EntryDocsTree string
 	// Conflicts are the docs paths the merge left conflicted,
-	// repository-relative. A resolution has to have changed one of them
-	// — "the docs tree moved" is passed by any docs commit at all.
+	// repository-relative.
 	Conflicts []string
 	// PreDatesEntryRecord marks a note written before the entry fields
-	// existed. It cannot prove a resolution happened, so it is read as
-	// unresolved.
+	// existed. It cannot say whether a commit settled anything, so the
+	// state it describes is reported as "unknown" rather than as "not
+	// resolved" — and `--continue` completes it like any other note.
 	PreDatesEntryRecord bool
 }
 
@@ -164,9 +187,10 @@ type Result struct {
 	//
 	// On StatusConflicts it names the merge TARGET, which the base file
 	// has deliberately not adopted yet: the conflicted run records it in
-	// the sync note and the base moves only once the resolution is
-	// confirmed. Renderers of that status say "merged with upstream", not
-	// "the base is now X", so the distinction stays visible to a reader.
+	// the sync note and the base moves only when `sanho sync --continue`
+	// completes the sync. Renderers of that status say "merged with
+	// upstream", not "the base is now X", so the distinction stays
+	// visible to a reader.
 	NewBase provenance.Base
 	// Conflicts lists conflicted docs paths when StatusConflicts.
 	Conflicts []string
@@ -209,9 +233,18 @@ var (
 	ErrSyncInProgress   = errors.New("a conflicted sync is in progress")
 	ErrNoSyncInProgress = errors.New("no sync is in progress")
 	ErrDocsDirty        = errors.New("docs have uncommitted changes")
-	ErrUnknownBase      = errors.New("the recorded docs base is unknown to the canonical repository")
-	ErrUnknownTarget    = errors.New("the requested target is not a canonical commit")
-	ErrPullNeedsSync    = errors.New("local docs have changes a fast-forward cannot carry")
+	// ErrMarkersRemain and ErrResolutionUncommitted are `--continue`'s
+	// two refusals. They are separate sentinels rather than reuses of
+	// ErrDocsDirty because the CLI has to tell them apart from the same
+	// states met by `sanho sync` itself, which are answered by different
+	// guidance: there, dirty docs mean "commit or stash before
+	// reconciling"; here they mean "your resolution is not committed
+	// yet".
+	ErrMarkersRemain         = errors.New("the docs worktree still contains conflict markers")
+	ErrResolutionUncommitted = errors.New("the resolution has not been committed")
+	ErrUnknownBase           = errors.New("the recorded docs base is unknown to the canonical repository")
+	ErrUnknownTarget         = errors.New("the requested target is not a canonical commit")
+	ErrPullNeedsSync         = errors.New("local docs have changes a fast-forward cannot carry")
 	// ErrRebaseOntoHealthy refuses --rebase-onto when the recorded base
 	// is perfectly reachable and the target merely precedes it (F-M4).
 	ErrRebaseOntoHealthy = errors.New("--rebase-onto targets an ancestor of a healthy base")
@@ -226,24 +259,36 @@ var (
 	ErrSyncNoteCorrupt = errors.New("the record of the sync in progress is unreadable")
 )
 
-// Resolution classifies what CompleteIfResolved found, so that callers
-// can tell "nothing to do" from "still owed" from "owed, and the user
-// probably thinks it is finished".
+// Resolution classifies the state of an unfinished sync for *reporting*.
+//
+// None of these values completes anything. A sync ends when the user
+// runs `sanho sync --continue` or `sanho sync --abort`; what the classes
+// below decide is which sentence a hook prints and whether the push
+// boundary explains itself as "still resolving", "put aside", or
+// "resolved but not recorded". Reading a state wrongly costs a
+// misdirected sentence, never a base write.
 type Resolution int
 
 const (
-	// ResolutionNoSync: no note; nothing was owed.
+	// ResolutionNoSync: no note; nothing is owed.
 	ResolutionNoSync Resolution = iota
 	// ResolutionPending: markers remain, or the resolution is edited but
 	// not committed. The ordinary mid-resolution state.
 	ResolutionPending
-	// ResolutionNotCommitted: no markers and clean docs, but HEAD is
-	// exactly where the sync left it — the conflict was put aside
-	// (stashed, reverted, checked out) rather than resolved. The note is
-	// kept and the state gets its own guidance.
+	// ResolutionNotCommitted: no markers and clean docs, but nothing has
+	// been committed that touches a path the merge conflicted on — the
+	// conflict was put aside (stashed, reverted, checked out) rather than
+	// resolved.
 	ResolutionNotCommitted
-	// ResolutionCompleted: the note was cleared by this call.
-	ResolutionCompleted
+	// ResolutionResolved: a commit has settled at least one conflicted
+	// path. The work looks finished and the sync is not: `--continue`
+	// records it.
+	ResolutionResolved
+	// ResolutionUnknown: the note cannot answer the question — it was
+	// written by an older build (PreDatesEntryRecord) or records no
+	// conflicted paths. Reported as such rather than as "not resolved",
+	// which would state a reason that is not known to be true.
+	ResolutionUnknown
 )
 
 // String renders the resolution for diagnostics.
@@ -255,8 +300,10 @@ func (r Resolution) String() string {
 		return "pending"
 	case ResolutionNotCommitted:
 		return "not_committed"
-	case ResolutionCompleted:
-		return "completed"
+	case ResolutionResolved:
+		return "resolved"
+	case ResolutionUnknown:
+		return "unknown"
 	default:
 		return "resolution(" + fmt.Sprint(int(r)) + ")"
 	}
@@ -365,8 +412,7 @@ func (u *UseCase) Run(ctx context.Context, opts Options) (Result, error) {
 	// is still recorded, and the base keeps answering the question it is
 	// defined by (§5.7) — which canonical state the *worktree* docs
 	// derive from — which during the window is still the previous base.
-	// CompleteIfResolved adopts Target the moment a resolution is
-	// confirmed.
+	// `sanho sync --continue` adopts Target, and nothing else does.
 	if !mergeClean {
 		// HEAD is read *before* the markers land so the note describes
 		// the state the resolution has to move away from. Nothing here
@@ -427,6 +473,10 @@ func (u *UseCase) Run(ctx context.Context, opts Options) (Result, error) {
 	return Result{Status: StatusSynced, NewBase: newBase, CommitOID: commit}, nil
 }
 
+// ContinueResult reports one `sanho sync --continue`: the base the
+// workspace has adopted, which is the sync's merge target.
+type ContinueResult struct{ Base provenance.Base }
+
 // AbortResult reports one `sanho sync --abort`. It carries nothing:
 // abort restores the docs, puts the base back, and drops the note, and
 // there is no partial outcome left to describe.
@@ -435,8 +485,10 @@ func (u *UseCase) Run(ctx context.Context, opts Options) (Result, error) {
 // the previous base lived inside the note and a conflicted sync had
 // already moved the base file to the merge target — so an abort over a
 // damaged note left the base on the target with pre-merge docs beneath
-// it, and had to say so. The conflicted sync no longer moves the base,
-// so that abort has nothing to restore and nothing to confess.
+// it, and had to say so. A conflicted sync no longer moves the base, and
+// an abort that cannot read its note now clears the base rather than
+// leaving one it cannot vouch for, so there is no degraded outcome left
+// to report.
 type AbortResult struct{}
 
 // Abort executes §5.5 step 7. Valid whenever a sync note exists; by
@@ -450,18 +502,23 @@ type AbortResult struct{}
 // left a workspace with markers in docs/, a file nothing could parse,
 // and no command that could clear either.
 //
-// An unreadable note is now lossless as well as survivable. Nothing in
-// it has to be applied: the conflicted sync left the base where it found
-// it, so restoring the docs from HEAD and deleting the file puts the
-// workspace back exactly where it started. What the base write below is
-// still for is the *asymmetric* pair of cases the note can describe when
-// it can be read — see restoreBase.
+// An unreadable note now clears the base instead of leaving it alone.
+// Skipping the base rested on a premise — "a conflicted sync never moved
+// it" — that two states break: a crash between a base write and the note
+// clear, and a note left by a build that advanced the base at conflict
+// time. In both, the abort walked away from a base sitting on the merge
+// target with pre-merge documents beneath it, and the next push
+// fast-forwarded over upstream at exit 0. An abort that cannot read its
+// note cannot know which value is right, and the invariant says that
+// where the base cannot be established the older value wins: no base at
+// all is the oldest there is. Publication then refuses with `no_base`
+// and names `sanho sync`, which establishes one.
 //
-// The order is restore docs → restore base → clear the note, and it is
-// chosen so that a crash anywhere in the middle leaves a re-runnable
+// The order is restore docs → settle the base → clear the note, and it
+// is chosen so that a crash anywhere in the middle leaves a re-runnable
 // state: the note is the proof that an abort is still owed, so it is
 // deleted last, and every step before it is idempotent (a checkout of
-// HEAD's docs, and a write of a value read out of the note). Running
+// HEAD's docs, and a base write that only ever moves backwards). Running
 // `sanho sync --abort` again after an interruption simply redoes them.
 func (u *UseCase) Abort(ctx context.Context) (AbortResult, error) {
 	note, exists, err := u.State.LoadSyncNote()
@@ -476,10 +533,12 @@ func (u *UseCase) Abort(ctx context.Context) (AbortResult, error) {
 	if err := u.App.RestoreDocsFromHead(ctx); err != nil {
 		return AbortResult{}, fmt.Errorf("restore the docs worktree: %w", err)
 	}
-	if !unreadable {
-		if err := u.restoreBase(note); err != nil {
-			return AbortResult{}, err
+	if unreadable {
+		if err := u.State.ClearBase(); err != nil {
+			return AbortResult{}, fmt.Errorf("remove the base file: %w", err)
 		}
+	} else if err := u.restoreBase(note); err != nil {
+		return AbortResult{}, err
 	}
 	if err := u.State.ClearSyncNote(); err != nil {
 		return AbortResult{}, fmt.Errorf("clear the sync note: %w", err)
@@ -517,46 +576,101 @@ func (u *UseCase) restoreBase(note SyncNote) error {
 	return nil
 }
 
-// CompleteIfResolved clears the sync note once a conflicted sync has
-// actually been resolved, and reports what it found.
+// Continue completes a conflicted sync (§5.5 step 6b). It is the only
+// path by which a workspace adopts a merge target, and it exists because
+// the alternative does not work.
 //
-// Resolution is the standard git idiom — edit, `git add`, `git commit`
-// — so nothing in this package observes it happening. The hooks call
-// this afterwards (P3b) and it decides from the state alone.
+// Three review waves tried to *infer* completion from the state a
+// resolution leaves behind, and each narrowing left a smaller version of
+// the same door. The last one is the argument: after escaping the
+// markers with `git stash push -- docs`, the most natural next action is
+// to keep editing the same document — and that commit moves HEAD, moves
+// the docs tree, and changes a path the merge conflicted on. Every
+// question after-the-fact tree evidence can ask answers "resolved",
+// while the merge stands exactly where it was. A predicate narrow enough
+// to reject it would start rejecting genuine resolutions.
 //
-// Three conditions, and the third is the one that matters. No worktree
-// file still carries markers; the docs are clean relative to HEAD, so
-// the resolution was committed rather than merely edited; and **a commit
-// really settled the conflict** — HEAD has moved off where the sync left
-// it, and at least one of the paths the merge conflicted on changed with
-// it.
+// So completion is an act, in the shape `git rebase --continue` already
+// taught: the user says when the reconciliation is done, and sanho
+// records it. Three preconditions, each of which names what remains:
 //
-// Without that third condition the test is passed by doing nothing at
-// all. `git stash push -- docs` leaves no markers and clean docs, and so
-// does `git checkout HEAD -- docs`; the note was then cleared while the
-// conflict stood unresolved, and the next push republished the pre-merge
-// tree — upstream's work reverted, exit 0, no message. That state is
-// reported as ResolutionNotCommitted, the note is kept, and the caller
-// says so.
+//   - A sync note exists. Without one there is nothing to complete.
+//   - No docs file still carries conflict markers. Recording a base for
+//     content full of markers describes a resolution of nothing.
+//   - The docs are clean relative to HEAD, so what the base will
+//     describe is committed content rather than an edit in progress.
 //
-// Asking about the *conflicted paths* rather than about the docs tree as
-// a whole is what the second review wave added, and it is not a
-// refinement of degree. "The docs tree moved" is passed by any docs
-// commit whatsoever: stash the markers, commit an unrelated note, and
-// the sync was declared resolved. Only a change to a path the merge
-// could not settle can be the resolution of that merge.
+// It deliberately does NOT ask whether a commit settled the conflicted
+// paths. Taking "ours" wholesale, byte for byte, is a legitimate
+// resolution that leaves no trace at all — the dead end the previous
+// design had no exit from — and the user asserting it is exactly the
+// evidence that was missing.
 //
-// A resolution that keeps every conflicted path exactly as it was —
-// taking "ours" wholesale, byte for byte — therefore does not register,
-// and that is deliberate. It is indistinguishable from putting the
-// conflict aside, so it is read the conservative way and the user is
-// pointed at `sanho sync --abort` followed by `sanho sync`, which
-// re-lays the same conflicts with the resolution still to make.
+// No commit is created (P3), no ref moves, and nothing is fetched.
 //
-// Confirming the resolution is also what moves the base: the note holds
-// the merge target precisely because the base file does not adopt it
-// until this point.
-func (u *UseCase) CompleteIfResolved(ctx context.Context) (Resolution, error) {
+// The two writes are ordered note-first, and the order is the invariant
+// in miniature: a crash between them leaves the note gone and the base
+// at its older value, which publication reconciles as an ordinary
+// divergence. The reverse order fails toward a base ahead of the
+// worktree — a fast-forward over upstream's work.
+func (u *UseCase) Continue(ctx context.Context) (ContinueResult, error) {
+	note, exists, err := u.State.LoadSyncNote()
+	switch {
+	case errors.Is(err, ErrSyncNoteCorrupt):
+		return ContinueResult{}, err
+	case err != nil:
+		return ContinueResult{}, fmt.Errorf("read sync state: %w", err)
+	case !exists:
+		return ContinueResult{}, ErrNoSyncInProgress
+	}
+	if !note.Target.Valid() {
+		// A note that cannot say what to adopt is unusable for exactly
+		// the reason an unparseable one is, so it is reported the same
+		// way and routed to the abort, which needs nothing from it.
+		return ContinueResult{}, fmt.Errorf("%w: the sync note records no usable merge target", ErrSyncNoteCorrupt)
+	}
+
+	conflicted, err := u.App.ScanWorktreeDocsForMarkers(ctx)
+	if err != nil {
+		return ContinueResult{}, fmt.Errorf("scan docs for conflict markers: %w", err)
+	}
+	if len(conflicted) > 0 {
+		return ContinueResult{}, fmt.Errorf("%w: %s", ErrMarkersRemain, strings.Join(conflicted, ", "))
+	}
+	clean, err := u.App.DocsClean(ctx)
+	if err != nil {
+		return ContinueResult{}, fmt.Errorf("read docs status: %w", err)
+	}
+	if !clean {
+		return ContinueResult{}, ErrResolutionUncommitted
+	}
+
+	if err := u.State.ClearSyncNote(); err != nil {
+		return ContinueResult{}, fmt.Errorf("clear the sync note: %w", err)
+	}
+	if err := u.State.SaveBase(note.Target); err != nil {
+		return ContinueResult{}, fmt.Errorf("record new base: %w", err)
+	}
+	return ContinueResult{Base: note.Target}, nil
+}
+
+// ResolutionState reports where an unfinished sync stands. It is a
+// query: it writes nothing, and in particular it neither moves the base
+// nor clears the note.
+//
+// It used to do both, under the name CompleteIfResolved, and the hooks
+// called it — so the read paths of the tool mutated the one file the
+// sync window is defined by, on evidence that could not tell a
+// resolution from a discarded merge. Completion moved to `--continue`;
+// what is left here is the reporting that tells a user which unfinished
+// state they are in.
+//
+// The classes are ordered by what can be observed, not by severity:
+// markers in the worktree or uncommitted docs mean the resolution is
+// still being made; otherwise a note that can say whether a commit
+// touched a conflicted path says so, and one that cannot says that
+// instead of guessing.
+func (u *UseCase) ResolutionState(ctx context.Context) (Resolution, error) {
 	note, exists, err := u.State.LoadSyncNote()
 	if err != nil {
 		return ResolutionNoSync, fmt.Errorf("read sync state: %w", err)
@@ -581,64 +695,48 @@ func (u *UseCase) CompleteIfResolved(ctx context.Context) (Resolution, error) {
 		return ResolutionPending, nil
 	}
 
-	committed, err := u.resolutionWasCommitted(ctx, note)
-	if err != nil {
-		return ResolutionNoSync, err
-	}
-	if !committed {
-		return ResolutionNotCommitted, nil
-	}
-
-	// The base moves first and the note is dropped second, keeping the
-	// invariant the whole window rests on: the note is the evidence that
-	// a base advance is still owed, so it outlives every step that owes
-	// it. A crash between the two leaves a note whose conditions are
-	// still satisfied, and the next hook redoes both.
-	if err := u.State.SaveBase(note.Target); err != nil {
-		return ResolutionNoSync, fmt.Errorf("record new base: %w", err)
-	}
-	if err := u.State.ClearSyncNote(); err != nil {
-		return ResolutionNoSync, fmt.Errorf("clear the sync note: %w", err)
-	}
-	return ResolutionCompleted, nil
+	return u.classifyCommittedWork(ctx, note)
 }
 
-// resolutionWasCommitted reports whether a commit has settled the
-// conflict the sync recorded.
+// classifyCommittedWork separates "a commit settled one of the paths the
+// merge conflicted on" from "nothing committed touched them" — and from
+// "this note cannot say".
 //
-// Two facts have to hold, and the second is the discriminating one. HEAD
-// has moved off the commit the sync was materialized on — a stash, a
-// revert and a `git checkout HEAD -- docs` all leave it exactly where it
-// was — and one of the conflicted paths differs between the docs tree
-// that HEAD carried then and the one it carries now.
+// HEAD moving is necessary but not sufficient: a stash, a revert and a
+// `git checkout HEAD -- docs` all leave HEAD alone, while an unrelated
+// docs commit moves it without going near the conflict. The
+// discriminating question is whether one of the conflicted paths differs
+// between the docs tree HEAD carried when the markers landed and the one
+// it carries now.
 //
-// A note with no conflicted paths recorded cannot answer the second
-// question, so it answers "not resolved". That is the safe direction:
-// the workspace is never wedged by it (`sanho sync --abort` clears any
-// note at all, losing nothing), while the other direction is exactly the
-// failure this test exists to prevent. It is reachable only for a note
-// written by an older build, or for a merge git reported as conflicted
-// while naming no path.
-func (u *UseCase) resolutionWasCommitted(ctx context.Context, note SyncNote) (bool, error) {
-	if note.PreDatesEntryRecord {
-		return false, nil
+// A note with no entry record and a note with no conflicted paths are
+// both reported as ResolutionUnknown. Saying "no commit has changed the
+// files it conflicted on" about a note that never recorded those files
+// would be stating a reason nothing knows to be true — the false
+// explanation the third review found in the legacy-note path.
+func (u *UseCase) classifyCommittedWork(ctx context.Context, note SyncNote) (Resolution, error) {
+	if note.PreDatesEntryRecord || len(note.Conflicts) == 0 {
+		return ResolutionUnknown, nil
 	}
 	head, err := u.App.HeadCommit(ctx)
 	if err != nil {
-		return false, fmt.Errorf("read HEAD: %w", err)
+		return ResolutionNoSync, fmt.Errorf("read HEAD: %w", err)
 	}
 	if head == note.EntryHead {
-		return false, nil
+		return ResolutionNotCommitted, nil
 	}
 	headTree, err := u.App.HeadDocsTree(ctx)
 	if err != nil {
-		return false, fmt.Errorf("read the docs tree of HEAD: %w", err)
+		return ResolutionNoSync, fmt.Errorf("read the docs tree of HEAD: %w", err)
 	}
 	settled, err := u.App.DocsPathsChangedBetween(ctx, note.EntryDocsTree, headTree, note.Conflicts)
 	if err != nil {
-		return false, fmt.Errorf("compare the conflicted docs paths: %w", err)
+		return ResolutionNoSync, fmt.Errorf("compare the conflicted docs paths: %w", err)
 	}
-	return settled, nil
+	if settled {
+		return ResolutionResolved, nil
+	}
+	return ResolutionNotCommitted, nil
 }
 
 // refuseWhileSyncing is the shared step-1 guard of Run and Pull: an

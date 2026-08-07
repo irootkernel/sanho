@@ -48,6 +48,13 @@ func reportSyncError(cmd *cobra.Command, ws *workspace, err error) error {
 	case errors.Is(err, docsync.ErrSyncInProgress):
 		writeln(stderr, syncInProgressMessage(errDetail(err, docsync.ErrSyncInProgress)))
 
+	// `--continue`'s own two refusals. They come before the generic
+	// dirty-docs reading because they describe the same worktree from a
+	// different question: not "commit before reconciling" but "your
+	// resolution is not recorded yet".
+	case errors.Is(err, docsync.ErrMarkersRemain), errors.Is(err, docsync.ErrResolutionUncommitted):
+		writeln(stderr, syncContinueBlockedMessage(causeOf(err)))
+
 	case errors.Is(err, docsync.ErrPullNeedsSync):
 		writeln(stderr, pullNeedsSyncMessage(errDetail(err, docsync.ErrPullNeedsSync)))
 
@@ -193,8 +200,10 @@ func machineErrorCode(err error) string {
 	case errors.Is(err, docsync.ErrSyncInProgress), errors.Is(err, docsync.ErrNoSyncInProgress),
 		errors.Is(err, docsync.ErrSyncNoteCorrupt), errors.Is(err, publish.ErrSyncInProgress):
 		return codeSyncInProgress
-	case errors.Is(err, docsync.ErrDocsDirty):
+	case errors.Is(err, docsync.ErrDocsDirty), errors.Is(err, docsync.ErrResolutionUncommitted):
 		return codeDocsDirty
+	case errors.Is(err, docsync.ErrMarkersRemain):
+		return codeMarkersPresent
 	case errors.Is(err, docsync.ErrPullNeedsSync), errors.Is(err, publish.ErrSyncRequired),
 		errors.Is(err, publish.ErrEmptyPublish):
 		return codeSyncRequired

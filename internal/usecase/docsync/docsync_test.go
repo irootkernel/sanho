@@ -482,13 +482,62 @@ func TestAbort(t *testing.T) {
 	})
 }
 
-// TestCompleteIfResolved covers the whole classification, including the
-// two states the reviews found: docs clean with no resolution commit
-// anywhere, and a docs commit that moved HEAD and the docs tree without
-// touching what the merge actually conflicted on. Either one used to be
-// indistinguishable from a real resolution, so the note was cleared with
-// the conflict still standing.
-func TestCompleteIfResolved(t *testing.T) {
+// TestResolutionStateWritesNothing is the demotion, asserted as a
+// property rather than per case: whatever the state, asking about it
+// changes nothing.
+//
+// This is the audit lineage's "a read path must not mutate" applied to
+// the one file the sync window is defined by. The routine this replaced
+// cleared the note and moved the base whenever the state looked
+// resolved, from inside `pre-commit` and `pre-push` — so a stash
+// followed by more work on the conflicted file was enough to make two
+// hooks finish a sync nobody had finished.
+func TestResolutionStateWritesNothing(t *testing.T) {
+	arrangements := map[string]func(f *fixture){
+		"no sync": func(f *fixture) {},
+		"markers remain": func(f *fixture) {
+			f.state.note = liveNote()
+			f.app.markerPaths = []string{"docs/api.md"}
+		},
+		"resolved and committed": func(f *fixture) {
+			f.state.note = liveNote()
+			f.app.headCommit = commitOID(8)
+			f.app.headTree = treeOID(9)
+			f.app.changedPaths = map[string]bool{"docs/api.md": true}
+		},
+		"put aside": func(f *fixture) { f.state.note = liveNote() },
+		"a legacy note": func(f *fixture) {
+			f.state.note = &SyncNote{
+				Target:              provenance.Base{Commit: commitOID(1)},
+				PreDatesEntryRecord: true,
+			}
+		},
+	}
+
+	for name, arrange := range arrangements {
+		t.Run(name, func(t *testing.T) {
+			f := newFixture()
+			arrange(f)
+			before := f.state.base
+
+			if _, err := f.useCase().ResolutionState(context.Background()); err != nil {
+				t.Fatalf("ResolutionState: %v", err)
+			}
+			if len(f.state.savedBases) != 0 || len(f.state.savedNotes) != 0 || f.state.noteCleared != 0 {
+				t.Fatalf("a query wrote state: bases=%v notes=%v cleared=%d",
+					f.state.savedBases, f.state.savedNotes, f.state.noteCleared)
+			}
+			if f.state.base != before {
+				t.Fatalf("base = %+v, want it untouched at %+v", f.state.base, before)
+			}
+		})
+	}
+}
+
+// TestResolutionState covers the whole classification. Nothing here
+// completes a sync — that is `Continue`'s job — so each case is about
+// which sentence a hook is entitled to print.
+func TestResolutionState(t *testing.T) {
 	// committed is a commit having happened: HEAD has moved and carries a
 	// different docs tree. On its own that is any docs commit at all.
 	committed := func(f *fixture) {
@@ -534,7 +583,7 @@ func TestCompleteIfResolved(t *testing.T) {
 				f.state.note = liveNote()
 				settled(f)
 			},
-			want: ResolutionCompleted,
+			want: ResolutionResolved,
 		},
 		{
 			name: "clean, but HEAD never moved (stash, revert, checkout)",
@@ -561,17 +610,21 @@ func TestCompleteIfResolved(t *testing.T) {
 			want: ResolutionNotCommitted,
 		},
 		{
-			name: "a note that records no conflicted paths cannot prove anything",
+			// It cannot say "no commit changed the files it conflicted
+			// on" — it does not know which files those were — so it says
+			// so, rather than borrowing a reason that happens to route
+			// the user to the same two commands.
+			name: "a note that records no conflicted paths says it cannot tell",
 			arrange: func(f *fixture) {
 				note := liveNote()
 				note.Conflicts = nil
 				f.state.note = note
 				settled(f)
 			},
-			want: ResolutionNotCommitted,
+			want: ResolutionUnknown,
 		},
 		{
-			name: "a note written before entry_head existed cannot prove anything",
+			name: "a note written before entry_head existed says it cannot tell",
 			arrange: func(f *fixture) {
 				f.state.note = &SyncNote{
 					Target:              provenance.Base{Commit: commitOID(1)},
@@ -579,7 +632,7 @@ func TestCompleteIfResolved(t *testing.T) {
 				}
 				settled(f)
 			},
-			want: ResolutionNotCommitted,
+			want: ResolutionUnknown,
 		},
 	}
 
@@ -588,56 +641,236 @@ func TestCompleteIfResolved(t *testing.T) {
 			f := newFixture()
 			test.arrange(f)
 
-			got, err := f.useCase().CompleteIfResolved(context.Background())
+			got, err := f.useCase().ResolutionState(context.Background())
 			if err != nil {
-				t.Fatalf("CompleteIfResolved: %v", err)
+				t.Fatalf("ResolutionState: %v", err)
 			}
 			if got != test.want {
-				t.Fatalf("CompleteIfResolved = %v, want %v", got, test.want)
-			}
-
-			// A confirmed resolution is the moment the base adopts the
-			// target, and the note is dropped after it: the note is the
-			// evidence that the advance is owed.
-			wantCleared := 0
-			wantBases := 0
-			if test.want == ResolutionCompleted {
-				wantCleared, wantBases = 1, 1
-			}
-			if f.state.noteCleared != wantCleared {
-				t.Fatalf("note cleared %d times, want %d", f.state.noteCleared, wantCleared)
-			}
-			if len(f.state.savedBases) != wantBases {
-				t.Fatalf("saved bases = %v, want %d write(s)", f.state.savedBases, wantBases)
-			}
-			if wantBases == 1 {
-				target := provenance.Base{Commit: commitOID(1), Tree: treeOID(1)}
-				if got := f.state.savedBases[0]; got != target {
-					t.Fatalf("adopted base = %+v, want the note's target %+v", got, target)
-				}
-				if trace := f.shared.trace(); !strings.HasSuffix(trace, "save-base clear-note") {
-					t.Fatalf("sequence = %q, want the note dropped after the base moved", trace)
-				}
+				t.Fatalf("ResolutionState = %v, want %v", got, test.want)
 			}
 		})
 	}
 }
 
-// TestCompleteIfResolvedComparesOnlyTheConflictedPaths pins what the
-// resolution test actually asks git, since the answer is the whole
-// difference between "resolved" and "an unrelated docs commit".
-func TestCompleteIfResolvedComparesOnlyTheConflictedPaths(t *testing.T) {
+// TestResolutionStateComparesOnlyTheConflictedPaths pins what the
+// classification actually asks git, since the answer is the whole
+// difference between the "resolved" sentence and the "put aside" one.
+func TestResolutionStateComparesOnlyTheConflictedPaths(t *testing.T) {
 	f := newFixture()
 	f.state.note = liveNote()
 	f.app.headCommit = commitOID(8)
 	f.app.headTree = treeOID(9)
 
-	if _, err := f.useCase().CompleteIfResolved(context.Background()); err != nil {
-		t.Fatalf("CompleteIfResolved: %v", err)
+	if _, err := f.useCase().ResolutionState(context.Background()); err != nil {
+		t.Fatalf("ResolutionState: %v", err)
 	}
 	want := diffCall{from: treeOID(0), to: treeOID(9), paths: "docs/api.md"}
 	if len(f.app.diffCalls) != 1 || f.app.diffCalls[0] != want {
 		t.Fatalf("diff calls = %+v, want one %+v", f.app.diffCalls, want)
+	}
+}
+
+// --- `sanho sync --continue`: completion as an act ---------------------
+
+// TestContinueRefusesWhatIsNotReady walks the three preconditions. Each
+// refusal names what remains, and none of them writes anything: a
+// refused completion must leave the workspace exactly as unfinished as
+// it found it, or the next attempt is answering a different question.
+func TestContinueRefusesWhatIsNotReady(t *testing.T) {
+	tests := []struct {
+		name    string
+		arrange func(f *fixture)
+		want    error
+	}{
+		{
+			name:    "no sync is in progress",
+			arrange: func(f *fixture) {},
+			want:    ErrNoSyncInProgress,
+		},
+		{
+			name: "markers are still in the worktree",
+			arrange: func(f *fixture) {
+				f.state.note = liveNote()
+				f.app.markerPaths = []string{"docs/api.md"}
+			},
+			want: ErrMarkersRemain,
+		},
+		{
+			name: "the resolution is edited but not committed",
+			arrange: func(f *fixture) {
+				f.state.note = liveNote()
+				f.app.docsClean = false
+			},
+			want: ErrResolutionUncommitted,
+		},
+		{
+			name: "the note cannot be read",
+			arrange: func(f *fixture) {
+				f.state.noteErr = fmt.Errorf("%w: unexpected end of JSON input", ErrSyncNoteCorrupt)
+			},
+			want: ErrSyncNoteCorrupt,
+		},
+		{
+			// A parseable note with no usable target cannot say what to
+			// adopt, and guessing is the one thing the invariant forbids.
+			name: "the note records no usable merge target",
+			arrange: func(f *fixture) {
+				note := liveNote()
+				note.Target = provenance.Base{}
+				f.state.note = note
+			},
+			want: ErrSyncNoteCorrupt,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			f := newFixture()
+			test.arrange(f)
+			before := f.state.base
+
+			_, err := f.useCase().Continue(context.Background())
+			if !errors.Is(err, test.want) {
+				t.Fatalf("error = %v, want %v", err, test.want)
+			}
+			if len(f.state.savedBases) != 0 || f.state.noteCleared != 0 {
+				t.Fatalf("a refused --continue acted: bases=%v cleared=%d",
+					f.state.savedBases, f.state.noteCleared)
+			}
+			if f.state.base != before {
+				t.Fatalf("base = %+v, want it untouched at %+v", f.state.base, before)
+			}
+			if len(f.app.commitMessages) != 0 || len(f.app.checkedOut) != 0 || f.app.restores != 0 {
+				t.Fatalf("a refused --continue touched the worktree: commits=%v checkouts=%v restores=%d",
+					f.app.commitMessages, f.app.checkedOut, f.app.restores)
+			}
+			// The sentinels state facts; the commands belong to the CLI
+			// catalog, where a closure fixture can prove them runnable.
+			if err != nil && strings.Contains(err.Error(), "sanho ") {
+				t.Errorf("message = %q, want a command-free sentinel", err)
+			}
+		})
+	}
+}
+
+// TestContinueCompletesTheSync is the whole of the new verb: the note
+// goes, the base adopts the target, and nothing else happens.
+//
+// The write order is asserted directly, because it is the invariant in
+// miniature. Note first, base second: an interruption between them
+// leaves the base at its OLDER value, which publication reconciles as an
+// ordinary divergence. The reverse order fails toward a base ahead of
+// the worktree, which is a fast-forward over upstream's work.
+func TestContinueCompletesTheSync(t *testing.T) {
+	f := newFixture()
+	f.state.note = liveNote()
+
+	result, err := f.useCase().Continue(context.Background())
+	if err != nil {
+		t.Fatalf("Continue: %v", err)
+	}
+
+	target := provenance.Base{Commit: commitOID(1), Tree: treeOID(1)}
+	if result.Base != target {
+		t.Fatalf("adopted base = %+v, want the note's target %+v", result.Base, target)
+	}
+	if got := f.shared.trace(); got != "scan docs-clean clear-note save-base" {
+		t.Fatalf("sequence = %q, want the note dropped BEFORE the base moved", got)
+	}
+	if got := f.state.savedBases; len(got) != 1 || got[0] != target {
+		t.Fatalf("saved bases = %v, want exactly the target %+v", got, target)
+	}
+	// P3: completing a sync creates nothing.
+	if len(f.app.commitMessages) != 0 || len(f.app.checkedOut) != 0 || f.app.restores != 0 {
+		t.Fatalf("--continue touched the repository: commits=%v checkouts=%v restores=%d",
+			f.app.commitMessages, f.app.checkedOut, f.app.restores)
+	}
+}
+
+// TestContinueInterruptedBeforeTheBaseWriteFailsOld simulates the crash
+// the ordering exists for: the note is gone, the base write never
+// happened, and what the workspace is left holding is the OLDER base.
+func TestContinueInterruptedBeforeTheBaseWriteFailsOld(t *testing.T) {
+	f := newFixture()
+	f.state.note = liveNote()
+	f.state.saveBaseErr = errors.New("the disk went away")
+
+	if _, err := f.useCase().Continue(context.Background()); err == nil {
+		t.Fatal("Continue reported success after the base write failed")
+	}
+	if f.state.noteCleared != 1 {
+		t.Fatalf("note cleared %d times, want 1 — the note is dropped first", f.state.noteCleared)
+	}
+	previous := provenance.Base{Commit: commitOID(0), Tree: treeOID(0)}
+	if f.state.base != previous {
+		t.Fatalf("base after the interruption = %+v, want the older value %+v", f.state.base, previous)
+	}
+}
+
+// TestContinueIsIdempotent: completing twice is not an error the second
+// time round wearing a different name — there is simply nothing left to
+// complete.
+func TestContinueIsIdempotent(t *testing.T) {
+	f := newFixture()
+	f.state.note = liveNote()
+	use := f.useCase()
+
+	if _, err := use.Continue(context.Background()); err != nil {
+		t.Fatalf("first Continue: %v", err)
+	}
+	if _, err := use.Continue(context.Background()); !errors.Is(err, ErrNoSyncInProgress) {
+		t.Fatalf("second Continue = %v, want ErrNoSyncInProgress", err)
+	}
+	if len(f.state.savedBases) != 1 {
+		t.Fatalf("saved bases = %v, want exactly one write", f.state.savedBases)
+	}
+}
+
+// TestContinueCompletesATakeOursResolution is the dead end the previous
+// design had no exit from: a resolution that keeps every conflicted path
+// byte for byte leaves no evidence at all, so no inference could ever
+// confirm it. The user asserting it is the evidence.
+func TestContinueCompletesATakeOursResolution(t *testing.T) {
+	f := newFixture()
+	f.state.note = liveNote()
+	// Nothing was committed: HEAD is exactly where the sync left it, and
+	// the docs tree with it.
+	f.app.headCommit = commitOID(7)
+	f.app.headTree = treeOID(0)
+
+	state, err := f.useCase().ResolutionState(context.Background())
+	if err != nil || state != ResolutionNotCommitted {
+		t.Fatalf("ResolutionState = (%v, %v), want (not_committed, nil)", state, err)
+	}
+	if _, err := f.useCase().Continue(context.Background()); err != nil {
+		t.Fatalf("Continue over a take-ours resolution: %v", err)
+	}
+	if target := (provenance.Base{Commit: commitOID(1), Tree: treeOID(1)}); f.state.base != target {
+		t.Fatalf("base = %+v, want the target %+v", f.state.base, target)
+	}
+}
+
+// TestContinueCompletesALegacyNote is the other escape the verb opens.
+// A note written before the entry fields existed cannot prove anything,
+// so the previous design could only ever abort it — and the message it
+// printed explained the refusal with a reason nothing knew to be true.
+func TestContinueCompletesALegacyNote(t *testing.T) {
+	f := newFixture()
+	f.state.note = &SyncNote{
+		PrevBase:            provenance.Base{Commit: commitOID(0), Tree: treeOID(0)},
+		Target:              provenance.Base{Commit: commitOID(1), Tree: treeOID(1)},
+		PreDatesEntryRecord: true,
+	}
+
+	state, err := f.useCase().ResolutionState(context.Background())
+	if err != nil || state != ResolutionUnknown {
+		t.Fatalf("ResolutionState = (%v, %v), want (unknown, nil)", state, err)
+	}
+	if _, err := f.useCase().Continue(context.Background()); err != nil {
+		t.Fatalf("Continue over a legacy note: %v", err)
+	}
+	if _, ok, _ := f.state.LoadSyncNote(); ok {
+		t.Error("--continue left the legacy note behind")
 	}
 }
 
@@ -656,32 +889,43 @@ func liveNote() *SyncNote {
 // TestACorruptNoteStillYieldsToAbort is the review's second finding: a
 // `sync.json` nothing can parse used to make every path fail, including
 // the one operation whose contract is that it cannot.
+//
+// The base assertion is the third review's C3, and it is why this test
+// is not the one it was. Leaving the base alone rested on "a conflicted
+// sync never moved it", and the fixture below is the state that breaks
+// the premise: the base already names the merge target (a crash between
+// the base write and the note clear, or a note from a build that
+// advanced the base at conflict time) and the note can no longer say
+// what it was. An abort that walked away from that left a base ahead of
+// the worktree, which the next push spends as a fast-forward.
 func TestACorruptNoteStillYieldsToAbort(t *testing.T) {
 	corrupt := func() *fixture {
 		f := newFixture()
 		f.state.noteErr = fmt.Errorf("%w: /repo/.git/sanho/sync.json: unexpected end of JSON input", ErrSyncNoteCorrupt)
+		// The dangerous shape: the base sits on canonical head while the
+		// worktree docs are the pre-merge ones (tree 0).
 		f.state.base = provenance.Base{Commit: commitOID(1), Tree: treeOID(1)}
 		return f
 	}
 
-	t.Run("abort restores the docs and clears the note", func(t *testing.T) {
+	t.Run("abort restores the docs, forgets the base, and clears the note", func(t *testing.T) {
 		f := corrupt()
-		before := f.state.base
 
 		if _, err := f.useCase().Abort(context.Background()); err != nil {
 			t.Fatalf("Abort over a corrupt note: %v", err)
 		}
-		if got := f.shared.trace(); got != "restore clear-note" {
-			t.Fatalf("sequence = %q, want the docs restored and the note dropped", got)
+		if got := f.shared.trace(); got != "restore clear-base clear-note" {
+			t.Fatalf("sequence = %q, want the docs restored, the base cleared, and the note dropped last", got)
 		}
-		// The previous base lived inside the note, so nothing may be
-		// written over the one on disk — and nothing needs to be, because
-		// the conflicted sync never moved it.
+		// The previous base lived inside the note, so nothing can be
+		// written in its place. The invariant decides what happens then:
+		// where the base cannot be established, the older value wins, and
+		// no base at all is the oldest there is.
 		if len(f.state.savedBases) != 0 {
 			t.Fatalf("an abort over an unreadable note guessed at a base: %v", f.state.savedBases)
 		}
-		if got := f.state.base; got != before {
-			t.Fatalf("base after the abort = %+v, want it untouched at %+v", got, before)
+		if f.state.hasBase {
+			t.Fatalf("base after the abort = %+v, want none recorded", f.state.base)
 		}
 	})
 
@@ -695,8 +939,12 @@ func TestACorruptNoteStillYieldsToAbort(t *testing.T) {
 				_, err := u.Pull(context.Background(), false)
 				return err
 			},
-			"complete": func(u *UseCase) error {
-				_, err := u.CompleteIfResolved(context.Background())
+			"resolution state": func(u *UseCase) error {
+				_, err := u.ResolutionState(context.Background())
+				return err
+			},
+			"continue": func(u *UseCase) error {
+				_, err := u.Continue(context.Background())
 				return err
 			},
 		} {

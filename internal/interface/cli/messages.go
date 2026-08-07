@@ -63,9 +63,12 @@ const (
 	// managed workspace. `sanho init` is what makes it one.
 	msgNotInWorkspace = "sanho: not a sanho workspace (no .sanho.json here); run 'sanho init' to create one"
 
-	// msgSyncInProgressPush rejects a push while a conflicted sync owns
-	// the docs worktree (§5.3 step 2).
-	msgSyncInProgressPush = "sanho: finish the sync first: resolve conflicts, then 'git add' and 'git commit' (or 'sanho sync --abort')"
+	// msgSyncInProgressPush rejects a push while a conflicted sync still
+	// has markers in the docs worktree (§5.3 step 2). It names the whole
+	// sequence, because the commit is no longer the last step: a sync
+	// ends when 'sanho sync --continue' records it.
+	msgSyncInProgressPush = "sanho: finish the sync first: resolve the conflicts, 'git add' and 'git commit', " +
+		"then 'sanho sync --continue' (or 'sanho sync --abort' to undo it)"
 
 	// msgMarkersBeforePush follows the marker list on a rejected push.
 	msgMarkersBeforePush = "resolve the markers before pushing"
@@ -82,9 +85,12 @@ const (
 	// `sanho clean`; --dry-run is the read-only alternative (audit M4).
 	msgCleanNeedsConfirmation = "sanho: 'sanho clean' removes this workspace's sanho state; rerun with -y to confirm, or 'sanho clean --dry-run' to preview"
 
-	// msgCleanSyncInProgress refuses to clean while a sync is owed. The
-	// named command cannot fail once its precondition holds (§5.5 step 7).
-	msgCleanSyncInProgress = "sanho: a conflicted sync is in progress; finish it, or run 'sanho sync --abort' first"
+	// msgCleanSyncInProgress refuses to clean while a sync is owed, and
+	// is reused by `sanho init` for the same state (a re-init would write
+	// a base the unfinished sync is holding still). Both named commands
+	// cannot fail once their preconditions hold (§5.5 steps 6b and 7).
+	msgCleanSyncInProgress = "sanho: a conflicted sync is in progress; complete it with 'sanho sync --continue', " +
+		"or undo it with 'sanho sync --abort' first"
 
 	// msgInitNoProvenance refuses reuse mode when existing docs carry no
 	// provenance to derive a base from (audit L4: English only).
@@ -181,9 +187,21 @@ func plural(n int, unit string) string {
 
 // --- Template 2: sync conflict (§5.9) ---------------------------------
 
-// syncConflictMessage renders §5.9 template 2 verbatim. docsDir is the
+// syncConflictMessage renders §5.9 template 2. docsDir is the
 // workspace's configured docs directory, which for the default "docs"
-// reproduces the template character for character.
+// reproduces the template's paths character for character.
+//
+// The template gains one line, and it is the whole of this wave at user
+// level: resolving is ordinary git work, and *completing* the sync is an
+// act of its own. The two commands are ordered — the commit first, then
+// the completion — and the closure fixture runs them in that order.
+// The three next-step lines are spelled out here and again in
+// unresolvedSyncMessage rather than shared through a helper. The catalog
+// gate reads this file's declarations and requires an entry for each one
+// that names a command; guidance hidden behind a helper is guidance no
+// closure fixture is forced to exist for. Two renderers, two entries,
+// two fixtures — and the duplication is what the messages_test.go
+// comparison of the two renderings keeps honest.
 func syncConflictMessage(docsDir string, conflicts []string) string {
 	var b strings.Builder
 	writef(&b, "sanho: merged docs with upstream — %d files have conflicts:\n", len(conflicts))
@@ -191,6 +209,7 @@ func syncConflictMessage(docsDir string, conflicts []string) string {
 		writef(&b, "  %s\n", path)
 	}
 	writef(&b, "Resolve the markers, then:  git add %s/ && git commit\n", docsDir)
+	b.WriteString("Then complete the sync:     sanho sync --continue\n")
 	b.WriteString("To undo this sync:          sanho sync --abort")
 	return b.String()
 }
@@ -356,23 +375,27 @@ func pulledMessage(target, commit string) string {
 }
 
 // syncNotCommittedMessage covers a conflicted sync whose markers are
-// gone from the worktree without a commit having settled them —
-// `git stash push -- docs`, `git checkout HEAD -- docs`, a revert, or a
-// commit that changed some other document entirely.
+// gone from the worktree without any commit having gone near the paths
+// it conflicted on — `git stash push -- docs`, `git checkout HEAD --
+// docs`, a revert, or a commit that changed some other document.
 //
 // The state looks finished and is not, which is why it gets its own
 // wording rather than the in-progress one: there are no markers left to
 // "resolve and commit", so template 2's advice would name a `git commit`
-// with nothing to commit. The two commands here are ordered, and the
-// order is the message: abort first (the stash is untouched by it), then
-// sync again to lay the same conflicts out with the resolution still to
-// make.
+// with nothing to commit.
 //
-// The second clause states the actual criterion rather than one symptom
-// of it. "The docs are clean but HEAD has not moved" was true of the
-// stash and false of everything else that reaches this line — a commit
-// made while the conflict was set aside moves HEAD, and the docs are not
-// clean while it is being prepared.
+// It states the criterion it actually applied, and only where that
+// criterion is knowable: a note that never recorded what the merge
+// conflicted on gets syncNeedsContinueMessage instead, which asserts
+// nothing about commits. Saying "no commit has changed the files it
+// conflicted on" about a note that does not list those files was a
+// reason nothing knew to be true.
+//
+// The recommended route is ordered — abort first (the stash is untouched
+// by it), then sync again to lay the same conflicts out — and the second
+// sentence names the other legitimate reading: a resolution can be
+// "keep every one of my lines", which leaves no trace whatsoever, and
+// `sanho sync --continue` is how a user declares it.
 //
 // It is printed by `pre-commit`, which does NOT block on it, and by
 // `pre-push`, which does. The split follows P2 and §5.6: the commit path
@@ -380,9 +403,47 @@ func pulledMessage(target, commit string) string {
 // unrelated work — while the push boundary is where local work becomes
 // shared.
 func syncNotCommittedMessage(prev, target string) string {
-	return fmt.Sprintf("sanho: the sync from %s to %s was never resolved by a commit; no commit has changed the files it conflicted on\n"+
-		"Run 'sanho sync --abort' to undo it — anything you stashed stays in your stash — then 'sanho sync' to lay the conflicts out again.",
+	return fmt.Sprintf("sanho: the sync from %s to %s is not completed; no commit has changed the files it conflicted on\n"+
+		"Run 'sanho sync --abort' to undo it — anything you stashed stays in your stash — then 'sanho sync' to lay the conflicts out again.\n"+
+		"If the docs already read the way you want them, run 'sanho sync --continue' instead to complete the sync as it stands.",
 		shortOID(prev), shortOID(target))
+}
+
+// syncNeedsContinueMessage covers the two unfinished states in which
+// nothing is wrong: the resolution is being made, or it is made and
+// committed and simply not recorded yet.
+//
+// Both renderings say "is not completed", which is the fact, and both
+// name the same two exits. What differs is the step in between: a
+// committed resolution needs only the completion, while an uncommitted
+// one needs the commit first — so the second rendering names it, and
+// says what the abort would do to work that is not committed. That
+// second clause is the one an earlier version left unsaid, and abort's
+// `git checkout HEAD -- docs` is not obviously reversible to a reader.
+func syncNeedsContinueMessage(prev, target string, committed bool) string {
+	if committed {
+		return fmt.Sprintf("sanho: the sync from %s to %s is not completed — the resolution is committed, and only 'sanho sync --continue' records it\n"+
+			"Run 'sanho sync --continue' now, or 'sanho sync --abort' to undo the whole sync.",
+			shortOID(prev), shortOID(target))
+	}
+	return fmt.Sprintf("sanho: the sync from %s to %s is not completed — no resolution has been committed yet\n"+
+		"Commit your resolution, then run 'sanho sync --continue'.\n"+
+		"Or run 'sanho sync --abort' to undo the sync, which restores docs/ from HEAD and discards anything you have not committed.",
+		shortOID(prev), shortOID(target))
+}
+
+// syncContinueBlockedMessage refuses `sanho sync --continue` when the
+// sync is not in a state that can be completed: markers are still in the
+// worktree, or the resolution has been edited and not committed.
+//
+// One renderer for both, because the remedy is one sequence and the
+// detail says which part of it is outstanding. The abort is named too:
+// a user who reaches this line may have decided the reconciliation is
+// not worth finishing.
+func syncContinueBlockedMessage(detail string) string {
+	return fmt.Sprintf("sanho: the sync is not ready to be completed (%s)\n"+
+		"Finish the resolution with 'git add docs/ && git commit', then run 'sanho sync --continue' again.\n"+
+		"Or run 'sanho sync --abort' to undo the sync.", detail)
 }
 
 // syncNoteCorruptMessage covers a sync note that is present and
@@ -390,13 +451,13 @@ func syncNotCommittedMessage(prev, target string) string {
 //
 // It names the abort and nothing else, because the abort is the one
 // operation that needs only the note's *existence*: it restores the docs
-// from HEAD and deletes the file. What it cannot do is put the base back
-// — that value lived inside the note — so the abort itself reports the
-// follow-up rather than this message carrying a second command that has
-// nothing to do until the first one has run.
+// from HEAD, clears the base it can no longer vouch for, and deletes the
+// file. The second line says so, because a workspace with no recorded
+// base is a state the user will meet at the next push — where the
+// rejection names `sanho sync`, which establishes one.
 func syncNoteCorruptMessage(detail string) string {
 	return fmt.Sprintf("sanho: the record of the sync in progress is unreadable (%s)\n"+
-		"Run 'sanho sync --abort' to restore the docs from HEAD and clear it.", detail)
+		"Run 'sanho sync --abort' to restore the docs from HEAD, forget the docs base it cannot vouch for, and clear it.", detail)
 }
 
 // syncAbortedMessage reports a completed `sanho sync --abort`.
@@ -420,9 +481,11 @@ func baseRederivedMessage(base string) string {
 	return fmt.Sprintf("sanho: docs base re-derived as %s after HEAD moved", shortOID(base))
 }
 
-// syncCompletedMessage reports that a conflicted sync has been resolved
-// and its note cleared.
-func syncCompletedMessage() string { return "sanho: sync resolved; the sync note has been cleared" }
+// syncCompletedMessage reports a completed `sanho sync --continue`: the
+// note is gone and the base names the state the docs now derive from.
+func syncCompletedMessage(base string) string {
+	return fmt.Sprintf("sanho: sync completed; docs base is now %s", shortOID(base))
+}
 
 // stagedMarkersMessage blocks a commit whose staged docs still carry
 // conflict markers (§5.6 step 1).
@@ -437,8 +500,8 @@ func stagedMarkersMessage(paths []string) string {
 }
 
 // unresolvedSyncMessage blocks a commit made while a sync is still
-// unresolved, in the shape of template 2: the same two next steps, for
-// the same state.
+// unresolved, in the shape of template 2: the same next steps, for the
+// same state.
 func unresolvedSyncMessage(docsDir string, paths []string) string {
 	var b strings.Builder
 	writef(&b, "sanho: a sync is in progress — %d files still have conflicts:\n", len(paths))
@@ -446,6 +509,7 @@ func unresolvedSyncMessage(docsDir string, paths []string) string {
 		writef(&b, "  %s\n", path)
 	}
 	writef(&b, "Resolve the markers, then:  git add %s/ && git commit\n", docsDir)
+	b.WriteString("Then complete the sync:     sanho sync --continue\n")
 	b.WriteString("To undo this sync:          sanho sync --abort")
 	return b.String()
 }
@@ -464,11 +528,11 @@ func commitMsgStampWarning(cause string) string {
 // a command that works.
 
 // syncInProgressMessage refuses a sync or pull while an earlier one is
-// still unresolved. Both next steps are the ones §5.9 template 2 named
-// when the conflict was created.
+// still unfinished. The next steps are the ones §5.9 template 2 named
+// when the conflict was created, in the same order.
 func syncInProgressMessage(detail string) string {
 	return fmt.Sprintf("sanho: a conflicted sync is in progress (%s)\n"+
-		"Resolve the markers and commit, or run 'sanho sync --abort' to undo it.", detail)
+		"Resolve the markers and commit, then run 'sanho sync --continue' — or 'sanho sync --abort' to undo it.", detail)
 }
 
 // pullNeedsSyncMessage refuses a fast-forward-only pull.
@@ -557,10 +621,16 @@ func doctorHooksMessage(problems string) string {
 	return fmt.Sprintf("%s — run 'sanho doctor --fix' to reinstall them", problems)
 }
 
-// syncNotePendingMessage is the unresolved-sync line status and doctor
-// both print.
+// syncNotePendingMessage is the unfinished-sync line `sanho status` and
+// `sanho doctor` both print, and the one `doctor --fix` prints when it
+// declines to re-derive a base a sync is holding still.
+//
+// It names the two commands that end a sync and no third one. The
+// previous wording ("resolve the markers and commit") described a step
+// rather than an exit: doing it leaves the sync exactly as unfinished as
+// before, which is the state this line is reporting.
 func syncNotePendingMessage(detail string) string {
-	return fmt.Sprintf("%s — resolve the markers and commit, or run 'sanho sync --abort'", detail)
+	return fmt.Sprintf("%s — complete it with 'sanho sync --continue', or undo it with 'sanho sync --abort'", detail)
 }
 
 // baseNeedsSyncMessage covers every state in which no base can be
@@ -690,6 +760,22 @@ type CatalogEntry struct {
 	// exactly like the rest: reach the state, clear its cause, run the
 	// command, require success.
 	NextCommands []string
+	// Prerequisites makes an advised command's *place in a sequence*
+	// part of the contract: for the command it keys, the listed commands
+	// run first, in order, in the same workspace, and each must succeed.
+	//
+	// It exists because guidance stopped being one command per state.
+	// The conflict template now names `git add docs/ && git commit`
+	// followed by `sanho sync --continue`, and a suite that ran the
+	// second one in a world where the first had not happened would be
+	// proving something else entirely. Declaring the order here rather
+	// than hiding it in a fixture keeps the catalog readable as what it
+	// claims to be: the enumerable form of the guidance contract.
+	//
+	// Every key must also appear in NextCommands (catalog_test.go), and
+	// the entries listed are run verbatim through /bin/sh exactly as
+	// NextCommands are.
+	Prerequisites map[string][]string
 }
 
 // Sample OIDs for the catalog renderings. They are syntactically real
@@ -727,12 +813,16 @@ var Catalog = []CatalogEntry{
 		NextCommands: []string{"sanho init"},
 	},
 	{
-		ID:           "push_sync_in_progress",
-		Source:       "msgSyncInProgressPush",
-		Scenario:     "push_sync_in_progress",
-		Sample:       msgSyncInProgressPush,
-		Match:        "finish the sync first",
-		NextCommands: []string{"sanho sync --abort"},
+		ID:       "push_sync_in_progress",
+		Source:   "msgSyncInProgressPush",
+		Scenario: "push_sync_in_progress",
+		Sample:   msgSyncInProgressPush,
+		Match:    "finish the sync first",
+		// The resolution sequence and the undo, both proven: the fixture
+		// resolves the markers, the prerequisite commits them, and
+		// `--continue` is what actually ends the sync.
+		NextCommands:  []string{"sanho sync --continue", "sanho sync --abort"},
+		Prerequisites: map[string][]string{"sanho sync --continue": {"git add docs/ && git commit"}},
 	},
 	{
 		ID:           "clean_needs_confirmation",
@@ -743,12 +833,13 @@ var Catalog = []CatalogEntry{
 		NextCommands: []string{"sanho clean --dry-run"},
 	},
 	{
-		ID:           "clean_sync_in_progress",
-		Source:       "msgCleanSyncInProgress",
-		Scenario:     "clean_sync_in_progress",
-		Sample:       msgCleanSyncInProgress,
-		Match:        "a conflicted sync is in progress",
-		NextCommands: []string{"sanho sync --abort"},
+		ID:            "clean_sync_in_progress",
+		Source:        "msgCleanSyncInProgress",
+		Scenario:      "clean_sync_in_progress",
+		Sample:        msgCleanSyncInProgress,
+		Match:         "a conflicted sync is in progress",
+		NextCommands:  []string{"sanho sync --continue", "sanho sync --abort"},
+		Prerequisites: map[string][]string{"sanho sync --continue": {"git add docs/ && git commit"}},
 	},
 	{
 		ID:           "migrate_blocked",
@@ -783,20 +874,25 @@ var Catalog = []CatalogEntry{
 		NextCommands: []string{"sanho sync"},
 	},
 	{
-		ID:           "sync_conflict",
-		Source:       "syncConflictMessage",
-		Scenario:     "sync_conflict",
-		Sample:       syncConflictMessage("docs", []string{"docs/api.md"}),
-		Match:        "merged docs with upstream",
-		NextCommands: []string{"git add docs/ && git commit", "sanho sync --abort"},
+		ID:       "sync_conflict",
+		Source:   "syncConflictMessage",
+		Scenario: "sync_conflict",
+		Sample:   syncConflictMessage("docs", []string{"docs/api.md"}),
+		Match:    "merged docs with upstream",
+		// Two branches out of one state: resolve-commit-complete, or
+		// undo. The first is a sequence, and Prerequisites is what makes
+		// the suite run it as one.
+		NextCommands:  []string{"git add docs/ && git commit", "sanho sync --continue", "sanho sync --abort"},
+		Prerequisites: map[string][]string{"sanho sync --continue": {"git add docs/ && git commit"}},
 	},
 	{
-		ID:           "unresolved_sync",
-		Source:       "unresolvedSyncMessage",
-		Scenario:     "unresolved_sync",
-		Sample:       unresolvedSyncMessage("docs", []string{"docs/api.md"}),
-		Match:        "a sync is in progress",
-		NextCommands: []string{"git add docs/ && git commit", "sanho sync --abort"},
+		ID:            "unresolved_sync",
+		Source:        "unresolvedSyncMessage",
+		Scenario:      "unresolved_sync",
+		Sample:        unresolvedSyncMessage("docs", []string{"docs/api.md"}),
+		Match:         "a sync is in progress",
+		NextCommands:  []string{"git add docs/ && git commit", "sanho sync --continue", "sanho sync --abort"},
+		Prerequisites: map[string][]string{"sanho sync --continue": {"git add docs/ && git commit"}},
 	},
 	{
 		ID:           "staged_markers",
@@ -820,10 +916,33 @@ var Catalog = []CatalogEntry{
 		Scenario: "sync_not_committed",
 		Sample:   syncNotCommittedMessage(sampleBaseOID, sampleHeadOID),
 		Match:    "no commit has changed the files it conflicted on",
-		// Ordered: the abort is what makes the second command possible,
-		// and the closure fixture runs it as the human half before
-		// `sanho sync` — which refuses while a note exists, by design.
-		NextCommands: []string{"sanho sync --abort", "sanho sync"},
+		// Two routes out, and the recommended one is a sequence: the
+		// abort is what makes `sanho sync` possible, since sync refuses
+		// while a note exists. `--continue` is the other reading — "my
+		// docs are already what I want" — and it works from this state
+		// without anything preceding it.
+		NextCommands:  []string{"sanho sync --abort", "sanho sync", "sanho sync --continue"},
+		Prerequisites: map[string][]string{"sanho sync": {"sanho sync --abort"}},
+	},
+	{
+		ID:       "sync_needs_continue",
+		Source:   "syncNeedsContinueMessage",
+		Scenario: "sync_needs_continue",
+		Sample:   syncNeedsContinueMessage(sampleBaseOID, sampleHeadOID, true),
+		// The em dash is load-bearing: syncNotCommittedMessage also says
+		// "is not completed", and the two states must not be able to
+		// satisfy each other's fixture.
+		Match:        "is not completed — ",
+		NextCommands: []string{"sanho sync --continue", "sanho sync --abort"},
+	},
+	{
+		ID:            "sync_continue_blocked",
+		Source:        "syncContinueBlockedMessage",
+		Scenario:      "sync_continue_blocked",
+		Sample:        syncContinueBlockedMessage("the docs worktree still contains conflict markers: docs/api.md"),
+		Match:         "the sync is not ready to be completed",
+		NextCommands:  []string{"git add docs/ && git commit", "sanho sync --continue", "sanho sync --abort"},
+		Prerequisites: map[string][]string{"sanho sync --continue": {"git add docs/ && git commit"}},
 	},
 	{
 		ID:           "sync_note_corrupt",
@@ -931,12 +1050,13 @@ var Catalog = []CatalogEntry{
 		NextCommands: []string{"sanho doctor --fix"},
 	},
 	{
-		ID:           "sync_note_pending",
-		Source:       "syncNotePendingMessage",
-		Scenario:     "sync_note_pending",
-		Sample:       syncNotePendingMessage("a sync from " + sampleBaseOID[:12] + " is unresolved"),
-		Match:        "resolve the markers and commit, or run 'sanho sync --abort'",
-		NextCommands: []string{"sanho sync --abort"},
+		ID:            "sync_note_pending",
+		Source:        "syncNotePendingMessage",
+		Scenario:      "sync_note_pending",
+		Sample:        syncNotePendingMessage("a sync from " + sampleBaseOID[:12] + " is unresolved"),
+		Match:         "complete it with 'sanho sync --continue'",
+		NextCommands:  []string{"sanho sync --continue", "sanho sync --abort"},
+		Prerequisites: map[string][]string{"sanho sync --continue": {"git add docs/ && git commit"}},
 	},
 	{
 		ID:           "base_needs_sync",
@@ -963,12 +1083,13 @@ var Catalog = []CatalogEntry{
 		NextCommands: []string{"sanho sync"},
 	},
 	{
-		ID:           "sync_in_progress_command",
-		Source:       "syncInProgressMessage",
-		Scenario:     "sync_in_progress_command",
-		Sample:       syncInProgressMessage("syncing " + sampleBaseOID[:12] + " to " + sampleHeadOID[:12]),
-		Match:        "a conflicted sync is in progress",
-		NextCommands: []string{"sanho sync --abort"},
+		ID:            "sync_in_progress_command",
+		Source:        "syncInProgressMessage",
+		Scenario:      "sync_in_progress_command",
+		Sample:        syncInProgressMessage("syncing " + sampleBaseOID[:12] + " to " + sampleHeadOID[:12]),
+		Match:         "a conflicted sync is in progress",
+		NextCommands:  []string{"sanho sync --continue", "sanho sync --abort"},
+		Prerequisites: map[string][]string{"sanho sync --continue": {"git add docs/ && git commit"}},
 	},
 	{
 		ID:           "pull_needs_sync",

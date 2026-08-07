@@ -6,7 +6,7 @@ package cli
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"strings"
 
 	"github.com/irootkernel/sanho/internal/infra/gitx"
@@ -19,11 +19,16 @@ import (
 // `sanho pull`:
 //
 //	{
-//	  "status":     "up_to_date" | "synced" | "conflicts" | "aborted",
+//	  "status":     "up_to_date" | "synced" | "conflicts"
+//	                | "completed" | "aborted",
 //	  "base":       {"commit": "<oid>", "tree": "<oid>"} | null,
 //	  "commit":     "<oid>",            // "" when nothing was committed
 //	  "conflicts":  ["docs/api.md"]     // [] unless status is conflicts
 //	}
+//
+// `completed` is `--continue`'s outcome and carries the base the
+// workspace has just adopted; `commit` stays empty there, because
+// completing a sync creates nothing (P3).
 //
 // A conflicted sync is a *success*: it did what it was asked to do and
 // the markers are in the worktree. It is reported as status "conflicts"
@@ -36,13 +41,18 @@ type syncJSON struct {
 	Conflicts []string  `json:"conflicts"`
 }
 
-// statusAborted is the one syncJSON status with no docsync.Status
-// counterpart: `--abort` is a distinct outcome, not a kind of sync.
-const statusAborted = "aborted"
+// statusAborted and statusCompleted are the two syncJSON statuses with
+// no docsync.Status counterpart: `--abort` and `--continue` are distinct
+// outcomes, not kinds of sync.
+const (
+	statusAborted   = "aborted"
+	statusCompleted = "completed"
+)
 
 func newSyncCmd() *cobra.Command {
 	var (
 		abort      bool
+		proceed    bool
 		rebaseOnto string
 		asJSON     bool
 	)
@@ -55,32 +65,65 @@ base-update commit under your work.
 
 A clean merge produces one ordinary commit ('docs: sync to <oid>') authored by
 you. A conflicted merge writes standard conflict markers into the docs
-directory; resolve them, 'git add', and 'git commit' as you would for any
-merge. 'sanho sync --abort' restores the pre-sync state.`,
+directory; resolve them, 'git add' and 'git commit' as you would for any merge,
+then run 'sanho sync --continue' to complete the sync. 'sanho sync --abort'
+restores the pre-sync state instead.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runSync(cmd, abort, rebaseOnto, asJSON)
+			return runSync(cmd, syncFlags{abort: abort, proceed: proceed, rebaseOnto: rebaseOnto, asJSON: asJSON})
 		},
 	}
 	cmd.Flags().BoolVar(&abort, "abort", false, "Undo an in-progress conflicted sync")
+	cmd.Flags().BoolVar(&proceed, "continue", false, "Complete the conflicted sync you have resolved and committed")
 	cmd.Flags().StringVar(&rebaseOnto, "rebase-onto", "", "Reconcile against an explicit canonical commit (rewrite recovery)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "Print machine-readable JSON")
 	return cmd
 }
 
-func runSync(cmd *cobra.Command, abort bool, rebaseOnto string, asJSON bool) error {
+// syncFlags is `sanho sync`'s flag set. The three mode flags are
+// mutually exclusive, and passing them together is a mistake worth
+// naming rather than resolving by precedence.
+type syncFlags struct {
+	abort      bool
+	proceed    bool
+	rebaseOnto string
+	asJSON     bool
+}
+
+// mode reports which of the three exclusive modes was asked for, or an
+// error naming the combination.
+func (f syncFlags) mode() (abort, proceed bool, err error) {
+	switch {
+	case f.abort && f.proceed:
+		return false, false, errors.New("--abort and --continue cannot be combined")
+	case f.abort && f.rebaseOnto != "":
+		return false, false, errors.New("--abort and --rebase-onto cannot be combined")
+	case f.proceed && f.rebaseOnto != "":
+		return false, false, errors.New("--continue and --rebase-onto cannot be combined")
+	}
+	return f.abort, f.proceed, nil
+}
+
+func runSync(cmd *cobra.Command, flags syncFlags) error {
 	ctx := cmd.Context()
+	abort, proceed, err := flags.mode()
+	if err != nil {
+		return err
+	}
+	asJSON := flags.asJSON
+
 	ws, err := requireV2Workspace(ctx)
 	if err != nil {
 		return finishCommand(cmd, nil, asJSON, err)
 	}
 
-	if abort {
-		if rebaseOnto != "" {
-			return fmt.Errorf("--abort and --rebase-onto cannot be combined")
-		}
+	switch {
+	case abort:
 		return runSyncAbort(cmd, ws, asJSON)
+	case proceed:
+		return runSyncContinue(cmd, ws, asJSON)
 	}
+	rebaseOnto := flags.rebaseOnto
 
 	use, err := ws.docsyncUseCase(ctx)
 	if err != nil {
@@ -100,12 +143,11 @@ func runSync(cmd *cobra.Command, abort bool, rebaseOnto string, asJSON bool) err
 }
 
 // runSyncAbort implements §5.5 step 7. Abort needs no network and no
-// canonical clone: it restores the docs worktree from HEAD and puts the
-// base file back, which is why it cannot fail once a note exists
+// canonical clone: it restores the docs worktree from HEAD and settles
+// the base file, which is why it cannot fail once a note exists
 // (guidance closure by construction, D3) — including when the note
-// itself is unreadable, which is now lossless too: the conflicted sync
-// left the base where it found it, so there is nothing an unread note
-// could have told the abort to restore.
+// itself is unreadable, where it clears the base rather than leaving
+// behind one it cannot vouch for.
 func runSyncAbort(cmd *cobra.Command, ws *workspace, asJSON bool) error {
 	ctx := cmd.Context()
 	use := &docsync.UseCase{App: ws.appPort(), State: ws.statePort()}
@@ -119,6 +161,35 @@ func runSyncAbort(cmd *cobra.Command, ws *workspace, asJSON bool) error {
 		return writeJSON(cmd.OutOrStdout(), syncJSON{Status: statusAborted, Conflicts: []string{}})
 	}
 	writeln(cmd.OutOrStdout(), syncAbortedMessage(untrackedDocs(ctx, ws)))
+	return nil
+}
+
+// runSyncContinue implements §5.5 step 6b: the explicit completion of a
+// conflicted sync.
+//
+// It needs no network and no canonical clone. Everything it decides is
+// in two local files and the docs worktree, which is what lets it be the
+// one command that finishes a sync from an offline machine — and what
+// keeps it, like the commit path, unable to fail for a canonical it
+// could not reach.
+func runSyncContinue(cmd *cobra.Command, ws *workspace, asJSON bool) error {
+	ctx := cmd.Context()
+	use := &docsync.UseCase{App: ws.appPort(), State: ws.statePort()}
+
+	result, err := use.Continue(ctx)
+	if err != nil {
+		return finishCommand(cmd, ws, asJSON, err)
+	}
+	recordWorkspaceState(ctx, ws)
+
+	if asJSON {
+		return writeJSON(cmd.OutOrStdout(), syncJSON{
+			Status:    statusCompleted,
+			Base:      &baseJSON{Commit: result.Base.Commit, Tree: result.Base.Tree},
+			Conflicts: []string{},
+		})
+	}
+	writeln(cmd.OutOrStdout(), syncCompletedMessage(result.Base.Commit))
 	return nil
 }
 
