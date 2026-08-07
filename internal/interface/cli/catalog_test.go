@@ -183,6 +183,35 @@ func TestCatalogEntriesAreConsistent(t *testing.T) {
 			t.Errorf("catalog entry %q: Match %q is not in its own rendering:\n%s",
 				entry.ID, entry.Match, entry.Sample)
 		}
+		requireCoherentPrerequisites(t, entry)
+	}
+}
+
+// requireCoherentPrerequisites keeps the multi-step half of the contract
+// enforceable: a sequence the e2e suite runs must be a sequence of
+// commands this entry actually advises, or the closure proof is about
+// something the user was never told.
+func requireCoherentPrerequisites(t *testing.T, entry CatalogEntry) {
+	t.Helper()
+
+	advised := map[string]bool{}
+	for _, command := range entry.NextCommands {
+		advised[command] = true
+	}
+	for command, steps := range entry.Prerequisites {
+		if !advised[command] {
+			t.Errorf("catalog entry %q: Prerequisites name %q, which is not one of its NextCommands",
+				entry.ID, command)
+		}
+		if len(steps) == 0 {
+			t.Errorf("catalog entry %q: %q has an empty prerequisite list; omit the key instead",
+				entry.ID, command)
+		}
+		for _, step := range steps {
+			if step == command {
+				t.Errorf("catalog entry %q: %q is listed as its own prerequisite", entry.ID, command)
+			}
+		}
 	}
 }
 

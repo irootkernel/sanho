@@ -22,6 +22,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -99,6 +100,14 @@ func runInit(cmd *cobra.Command, opts initOptions) error {
 	}
 	if _, err := os.Stat(filepath.Join(root, wsstate.ConfigFileName)); err == nil && !opts.force {
 		return fmt.Errorf("%s already exists in %s; rerun with --force to reinitialize", wsstate.ConfigFileName, root)
+	}
+	// The sync note is consulted before the dirty-docs check, and the
+	// order is the same one `sanho sync` uses: an unfinished sync makes
+	// the docs dirty by construction, so asking about the docs first
+	// would answer a state that is really about the sync with advice that
+	// does not end it.
+	if err := refuseInitWhileSyncing(ctx, root); err != nil {
+		return err
 	}
 	if opts.force {
 		if err := refuseForceOnDirtyDocs(ctx, root, opts.docsDir); err != nil {
@@ -227,6 +236,31 @@ func normalizeDocsDir(docsDir string) (string, error) {
 	return cleaned, nil
 }
 
+// refuseInitWhileSyncing refuses to (re-)initialize a workspace whose
+// sync is unfinished.
+//
+// `sanho init --force` replaces the docs directory and records a base
+// from canonical head. Both halves are wrong inside the window: the
+// docs it would replace are a reconciliation in progress, and the base
+// it would record describes content `sanho sync --abort` then takes back
+// — leaving a base ahead of the worktree, which is the one state every
+// path in v0.2 is arranged to prevent.
+//
+// A directory that is not a git repository, or one with no note, is not
+// this function's business: it answers only for the note's existence,
+// and an unreadable one counts, because "the sync state is unknown" is
+// not a state to re-initialize over.
+func refuseInitWhileSyncing(ctx context.Context, root string) error {
+	gitDir, err := gitx.New(root).Line(ctx, "rev-parse", "--absolute-git-dir")
+	if err != nil {
+		return nil //nolint:nilerr // requireGitWorktreeRoot has already vouched for the directory
+	}
+	if _, exists, noteErr := wsstate.LoadSyncNote(gitDir); exists || noteErr != nil {
+		return errors.New(msgCleanSyncInProgress)
+	}
+	return nil
+}
+
 // refuseForceOnDirtyDocs is F-H7.
 //
 // `--force` replaces the docs directory with canonical's content. Doing
@@ -297,6 +331,16 @@ func gitUserEmail(ctx context.Context, root string) (string, error) {
 // worktree and index, which is the one outcome that leaves the user a
 // commit to make.
 func establishBase(ctx context.Context, cmd *cobra.Command, ws *workspace, store *canonical.Store, opts initOptions) (base provenance.Base, hasBase, staged bool, err error) {
+	// An unfinished sync owns the base, and `sanho init --force` over one
+	// would both replace the docs it is holding and record a base for
+	// content the abort would then take back — leaving the base ahead of
+	// the worktree, which is the one state every path in v0.2 is arranged
+	// to prevent. Refusing is the honest answer, and both commands it
+	// names work here.
+	if _, syncing, noteErr := ws.statePort().LoadSyncNote(); syncing || noteErr != nil {
+		return provenance.Base{}, false, false, errors.New(msgCleanSyncInProgress)
+	}
+
 	head, headTree, headErr := store.Head(ctx)
 	canonicalEmpty := headErr != nil
 

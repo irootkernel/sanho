@@ -219,9 +219,17 @@ func renderStatus(out io.Writer, ws *workspace, store *canonical.Store, report a
 		writef(out, "relation  : behind %d, ahead %d\n", report.Behind, report.Ahead)
 	}
 
-	renderSyncPreview(out, report)
+	// One sync row, and during a sync it is the sync's own. The behind
+	// count is still true in that window — the base deliberately stays at
+	// the pre-sync value — but "N behind — 'sanho sync' will merge
+	// cleanly" names a command that refuses while a note exists, which is
+	// exactly the closure violation D3 forbids. The unfinished sync is
+	// the more useful reading of the same state, and it names two
+	// commands that do work here.
 	if report.SyncInProgress {
 		writef(out, "sync      : %s\n", syncNotePendingMessage("IN PROGRESS"))
+	} else {
+		renderSyncPreview(out, report)
 	}
 	renderSiblings(out, report.Siblings)
 }

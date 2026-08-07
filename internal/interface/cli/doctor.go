@@ -318,7 +318,26 @@ func checkBase(ctx context.Context, ws *workspace, fix bool, out *report) {
 
 // repairBase re-runs the §5.10 derivation and writes the result,
 // reporting under the `base-fix` name.
+//
+// It stands down while a sync is unfinished, for the same reason
+// post-checkout re-derivation does (§5.10) and checkBaseDerivation
+// already did: the note holds the base still until the user completes
+// or undoes the sync, and a repair that wrote the newest stamped
+// commit's value would be a third party moving the one file the window
+// is defined by. The reading is deliberately wide — an unreadable note
+// counts as a sync in progress, because "the sync state is unknown" is
+// not a state to write a base in.
+//
+// It is reported as info rather than as a warning: the unfinished sync
+// is already a warning of its own from checkSyncNote, and counting it
+// twice would make `sanho doctor --fix` look like it made things worse.
 func repairBase(ctx context.Context, ws *workspace, out *report) {
+	if _, syncing, noteErr := ws.statePort().LoadSyncNote(); syncing || noteErr != nil {
+		out.info("base-fix", "%s", syncNotePendingMessage(
+			"a sync is in progress, so the docs base was not re-derived"))
+		return
+	}
+
 	derived, found, deriveErr := deriveBase(ctx, ws.root)
 	if deriveErr != nil || !found {
 		out.warn("base-fix", "%s", baseNeedsSyncMessage(fmt.Sprintf(

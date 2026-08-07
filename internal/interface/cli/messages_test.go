@@ -28,6 +28,12 @@ func TestCommitWarningConflictVariantSaysWhatHappensIfIgnored(t *testing.T) {
 	}
 }
 
+// Template 2 gains one line, and the deviation is deliberate: §5.5's
+// D3 ("no new vocabulary — resolve, add, commit") could not be kept
+// without keeping the inference that made a stash indistinguishable from
+// a resolution. `sanho sync --continue` is the new step, it is named
+// where the conflict is created, and docs/architecture.md records the
+// deviation. The rest of the template is still character for character.
 func TestSyncConflictMatchesTemplate2(t *testing.T) {
 	got := syncConflictMessage("docs", []string{"docs/api.md", "docs/schema.md"})
 	want := strings.Join([]string{
@@ -35,6 +41,7 @@ func TestSyncConflictMatchesTemplate2(t *testing.T) {
 		"  docs/api.md",
 		"  docs/schema.md",
 		"Resolve the markers, then:  git add docs/ && git commit",
+		"Then complete the sync:     sanho sync --continue",
 		"To undo this sync:          sanho sync --abort",
 	}, "\n")
 	if got != want {
@@ -88,12 +95,14 @@ func TestPushRejectionWithoutFileDetailIsTheBareTemplate(t *testing.T) {
 }
 
 // The X1 state has to say plainly what it is, because it is the one
-// refusal whose docs look finished.
-func TestSyncNotCommittedNamesBothWaysOut(t *testing.T) {
+// refusal whose docs look finished — and it must name every way out,
+// including the one that says "my version is the resolution".
+func TestSyncNotCommittedNamesEveryWayOut(t *testing.T) {
 	got := syncNotCommittedMessage(sampleBaseOID, sampleHeadOID)
 	for _, want := range []string{
-		"was never resolved by a commit",
+		"no commit has changed the files it conflicted on",
 		"sanho sync --abort",
+		"sanho sync --continue",
 		"stays in your stash",
 		"67c4bbfeada3",
 		"9a41f2c0e1d2",
@@ -106,6 +115,66 @@ func TestSyncNotCommittedNamesBothWaysOut(t *testing.T) {
 	// no markers left to resolve and nothing staged to commit.
 	if strings.Contains(got, "git add") {
 		t.Errorf("syncNotCommittedMessage =\n%s\nnames a commit that has nothing to commit", got)
+	}
+}
+
+// The two unfinished-but-fine states share a renderer, so the wording
+// that separates them is worth pinning: one asserts a commit exists, the
+// other asserts none does, and neither may claim the other.
+func TestSyncNeedsContinueDistinguishesTheTwoStates(t *testing.T) {
+	committed := syncNeedsContinueMessage(sampleBaseOID, sampleHeadOID, true)
+	uncommitted := syncNeedsContinueMessage(sampleBaseOID, sampleHeadOID, false)
+
+	for _, message := range []string{committed, uncommitted} {
+		for _, want := range []string{"is not completed — ", "sanho sync --continue", "sanho sync --abort"} {
+			if !strings.Contains(message, want) {
+				t.Errorf("message =\n%s\nwant it to contain %q", message, want)
+			}
+		}
+	}
+	if !strings.Contains(committed, "the resolution is committed") {
+		t.Errorf("committed rendering =\n%s\nwant it to say the resolution is committed", committed)
+	}
+	if !strings.Contains(uncommitted, "Commit your resolution") {
+		t.Errorf("uncommitted rendering =\n%s\nwant it to name the commit that is missing", uncommitted)
+	}
+	// The abort throws away an uncommitted resolution, and only the
+	// rendering printed while one might exist has to say so.
+	if !strings.Contains(uncommitted, "discards anything you have not committed") {
+		t.Errorf("uncommitted rendering =\n%s\nwant it to say what the abort discards", uncommitted)
+	}
+	// Neither may borrow the "put aside" explanation, which is a claim
+	// about commits that this renderer never checks.
+	for _, message := range []string{committed, uncommitted} {
+		if strings.Contains(message, "no commit has changed the files it conflicted on") {
+			t.Errorf("message =\n%s\nstates a reason it does not know", message)
+		}
+	}
+}
+
+// §5.9 template 2 names the resolution sequence in order, and the order
+// is the message: commit, then complete, or undo.
+func TestConflictTemplateNamesTheWholeSequence(t *testing.T) {
+	got := syncConflictMessage("docs", []string{"docs/api.md"})
+	commit := strings.Index(got, "git add docs/ && git commit")
+	proceed := strings.Index(got, "sanho sync --continue")
+	abort := strings.Index(got, "sanho sync --abort")
+
+	switch {
+	case commit < 0 || proceed < 0 || abort < 0:
+		t.Fatalf("syncConflictMessage =\n%s\nwant it to name the commit, the completion and the undo", got)
+	case commit > proceed:
+		t.Errorf("syncConflictMessage =\n%s\nnames --continue before the commit it comes after", got)
+	case proceed > abort:
+		t.Errorf("syncConflictMessage =\n%s\nwant the undo listed last, as the alternative", got)
+	}
+	// The blocked-commit rendering of the same template says the same
+	// three things, so a user who meets either one reads one procedure.
+	blocked := unresolvedSyncMessage("docs", []string{"docs/api.md"})
+	for _, want := range []string{"git add docs/ && git commit", "sanho sync --continue", "sanho sync --abort"} {
+		if !strings.Contains(blocked, want) {
+			t.Errorf("unresolvedSyncMessage =\n%s\nwant it to contain %q", blocked, want)
+		}
 	}
 }
 
@@ -226,7 +295,10 @@ func TestMessagesAreEnglishOnly(t *testing.T) {
 		upToDateMessage(""),
 		pulledMessage("abc", ""),
 		syncAbortedMessage(nil),
-		syncCompletedMessage(),
+		syncCompletedMessage("abc"),
+		syncNeedsContinueMessage("a", "b", true),
+		syncNeedsContinueMessage("a", "b", false),
+		syncContinueBlockedMessage("markers remain"),
 		baseRederivedMessage("abc"),
 		stagedMarkersMessage([]string{"docs/a.md"}),
 		unresolvedSyncMessage("docs", []string{"docs/a.md"}),
@@ -274,6 +346,8 @@ func TestAdvisedCommandsAreRealCommands(t *testing.T) {
 		syncConflictMessage("docs", []string{"docs/a.md"}),
 		pushConflictMessage("a", "b", []string{"docs/a.md"}),
 		syncNotCommittedMessage("a", "b"),
+		syncNeedsContinueMessage("a", "b", true),
+		syncContinueBlockedMessage("markers remain"),
 		syncNoteCorruptMessage("unexpected end of JSON input"),
 		staleCanonicalLine(time.Hour),
 		neverFetchedLine,
