@@ -2,6 +2,43 @@
 
 ## v0.2.0 - 2026-08-07
 
+### Fixed before release (second external review wave)
+
+A re-review found that the first wave had hardened the test for "is this sync
+resolved?" while leaving the dangerous state it was protecting: a conflicted
+sync advanced the docs base to the merge target immediately, so for the whole
+time a resolution was owed the workspace held `base == canonical head` with
+pre-merge documents beneath it. Two paths still reached a publication from
+there. The base advance now happens when a resolution is confirmed, which
+removes the state rather than the two symptoms.
+
+- **An unrelated docs commit no longer passes for a resolution.** With the
+  markers stashed away, committing any other document moved HEAD and its docs
+  tree — all the completion test asked for — so the sync note was cleared and
+  the next push republished the pre-merge tree over upstream's work at exit 0.
+  The sync note now records which paths the merge conflicted on, and a sync
+  counts as resolved only once a commit has changed one of them. `pre-commit`
+  says so for every unfinished sync whose markers are gone, not only for the
+  tidy stashed case, and stays quiet when the commit being prepared is itself
+  the resolution.
+- **`sanho sync --abort` over a damaged note is lossless.** The previous base
+  lived inside the note, so an abort that could not read it left the base on
+  the merge target with pre-merge documents beneath it, and the next push
+  fast-forwarded over upstream. A conflicted sync no longer moves the base, so
+  there is nothing for that abort to restore: it succeeds, says only that the
+  docs were restored, and the follow-up `sanho doctor --fix` line is gone. An
+  abort still restores the base recorded in a readable note, which is what a
+  workspace left mid-sync across this upgrade needs.
+- Consequences of holding the base still, all local and none of them networked:
+  the resolution commit stamps the merge target it derives from (and a commit
+  that leaves the conflicted paths alone stamps the pre-sync base, so a later
+  checkout cannot re-derive its way back into the old state); base
+  re-derivation and `sanho doctor`'s `base-derivation` check stand down while a
+  sync owns the base; and the freshness warning is suppressed for the duration,
+  since the notice above already describes that state and names the way out.
+- The registry lock timeout is reported as `registry_lock_timeout` in the
+  `--json` error envelope again, rather than as `internal`.
+
 ### Fixed before release (external review wave)
 
 A second, external review of the v0.2 implementation found one critical defect,

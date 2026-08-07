@@ -323,7 +323,7 @@ commit을 가리킬 수 있으며, 그때 관계는 `unknown`이다.
 | 필드 | 설명 |
 |---|---|
 | `status` | 위 "안정 어휘"의 네 값 중 하나. |
-| `base` | 적용된 새 base(canonical head 또는 `--rebase-onto` 대상). `up_to_date`에서도 현재 base를 그대로 반복한다. canonical이 비어 있으면 이름 붙일 commit이 없으므로 `null`이다. `--abort`에서도 `null`이다. |
+| `base` | 적용된 새 base(canonical head 또는 `--rebase-onto` 대상). `up_to_date`에서도 현재 base를 그대로 반복한다. canonical이 비어 있으면 이름 붙일 commit이 없으므로 `null`이다. `--abort`에서도 `null`이다. **`conflicts`에서는 아직 채택되지 않은 병합 대상**을 가리킨다 — 충돌 sync는 base 파일을 옮기지 않고 sync note에 대상을 기록해 두었다가 해소가 확정될 때 채택한다. |
 | `commit` | 만들어진 sync commit OID. 아무것도 commit하지 않았으면 빈 문자열이다. 병합 결과가 `HEAD`의 docs tree와 같으면 기록할 변경이 없으므로 `synced`이면서 `commit`이 비어 있을 수 있다. |
 | `conflicts` | 충돌 경로(저장소 기준 상대 경로). `conflicts` 상태가 아니면 `[]`. |
 

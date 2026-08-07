@@ -170,11 +170,28 @@ sanho: staged docs contain conflict markers:
 Resolve them, then 'git add' the files and commit again.
 ```
 
-해소가 commit되면 다음 `pre-commit` 또는 `pre-push`가 note를 정리한다.
+해소가 commit되면 다음 `pre-commit` 또는 `pre-push`가 note를 정리하고, 그때
+docs base가 병합 대상으로 전진한다. 충돌 sync 자체는 base를 옮기지 않는다 —
+마커가 worktree에 있는 동안 docs는 여전히 병합 이전 상태에서 파생돼 있기
+때문이다.
 
 ```text
 sanho: sync resolved; the sync note has been cleared
 ```
+
+마커를 stash하거나 `git checkout HEAD -- docs`로 치워 두면 끝난 것처럼 보이지만
+끝난 것이 아니다. commit할 때마다 이렇게 알린다(막지는 않는다). push는 거절한다.
+
+```text
+sanho: the sync from 67c4bbfeada3 to 9a41f2cbbbbb was never resolved by a commit; no commit has changed the files it conflicted on
+Run 'sanho sync --abort' to undo it — anything you stashed stays in your stash — then 'sanho sync' to lay the conflicts out again.
+```
+
+해소로 치는 조건은 "충돌났던 파일 중 하나를 바꾼 commit이 있었는가"다. 무관한
+문서를 commit하는 것으로는 해소되지 않으며, 모든 충돌 경로를 그대로 두는
+"전부 내 것으로" 해소도 마찬가지다. 후자라면 위 안내대로 abort하고 다시 sync한
+뒤 해소를 만들면 된다. 창이 열려 있는 동안 신선도 경고(`docs base is N commits
+behind`)는 이 안내로 대체된다.
 
 되돌리고 싶으면 언제든 abort할 수 있다.
 

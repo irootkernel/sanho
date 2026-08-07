@@ -41,9 +41,15 @@ sanho: sync aborted; docs restored to HEAD
 abort는 세 가지만 한다.
 
 1. docs worktree와 index를 `HEAD` 기준으로 복원한다.
-2. base 파일을 note에 기록된 `prev_base`로 되돌린다. sync 진입 시점에 base가
-   없었다면 base 파일을 삭제한다.
+2. base 파일을 note에 기록된 `prev_base`로 되돌린다. 충돌 sync는 base를 옮기지
+   않으므로 이것은 보통 이미 있는 값을 다시 쓰는 멱등 연산이고, 실제로 값이
+   바뀌는 경우는 둘뿐이다. base 없이 sync에 들어간 경우(파일을 삭제한다), 그리고
+   base를 선-전진시키던 이전 빌드가 남긴 옛 note를 정리하는 경우다.
 3. note를 지운다.
+
+note를 읽을 수 없어도 같다. 2단계만 건너뛰는데(값이 note 안에 있었다), 되돌릴
+것이 없으므로 **무손실**이다. 예전에 이 경우 붙던 "base가 sync가 둔 자리에
+남았다"는 후속 안내는 그 상태가 사라지면서 함께 없어졌다.
 
 ref를 움직이지 않고, commit을 만들지 않고, docs 밖의 파일을 건드리지 않는다.
 따라서 "abort가 실패하는 상태"가 존재하지 않는다. 순서도 재실행 가능하도록
