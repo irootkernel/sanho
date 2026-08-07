@@ -169,15 +169,21 @@ sanho: pushed docs still contain conflict markers:
 sanho: canonical repository unreachable (<url>): <원인>
 sanho: canonical history was rewritten; base <oid> is no longer reachable
 sanho: branch <name> carries no docs; publishing it would delete …
-sanho: the sync from <a> to <b> was never resolved by a commit; …
+sanho: the sync from <a> to <b> is not completed; no commit has changed the files it conflicted on
+sanho: this sync cannot be completed here (<원인>)
+sanho: this branch carries no docs provenance, so the docs base was cleared — run 'sanho sync' to establish one
 sanho: the record of the sync in progress is unreadable (<원인>)
 error: push rejected — no remote ref was changed
 ```
 
-`SANHO_ALLOW_DOCS_DELETION=1`을 환경에 두고 push하면 마지막에서 두 번째 줄의
-거절을 한 번만 무력화한다. docs가 없는 branch를 게시해 canonical의 모든 문서를
-삭제하는 일은 정당한 작업이지만, branch에 docs가 없다는 사실만으로 추론할 수
-있는 의도가 아니어서 명시를 요구한다.
+`SANHO_ALLOW_DOCS_DELETION=1`을 앞에 붙여 push하면 `branch <name> carries no
+docs` 거절을 그 한 번만 무력화한다. docs가 없는 branch를 게시해 canonical의
+모든 문서를 삭제하는 일은 정당한 작업이지만, branch에 docs가 없다는 사실만으로
+추론할 수 있는 의도가 아니어서 명시를 요구한다.
+
+값은 프로세스 환경에서 읽으므로 `export`로 두면 그 셸의 이후 push 전부에
+적용된다 — "한 번만"이 아니다. 그래서 안내 문구는 실제로 한 번만 유효한
+`SANHO_ALLOW_DOCS_DELETION=1 git push` 접두 형태를 보여 준다.
 
 ## `version`
 

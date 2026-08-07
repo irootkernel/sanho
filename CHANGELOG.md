@@ -2,6 +2,99 @@
 
 ## v0.2.0 - 2026-08-07
 
+### Added before release (fourth external review wave)
+
+- **Every docs-base write goes through one guard, and a test fails the build
+  when a new caller goes around it.** The same failure — a base naming a
+  canonical state the documents beside it never derived from, published as a
+  fast-forward at exit 0 — has now been found four times, in four different
+  writers. `wsstate.SaveBase` was an unconditional writer and the invariant
+  governing it ("a recorded base may never be ahead of the docs the worktree
+  carries") had no runtime enforcement anywhere, so each fix protected one
+  caller and the next one written inherited none of them. All eight writers now
+  pass through `interface/cli`'s `writeBase`, which records a base only on a
+  proof it can check itself: the worktree docs ARE that base's docs, the tip's
+  own provenance names it, it precedes the base already recorded, merging it
+  into the worktree changes nothing, or it completes a sync begun on the
+  history HEAD stands on. Nothing is taken on the caller's word.
+- **`sanho sync --continue` reports how far the completed state drifted from
+  the merge it completes.** Reverting the clean half of a merge along with its
+  conflicts and then completing is a legitimate "keep my own lines" decision,
+  and it also silently drops upstream content no conflict was ever shown for.
+  The count is printed; nothing is refused.
+
+### Fixed before release (fourth external review wave)
+
+- **A conflicted sync can no longer be completed from a branch that never took
+  part in it.** `git stash push -- docs` clears the markers and the dirt, and
+  `git checkout other` satisfies every remaining precondition while replacing
+  the documents entirely — so the completion recorded canonical head as the
+  base of documents that had never been reconciled with it, and the next push
+  republished them over upstream. `sanho sync --continue` now requires HEAD to
+  be the commit the sync began at or a descendant of it, decided by one local
+  `merge-base --is-ancestor`. Ancestry rather than identity: a resolution that
+  made commits, or that continued on a branch cut from the resolution, still
+  completes exactly as before.
+- **A branch with no docs provenance no longer inherits another branch's base.**
+  A repository that had `docs/` before it had sanho has such branches by
+  construction. Checking one out found no trailer, printed nothing, and KEPT
+  the base — leaving base == canonical head over one stale document, which the
+  next push published as a fast-forward, replacing every canonical document
+  with that one. Base re-derivation now CLEARS a base the new HEAD cannot
+  account for, and says so. No base is a state everything downstream handles:
+  publication refuses with `no_base`, and `sanho sync` establishes one.
+- **Publication refuses a fast-forward the pushed branch's history does not
+  support.** The base file is workspace state — one file at the checkout root,
+  shared by every branch — while the thing being published is a branch, so a
+  branch switch can leave it licensing a fast-forward over content the branch
+  never derived from. A fast-forward now additionally requires the newest
+  `docs-base` trailer reachable from the tip to name the recorded base, or a
+  canonical ancestor of it. Auto-merges and docs-identical pushes are
+  unaffected.
+- **A failed base advance no longer reports a successful push as rejected.**
+  Step 6 runs after the CAS push has landed, so returning its failure printed
+  the rejection template — whose last line promises that no remote ref was
+  changed — over a push that changed one. The publication now stands and one
+  line says the local pointer did not move.
+- **Tag pushes and branch deletions are filtered before anything else.** They
+  publish nothing, and used to be refused by an unrelated sync window and made
+  to wait on a clone creation and fetch they never needed.
+- **`commit-msg` no longer demotes an existing trailer block.** The provenance
+  lines were always separated from the body by a blank line, which turned a
+  message already ending in `Signed-off-by:` into body text plus a new block —
+  so `Signed-off-by` silently stopped being a trailer on every commit sanho
+  stamped.
+- **`GIT_INDEX_FILE` is scrubbed like every other repository-identity variable
+  and passed back explicitly.** The application repository's runner asks for it
+  by name (`gitx.WithInheritedIndexFile`), because the hooks of a partial
+  commit must read that commit's temporary index; every other invocation,
+  including all of them against the private canonical clone, now runs without
+  it.
+- **The private canonical clone is built out of place and renamed in.** Two
+  linked worktrees share one clone, so two write paths can find it missing at
+  once — and a lock around the construction is not enough, because the
+  observation is unsynchronized. The loser could see the winner's directory
+  mid-build and open it; because the clone lives inside the application
+  repository's git directory, `git rev-parse` walked UP and bound the Store to
+  the APPLICATION repository, so the reconcile read the app's own
+  `remote.origin.url` and tried to rewrite it — failing with "No such remote
+  'origin'" and then deleting the winner's clone. The clone is now assembled in
+  a sibling staging directory and moved into place with one rename, so the
+  final path is either absent or complete; `canonical.Open` refuses a directory
+  git resolves to a different repository; and the reconcile decides `add`
+  versus `set-url` from `git remote` rather than from a config value.
+- Smaller fixes: clone creation is serialized across linked worktrees; a
+  workspace root is only borrowed from the main worktree for a directory that
+  is itself a worktree, not for any subdirectory; the pre-commit freshness
+  prediction is computed from the index rather than from HEAD; `post-checkout`
+  stands down on a file checkout; a corrupt `.sanho.json` no longer stops
+  `sanho doctor` from running its other checks; each publication line reports
+  its own case; `init` and `migrate` no longer fetch twice; `cat-file` failures
+  name the docs file; a conflicted sync records its note before the markers;
+  `--json` failures from mis-combined `sanho sync` flags carry the error
+  envelope; and `SANHO_ALLOW_DOCS_DELETION` is advised in the one-command
+  prefix form it is actually single-use in.
+
 ### Added before release (third external review wave)
 
 - **`sanho sync --continue` completes a conflicted sync, and nothing else

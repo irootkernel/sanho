@@ -130,18 +130,8 @@ docs-base-tree: <그 commit의 docs tree OID>
 없으면 `docs-base-tree` 줄은 생략한다. stamp는 순수 로컬 동작이다. network,
 clone 접근, 원격 조회를 전혀 하지 않는다.
 
-출처가 base 파일이 아닌 경우가 하나 있다. **sync가 진행 중이고 지금 만들어지는
-commit이 그 sync의 해소일 때**는 note의 `target`을 stamp한다. 판정은 해소
-판정과 같다 — index의 docs tree가 note의 `conflicts` 중 한 경로를 바꿨는가.
-해소 commit의 docs 내용은 대상에서 병합돼 온 것이므로 그것이 정직한 값이고,
-직전 base를 새기면 체크아웃 재유도가 base를 이미 가진 내용 뒤로 되감아 다음
-push가 아무도 만들지 않은 충돌을 보고하게 된다.
-
-역도 마찬가지로 중요하다. 창 안에서 만들어졌지만 충돌 경로를 하나도 건드리지
-않은 commit(무관한 문서 하나를 commit한 경우)은 직전 base에서 파생된 것이고,
-거기에 대상을 새기면 같은 재유도가 base를 canonical head에 올려놓고 그 밑에
-병합 이전 docs를 두게 된다 — 위험 상태가 trailer를 통해 되살아난다.
-판정은 로컬 `git diff-tree` 하나이므로 무network 계약은 그대로다.
+출처는 **언제나 base 파일**이다. 예외는 없고, 특히 sync 창 안에도 없다
+(§창 안 stamping은 언제나 base 파일 값이다).
 
 의미는 **파생(ancestry)**이다. `docs-base: X`는 "이 commit의 docs 내용은
 canonical commit X에서 파생됐다"를 뜻하며, tree가 같다는 주장(identity)이
@@ -206,16 +196,48 @@ sanho: docs provenance not stamped (<원인>); run 'sanho doctor --fix' to resto
    "worktree docs가 어디에서 파생됐는가"에 답해야 하기 때문이다.
 2. `git log --max-count=500 HEAD`를 걸어 각 commit의 trailer를 모으고,
    최신순으로 처음 채택 가능한 commit의 base를 고른다.
-3. 채택한 commit이 현재 기록된 base commit과 같으면 파일을 그대로 둔다.
+3. **채택할 것이 하나도 없고**, 기록된 base의 docs tree가 worktree docs와
+   같지도 않으면 **base를 지운다.**
+4. 채택한 commit이 현재 기록된 base commit과 같으면 파일을 그대로 둔다.
    legacy `docs-version` 채택은 tree가 없으므로, 덮어쓰면 rewrite 복구
    anchor를 잃는다.
-4. 실제로 바뀐 경우에만 한 줄 출력한다.
+5. 기록된 base의 docs tree가 worktree docs 그 자체이면 역시 그대로 둔다.
+   문서에 대해 다툴 것이 없는데 포인터만 다시 쓰는 것은 잡음이고, 방금
+   게시하거나 `pull`한 workspace가 모두 이 상태다 — 거기서 재유도하면 다음
+   HEAD 이동에서 base가 뒤로 끌려가고 그 다음 push가 아무도 바꾸지 않은
+   내용을 다시 병합한다.
+6. 실제로 바뀐 경우에만 한 줄 출력한다.
 
 ```text
 sanho: docs base re-derived as <oid12> after HEAD moved
 ```
 
-세 hook 모두 어떤 실패에서도 exit 0이다.
+세 hook 모두 어떤 실패에서도 exit 0이다. `post-checkout`은 git이 넘기는 세
+번째 인자를 읽어 **파일 체크아웃(flag 0)이면 물러난다** — `git checkout --
+docs/api.md`는 ref를 움직이지 않으므로 재유도할 이력 변화 자체가 없고, 문서
+하나를 되돌리는 그 동작은 1번이 이미 물러나야 하는 상태다.
+
+#### 3번 — 근거 없는 base는 지운다
+
+이것이 4차 리뷰의 C2다. 예전에는 "채택할 것이 없다"를 조용히 "그대로 둔다"로
+읽었다. 하지만 base 파일은 checkout 루트에 있는 **파일 하나**이고 움직인 것은
+`HEAD`다. "그대로 둔다"가 실제로 한 일은 **지금 거기 선 branch에게 다른
+branch의 base를 넘겨주는 것**이었다.
+
+sanho 도입 전에 이미 `docs/`가 있던 저장소는 그런 branch를 구조적으로 가진다.
+하나를 체크아웃하면 workspace는 낡은 문서 하나 위에 base == canonical head를
+들고 있었고, push는 fast-forward로 평가되어 canonical의 문서 여섯 개가 그 하나로
+바뀌었다 — exit 0, `(fast_forward)`.
+
+기준은 일부러 낮다. 기록된 base의 docs가 **곧 worktree의 docs**이거나 이력이
+그것을 이름지으면 유지한다. 목적은 잘 돌아가는 workspace를 의심하는 것이 아니라,
+검증되지 않은 포인터를 branch 전환 너머로 나르기를 거부하는 것이다. base가
+없는 상태는 아래가 모두 다룬다: 게시는 `no_base`로 거절하며 `sanho sync`를
+이름짓고, sync는 빈 tree(양쪽의 합집합)에 대해 병합하여 하나를 세운다.
+
+```text
+sanho: this branch carries no docs provenance, so the docs base was cleared — run 'sanho sync' to establish one
+```
 
 1번 때문에 남는 불일치는 `sanho doctor`의 `base-derivation` 검사가 보고한다.
 이력에서 재유도한 base 후보와 기록된 base가 다를 때, 셋으로 갈린다. (0번의
@@ -235,8 +257,11 @@ sanho: docs base re-derived as <oid12> after HEAD moved
 있는(또는 읽을 수 없는) 동안 `--fix`는 base를 쓰지 않고 `[info]`로 그 사실만
 말하며, `sanho init`은 아예 거절한다 — `--force`가 docs 디렉터리를 canonical
 내용으로 갈아치우고 base를 canonical head로 기록하는데, 그 뒤 abort가 docs만
-되돌리면 base가 worktree보다 앞선 상태가 남기 때문이다. base를 쓰는 경로는 넷이며
-(sync·`--continue`·게시 후 전진·재유도) 넷 모두 같은 불변식을 지킨다.
+되돌리면 base가 worktree보다 앞선 상태가 남기 때문이다.
+
+base를 쓰는 경로는 여덟이다: `sync`(clean)·`--continue`·`--abort`의 복원·
+`pull`·게시 후 전진·재유도·`doctor --fix`·`init`/`migrate`. 여덟 모두
+§base 쓰기 가드 하나를 지나며, 그것이 불변식의 강제점이다.
 
 ## 게시 계약 (pre-push)
 
@@ -244,34 +269,53 @@ sanho: docs base re-derived as <oid12> after HEAD moved
 
 1. **필터.** `refs/heads/*`이고 local OID가 0이 아닌 update만 남긴다. tag
    push와 branch 삭제는 그대로 통과한다. local ref가 `HEAD`인 update는
-   현재 branch 이름으로 치환한다(`git push origin HEAD` 대응). detached
-   HEAD는 치환하지 못하므로 필터에서 걸러진다. 남는 것이 없으면 exit 0.
-2. **sync 진행 게이트.** `sync.json`이 있으면 거절한다. clone을 열기 전에,
-   로컬 파일 하나만 보고 판정하므로 가장 값싼 거절이다. 이미 해소된 sync는
-   여기서 note를 정리하므로 해소 commit을 담은 push를 막지 않는다.
+   **먼저** 현재 branch 이름으로 치환한다(`git push origin HEAD` 대응);
+   치환 전에는 branch update로 보이지 않기 때문이다. detached HEAD는 치환하지
+   못하므로 필터에서 걸러진다. 남는 것이 없으면 exit 0.
 
-   상태에 따라 세 가지로 갈린다.
+   이 필터는 아래 어떤 단계보다도 먼저 돌고, 순서가 계약이다. tag만 담은
+   push나 branch 삭제만 담은 push는 게시할 것이 없으므로, 자기와 무관한 sync
+   창 때문에 거절돼서도 안 되고 clone을 만들고 fetch하는 `Ensure`를 기다려서도
+   안 된다. 둘 다 실제로 일어났다 — 미완료 sync 중의 `git push --tags`가
+   거절됐고, 오프라인에서 같은 push가 필요도 없는 network 호출로 실패했다.
+2. **sync 진행 게이트.** `sync.json`이 있으면 거절한다. clone을 열기 전에,
+   로컬 파일 하나만 보고 판정하므로 가장 값싼 거절이다.
+
+   **게이트는 아무것도 쓰지 않는다.** note를 지우는 것은 `sanho sync
+   --continue`와 `sanho sync --abort` 둘뿐이다(§감지 계약 1번). 예전에는
+   "해소된 것처럼 보이면" 여기서 note를 정리했고, 그래서 stash로 마커를
+   빠져나온 뒤 같은 파일을 계속 편집한 것이 완료로 읽혔다. 해소 commit을
+   담은 push도 거절되며, 그것이 계약이다 — 완료는 명시적 행위이고, 완료되지
+   않은 workspace의 base는 아직 그 docs를 설명하지 않는다.
+
+   상태에 따라 네 가지로 갈린다. 어느 쪽이든 거절이고, 분류가 정하는 것은
+   **어떤 문장을 출력할지**뿐이다.
 
    - 마커가 남아 있으면 진행 중인 sync다.
      ```text
-     sanho: finish the sync first: resolve conflicts, then 'git add' and 'git commit' (or 'sanho sync --abort')
+     sanho: finish the sync first: resolve the conflicts, 'git add' and 'git commit', then 'sanho sync --continue' (or 'sanho sync --abort' to undo it)
      ```
    - 마커가 없고 docs가 clean인데 **충돌 경로를 바꾼 commit이 없으면**,
      해소가 commit되지 않았다는 뜻이다(stash·revert·`git checkout HEAD --
-     docs`, 그리고 무관한 문서만 commit한 경우). 반쯤 끝난 화해를 공유
-     상태로 만들지 않기 위해 여기서 막는다.
+     docs`, 그리고 무관한 문서만 commit한 경우).
      ```text
-     sanho: the sync from <a> to <b> was never resolved by a commit; no commit has changed the files it conflicted on
+     sanho: the sync from <a> to <b> is not completed; no commit has changed the files it conflicted on
      Run 'sanho sync --abort' to undo it — anything you stashed stays in your stash — then 'sanho sync' to lay the conflicts out again.
+     If the docs already read the way you want them, run 'sanho sync --continue' instead to complete the sync as it stands.
      ```
      이 거절이 마지막 방어선은 아니다. 충돌 sync는 base를 옮기지 않으므로
      (아래 sync 계약 8번), 설령 이 게이트를 지나치더라도 push는 실제 이력에
      대해 case ③으로 평가된다. 게이트는 **무엇을 안내할지**를 정하고, base는
      **게이트가 틀렸을 때 무엇을 잃는지**를 정한다.
+   - 해소가 commit됐지만 완료되지 않았거나, 아직 해소 중이면 그 사실을
+     말한다.
+     ```text
+     sanho: the sync from <a> to <b> is not completed — the resolution is committed, and only 'sanho sync --continue' records it
+     ```
    - note를 읽을 수 없으면 존재만으로 거절하고 abort를 안내한다.
      ```text
      sanho: the record of the sync in progress is unreadable (<원인>)
-     Run 'sanho sync --abort' to restore the docs from HEAD and clear it.
+     Run 'sanho sync --abort' to restore the docs from HEAD, forget the docs base it cannot vouch for, and clear it.
      ```
 3. **fetch.** `git -C <clone> fetch origin`. 실패하면 fail-closed로
    canonical-unreachable 메시지와 함께 거절한다.
@@ -317,6 +361,27 @@ sanho: docs base re-derived as <oid12> after HEAD moved
    `no_base`)로 거절한다. 병합 base가 없으면 안전하게 합칠 방법이 없고,
    `sanho sync`가 그 상태에서 base를 만들어 주기 때문이다.
 
+   **case ②는 tip의 이력이 base를 뒷받침해야 성립한다.** fast-forward는 병합
+   없이 tip의 docs tree를 canonical head **위에 그대로** 게시하는 유일한
+   case이므로, canonical이 들고 있고 tip이 들고 있지 않은 것은 전부 삭제된다.
+   그 근거는 오직 기록된 base다 — `B == H`는 "이 docs가 파생된 이후 상류에
+   들어온 것이 없다"는 뜻이니까.
+
+   base 파일 혼자서는 그 근거를 감당하지 못한다. base 파일은 checkout 루트의
+   **workspace 상태**이고 게시되는 것은 **branch**다. sanho 도입 이전 docs를
+   가진 branch나 provenance가 한 번도 새겨지지 않은 branch를 체크아웃하면,
+   파일은 여전히 canonical head를 이름짓는데 그 밑의 문서는 거기서 파생된 적이
+   없다. 그것이 4차 리뷰 C2의 재현이다: 낡은 문서 하나짜리 branch가 canonical의
+   여섯 문서를 전부 대체했고, `(fast_forward)`로 보고됐다.
+
+   그래서 tip이 **자기 이력으로** base를 보증해야 한다. tip에서 도달 가능한
+   최신 `docs-base` trailer가 기록된 base를 이름짓거나, 그 canonical **조상**을
+   이름지어야 한다. 조상 쪽은 빠져나갈 구멍이 아니라 정상 상태다 — 게시 후 전진
+   규칙이 base 파일을 trailer가 가리키는 commit보다 앞으로 옮기므로, 방금
+   push한 workspace는 모두 그 상태다. 보증되지 않으면 `sync_required`(사유
+   `uncorroborated_base`)로 거절하고 `sanho sync`를 안내한다. case ③은 양쪽을
+   합치므로 이 요구가 필요 없고, case ①은 base를 보기도 전에 통과한다.
+
    **다중 ref push는 사슬로 이어진다.** 두 번째 이후의 tip은 canonical의
    고정된 head tree가 아니라 **앞선 tip이 게시하게 될 tree** 위로 병합한다
    (병합 base는 고정된 `B`의 docs tree, 없으면 empty tree). 판정이 ②라도
@@ -331,7 +396,9 @@ sanho: docs base re-derived as <oid12> after HEAD moved
    docs 디렉터리가 생기기 전에 만들어진 branch와 `git rm -r docs`가 요점이었던
    branch는 이 지점에서 구별되지 않으므로 fail-closed로 거절하고 branch 이름과
    삭제될 문서 수를 말한다. 의도한 삭제라면 그 push 한 번에 한해 환경 변수
-   `SANHO_ALLOW_DOCS_DELETION=1`로 명시한다. 삭제 자체는 정당한 작업이고, 다만
+   `SANHO_ALLOW_DOCS_DELETION=1 git push` 접두 형태로 명시한다(값은 프로세스
+   환경에서 읽으므로 `export`는 그 셸의 이후 push 전부에 적용된다 — 접두
+   형태만이 실제로 한 번짜리다). 삭제 자체는 정당한 작업이고, 다만
    추론할 일이 아니다.
 
 6. **부트스트랩.** canonical 게시 branch에 commit이 하나도 없으면
@@ -558,24 +625,52 @@ To undo this sync:          sanho sync --abort
 
 #### `sanho sync --continue`
 
-전제는 셋이며, 각각이 남은 것을 이름짓는다.
+전제는 넷이며, 각각이 남은 것을 이름짓는다.
 
 1. sync note가 있다. 없으면 끝낼 것이 없다.
 2. worktree docs 어느 파일에도 마커가 남아 있지 않다. 마커가 남은 tree에 대해
    base를 기록하는 것은 아무것도 해소하지 않은 상태를 기록하는 일이다.
 3. docs가 `HEAD` 기준 clean하다. base가 서술할 대상이 편집 중인 내용이 아니라
    commit된 내용이어야 하기 때문이다.
+4. **`HEAD`가 sync를 시작한 이력 위에 있다** — note의 `entry_head` 그 자체이거나
+   그 자손이다. 로컬 `git merge-base --is-ancestor` 한 번으로 판정하며 network를
+   열지 않는다.
 
-**"충돌 경로를 바꾼 commit이 있는가"는 묻지 않는다.** 모든 충돌 경로를 바이트
-그대로 "ours"로 두는 해소는 흔적을 남기지 않으며, 이전 설계에서 그것은 빠져
-나갈 수 없는 막다른 길이었다(abort → 재sync → 같은 충돌). 빠져 있던 증거가
-바로 사용자의 선언이다.
+네 번째가 4차 리뷰의 C1이고, 앞의 셋이 그 이유다. 셋 모두 **worktree**에 대한
+질문인데, branch 전환은 셋을 전부 만족시키면서 문서를 통째로 바꾼다.
+`git stash push -- docs`가 마커와 dirty를 없애고, `git checkout other`가 병합에
+참여한 적 없는 이력으로 옮긴다. 그러면 완료는 그 문서들이 한 번도 화해한 적
+없는 canonical head를 base로 기록했고, 다음 push는 fast-forward로 평가돼 상류를
+덮어썼다 — exit 0으로.
+
+동일성이 아니라 **조상 관계**가 옳은 판정이다. 해소는 보통 여러 commit이고,
+때로는 해소에서 낸 branch 위에서 끝나며, 그 전부가 시작 지점의 자손이다. 자손일
+수 없는 것은 애초에 참여하지 않은 branch다. `entry_head`가 비어 있는 note
+(unborn HEAD, 또는 필드가 생기기 전 빌드가 남긴 note)는 어떤 이력도 주장하지
+않으므로 위반될 수도 없어 통과시킨다.
+
+여전히 **"충돌 경로를 바꾼 commit이 있는가"는 묻지 않는다.** 모든 충돌 경로를
+바이트 그대로 "ours"로 두는 해소는 흔적을 남기지 않으며, 이전 설계에서 그것은
+빠져 나갈 수 없는 막다른 길이었다(abort → 재sync → 같은 충돌). 빠져 있던 증거가
+바로 **sync 자신의 이력 위에 선 사용자의 선언**이다.
 
 성립하면 **note를 지우고, 그 다음 base 파일에 `target`을 쓴다.** commit을
-만들지 않고(P3), ref를 움직이지 않고, network를 열지 않는다.
+만들지 않고(P3), ref를 움직이지 않고, network를 열지 않는다. base 쓰기는
+§base 쓰기 가드를 통과하며, 가드는 같은 조상 관계를 어댑터 쪽에서 한 번 더
+증명한다 — 불변식이 이 함수 하나에 기대지 않도록.
 
 ```text
 sanho: sync completed; docs base is now <oid12>
+```
+
+완료되는 tree가 병합 결과와 다르면 **몇 개가 다른지 한 줄로 보고한다**(차단이
+아니다). 충돌과 함께 clean했던 부분까지 되돌린 뒤 완료하는 것은 정당한
+"내 줄을 유지한다" 선언이면서, 동시에 사용자가 충돌을 본 적조차 없는 상류
+내용을 조용히 버리는 일이기도 하다. 숫자를 말하는 것이 결정과 사고의 차이다.
+
+```text
+sanho: sync completed; docs base is now <oid12>
+2 files differ from the merge result and were completed as they stand.
 ```
 
 전제가 성립하지 않으면 남은 것을 이름지어 거절한다.
@@ -602,7 +697,7 @@ base가 너무 오래되면 대가는 병합 한 번이다. 게시가 실제 이
 다음 push가 fast-forward로 판정되어 worktree가 들고 있는 것을 그대로 게시한다.
 두 실패는 비교 대상이 아니므로 모든 판단을 오래된 쪽으로 해소한다.
 
-불변식이 구현에 남긴 자리는 넷이다.
+불변식이 구현에 남긴 자리는 다섯이다.
 
 - **쓰기 순서**: `--continue`는 note 삭제 → base 기록 순이다. 중간에 죽으면
   note는 사라지고 base는 **직전 값**에 남는다(게시가 case-③ 병합으로 화해할
@@ -613,6 +708,53 @@ base가 너무 오래되면 대가는 병합 한 번이다. 게시가 실제 이
   **지운다**. 아무 base도 없는 것이 가장 오래된 값이다.
 - **다른 base 기록자**: 재유도(§base 재유도), `sanho doctor --fix`,
   `sanho init`은 note가 있는 동안 base를 쓰지 않는다.
+- **base 쓰기 가드**: base를 기록하는 **모든** 경로가 하나의 함수를 지난다.
+  아래.
+
+#### base 쓰기 가드 (강제점)
+
+같은 실패 계열이 네 번 재발했고, 매번 다른 경로였다. 매번 그 자리에서는
+올바르게 보이는 쓰기였다 — 값의 출처가 실재했고, 호출자에게 이유가 있었고,
+결과는 옆에 놓인 문서가 한 번도 파생된 적 없는 canonical 상태를 가리키는
+base 파일이었다.
+
+세 웨이브가 세 호출자를 고쳤다. 바뀌지 않은 것은 `wsstate.SaveBase`가 **무조건
+쓰기**라는 사실이다. 위 불변식은 런타임 강제가 어디에도 없었고, 호출자 전원이
+각자 옳게 하는 것으로만 유지됐다. 내년에 쓰일 열 번째 호출자는 앞선 세 수정을
+하나도 물려받지 않는다.
+
+그래서 불변식에 **강제점**을 두었다. `internal/interface/cli`의 `writeBase`가
+`wsstate.SaveBase`를 호출할 수 있는 유일한 곳이고, `internal/architecture`의
+테스트가 다른 호출자가 생기는 순간 빌드를 깬다.
+
+가드는 "worktree가 이 내용을 담고 있는가"를 묻지 않는다. 그것은 틀린 질문이다 —
+문서 하나를 지우고 게시하는 것은 정당한 작업이고, 그때 base는 worktree에 없는
+내용을 이름짓는다. 가드가 묻는 것은 **"이 workspace가 자기 문서의 출처를
+로컬로 보일 수 있는가"**이며, 스스로 확인할 수 있는 증명에만 통과를 준다.
+증명은 다음뿐이고, "호출자가 그렇다고 한다"는 없다.
+
+| 증명 | 내용 | 통과하는 경로 |
+| --- | --- | --- |
+| worktree tree | 후보의 docs tree가 worktree가 해시하는 tree 그 자체다. | 게시 advance, `pull`, `init`(fresh), 병합 결과가 곧 대상인 sync |
+| 같은 commit | 기록된 base가 이미 그 commit을 이름짓는다(쓰기가 아무것도 옮기지 않는다). | `migrate`의 tree 보강, 값을 재확인하는 재유도 |
+| 이력 stamp | `HEAD`에서 도달 가능한 최신 `docs-base` trailer가 이 commit을 이름짓는다. | 재유도, `doctor --fix`, `init`(reuse) |
+| 더 오래된 base | 후보가 기록된 base의 canonical 조상이다(뒤로 가는 것은 언제나 안전하다). | `--abort`의 복원, `--rebase-onto` |
+| 흡수됨 | 후보의 docs를 worktree docs에 3-way 병합해도 clean하고 아무것도 바뀌지 않는다. 병합 base는 기록된 base의 tree와 **빈 tree** 둘 다 시도한다 — 후자는 흐름 자신이 쓴 조상이며(rewrite 복구), 더 강한 주장이다. | `sanho sync`의 clean 경로 |
+| tree 미해결 | 후보의 docs tree가 이 저장소에 아예 없어 어느 방향으로도 비교가 불가능하다. 잃을 것을 보일 수 없으므로 통과시키고, 게시 쪽 확증이 뒤를 받친다. | legacy 채택 |
+| sync 완료 | 완료하려는 sync가 지금 `HEAD`가 선 이력에서 시작됐고 docs가 commit돼 있다. | `sanho sync --continue` |
+
+마지막 하나만 호출자가 증거를 건넨다. 이유는 tree로는 결코 알 수 없는 사실이기
+때문이다 — "내 줄을 전부 유지한다"는 해소는 worktree를 병합 이전과 바이트
+동일하게 남기므로, 어떤 tree 비교도 그것을 "참여한 적 없는 branch에서의 완료"와
+구별하지 못한다. 그래도 **조상 관계 자체는 여기서 실제 git으로 검증**한다;
+넘어오는 것은 note에서 방금 읽은 시작 commit뿐이다.
+
+증명이 하나도 서지 않으면 **쓰지 않고 거절한다.** 흐름은 그 거절을 그대로
+보고하고, 재유도는 대신 **지운다**(아래).
+
+가드가 마지막 방어선은 아니다. base 파일은 손으로 고칠 수도, 백업에서 되돌릴
+수도, 이 코드를 한 번도 지나지 않은 도구가 들여놓을 수도 있으므로, 게시가
+사용 시점에 같은 요구를 한 번 더 한다(§게시 계약의 fast-forward 확증).
 
 #### 창 안 stamping은 언제나 base 파일 값이다
 
@@ -743,6 +885,7 @@ commit 경로는 network를 열지 않고 canonical 가용성에 의존하지 �
    sanho: a sync is in progress — N files still have conflicts:
      docs/api.md
    Resolve the markers, then:  git add docs/ && git commit
+   Then complete the sync:     sanho sync --continue
    To undo this sync:          sanho sync --abort
    ```
    note가 남아 있는데 **worktree에 마커가 하나도 없으면** 안내만 출력하고
@@ -795,6 +938,34 @@ commit 경로는 network를 열지 않고 canonical 가용성에 의존하지 �
    못하거나, canonical head가 없으면 조용히 통과한다. 막을 수 있는 것은 마커
    게이트뿐이다.
 
+#### clone 생성은 원자적이다
+
+clone은 **형제 staging 디렉터리**(`sanho/canonical.building-XXXX`, 같은 부모이므로
+같은 파일시스템)에서 `init --bare` → `remote add` → 최초 fetch → 게시 branch 확정까지
+전부 마친 뒤, `rename` 한 번으로 제자리에 들어온다. 실패하면 staging을 지우고,
+성공하면 rename이 이미 그것을 소비했다. 최종 경로는 **없거나, 완성된 clone**이며
+그 사이 상태가 없다.
+
+생성 자체는 `<git-common-dir>/sanho-clone.lock`으로 직렬화하고 락 안에서 존재를
+다시 확인한다(기다린 쪽은 승자의 clone을 채택한다). 하지만 락만으로는 부족하다 —
+**관찰**이 동기화되지 않기 때문이다. 첫 `stat`은 락 밖에서 일어나므로, 예전의
+제자리 생성에서는 두 번째 프로세스가 승자가 막 만든 디렉터리를 보고 "이미 있다"
+분기로 들어갈 수 있었다.
+
+그때 열린 것은 반쯤 만들어진 clone보다 나빴다. clone은 애플리케이션 저장소의 git
+디렉터리 **안에** 있으므로, 아직 저장소가 아닌 디렉터리에서 `git rev-parse`를 돌리면
+**위로 올라가** 애플리케이션 저장소를 찾는다. 그래서 `reconcileExisting`이 앱 자신의
+`remote.origin.url`을 읽어 canonical URL과 다르다고 판단하고 `git remote set-url`을
+실행했다 — 그 사이 승자의 `init --bare`가 끝나 있어 `No such remote 'origin'`으로
+실패했고, 패자의 정리가 승자의 clone을 지웠다.
+
+그래서 두 곳을 함께 막는다. 생성이 원자적이라 부분 상태가 관찰될 수 없고,
+`Open`은 **디렉터리가 자기 자신의 저장소일 때만** 성공한다(`rev-parse
+--absolute-git-dir`이 그 디렉터리 자신을 가리켜야 한다). 그리고
+`reconcileExisting`은 `add`와 `set-url` 중 무엇을 할지 config 값이 아니라 `git
+remote` 목록에서 직접 판정한다 — 값의 존재는 그 config가 쓰려는 저장소의 것일
+때만 remote의 존재를 뜻하기 때문이다.
+
 sync 예측은 애플리케이션 저장소가 아니라 private clone에서 계산한다. 세 tree가
 한 object database에 있어야 하는데, 애플리케이션 저장소 쪽에서 하면 읽기 전용
 검사가 매 commit마다 canonical object를 사용자 저장소에 밀어넣고 `FETCH_HEAD`를
@@ -808,8 +979,8 @@ private clone으로 가져온다.
 | `.sanho.json` | 작업공간 root | `0644` | v2 workspace 설정. `schema_version`, `workspace_id`, `project`, `docs_repo_url`, `actor_email`, `docs_dir`. `socket_path`는 없다. **v0.1 판정 기준은 `socket_path`의 존재다.** `schema_version`도 `socket_path`도 없는 파일은 v0.1이 아니라 손상이며(`ErrConfigCorrupt`), 파일 이름을 말하며 거절한다. v0.1로 오판하면 `sanho migrate`가 없는 필드로부터 그 파일을 다시 쓰게 된다. |
 | `.sanho_base.json` | 작업공간 root | `0644` | base 포인터. `{"version": 2, "commit": "<oid>", "tree": "<oid>"}`. tree는 비어 있을 수 있다(legacy 채택). 손상되면 fail-closed로 오류다. |
 | `.sanho_docs_hash` | 작업공간 root | — | v0.1 legacy. 읽기 전용 호환 입력이며 Sanho는 쓰지 않는다. `.sanho_base.json`이 없을 때만 한 줄 OID로 읽는다. |
-| `sanho/sync.json` | git-dir | `0644` (디렉터리 `0700`) | 충돌 sync 진행 중에만 존재. `{prev_base, target, started_at, entry_head, entry_docs_tree, conflicts}`. `entry_head`·`entry_docs_tree`는 마커를 쓸 당시의 `HEAD`와 그 docs tree, `conflicts`는 병합이 해결하지 못한 저장소 기준 경로들이다. 셋은 끝나지 않은 sync가 어떤 모양인지 **보고**하기 위한 것이며, 무엇도 완료시키지 않는다. `target`은 창 동안 **대상을 담고 있는 유일한 기록**이다 — base 파일은 `sanho sync --continue`가 완료할 때까지 직전 값에 머무른다. 파싱에 실패해도 **존재는 참**이므로 게이트는 계속 거절하고 `sanho sync --abort`는 성립한다(그리고 base 파일을 지운다). |
-| `sanho/canonical/` | git-common-dir | `0700` | private bare clone. linked worktree는 공통 dir을 공유하므로 하나를 함께 쓴다. |
+| `sanho/sync.json` | git-dir | `0644` (디렉터리 `0700`) | 충돌 sync 진행 중에만 존재. `{prev_base, target, started_at, entry_head, entry_docs_tree, merged_tree, conflicts}`. `entry_head`·`entry_docs_tree`는 마커를 쓸 당시의 `HEAD`와 그 docs tree, `merged_tree`는 충돌 병합이 만든 docs tree, `conflicts`는 병합이 해결하지 못한 저장소 기준 경로들이다. `entry_head`는 `--continue`의 네 번째 전제(같은 이력 위인가)를 판정하고, `merged_tree`는 완료가 병합 결과에서 얼마나 벗어났는지 보고한다. 셋은 끝나지 않은 sync가 어떤 모양인지 **보고**하기 위한 것이며, 무엇도 완료시키지 않는다. `target`은 창 동안 **대상을 담고 있는 유일한 기록**이다 — base 파일은 `sanho sync --continue`가 완료할 때까지 직전 값에 머무른다. 파싱에 실패해도 **존재는 참**이므로 게이트는 계속 거절하고 `sanho sync --abort`는 성립한다(그리고 base 파일을 지운다). |
+| `sanho/canonical/` | git-common-dir | `0700` | private bare clone. linked worktree는 공통 dir을 공유하므로 하나를 함께 쓴다. **생성은 원자적이다**: 아래 참조. |
 | `sanho/canonical/sanho-last-fetch` | 위와 동일 | `0644` | 마지막 성공 fetch 시각(RFC3339Nano 한 줄). |
 | `~/.sanho/state.json` | sanho home | `0600` | 레지스트리. `{"version":2,"projects":{...},"workspaces":{...}}`. |
 | `~/.sanho/state.json.bak` | sanho home | `0600` | 매 갱신마다 같은 바이트로 함께 쓰는 백업. |
@@ -939,6 +1110,27 @@ primary가 깨지면 `.bak`에서 복구하고 primary를 즉시 되살린다. �
   자격 증명이 없으면 프롬프트 대신 즉시 실패한다.
 - 정책 환경 변수는 상속된 환경 뒤에 붙이므로, 사용자의 기존
   `GIT_SSH_COMMAND` 설정을 덮어쓴다.
+- **저장소를 지정하는 환경 변수는 상속하지 않는다.** `GIT_DIR`,
+  `GIT_WORK_TREE`, `GIT_INDEX_FILE`, `GIT_COMMON_DIR`,
+  `GIT_OBJECT_DIRECTORY`, `GIT_ALTERNATE_OBJECT_DIRECTORIES`,
+  `GIT_PREFIX`, `GIT_CEILING_DIRECTORIES`, `GIT_QUARANTINE_PATH`,
+  `GIT_NAMESPACE`, `GIT_GRAFT_FILE`을 자식 환경에서 제거한다. Runner는 대상
+  저장소를 언제나 `dir`로 명시하는데, 상속된 `GIT_DIR`은 명시적인 `-C`조차
+  이긴다(git 2.50.1 확인). git은 **linked worktree**에서 hook을 실행할 때
+  절대 경로 `GIT_DIR`을 반드시 내보내므로, 씻지 않으면 hook 안에서 낸 모든
+  git 명령이 — private canonical clone을 향한 것까지 — 애플리케이션 저장소에
+  대해 실행됐다. 실제로 `reconcileExisting`의 `git remote set-url origin`이
+  사용자의 `origin`을 docs clone URL로 영구 재작성했다.
+- **한 변수만 명시적으로 되돌려 받는다.** `GIT_INDEX_FILE`은 위 목록에 함께
+  있고, 애플리케이션 저장소용 Runner만 `WithInheritedIndexFile()`로 자기
+  프로세스의 값을 **명시적으로** 전달한다. `git commit -- docs`는 부분
+  commit이라 git이 임시 index를 만들어 그 hook들의 `GIT_INDEX_FILE`을 거기로
+  가리키고, §5.1 stamp와 §5.6 staged 마커 게이트가 바로 그것을 읽어야 하기
+  때문이다. 그냥 씻기만 했을 때는 모든 `sanho sync` commit이 조용히
+  `docs-base` trailer를 잃었다(stamp는 설계상 fail-open이라 아무 신호도
+  없었다). 의존은 그대로이고, 달라진 것은 그것이 **한 호출 지점에 적혀
+  있다**는 점이다 — clone을 향한 명령을 포함해 다른 모든 Runner는 이 변수를
+  받지 않는다.
 - 기본 timeout은 60초, canonical fetch/push는 120초다.
 - timeout이나 취소로 죽일 때는 프로세스 그룹째 종료하고 최대 3초 동안
   파이프 정리를 기다린다.
@@ -953,7 +1145,7 @@ primary가 깨지면 `.bak`에서 복구하고 primary를 즉시 되살린다. �
 | `pre-commit` | `sanho hook pre-commit` | staged 마커 게이트 + 로컬 신선도 경고 | 마커 게이트만 차단, 그 외 항상 통과 |
 | `commit-msg` | `sanho hook commit-msg "$1"` | `docs-base` / `docs-base-tree` stamp | 절대 차단하지 않음 |
 | `pre-push` | `sanho hook pre-push "$@"` | 게시 + 마커 게이트 + sync 게이트 | 유일한 fail-closed hook |
-| `post-checkout` | `sanho hook post-checkout` | base 재유도 | 항상 exit 0 |
+| `post-checkout` | `sanho hook post-checkout "$@"` | base 재유도 (파일 checkout이면 stand-down) | 항상 exit 0 |
 | `post-merge` | `sanho hook post-merge` | base 재유도 | 항상 exit 0 |
 | `post-rewrite` | `sanho hook post-rewrite "$@"` | base 재유도 | 항상 exit 0 |
 
@@ -969,7 +1161,9 @@ hook 설치와 제거는 **정확한 줄 일치**로만 판단한다. 부분 문
 - 스크립트가 `exit`으로 끝나면 그 앞에 삽입한다. 뒤에 붙이면 실행되지 않는다.
 - 파일이 없으면 `#!/bin/sh` + 한 줄로 새로 만들고 `0755`를 준다.
 - 이미 있는 파일에는 owner execute 비트만 더한다. group/world까지 넓히지 않는다.
-- 제거 후 shebang과 주석만 남은 파일은 삭제한다. 빈 껍데기를 남기지 않는다.
+- 제거 후 **Sanho 자신이 쓴 `#!/bin/sh` 한 줄만** 남은 파일은 삭제한다. 주석은
+  내용이므로 남긴다 — hook의 용도를 적어 둔 머리말이나 되살리려고 주석 처리해
+  둔 줄까지 지우는 것은 사용자 파일을 지우는 일이다(F-L2).
 - 제거 대상에는 v0.1의 7종 라인(구형 `sanho hook pre-push` 무인자 형태와
   `post-commit` 포함)도 들어간다.
 
