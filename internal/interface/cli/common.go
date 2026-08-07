@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strconv"
 )
 
 // writeJSON renders v as an indented JSON document with a trailing
@@ -44,8 +43,6 @@ func requireV2Workspace(ctx context.Context) (*workspace, error) {
 	}
 	return ws, nil
 }
-
-func itoa(n int) string { return strconv.Itoa(n) }
 
 // writef and writeln are the only way this package writes user-facing
 // output.

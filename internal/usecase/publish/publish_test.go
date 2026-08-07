@@ -47,13 +47,20 @@ func newScenario(t *testing.T) *scenario {
 		},
 		mergeTree: mergedTree,
 	}
+	// Every pushed tip in the default scenario carries provenance
+	// naming the recorded base, which is the ordinary state of a
+	// workspace whose own commits were stamped. Publication's
+	// fast-forward gate requires it (the fourth review's C2); a scenario
+	// about the ABSENCE of provenance sets stampedBases explicitly.
+	stamped := provenance.Base{Commit: canonHead, Tree: canonTree}
 	app := &fakeApp{
-		docsTrees:   map[string]string{appTip: tipTree, appTipAlt: tipTreeB},
-		markerPaths: map[string][]string{},
-		subjects:    map[string][]string{".." + appTip: {"docs: local edit"}},
-		repoName:    "product",
-		branch:      "main",
-		worktree:    tipTree,
+		docsTrees:          map[string]string{appTip: tipTree, appTipAlt: tipTreeB},
+		markerPaths:        map[string][]string{},
+		subjects:           map[string][]string{".." + appTip: {"docs: local edit"}},
+		repoName:           "product",
+		branch:             "main",
+		worktree:           tipTree,
+		defaultStampedBase: &stamped,
 	}
 	state := &fakeState{base: provenance.Base{Commit: canonHead, Tree: canonTree}, hasBase: true}
 
@@ -745,12 +752,78 @@ func TestRunLeavesTheBaseWhenTheWorktreeDiffers(t *testing.T) {
 	}
 }
 
-func TestRunPropagatesWorktreeHashFailures(t *testing.T) {
+// TestRunReportsButDoesNotFailOnBaseAdvanceFailures is M2.
+//
+// The base advance is §5.3 step 6, and it runs AFTER the CAS push has
+// succeeded. Returning its failure as the hook's error made `git push`
+// print the §5.9 rejection template — whose last line promises that no
+// remote ref was changed — over a push that changed one, and left the
+// user with a publication they had been told did not happen.
+//
+// The predecessor of this test asserted exactly that propagation. The
+// contract now is: the publication stands, the outcome carries the
+// failure, and the hook prints one line saying the local pointer did not
+// move.
+func TestRunReportsButDoesNotFailOnBaseAdvanceFailures(t *testing.T) {
 	s := newScenario(t)
 	s.app.worktreeErr = errors.New("docs unreadable")
 
-	if _, err := s.run(t); err == nil || !strings.Contains(err.Error(), "docs unreadable") {
-		t.Fatalf("error = %v, want the worktree hash failure", err)
+	outcome, err := s.run(t)
+	if err != nil {
+		t.Fatalf("a base-advance failure failed the whole push: %v", err)
+	}
+	if outcome.Published == "" {
+		t.Fatal("no publication was reported, so the push did not stand")
+	}
+	if outcome.BaseAdvanced {
+		t.Error("Outcome.BaseAdvanced = true after the advance failed")
+	}
+	if outcome.BaseAdvanceError == nil || !strings.Contains(outcome.BaseAdvanceError.Error(), "docs unreadable") {
+		t.Fatalf("Outcome.BaseAdvanceError = %v, want the worktree hash failure", outcome.BaseAdvanceError)
+	}
+	if len(s.state.saved) != 0 {
+		t.Fatalf("saved %v, want no base write", s.state.saved)
+	}
+}
+
+// TestRunRefusesAnUncorroboratedFastForward is the fourth review's C2 at
+// the unit level: base == canonical head licenses a fast-forward, which
+// publishes the tip's docs tree straight over canonical — and the tip's
+// own history says nothing about that base.
+func TestRunRefusesAnUncorroboratedFastForward(t *testing.T) {
+	s := newScenario(t)
+	// The pushed branch predates adoption: no provenance at all.
+	s.app.stampedBases = map[string]provenance.Base{}
+	s.app.defaultStampedBase = nil
+
+	_, err := s.run(t)
+	var syncErr *SyncRequiredError
+	if !errors.As(err, &syncErr) {
+		t.Fatalf("error = %v, want a sync-required rejection", err)
+	}
+	if syncErr.Reason != ReasonUncorroboratedBase {
+		t.Fatalf("reason = %q, want %q", syncErr.Reason, ReasonUncorroboratedBase)
+	}
+	if s.canonical.pushes != 0 {
+		t.Fatalf("canonical was written %d times", s.canonical.pushes)
+	}
+}
+
+// TestRunAcceptsAFastForwardStampedWithAnOlderBase is the no-regression
+// half: publication's own advance moves the base file PAST the commit
+// the trailers name, so every workspace that has just published stamps
+// an ancestor of its recorded base. That must still fast-forward.
+func TestRunAcceptsAFastForwardStampedWithAnOlderBase(t *testing.T) {
+	s := newScenario(t)
+	stamped := provenance.Base{Commit: canonRoot, Tree: rootTree}
+	s.app.defaultStampedBase = &stamped
+
+	outcome, err := s.run(t)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if outcome.Case != pubdom.CaseFastForward {
+		t.Fatalf("case = %v, want fast_forward", outcome.Case)
 	}
 }
 

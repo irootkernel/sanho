@@ -109,7 +109,16 @@ func openWorkspace(ctx context.Context) (*workspace, error) {
 	if ws.homeDir, err = resolveHome(); err != nil {
 		return nil, err
 	}
-	ws.repo = appgit.New(root, cfg.DocsDir, gitx.New(root))
+	// WithInheritedIndexFile is the one place sanho asks for a
+	// repository-scoped git variable from its own environment, and it is
+	// asked for here rather than inherited silently. The commit hooks run
+	// inside a PARTIAL commit (`git commit -- docs`), where git points
+	// GIT_INDEX_FILE at a temporary index holding exactly what that
+	// commit will contain — which is what the §5.1 stamp and the §5.6
+	// staged-marker gate must read. Every other runner in the process,
+	// including every command against the private canonical clone, has it
+	// scrubbed (see gitx.scrubbedEnvVars).
+	ws.repo = appgit.New(root, cfg.DocsDir, gitx.New(root, gitx.WithInheritedIndexFile()))
 
 	if cfg.SchemaVersion == 1 {
 		return ws, errV1Workspace
@@ -128,11 +137,24 @@ func openWorkspace(ctx context.Context) (*workspace, error) {
 // absent.
 //
 // So a directory with no config asks git for the MAIN worktree and uses
-// the config there. `git worktree list --porcelain` names it in its
-// first record, which is the documented order and answers correctly for
-// a linked worktree, an ordinary checkout, and a bare main repository
-// alike. A main worktree with no config is simply not a workspace, which
-// is the same answer as before.
+// the config there. A main worktree with no config is simply not a
+// workspace, which is the same answer as before.
+//
+// The borrowing is allowed only for a directory that IS one of the
+// repository's worktrees, and checking that is M6. The previous version
+// took the first record of `git worktree list --porcelain` and stopped
+// there, so any SUBDIRECTORY of a checkout — `docs/`, `src/internal/`,
+// anywhere a user might be standing — resolved to the main worktree's
+// config and was treated as a workspace root. Every path built from it
+// then pointed at the wrong place: the base file, the docs pathspec, the
+// checkout target. sanho is a per-checkout tool and the hooks always run
+// from the top, so the honest answer for a subdirectory is "not a
+// workspace" — which is what it was before linked-worktree support
+// existed, and what it must stay.
+//
+// All records are compared rather than only the first, because the
+// question is "is this one of them", and the main worktree is separately
+// the first record git documents.
 func resolveConfigRoot(ctx context.Context, root string) (string, error) {
 	switch found, err := hasConfig(root); {
 	case err != nil:
@@ -141,9 +163,17 @@ func resolveConfigRoot(ctx context.Context, root string) (string, error) {
 		return root, nil
 	}
 
-	main, err := mainWorktreeRoot(ctx, root)
-	if err != nil || main == "" || main == root {
+	worktrees, err := worktreeRoots(ctx, root)
+	if err != nil || len(worktrees) == 0 {
 		return "", errNotWorkspace //nolint:nilerr // "not a workspace" is the answer for every failure to locate one
+	}
+	if !containsPath(worktrees, root) {
+		// A subdirectory of a checkout, not a checkout.
+		return "", errNotWorkspace
+	}
+	main := worktrees[0]
+	if main == root {
+		return "", errNotWorkspace
 	}
 	switch found, err := hasConfig(main); {
 	case err != nil:
@@ -152,6 +182,25 @@ func resolveConfigRoot(ctx context.Context, root string) (string, error) {
 		return "", errNotWorkspace
 	}
 	return main, nil
+}
+
+// containsPath reports whether candidate is one of paths, comparing
+// resolved forms so that a symlinked temp directory (every macOS
+// `/var/...`) matches the `/private/var/...` git reports.
+func containsPath(paths []string, candidate string) bool {
+	resolved := candidate
+	if real, err := filepath.EvalSymlinks(candidate); err == nil {
+		resolved = real
+	}
+	for _, path := range paths {
+		if path == candidate || path == resolved {
+			return true
+		}
+		if real, err := filepath.EvalSymlinks(path); err == nil && (real == candidate || real == resolved) {
+			return true
+		}
+	}
+	return false
 }
 
 func hasConfig(dir string) (bool, error) {
@@ -165,19 +214,20 @@ func hasConfig(dir string) (bool, error) {
 	}
 }
 
-// mainWorktreeRoot reads the first record of `git worktree list
-// --porcelain`, which git documents as the main worktree.
-func mainWorktreeRoot(ctx context.Context, dir string) (string, error) {
+// worktreeRoots reads every record of `git worktree list --porcelain`,
+// main worktree first (git's documented order).
+func worktreeRoots(ctx context.Context, dir string) ([]string, error) {
 	res, err := gitx.New(dir).RunExit(ctx, "worktree", "list", "--porcelain")
 	if err != nil || res.ExitCode != 0 {
-		return "", err //nolint:nilerr // a non-git directory has no main worktree, which is not an error here
+		return nil, err //nolint:nilerr // a non-git directory has no worktrees, which is not an error here
 	}
+	var roots []string
 	for _, line := range strings.Split(string(res.Stdout), "\n") {
 		if path, ok := strings.CutPrefix(strings.TrimSpace(line), "worktree "); ok {
-			return filepath.Clean(path), nil
+			roots = append(roots, filepath.Clean(path))
 		}
 	}
-	return "", nil
+	return roots, nil
 }
 
 // resolveGitDirs asks git for both directory forms at once. A workspace
@@ -272,11 +322,32 @@ func registryKey(project, root string) string { return project + ":" + root }
 // workspace-root file the user can see and a rollback can restore, while
 // the sync note is `.git/`-private because it describes an in-flight
 // operation, not a fact about the checkout.
-type statePort struct{ workDir, gitDir string }
+// ws is what makes the base write guarded: the guard has to read the
+// docs worktree, the tip's provenance and (sometimes) the canonical
+// clone before it will record anything, and all three hang off the
+// workspace. See basewrite.go.
+type statePort struct {
+	workDir, gitDir string
+	ws              *workspace
+}
 
 func (s statePort) LoadBase() (provenance.Base, bool, error) { return wsstate.LoadBase(s.workDir) }
 
-func (s statePort) SaveBase(base provenance.Base) error { return wsstate.SaveBase(s.workDir, base) }
+// SaveBase records a base through the §5.7 guard. Every path in the
+// codebase that records one arrives here; nothing calls wsstate.SaveBase
+// directly, and `internal/architecture` fails the build if anything
+// starts to.
+func (s statePort) SaveBase(ctx context.Context, base provenance.Base) error {
+	return s.writeBase(ctx, base, nil)
+}
+
+// SaveSyncTargetBase records the base a `sanho sync --continue` adopts,
+// offering the sync's entry head as the guard's evidence. See the
+// warrant list in basewrite.go for why that one write needs evidence a
+// tree comparison cannot supply.
+func (s statePort) SaveSyncTargetBase(ctx context.Context, base provenance.Base, entryHead string) error {
+	return s.writeBase(ctx, base, &syncCompletion{entryHead: entryHead})
+}
 
 func (s statePort) ClearBase() error { return wsstate.ClearBase(s.workDir) }
 
@@ -302,6 +373,7 @@ func (s statePort) LoadSyncNote() (docsync.SyncNote, bool, error) {
 		Target:              note.Target,
 		EntryHead:           note.EntryHead,
 		EntryDocsTree:       note.EntryDocsTree,
+		MergedTree:          note.MergedTree,
 		Conflicts:           note.Conflicts,
 		PreDatesEntryRecord: note.PreDatesEntryRecord(),
 	}, true, nil
@@ -314,6 +386,7 @@ func (s statePort) SaveSyncNote(note docsync.SyncNote) error {
 		StartedAt:     time.Now().UTC(),
 		EntryHead:     note.EntryHead,
 		EntryDocsTree: note.EntryDocsTree,
+		MergedTree:    note.MergedTree,
 		Conflicts:     note.Conflicts,
 	})
 }
@@ -334,7 +407,7 @@ func (s statePort) SyncInProgress() (bool, error) {
 }
 
 func (w *workspace) statePort() statePort {
-	return statePort{workDir: w.root, gitDir: w.gitDir}
+	return statePort{workDir: w.root, gitDir: w.gitDir, ws: w}
 }
 
 // --- AppRepoPort ------------------------------------------------------
@@ -350,6 +423,19 @@ func (w *workspace) statePort() statePort {
 // directory — the port contract is repository-relative paths, matching
 // the marker scanners and §5.9's `docs/api.md` rendering.
 type appPort struct{ *appgit.Repo }
+
+// NewestDocsBase is the pushed tip's own account of where its docs came
+// from: the newest provenance trailer reachable from it (§5.10's scan,
+// applied to a tip rather than to HEAD). Publication's fast-forward gate
+// is the caller.
+func (a appPort) NewestDocsBase(ctx context.Context, tip string) (provenance.Base, bool, error) {
+	commits, err := a.CommitTrailers(ctx, tip, deriveScanDepth)
+	if err != nil {
+		return provenance.Base{}, false, err
+	}
+	base, ok := provenance.SelectBase(commits)
+	return base, ok, nil
+}
 
 func (a appPort) MergeDocs(ctx context.Context, baseTree, oursTree, theirsTree string) (string, []string, bool, error) {
 	result, err := canonical.MergeTree(ctx, a.WorkDir(), baseTree, oursTree, theirsTree)

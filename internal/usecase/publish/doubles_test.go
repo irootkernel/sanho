@@ -255,10 +255,41 @@ type fakeApp struct {
 	worktreeErr error
 	emptyTree   string
 
+	// stampedBases maps a tip OID to the base its own history stamps —
+	// the corroboration a fast-forward now requires. An absent entry
+	// means the tip carries no provenance at all, which is the
+	// pre-adoption branch of the fourth review's C2.
+	//
+	// Every existing fixture predates the requirement, so
+	// defaultStampedBase stands in when the map is nil: those tests are
+	// about other things and would otherwise all have to be rewritten to
+	// declare a fact they never cared about.
+	stampedBases       map[string]provenance.Base
+	defaultStampedBase *provenance.Base
+	stampErr           error
+
 	scanned       []string
 	scanRanges    []string
 	subjectCalls  []string
 	worktreeCalls int
+	stampCalls    []string
+}
+
+func (a *fakeApp) NewestDocsBase(ctx context.Context, tip string) (provenance.Base, bool, error) {
+	a.stampCalls = append(a.stampCalls, tip)
+	if a.stampErr != nil {
+		return provenance.Base{}, false, a.stampErr
+	}
+	if base, ok := a.stampedBases[tip]; ok {
+		return base, true, nil
+	}
+	if a.stampedBases != nil {
+		return provenance.Base{}, false, nil
+	}
+	if a.defaultStampedBase != nil {
+		return *a.defaultStampedBase, true, nil
+	}
+	return provenance.Base{}, false, nil
 }
 
 func (a *fakeApp) DocsTreeOf(ctx context.Context, commit string) (string, error) {
@@ -324,7 +355,7 @@ func (s *fakeState) LoadBase() (provenance.Base, bool, error) {
 	return s.base, s.hasBase, s.loadErr
 }
 
-func (s *fakeState) SaveBase(base provenance.Base) error {
+func (s *fakeState) SaveBase(ctx context.Context, base provenance.Base) error {
 	if s.saveErr != nil {
 		return s.saveErr
 	}

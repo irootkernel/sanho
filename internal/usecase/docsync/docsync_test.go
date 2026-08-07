@@ -377,8 +377,11 @@ func TestRunConflictIsNotAnError(t *testing.T) {
 		t.Fatalf("conflicts = %v", result.Conflicts)
 	}
 
-	if got := f.shared.trace(); got != "docs-clean fetch import merge checkout save-note" {
-		t.Fatalf("sequence = %q, want the note written and the base left alone", got)
+	// The note is written BEFORE the markers land. An interruption
+	// between the two writes has to leave the recoverable half, and
+	// markers with no note are a state nothing can abort or complete.
+	if got := f.shared.trace(); got != "docs-clean fetch import merge save-note checkout" {
+		t.Fatalf("sequence = %q, want the note written before the markers and the base left alone", got)
 	}
 	if got := f.app.checkedOut; len(got) != 1 || got[0] != treeOID(9) {
 		t.Fatalf("checked out %v, want the conflicted merge result", got)
@@ -401,7 +404,10 @@ func TestRunConflictIsNotAnError(t *testing.T) {
 		// answerable, and answerable by the right question.
 		EntryHead:     commitOID(7),
 		EntryDocsTree: treeOID(0),
-		Conflicts:     []string{"docs/api.md", "docs/schema.md"},
+		// And the merge result, so `--continue` can report how far the
+		// completed state drifted from the merge it completes.
+		MergedTree: treeOID(9),
+		Conflicts:  []string{"docs/api.md", "docs/schema.md"},
 	}
 	if len(f.state.savedNotes) != 1 || !reflect.DeepEqual(f.state.savedNotes[0], wantNote) {
 		t.Fatalf("note = %+v, want %+v", f.state.savedNotes, wantNote)
@@ -764,6 +770,7 @@ func TestContinueRefusesWhatIsNotReady(t *testing.T) {
 func TestContinueCompletesTheSync(t *testing.T) {
 	f := newFixture()
 	f.state.note = liveNote()
+	entryHead := f.state.note.EntryHead
 
 	result, err := f.useCase().Continue(context.Background())
 	if err != nil {
@@ -774,8 +781,13 @@ func TestContinueCompletesTheSync(t *testing.T) {
 	if result.Base != target {
 		t.Fatalf("adopted base = %+v, want the note's target %+v", result.Base, target)
 	}
-	if got := f.shared.trace(); got != "scan docs-clean clear-note save-base" {
+	if got := f.shared.trace(); got != "scan docs-clean clear-note save-sync-target-base" {
 		t.Fatalf("sequence = %q, want the note dropped BEFORE the base moved", got)
+	}
+	// The completion hands the guard the note's own evidence, so the
+	// adapter can re-prove the history precondition independently.
+	if got := f.state.completionHeads; len(got) != 1 || got[0] != entryHead {
+		t.Fatalf("completion evidence = %v, want the note's entry head", got)
 	}
 	if got := f.state.savedBases; len(got) != 1 || got[0] != target {
 		t.Fatalf("saved bases = %v, want exactly the target %+v", got, target)

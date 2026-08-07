@@ -19,6 +19,7 @@ import (
 	"github.com/irootkernel/sanho/internal/infra/canonical"
 	"github.com/irootkernel/sanho/internal/infra/fsx"
 	"github.com/irootkernel/sanho/internal/infra/registry"
+	"github.com/irootkernel/sanho/internal/infra/wsstate"
 	"github.com/irootkernel/sanho/internal/usecase/docsync"
 	"github.com/irootkernel/sanho/internal/usecase/publish"
 
@@ -47,6 +48,13 @@ func reportSyncError(cmd *cobra.Command, ws *workspace, err error) error {
 
 	case errors.Is(err, docsync.ErrSyncInProgress):
 		writeln(stderr, syncInProgressMessage(errDetail(err, docsync.ErrSyncInProgress)))
+
+	// `--continue`'s refusal for standing on history the sync never
+	// began on. It comes before the two below because it describes a
+	// state in which they are all satisfied: no markers, clean docs, and
+	// a note — on a branch that was never part of the merge.
+	case errors.Is(err, docsync.ErrContinueForeignHistory):
+		writeln(stderr, syncContinueForeignHistoryMessage(errDetail(err, docsync.ErrContinueForeignHistory)))
 
 	// `--continue`'s own two refusals. They come before the generic
 	// dirty-docs reading because they describe the same worktree from a
@@ -185,7 +193,18 @@ const (
 	codeRegistryLockTimeout  = "registry_lock_timeout"
 	codeMarkersPresent       = "markers_present"
 	codeTooLarge             = "too_large"
-	codeInternal             = "internal"
+	// codeConfigCorrupt / codeBaseCorrupt are M4: a state file that is
+	// present and unreadable is a state the user can act on (restore it,
+	// re-init, let `doctor --fix` re-derive), so reporting it as
+	// `internal` — the one code that means "sanho has a bug" — sent an
+	// agent looking in the wrong place entirely.
+	codeConfigCorrupt = "config_corrupt"
+	codeBaseCorrupt   = "base_corrupt"
+	// codeBaseNotCorroborated is the §5.7 guard's refusal to record a
+	// base it cannot vouch for. It is a `sync_required`-family state:
+	// what establishes a base the workspace can stand behind is a sync.
+	codeBaseNotCorroborated = "base_not_corroborated"
+	codeInternal            = "internal"
 )
 
 // machineErrorCode maps an error to its §5.9 code. The order matters
@@ -199,6 +218,14 @@ func machineErrorCode(err error) string {
 		return codeNotInWorkspace
 	case errors.Is(err, docsync.ErrSyncInProgress), errors.Is(err, docsync.ErrNoSyncInProgress),
 		errors.Is(err, docsync.ErrSyncNoteCorrupt), errors.Is(err, publish.ErrSyncInProgress):
+		return codeSyncInProgress
+	case errors.Is(err, wsstate.ErrConfigCorrupt):
+		return codeConfigCorrupt
+	case errors.Is(err, wsstate.ErrBaseCorrupt), errors.Is(err, wsstate.ErrLegacyBaseEmpty):
+		return codeBaseCorrupt
+	case errors.Is(err, docsync.ErrBaseNotCorroborated):
+		return codeBaseNotCorroborated
+	case errors.Is(err, docsync.ErrContinueForeignHistory):
 		return codeSyncInProgress
 	case errors.Is(err, docsync.ErrDocsDirty), errors.Is(err, docsync.ErrResolutionUncommitted):
 		return codeDocsDirty

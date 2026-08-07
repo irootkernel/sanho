@@ -19,11 +19,14 @@ import (
 // `sanho pull`:
 //
 //	{
-//	  "status":     "up_to_date" | "synced" | "conflicts"
-//	                | "completed" | "aborted",
-//	  "base":       {"commit": "<oid>", "tree": "<oid>"} | null,
-//	  "commit":     "<oid>",            // "" when nothing was committed
-//	  "conflicts":  ["docs/api.md"]     // [] unless status is conflicts
+//	  "status":       "up_to_date" | "synced" | "conflicts"
+//	                  | "completed" | "aborted",
+//	  "base":         {"commit": "<oid>", "tree": "<oid>"} | null,
+//	  "commit":       "<oid>",          // "" when nothing was committed
+//	  "conflicts":    ["docs/api.md"],  // [] unless status is conflicts
+//	  "merge_drift":  0                 // --continue only: how many docs
+//	                                    // paths the completed state
+//	                                    // differs from the merge result by
 //	}
 //
 // `completed` is `--continue`'s outcome and carries the base the
@@ -39,6 +42,9 @@ type syncJSON struct {
 	Base      *baseJSON `json:"base"`
 	Commit    string    `json:"commit"`
 	Conflicts []string  `json:"conflicts"`
+	// MergeDrift is how many docs paths the completed state differs from
+	// the merge result by; only `--continue` ever reports a non-zero one.
+	MergeDrift int `json:"merge_drift"`
 }
 
 // statusAborted and statusCompleted are the two syncJSON statuses with
@@ -106,11 +112,17 @@ func (f syncFlags) mode() (abort, proceed bool, err error) {
 
 func runSync(cmd *cobra.Command, flags syncFlags) error {
 	ctx := cmd.Context()
+	asJSON := flags.asJSON
+
+	// The flag-combination refusal owes the §5.8 envelope like every
+	// other `--json` failure. It used to return bare, so an agent that
+	// mis-combined the flags got prose on stderr, nothing on stdout, and
+	// no code to branch on — from the one command whose whole point is
+	// being driven by a program.
 	abort, proceed, err := flags.mode()
 	if err != nil {
-		return err
+		return finishCommand(cmd, nil, asJSON, err)
 	}
-	asJSON := flags.asJSON
 
 	ws, err := requireV2Workspace(ctx)
 	if err != nil {
@@ -144,10 +156,17 @@ func runSync(cmd *cobra.Command, flags syncFlags) error {
 
 // runSyncAbort implements §5.5 step 7. Abort needs no network and no
 // canonical clone: it restores the docs worktree from HEAD and settles
-// the base file, which is why it cannot fail once a note exists
-// (guidance closure by construction, D3) — including when the note
-// itself is unreadable, where it clears the base rather than leaving
-// behind one it cannot vouch for.
+// the base file, which is what makes it the exit from every broken sync
+// state — including one whose note is unreadable, where it clears the
+// base rather than leaving behind one it cannot vouch for.
+//
+// The contract is that nothing about the SYNC can make it fail: no ref
+// moves, no commit is created, no network is opened, and every step is
+// idempotent, so an interrupted abort is simply re-run. It is not a
+// promise that the process cannot fail at all — a filesystem that will
+// not accept a write, or a docs checkout git itself refuses, still
+// surfaces. The earlier "cannot fail" wording claimed the second thing
+// while only the first is true.
 func runSyncAbort(cmd *cobra.Command, ws *workspace, asJSON bool) error {
 	ctx := cmd.Context()
 	use := &docsync.UseCase{App: ws.appPort(), State: ws.statePort()}
@@ -184,12 +203,13 @@ func runSyncContinue(cmd *cobra.Command, ws *workspace, asJSON bool) error {
 
 	if asJSON {
 		return writeJSON(cmd.OutOrStdout(), syncJSON{
-			Status:    statusCompleted,
-			Base:      &baseJSON{Commit: result.Base.Commit, Tree: result.Base.Tree},
-			Conflicts: []string{},
+			Status:     statusCompleted,
+			Base:       &baseJSON{Commit: result.Base.Commit, Tree: result.Base.Tree},
+			Conflicts:  []string{},
+			MergeDrift: result.MergeDrift,
 		})
 	}
-	writeln(cmd.OutOrStdout(), syncCompletedMessage(result.Base.Commit))
+	writeln(cmd.OutOrStdout(), syncCompletedMessage(result.Base.Commit, result.MergeDrift))
 	return nil
 }
 

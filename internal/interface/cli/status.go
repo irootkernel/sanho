@@ -186,7 +186,14 @@ type previewPort struct {
 }
 
 func (p previewPort) Preview(ctx context.Context, base provenance.Base, head, headTree string) (bool, bool, []string) {
-	preview := previewSync(ctx, p.ws, p.store, base, head, headTree)
+	// `sanho status` reports on the checkout, so its local side is HEAD.
+	// (The pre-commit warning asks about the index instead — it reports
+	// on the commit being made, M7.)
+	oursTree, err := p.ws.repo.HeadDocsTree(ctx)
+	if err != nil {
+		return false, false, nil
+	}
+	preview := previewSync(ctx, p.ws, p.store, base, head, headTree, oursTree)
 	return preview.Known, preview.Clean, preview.Conflicts
 }
 

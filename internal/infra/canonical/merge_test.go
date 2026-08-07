@@ -4,15 +4,16 @@ import (
 	"context"
 	"os"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 )
 
 // TestMergeTreeMatrix is the C2 regression ground: the merge matrix
 // sanho-v0.2.md §9 requires — 0/1/2/3-hunk conflicts, symlinks, mode
-// changes, binaries, delete-vs-edit, and an empty tree on one side — run
-// against real git, with the exit-code and conflict-path parsing
-// asserted for each.
+// changes, binaries, delete-vs-edit, DELETES ON BOTH SIDES, and an empty
+// tree on one side — run against real git, with the exit-code and
+// conflict-path parsing asserted for each.
 func TestMergeTreeMatrix(t *testing.T) {
 	factory := newTreeFactory(t)
 	ctx := context.Background()
@@ -28,6 +29,10 @@ func TestMergeTreeMatrix(t *testing.T) {
 		// carries, for the content-conflict cases.
 		wantHunks int
 		hunkPath  string
+		// wantPaths, when set, asserts the exact contents of the result
+		// tree — which is the only way a DELETION can be checked, since
+		// a resurrected path shows up nowhere in a clean/conflict verdict.
+		wantPaths []string
 	}{
 		{
 			name:      "zero conflicts: disjoint files",
@@ -112,6 +117,43 @@ func TestMergeTreeMatrix(t *testing.T) {
 			wantConflicts: []string{"a.md"},
 		},
 		{
+			// §9.1's "deletes on both sides": the same removal from both
+			// sides is agreement, not a conflict, and the path must be
+			// gone from the result rather than resurrected from the base.
+			// A merge that resurrects it republishes a document the team
+			// deleted, which reads as an upstream regression nobody made.
+			name:      "delete on both sides",
+			base:      map[string]entry{"a.md": text("a\n"), "keep.md": text("keep\n")},
+			ours:      map[string]entry{"keep.md": text("keep\n")},
+			theirs:    map[string]entry{"keep.md": text("keep\n")},
+			wantClean: true,
+			wantPaths: []string{"keep.md"},
+		},
+		{
+			// The same agreement while each side ALSO edits a different
+			// file, so the deletion is decided beside real changes rather
+			// than in isolation.
+			name:      "delete on both sides while each side edits elsewhere",
+			base:      map[string]entry{"a.md": text("a\n"), "ours.md": text("o\n"), "theirs.md": text("t\n")},
+			ours:      map[string]entry{"ours.md": text("o changed\n"), "theirs.md": text("t\n")},
+			theirs:    map[string]entry{"ours.md": text("o\n"), "theirs.md": text("t changed\n")},
+			wantClean: true,
+			wantPaths: []string{"ours.md", "theirs.md"},
+		},
+		{
+			// Both sides delete the last document. The docs directory
+			// becomes empty, which is a legitimate merge result — the
+			// refusal to PUBLISH an empty docs tree is a separate gate
+			// (§5.3, F-H2) and must not be pre-empted by the merge
+			// reporting a conflict here.
+			name:      "delete on both sides emptying the docs tree",
+			base:      map[string]entry{"a.md": text("a\n")},
+			ours:      map[string]entry{},
+			theirs:    map[string]entry{},
+			wantClean: true,
+			wantPaths: []string{},
+		},
+		{
 			name:          "empty tree on our side against an upstream edit",
 			base:          map[string]entry{"a.md": text("a\n")},
 			ours:          map[string]entry{},
@@ -165,6 +207,9 @@ func TestMergeTreeMatrix(t *testing.T) {
 				}
 			} else if !reflect.DeepEqual(got.Conflicts, test.wantConflicts) {
 				t.Fatalf("Conflicts = %v, want %v", got.Conflicts, test.wantConflicts)
+			}
+			if test.wantPaths != nil {
+				requireTreePaths(t, factory, got.Tree, test.wantPaths)
 			}
 			if test.wantHunks > 0 {
 				merged := factory.blobAt(t, got.Tree, test.hunkPath)
@@ -474,5 +519,31 @@ func TestParseMergeTree(t *testing.T) {
 				t.Errorf("conflicts = %v, want %v", gotConflicts, test.wantConflicts)
 			}
 		})
+	}
+}
+
+// requireTreePaths asserts the exact set of paths a result tree holds.
+//
+// It is what makes a DELETION checkable. Clean/conflict says nothing
+// about a path that came back: a merge that resurrected a document both
+// sides removed reports a clean merge and republishes content the team
+// deleted, which reads downstream as an upstream regression nobody made.
+func requireTreePaths(t *testing.T, factory *treeFactory, tree string, want []string) {
+	t.Helper()
+
+	var got []string
+	for _, line := range factory.lsTree(t, tree) {
+		_, path, _ := strings.Cut(line, "\t")
+		got = append(got, path)
+	}
+	sort.Strings(got)
+	sorted := append([]string{}, want...)
+	sort.Strings(sorted)
+
+	if len(got) == 0 && len(sorted) == 0 {
+		return
+	}
+	if !reflect.DeepEqual(got, sorted) {
+		t.Fatalf("merged tree holds %v, want %v", got, sorted)
 	}
 }

@@ -253,7 +253,16 @@ func warnStaleBase(ctx context.Context, cmd *cobra.Command, ws *workspace) {
 		return
 	}
 
-	preview := previewSync(ctx, ws, store, base, head, headTree)
+	// The prediction is about the COMMIT BEING MADE, so its local side is
+	// the index rather than HEAD (M7). An unreadable index degrades to
+	// HEAD, which is what the warning used to use unconditionally.
+	oursTree, err := ws.repo.IndexDocsTree(ctx)
+	if err != nil {
+		if oursTree, err = ws.repo.HeadDocsTree(ctx); err != nil {
+			return
+		}
+	}
+	preview := previewSync(ctx, ws, store, base, head, headTree, oursTree)
 	var line string
 	switch {
 	case !preview.Known:
@@ -296,7 +305,10 @@ func runCommitMsg(cmd *cobra.Command, args []string) error {
 	}
 
 	if err := stampCommitMessage(ctx, ws, args[0]); err != nil {
-		writeln(cmd.ErrOrStderr(), commitMsgStampWarning(err.Error()))
+		// One line, the innermost cause, no package tags: §5.9 forbids a
+		// raw Go chain at user level, and this one is printed inside
+		// `git commit` where it competes with git's own output.
+		writeln(cmd.ErrOrStderr(), commitMsgStampWarning(stripInternalPrefixes(causeLine(err))))
 	}
 	return nil
 }
@@ -426,11 +438,86 @@ func messageHasBaseTrailer(message string) bool {
 	return false
 }
 
-// appendTrailers appends the trailer block, separated from the message
-// body by exactly one blank line so git reads it as a trailer block.
+// appendTrailers adds the provenance lines to a commit message.
+//
+// The blank line is the whole subtlety (M5). Git reads a trailer block
+// as the LAST paragraph of the message, so a message that already ends
+// in one — `Signed-off-by:`, `Co-authored-by:`, a squash's collected
+// trailers — must be extended rather than followed by a new paragraph.
+// Always inserting a blank line demoted the existing block into ordinary
+// body text: `git interpret-trailers --parse` then reported only
+// sanho's own lines, and `Signed-off-by` silently stopped being a
+// trailer on every commit sanho stamped. Where the message does NOT end
+// in a trailer block, the blank line is exactly what makes one.
+//
+// The test for "is a trailer block" is git's own shape — `Key: value`
+// with a token key, or a folded continuation line — applied to the last
+// paragraph. It is a local string decision, so §5.1's no-network
+// contract for the commit path is untouched.
 func appendTrailers(message []byte, trailers []string) []byte {
 	text := strings.TrimRight(string(message), "\n")
-	return []byte(text + "\n\n" + strings.Join(trailers, "\n") + "\n")
+	separator := "\n\n"
+	if endsWithTrailerBlock(text) {
+		separator = "\n"
+	}
+	return []byte(text + separator + strings.Join(trailers, "\n") + "\n")
+}
+
+// endsWithTrailerBlock reports whether the message's last paragraph is
+// entirely trailer lines.
+//
+// "Entirely" is deliberate and matches git: one non-trailer line in the
+// final paragraph makes the whole paragraph body text, so appending
+// there would produce a trailer git does not parse. An empty message has
+// no paragraph and takes the blank-line form.
+func endsWithTrailerBlock(text string) bool {
+	lines := strings.Split(text, "\n")
+
+	start := len(lines)
+	for i := len(lines) - 1; i >= 0; i-- {
+		if strings.TrimSpace(lines[i]) == "" {
+			break
+		}
+		start = i
+	}
+	if start >= len(lines) {
+		return false
+	}
+	// A message that is nothing but its subject line is not a trailer
+	// block, however the subject happens to be punctuated.
+	if start == 0 {
+		return false
+	}
+	for _, line := range lines[start:] {
+		if !isTrailerLine(line) {
+			return false
+		}
+	}
+	return true
+}
+
+// isTrailerLine applies git's trailer shape: `<token>: <value>` where
+// the token is letters, digits and hyphens, or a folded continuation
+// (a line beginning with whitespace).
+func isTrailerLine(line string) bool {
+	if line == "" {
+		return false
+	}
+	if line[0] == ' ' || line[0] == '\t' {
+		return true
+	}
+	key, _, ok := strings.Cut(line, ":")
+	if !ok || key == "" {
+		return false
+	}
+	for _, r := range key {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // --- pre-push (§5.3) --------------------------------------------------
@@ -471,6 +558,16 @@ func runPrePush(cmd *cobra.Command, _ []string) error {
 	if updates, err = resolveSymbolicRefs(ctx, ws, updates); err != nil {
 		return err
 	}
+	// M1: the §5.3 step-1 filter, applied at the boundary rather than
+	// inside the use case. A push carrying only tags, or only branch
+	// deletions, publishes nothing — so it must not be refused by the
+	// sync gate for a window it has no part in, and must not be made to
+	// wait on `ensureCanonical`, which creates and fetches a clone. Both
+	// used to happen: `git push --tags` from an unfinished sync was
+	// rejected, and the same push offline failed on a network call it
+	// never needed. Symbolic refs are resolved first, because `HEAD` is
+	// not yet recognizable as a branch update when it arrives.
+	updates = publish.Publishable(updates)
 	if len(updates) == 0 {
 		return nil
 	}
@@ -517,9 +614,21 @@ func runPrePush(cmd *cobra.Command, _ []string) error {
 	if len(outcome.PublishedOIDs) > 0 {
 		// One line per publication: a multi-ref push writes one canonical
 		// commit per distinct docs tree, and reporting only the last one
-		// is how F-C1's clobber stayed invisible.
-		for _, oid := range outcome.PublishedOIDs {
-			writeln(cmd.ErrOrStderr(), pushPublishedMessage(oid, outcome.Case.String()))
+		// is how F-C1's clobber stayed invisible. Each line carries ITS
+		// OWN case — reusing the last tip's label for every line reported
+		// a fast-forward as a merge, or worse the reverse.
+		for i, oid := range outcome.PublishedOIDs {
+			decided := outcome.Case
+			if i < len(outcome.PublishedCases) {
+				decided = outcome.PublishedCases[i]
+			}
+			writeln(cmd.ErrOrStderr(), pushPublishedMessage(oid, decided.String()))
+		}
+		if outcome.BaseAdvanceError != nil {
+			// The push landed and the local pointer did not move (M2).
+			// Saying so is the whole of it: this is not a rejection, and
+			// the two commands that repair it run on the user's schedule.
+			writeln(cmd.ErrOrStderr(), baseNotAdvancedMessage(causeOfBaseRefusal(outcome.BaseAdvanceError)))
 		}
 		recordWorkspaceState(ctx, ws)
 	}
@@ -746,13 +855,36 @@ func causeLine(err error) string {
 
 // --- post-checkout / post-merge / post-rewrite (§5.10) ----------------
 
+// newPostCheckoutCmd is the one HEAD-moved hook that receives arguments
+// worth reading. Git calls `post-checkout <prev> <new> <branch-flag>`,
+// and the flag is 1 for a branch checkout and **0 for a file checkout**
+// — `git checkout -- docs/api.md`, which moves no ref at all.
+//
+// Re-deriving there is wrong twice over (M8). HEAD did not move, so
+// there is nothing to re-derive from; and a file checkout is precisely
+// how a user restores one document, which changes the docs worktree
+// without changing history — the state §5.10 step 1 already stands down
+// for, reached by a route that used to skip the test.
 func newPostCheckoutCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "post-checkout [prev] [new] [branch-flag]",
 		Short: "Re-derive the docs base for the new HEAD",
 		Args:  cobra.ArbitraryArgs,
-		RunE:  func(cmd *cobra.Command, _ []string) error { return runRederiveHook(cmd) },
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if isFileCheckout(args) {
+				return nil
+			}
+			return runRederiveHook(cmd)
+		},
 	}
+}
+
+// isFileCheckout reads git's third post-checkout argument. Anything
+// else — too few arguments, an unrecognized value — is treated as a
+// branch checkout, which is the answer that keeps the hook doing its
+// job when git's contract is not what this expects.
+func isFileCheckout(args []string) bool {
+	return len(args) >= 3 && strings.TrimSpace(args[2]) == "0"
 }
 
 func newPostMergeCmd() *cobra.Command {
@@ -783,13 +915,16 @@ func runRederiveHook(cmd *cobra.Command) error {
 		return nil
 	}
 
-	base, changed, err := rederiveBaseAfterHeadMoved(ctx, ws)
+	base, outcome, err := rederiveBaseAfterHeadMoved(ctx, ws)
 	if err != nil {
 		debugf(cmd, "base re-derivation skipped: %v", err)
 		return nil
 	}
-	if changed {
+	switch outcome {
+	case rederivedAdopted:
 		writeln(cmd.ErrOrStderr(), baseRederivedMessage(base.Commit))
+	case rederivedCleared:
+		writeln(cmd.ErrOrStderr(), baseClearedMessage())
 	}
 	return nil
 }

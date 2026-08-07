@@ -175,8 +175,12 @@ func runInit(cmd *cobra.Command, opts initOptions) error {
 	if err != nil {
 		return rollback(initGitError("create the canonical clone", err))
 	}
-	if err := store.Fetch(ctx); err != nil {
-		return rollback(initGitError("fetch the canonical repository", err))
+	// A clone Ensure just built has already fetched; only an existing one
+	// needs refreshing here.
+	if !store.Fresh() {
+		if err := store.Fetch(ctx); err != nil {
+			return rollback(initGitError("fetch the canonical repository", err))
+		}
 	}
 
 	base, hasBase, staged, err := establishBase(ctx, cmd, ws, store, opts)
@@ -184,7 +188,11 @@ func runInit(cmd *cobra.Command, opts initOptions) error {
 		return rollback(err)
 	}
 	if hasBase {
-		if err := ws.statePort().SaveBase(base); err != nil {
+		// Through the §5.7 guard like every other base write. Fresh mode
+		// has just checked canonical's docs out, so the worktree IS the
+		// base's tree; reuse mode derived the value from this history's
+		// own trailer. Both are warrants the guard checks for itself.
+		if err := ws.statePort().SaveBase(ctx, base); err != nil {
 			return rollback(err)
 		}
 	}
@@ -391,7 +399,7 @@ func establishBase(ctx context.Context, cmd *cobra.Command, ws *workspace, store
 // rewritten since — which is exactly the state docs-base-tree exists to
 // recover from (D2). Discarding it would throw away the anchor.
 func reuseExistingDocs(ctx context.Context, cmd *cobra.Command, ws *workspace, store *canonical.Store) (provenance.Base, bool, error) {
-	derived, found, err := deriveBase(ctx, ws.root)
+	derived, found, err := deriveBase(ctx, ws)
 	if err != nil {
 		return provenance.Base{}, false, err
 	}

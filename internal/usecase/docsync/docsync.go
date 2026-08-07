@@ -82,6 +82,15 @@ type AppRepoPort interface {
 	// conflict was put aside" — never how a sync is completed, which is
 	// an explicit act (see Continue).
 	DocsPathsChangedBetween(ctx context.Context, fromTree, toTree string, paths []string) (bool, error)
+	// DocsTreeDifferences counts the paths differing between two docs
+	// trees. `--continue` uses it to say how far the worktree has drifted
+	// from the merge result it is completing; nothing gates on it.
+	DocsTreeDifferences(ctx context.Context, fromTree, toTree string) (int, error)
+	// IsAncestor reports whether commit a is b or an ancestor of it in
+	// THIS repository's history. It is local and network-free, which is
+	// what lets `--continue` insist on standing where the sync began
+	// without reaching for the canonical clone.
+	IsAncestor(ctx context.Context, a, b string) (bool, error)
 	// CheckoutDocsTree materializes tree into the docs worktree and
 	// index (docs paths only).
 	CheckoutDocsTree(ctx context.Context, tree string) error
@@ -96,9 +105,29 @@ type AppRepoPort interface {
 }
 
 // StatePort is workspace-local state (wsstate) as sync needs it.
+//
+// Both writers take a context because neither is a plain file write any
+// more: every base that reaches disk goes through the guard described on
+// SaveBase, and the guard runs git.
 type StatePort interface {
 	LoadBase() (provenance.Base, bool, error)
-	SaveBase(provenance.Base) error
+	// SaveBase records a base only when the adapter can show, locally,
+	// that it is not ahead of the docs the worktree carries. A candidate
+	// it cannot vouch for is refused with an error satisfying
+	// errors.Is(err, ErrBaseNotCorroborated) and nothing is written.
+	SaveBase(ctx context.Context, base provenance.Base) error
+	// SaveSyncTargetBase records the merge target a `--continue` adopts.
+	//
+	// It exists because that one write cannot be corroborated from trees.
+	// A resolution may legitimately be "keep every one of my lines",
+	// which leaves the worktree byte-identical to the pre-merge state, so
+	// no comparison of docs trees can tell it from a sync that was never
+	// reconciled at all. entryHead — where the app repo stood when the
+	// markers were written — is the fact that can: the adapter verifies
+	// with real git that HEAD descends from it, which is the same
+	// precondition Continue enforces and is what makes completing a sync
+	// from unrelated history impossible from either side.
+	SaveSyncTargetBase(ctx context.Context, base provenance.Base, entryHead string) error
 	// ClearBase removes the base file, restoring the "no base recorded"
 	// state. Abort needs it because a workspace can enter a sync with no
 	// base at all, and a zero Base is not a writable value: the base
@@ -143,6 +172,12 @@ type SyncNote struct {
 	// and one that may be answered wrongly without costing anything.
 	EntryHead     string
 	EntryDocsTree string
+	// MergedTree is the docs tree the conflicted merge produced — markers
+	// and all. It is recorded for one purpose: `--continue` compares the
+	// worktree against it and says how far the completion drifted from
+	// the merge it is completing. Nothing gates on it, and a note written
+	// before the field existed simply carries "".
+	MergedTree string
 	// Conflicts are the docs paths the merge left conflicted,
 	// repository-relative.
 	Conflicts []string
@@ -187,9 +222,10 @@ type Result struct {
 	//
 	// On StatusConflicts it names the merge TARGET, which the base file
 	// has deliberately not adopted yet: the conflicted run records it in
-	// the sync note and the base moves only when `sanho sync --continue`
-	// completes the sync. Renderers of that status say "merged with
-	// upstream", not "the base is now X", so the distinction stays
+	// the sync note — along with the merge result and where HEAD stood —
+	// and the base moves only when `sanho sync --continue` completes the
+	// sync, from that same history. Renderers of that status say "merged
+	// with upstream", not "the base is now X", so the distinction stays
 	// visible to a reader.
 	NewBase provenance.Base
 	// Conflicts lists conflicted docs paths when StatusConflicts.
@@ -242,9 +278,21 @@ var (
 	// yet".
 	ErrMarkersRemain         = errors.New("the docs worktree still contains conflict markers")
 	ErrResolutionUncommitted = errors.New("the resolution has not been committed")
-	ErrUnknownBase           = errors.New("the recorded docs base is unknown to the canonical repository")
-	ErrUnknownTarget         = errors.New("the requested target is not a canonical commit")
-	ErrPullNeedsSync         = errors.New("local docs have changes a fast-forward cannot carry")
+	// ErrContinueForeignHistory refuses a `--continue` run from history
+	// the sync never stood on.
+	//
+	// The three preconditions before it are all about the *worktree*, and
+	// a branch switch satisfies every one of them while changing what the
+	// worktree contains completely: `git stash push -- docs` followed by
+	// `git checkout other` leaves no markers, clean docs, and a note that
+	// still names a merge target — so the sync completed on a branch whose
+	// documents never took part in it, and the base landed ahead of them.
+	// Standing on the sync's own history is the fourth precondition, and
+	// it is answered locally by one `merge-base --is-ancestor`.
+	ErrContinueForeignHistory = errors.New("the sync was started on a different history")
+	ErrUnknownBase            = errors.New("the recorded docs base is unknown to the canonical repository")
+	ErrUnknownTarget          = errors.New("the requested target is not a canonical commit")
+	ErrPullNeedsSync          = errors.New("local docs have changes a fast-forward cannot carry")
 	// ErrRebaseOntoHealthy refuses --rebase-onto when the recorded base
 	// is perfectly reachable and the target merely precedes it (F-M4).
 	ErrRebaseOntoHealthy = errors.New("--rebase-onto targets an ancestor of a healthy base")
@@ -257,6 +305,12 @@ var (
 	// existence is the fact, not its contents — and routes the user to
 	// `sanho sync --abort`, which succeeds over it.
 	ErrSyncNoteCorrupt = errors.New("the record of the sync in progress is unreadable")
+	// ErrBaseNotCorroborated is the StatePort's refusal to record a base
+	// it cannot show is safe. Like ErrSyncNoteCorrupt it is declared here
+	// rather than imported from the adapter, because a use case may not
+	// see infra or interface; the CLI raises the condition under this
+	// sentinel so both sides can route on it.
+	ErrBaseNotCorroborated = errors.New("the docs base could not be recorded")
 )
 
 // Resolution classifies the state of an unfinished sync for *reporting*.
@@ -423,18 +477,28 @@ func (u *UseCase) Run(ctx context.Context, opts Options) (Result, error) {
 		if err != nil {
 			return Result{}, fmt.Errorf("read HEAD: %w", err)
 		}
-		if err := u.App.CheckoutDocsTree(ctx, mergedTree); err != nil {
-			return Result{}, fmt.Errorf("write the merged docs: %w", err)
-		}
+		// The note is written BEFORE the markers land, and the order is
+		// the crash contract. The note is the only record that a sync
+		// owns the docs worktree; markers in the worktree with no note
+		// are a state nothing can abort, complete, or even name, and an
+		// interruption between the two writes has to leave the
+		// recoverable half. A note with no markers yet is exactly that —
+		// `sanho sync --abort` restores docs from HEAD and clears it, and
+		// re-running `sanho sync` after the abort lays the merge out
+		// again. Nothing reads the note as proof that markers exist.
 		note := SyncNote{
 			PrevBase:      base,
 			Target:        newBase,
 			EntryHead:     entryHead,
 			EntryDocsTree: oursTree,
+			MergedTree:    mergedTree,
 			Conflicts:     conflicts,
 		}
 		if err := u.State.SaveSyncNote(note); err != nil {
 			return Result{}, fmt.Errorf("record the sync in progress: %w", err)
+		}
+		if err := u.App.CheckoutDocsTree(ctx, mergedTree); err != nil {
+			return Result{}, fmt.Errorf("write the merged docs: %w", err)
 		}
 		return Result{Status: StatusConflicts, NewBase: newBase, Conflicts: conflicts}, nil
 	}
@@ -454,7 +518,7 @@ func (u *UseCase) Run(ctx context.Context, opts Options) (Result, error) {
 		if hasBase && base == newBase {
 			return Result{Status: StatusUpToDate, NewBase: newBase}, nil
 		}
-		if err := u.State.SaveBase(newBase); err != nil {
+		if err := u.State.SaveBase(ctx, newBase); err != nil {
 			return Result{}, fmt.Errorf("record new base: %w", err)
 		}
 		return Result{Status: StatusSynced, NewBase: newBase}, nil
@@ -463,7 +527,7 @@ func (u *UseCase) Run(ctx context.Context, opts Options) (Result, error) {
 	if err := u.App.CheckoutDocsTree(ctx, mergedTree); err != nil {
 		return Result{}, fmt.Errorf("write the merged docs: %w", err)
 	}
-	if err := u.State.SaveBase(newBase); err != nil {
+	if err := u.State.SaveBase(ctx, newBase); err != nil {
 		return Result{}, fmt.Errorf("record new base: %w", err)
 	}
 	commit, err := u.App.CommitDocs(ctx, syncCommitMessage(target))
@@ -475,7 +539,22 @@ func (u *UseCase) Run(ctx context.Context, opts Options) (Result, error) {
 
 // ContinueResult reports one `sanho sync --continue`: the base the
 // workspace has adopted, which is the sync's merge target.
-type ContinueResult struct{ Base provenance.Base }
+type ContinueResult struct {
+	Base provenance.Base
+	// MergeDrift counts the docs paths that differ between the tree the
+	// conflicted merge produced and the tree being completed.
+	//
+	// It is information, never a refusal. Completing a sync whose clean
+	// half was reverted along with its conflicts — the shape a blanket
+	// `git checkout HEAD -- docs` or a `git stash push -- docs` leaves —
+	// is legitimate and is exactly the "keep my own lines" reading
+	// `--continue` exists to express. But it silently drops upstream
+	// content the user never saw a conflict for, so the count is
+	// reported. Zero means the worktree is the merge result, and a note
+	// written before the merged tree was recorded reports zero too,
+	// because nothing is known rather than because nothing drifted.
+	MergeDrift int
+}
 
 // AbortResult reports one `sanho sync --abort`. It carries nothing:
 // abort restores the docs, puts the base back, and drops the note, and
@@ -537,7 +616,7 @@ func (u *UseCase) Abort(ctx context.Context) (AbortResult, error) {
 		if err := u.State.ClearBase(); err != nil {
 			return AbortResult{}, fmt.Errorf("remove the base file: %w", err)
 		}
-	} else if err := u.restoreBase(note); err != nil {
+	} else if err := u.restoreBase(ctx, note); err != nil {
 		return AbortResult{}, err
 	}
 	if err := u.State.ClearSyncNote(); err != nil {
@@ -562,7 +641,7 @@ func (u *UseCase) Abort(ctx context.Context) (AbortResult, error) {
 //     value, which is not a writable one — the base file schema has no
 //     representation for an empty commit OID and reading one back is a
 //     corruption error — so "forget the base" has to be a removal.
-func (u *UseCase) restoreBase(note SyncNote) error {
+func (u *UseCase) restoreBase(ctx context.Context, note SyncNote) error {
 	prev := note.PrevBase
 	if prev.IsZero() {
 		if err := u.State.ClearBase(); err != nil {
@@ -570,10 +649,26 @@ func (u *UseCase) restoreBase(note SyncNote) error {
 		}
 		return nil
 	}
-	if err := u.State.SaveBase(prev); err != nil {
+	switch err := u.State.SaveBase(ctx, prev); {
+	case err == nil:
+		return nil
+	case errors.Is(err, ErrBaseNotCorroborated):
+		// The guard could not vouch for the value the sync found, which
+		// only a note from an older build can produce (one that moved
+		// the base at conflict time, so PrevBase is genuinely behind the
+		// recorded value and the ancestry cannot be shown offline). The
+		// invariant resolves toward the older value, and no base at all
+		// is the oldest there is — and abort's contract is that it
+		// cannot fail once a note exists, so this may not become an
+		// error. Publication then refuses with `no_base` and names
+		// `sanho sync`, which establishes one.
+		if clearErr := u.State.ClearBase(); clearErr != nil {
+			return fmt.Errorf("remove the base file: %w", clearErr)
+		}
+		return nil
+	default:
 		return fmt.Errorf("restore the base file: %w", err)
 	}
-	return nil
 }
 
 // Continue completes a conflicted sync (§5.5 step 6b). It is the only
@@ -592,19 +687,37 @@ func (u *UseCase) restoreBase(note SyncNote) error {
 //
 // So completion is an act, in the shape `git rebase --continue` already
 // taught: the user says when the reconciliation is done, and sanho
-// records it. Three preconditions, each of which names what remains:
+// records it. Four preconditions, each of which names what remains:
 //
 //   - A sync note exists. Without one there is nothing to complete.
 //   - No docs file still carries conflict markers. Recording a base for
 //     content full of markers describes a resolution of nothing.
 //   - The docs are clean relative to HEAD, so what the base will
 //     describe is committed content rather than an edit in progress.
+//   - HEAD stands on the history the sync began on — it IS the note's
+//     entry head, or descends from it.
 //
-// It deliberately does NOT ask whether a commit settled the conflicted
-// paths. Taking "ours" wholesale, byte for byte, is a legitimate
-// resolution that leaves no trace at all — the dead end the previous
-// design had no exit from — and the user asserting it is exactly the
-// evidence that was missing.
+// The fourth is the fix for the fourth review's C1, and the first three
+// are the reason it was needed: every one of them is about the worktree,
+// and a branch switch satisfies all three while replacing the documents
+// entirely. `git stash push -- docs` clears the markers and the dirt;
+// `git checkout other` moves to history the merge never touched; and the
+// completion then recorded canonical head as the base of documents that
+// had never been reconciled with it. The next push was evaluated as a
+// fast-forward and republished them over upstream, at exit 0.
+//
+// Ancestry rather than identity is the right test, and deliberately so:
+// a resolution is ordinarily several commits, sometimes on a branch made
+// from the resolution, and all of those still descend from where the
+// sync began. What cannot descend from it is a branch that was never
+// part of it. One local `merge-base --is-ancestor` decides it; nothing
+// is fetched.
+//
+// It still deliberately does NOT ask whether a commit settled the
+// conflicted paths. Taking "ours" wholesale, byte for byte, is a
+// legitimate resolution that leaves no trace at all — the dead end the
+// previous design had no exit from — and the user asserting it, from
+// the sync's own history, is exactly the evidence that was missing.
 //
 // No commit is created (P3), no ref moves, and nothing is fetched.
 //
@@ -612,7 +725,9 @@ func (u *UseCase) restoreBase(note SyncNote) error {
 // in miniature: a crash between them leaves the note gone and the base
 // at its older value, which publication reconciles as an ordinary
 // divergence. The reverse order fails toward a base ahead of the
-// worktree — a fast-forward over upstream's work.
+// worktree — a fast-forward over upstream's work. The base write is
+// still guarded: SaveSyncTargetBase re-proves the same ancestry from the
+// adapter side, so the invariant does not rest on this function alone.
 func (u *UseCase) Continue(ctx context.Context) (ContinueResult, error) {
 	note, exists, err := u.State.LoadSyncNote()
 	switch {
@@ -644,14 +759,71 @@ func (u *UseCase) Continue(ctx context.Context) (ContinueResult, error) {
 	if !clean {
 		return ContinueResult{}, ErrResolutionUncommitted
 	}
+	if err := u.requireSyncHistory(ctx, note); err != nil {
+		return ContinueResult{}, err
+	}
+
+	drift, err := u.mergeDrift(ctx, note)
+	if err != nil {
+		return ContinueResult{}, err
+	}
 
 	if err := u.State.ClearSyncNote(); err != nil {
 		return ContinueResult{}, fmt.Errorf("clear the sync note: %w", err)
 	}
-	if err := u.State.SaveBase(note.Target); err != nil {
+	if err := u.State.SaveSyncTargetBase(ctx, note.Target, note.EntryHead); err != nil {
 		return ContinueResult{}, fmt.Errorf("record new base: %w", err)
 	}
-	return ContinueResult{Base: note.Target}, nil
+	return ContinueResult{Base: note.Target, MergeDrift: drift}, nil
+}
+
+// requireSyncHistory is `--continue`'s fourth precondition.
+//
+// An empty EntryHead is not a failure to check: it means the sync began
+// on an unborn HEAD, or on a note written before the field existed
+// (PreDatesEntryRecord). Neither can say which history the sync belongs
+// to, so neither can be violated — and refusing there would strand a
+// workspace left mid-sync across an upgrade with no way to finish it,
+// which is a worse answer than the one this precondition prevents.
+func (u *UseCase) requireSyncHistory(ctx context.Context, note SyncNote) error {
+	if note.EntryHead == "" {
+		return nil
+	}
+	head, err := u.App.HeadCommit(ctx)
+	if err != nil {
+		return fmt.Errorf("read HEAD: %w", err)
+	}
+	if head == note.EntryHead {
+		return nil
+	}
+	descends, err := u.App.IsAncestor(ctx, note.EntryHead, head)
+	if err != nil {
+		return fmt.Errorf("check whether HEAD descends from where the sync began: %w", err)
+	}
+	if descends {
+		return nil
+	}
+	return fmt.Errorf("%w: it began at %s, and HEAD is %s",
+		ErrContinueForeignHistory, shortOID(note.EntryHead), shortOID(head))
+}
+
+// mergeDrift counts how far the tree being completed has moved from the
+// tree the conflicted merge produced. A note with no recorded merged
+// tree reports zero: the fact is unknown, and inventing a number would
+// be worse than saying nothing.
+func (u *UseCase) mergeDrift(ctx context.Context, note SyncNote) (int, error) {
+	if note.MergedTree == "" {
+		return 0, nil
+	}
+	worktree, err := u.App.WorktreeDocsTree(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("hash worktree docs: %w", err)
+	}
+	drift, err := u.App.DocsTreeDifferences(ctx, note.MergedTree, worktree)
+	if err != nil {
+		return 0, fmt.Errorf("compare the worktree with the merge result: %w", err)
+	}
+	return drift, nil
 }
 
 // ResolutionState reports where an unfinished sync stands. It is a
@@ -839,7 +1011,7 @@ func (u *UseCase) Pull(ctx context.Context, withCommit bool) (Result, error) {
 			return Result{}, fmt.Errorf("write the canonical docs: %w", err)
 		}
 	}
-	if err := u.State.SaveBase(newBase); err != nil {
+	if err := u.State.SaveBase(ctx, newBase); err != nil {
 		return Result{}, fmt.Errorf("record new base: %w", err)
 	}
 

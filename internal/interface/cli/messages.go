@@ -243,9 +243,16 @@ func pushConflictMessage(base, head string, files []string) string {
 // Both are states in which `sanho sync` succeeds, which is what keeps
 // the advice closed (D3).
 func pushSyncRequiredMessage(reason, base, head string) string {
-	return fmt.Sprintf("sanho: docs must be reconciled before publishing (%s; base %s → %s)\n"+
+	// A workspace with no base has nothing to render on the left of the
+	// arrow, and "base (none) → 9a41f2c0e1d2" reads as a transition from
+	// a state rather than as the absence of one. Name the head instead.
+	state := fmt.Sprintf("base %s → %s", shortOID(base), shortOID(head))
+	if base == "" {
+		state = fmt.Sprintf("canonical head %s", shortOID(head))
+	}
+	return fmt.Sprintf("sanho: docs must be reconciled before publishing (%s; %s)\n"+
 		"Run 'sanho sync', resolve if needed, commit, then push again.\n"+
-		"%s", reason, shortOID(base), shortOID(head), msgPushRejectedTrailer)
+		"%s", reason, state, msgPushRejectedTrailer)
 }
 
 // pushMarkersMessage rejects a push whose docs carry committed conflict
@@ -298,9 +305,14 @@ func pushRewrittenMessage(base, anchor, cloneDir, branch string) string {
 // The state is genuinely ambiguous — a branch created before the docs
 // directory existed and a branch where `git rm -r docs` was the point
 // look identical from the push boundary — so the message states what
-// would happen, names the branch, and offers both readings. The
-// environment variable is spelled rather than embedded in a command
-// line, because the deliberate deletion is a decision, not a retry.
+// would happen, names the branch, and offers both readings.
+//
+// The escape hatch is shown as a ONE-COMMAND PREFIX rather than as a
+// variable to set. It reads from the process environment, so an
+// `export` disarms the refusal for every push in that shell until the
+// user remembers to unset it — which is not "for that one push", the
+// promise the previous wording made. The prefix form is genuinely
+// single-use, and it is the shape the sentence can keep.
 func pushEmptyDocsMessage(branch, head string, docsCount int) string {
 	scope := "every canonical document"
 	if docsCount > 0 {
@@ -308,7 +320,7 @@ func pushEmptyDocsMessage(branch, head string, docsCount int) string {
 	}
 	return fmt.Sprintf("sanho: branch %s carries no docs; publishing it would delete %s (canonical head %s)\n"+
 		"If that is not what you meant, push a docs-bearing branch, or run 'sanho sync' on this one first.\n"+
-		"If it is, set SANHO_ALLOW_DOCS_DELETION=1 in the environment for that one push.\n"+
+		"If it is, prefix the one push:  SANHO_ALLOW_DOCS_DELETION=1 git push\n"+
 		"%s", branch, scope, shortOID(head), msgPushRejectedTrailer)
 }
 
@@ -481,10 +493,71 @@ func baseRederivedMessage(base string) string {
 	return fmt.Sprintf("sanho: docs base re-derived as %s after HEAD moved", shortOID(base))
 }
 
+// baseClearedMessage is the line a HEAD-moved hook prints when it
+// removed a base the new HEAD cannot account for.
+//
+// It has to be said out loud. Losing the base is not a failure — the
+// next `sanho sync` establishes one, merging against the empty tree —
+// but it changes what the next push does, and a workspace that silently
+// stopped having a base would meet that at the push boundary with no
+// idea when it happened. The alternative was worse and is what this
+// wave closes: carrying a base belonging to another branch across a
+// checkout, and publishing this branch's documents over canonical as a
+// fast-forward.
+func baseClearedMessage() string {
+	return "sanho: this branch carries no docs provenance, so the docs base was cleared — run 'sanho sync' to establish one"
+}
+
+// baseNotAdvancedMessage follows a SUCCESSFUL publication whose local
+// base pointer could not be moved (§5.3 step 6, M2).
+//
+// It names no command, for the same reason pushMergeFailedMessage names
+// none: everything that can reach it is environmental — an unreadable
+// docs directory, a workspace root that cannot be written — and D3
+// forbids printing a command that would fail where it is printed. Every
+// command that repairs a stale base needs the same filesystem the write
+// just failed on.
+//
+// Nor does the state need guidance. The publication stands; what did not
+// move is a local pointer, and the next `sanho sync` records it as a
+// matter of course (the worktree already holds what was published, so
+// the merge is clean and only the base moves). `sanho status` and
+// `sanho doctor` report the staleness with their own guidance until then.
+func baseNotAdvancedMessage(cause string) string {
+	return fmt.Sprintf("sanho: published, but the docs base was not advanced (%s)", cause)
+}
+
 // syncCompletedMessage reports a completed `sanho sync --continue`: the
 // note is gone and the base names the state the docs now derive from.
-func syncCompletedMessage(base string) string {
-	return fmt.Sprintf("sanho: sync completed; docs base is now %s", shortOID(base))
+//
+// drift is how many docs paths differ between the merge result and what
+// was actually completed. It is reported, never refused: completing a
+// sync whose clean half was reverted along with its conflicts is the
+// legitimate "keep my own lines" reading, and it also silently drops
+// upstream content the user was never shown a conflict for. Saying so is
+// the difference between a decision and an accident.
+func syncCompletedMessage(base string, drift int) string {
+	line := fmt.Sprintf("sanho: sync completed; docs base is now %s", shortOID(base))
+	if drift == 0 {
+		return line
+	}
+	return line + fmt.Sprintf("\n%s differ from the merge result and were completed as they stand.",
+		plural(drift, "file"))
+}
+
+// syncContinueForeignHistoryMessage refuses `sanho sync --continue` from
+// history the sync never stood on (C1).
+//
+// The abort is the one route out, and it works from anywhere: it
+// restores docs from HEAD, puts the base back where the sync found it,
+// and deletes the note — none of which depends on which branch is
+// checked out. Naming the branch switch explicitly is the point, because
+// from inside the state nothing looks wrong: no markers, clean docs, a
+// note that still names a target.
+func syncContinueForeignHistoryMessage(detail string) string {
+	return fmt.Sprintf("sanho: this sync cannot be completed here (%s)\n"+
+		"Completing it would record a docs base for documents that never took part in the merge.\n"+
+		"Run 'sanho sync --abort' to undo the sync, then run 'sanho sync' again where you want to reconcile.", detail)
 }
 
 // stagedMarkersMessage blocks a commit whose staged docs still carry
@@ -1065,6 +1138,28 @@ var Catalog = []CatalogEntry{
 		Sample:       baseNeedsSyncMessage("no docs base is recorded"),
 		Match:        "to establish one from canonical",
 		NextCommands: []string{"sanho sync"},
+	},
+	{
+		ID:           "base_cleared",
+		Source:       "baseClearedMessage",
+		Scenario:     "base_cleared",
+		Sample:       baseClearedMessage(),
+		Match:        "the docs base was cleared",
+		NextCommands: []string{"sanho sync"},
+	},
+	{
+		ID:       "sync_continue_foreign_history",
+		Source:   "syncContinueForeignHistoryMessage",
+		Scenario: "sync_continue_foreign_history",
+		Sample: syncContinueForeignHistoryMessage(
+			"it began at " + sampleBaseOID[:12] + ", and HEAD is " + sampleHeadOID[:12]),
+		Match: "this sync cannot be completed here",
+		// One route out, and it is the whole of it: the abort needs
+		// nothing from the branch it is standing on. `sanho sync` after
+		// it is the way back to the reconciliation, so the sequence is
+		// declared rather than left implied.
+		NextCommands:  []string{"sanho sync --abort", "sanho sync"},
+		Prerequisites: map[string][]string{"sanho sync": {"sanho sync --abort"}},
 	},
 	{
 		ID:           "base_unknown_to_canonical",

@@ -145,7 +145,7 @@ func runMigrate(cmd *cobra.Command, docsRepoURLFlag string) error {
 		return err
 	}
 
-	site, err := openMigrationSite(ctx, root, legacy.DocsDir)
+	site, err := openMigrationSite(ctx, root, legacy.DocsDir, docsRepoURL)
 	if err != nil {
 		return err
 	}
@@ -153,11 +153,23 @@ func runMigrate(cmd *cobra.Command, docsRepoURLFlag string) error {
 	if err != nil {
 		return err
 	}
-	if err := store.Fetch(ctx); err != nil {
-		return err
+	if !store.Fresh() {
+		if err := store.Fetch(ctx); err != nil {
+			return err
+		}
 	}
 
-	base, hasBase, err := migrateBase(ctx, cmd, root, store)
+	// Defence in depth: a v0.1 workspace cannot have a v0.2 sync note, so
+	// finding one means the layout is further along than the config says
+	// — a partially rolled-back upgrade, or a config restored from a
+	// backup. Migration rewrites the base, which is the one file an
+	// unfinished sync is holding still, so it refuses for exactly the
+	// reason `sanho init` does and names the same two exits.
+	if _, syncing, noteErr := wsstate.LoadSyncNote(site.gitDir); syncing || noteErr != nil {
+		return errors.New(msgCleanSyncInProgress)
+	}
+
+	base, hasBase, err := migrateBase(ctx, cmd, root, site.statePort(), store)
 	if err != nil {
 		return err
 	}
@@ -212,10 +224,20 @@ func runMigrate(cmd *cobra.Command, docsRepoURLFlag string) error {
 // before it has a v2 config to open one from.
 type migrationSite struct {
 	commonDir string
+	gitDir    string
 	repo      *appgit.Repo
+	// workspace is the same facts in the shape the rest of the package
+	// takes, so that migrate's base write goes through the ordinary
+	// guarded port rather than around it. A v0.1 workspace cannot be
+	// resolved by openWorkspace — that is what migration is for — so it
+	// is assembled here from what has already been read.
+	workspace *workspace
 }
 
-func openMigrationSite(ctx context.Context, root, docsDir string) (migrationSite, error) {
+// statePort is migrate's guarded state adapter.
+func (m migrationSite) statePort() statePort { return m.workspace.statePort() }
+
+func openMigrationSite(ctx context.Context, root, docsDir, docsRepoURL string) (migrationSite, error) {
 	run := gitx.New(root)
 	common, err := run.Line(ctx, "rev-parse", "--git-common-dir")
 	if err != nil {
@@ -224,16 +246,32 @@ func openMigrationSite(ctx context.Context, root, docsDir string) (migrationSite
 	if !filepath.IsAbs(common) {
 		common = filepath.Join(root, common)
 	}
-	return migrationSite{
+	gitDir, err := run.Line(ctx, "rev-parse", "--absolute-git-dir")
+	if err != nil {
+		return migrationSite{}, fmt.Errorf("%s is not inside a git repository: %w", root, err)
+	}
+
+	repo := appgit.New(root, docsDir, run)
+	site := migrationSite{
 		commonDir: filepath.Clean(common),
-		repo:      appgit.New(root, docsDir, run),
-	}, nil
+		gitDir:    gitDir,
+		repo:      repo,
+	}
+	site.workspace = &workspace{
+		root:       root,
+		configRoot: root,
+		gitDir:     gitDir,
+		commonDir:  site.commonDir,
+		config:     wsstate.Config{DocsRepoURL: docsRepoURL, DocsDir: repo.DocsDir()},
+		repo:       repo,
+	}
+	return site, nil
 }
 
 // migrationComplete reports whether a v2 workspace really finished
 // migrating: config, clone, and all six hooks (F-H8b).
 func migrationComplete(ctx context.Context, root string, config wsstate.Config) (bool, error) {
-	site, err := openMigrationSite(ctx, root, config.DocsDir)
+	site, err := openMigrationSite(ctx, root, config.DocsDir, config.DocsRepoURL)
 	if err != nil {
 		return false, err
 	}
@@ -379,7 +417,15 @@ func writeV2Config(root string, legacy v1Config, docsRepoURL string) error {
 //
 // The legacy file itself is copied, never consumed: LoadBase prefers the
 // v2 file, so leaving it intact costs nothing and keeps rollback whole.
-func migrateBase(ctx context.Context, cmd *cobra.Command, root string, store *canonical.Store) (provenance.Base, bool, error) {
+// It writes through the §5.7 guard like every other base write, and the
+// warrant it holds is the plainest one: LoadBase already reads the
+// legacy file, so the commit being written is the commit already
+// recorded and only the tree annotation is new. A guard refusal here
+// would mean the workspace's own v0.1 pointer disagrees with its
+// documents, which migration is not the place to adjudicate — it is
+// reported and the workspace continues without a base, exactly as the
+// no-base branch above does.
+func migrateBase(ctx context.Context, cmd *cobra.Command, root string, state statePort, store *canonical.Store) (provenance.Base, bool, error) {
 	legacyPath := filepath.Join(root, wsstate.LegacyHashFileName)
 	if exists, err := pathExists(legacyPath); err != nil {
 		return provenance.Base{}, false, err
@@ -404,13 +450,13 @@ func migrateBase(ctx context.Context, cmd *cobra.Command, root string, store *ca
 	}
 	if !known {
 		writeln(cmd.ErrOrStderr(), baseUnknownToCanonicalMessage(base.Commit))
-		return base, true, wsstate.SaveBase(root, base)
+		return base, true, state.SaveBase(ctx, base)
 	}
 
 	if tree, treeErr := commitTreeInClone(ctx, store, base.Commit); treeErr == nil {
 		base.Tree = tree
 	}
-	return base, true, wsstate.SaveBase(root, base)
+	return base, true, state.SaveBase(ctx, base)
 }
 
 // commitTreeInClone resolves a canonical commit's tree. The canonical

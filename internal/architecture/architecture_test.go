@@ -3,6 +3,8 @@ package architecture_test
 import (
 	"encoding/json"
 	"fmt"
+	"io/fs"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -74,14 +76,158 @@ func TestLayerRulesRejectOutwardDependencies(t *testing.T) {
 	}
 }
 
-func listInternalPackages(t *testing.T) []listedPackage {
+// baseWriteGuardFile is the one file allowed to call wsstate.SaveBase.
+// It is `interface/cli`'s guarded writer; see its own doc comment for
+// why the invariant needs an enforcement point rather than nine careful
+// callers.
+const baseWriteGuardFile = "internal/interface/cli/basewrite.go"
+
+// guardedStateWriters are the wsstate functions that put a docs base on
+// disk. Every one of them must be reached through the guard.
+var guardedStateWriters = []string{"wsstate.SaveBase("}
+
+// TestBaseWritesGoThroughTheGuard is the meta-test the fourth review
+// wave asked for.
+//
+// The failure class it protects has now been found four times, once per
+// wave, and each time in a base write that looked locally correct. Three
+// waves fixed three callers; what none of them could fix is that a new
+// caller inherits none of the fixes. So "a recorded base may never be
+// ahead of the docs the worktree carries" has a single enforcement point
+// (interface/cli's writeBase), and this test fails the build the moment
+// anything reaches around it.
+//
+// It reads source text rather than the type graph on purpose: the thing
+// being forbidden is a *call to a specific function*, and a package-level
+// import rule cannot express it — interface/cli legitimately imports
+// wsstate for the config, the note, and LoadBase.
+//
+// The scope is production code, the same boundary the depguard rule for
+// os/exec draws. A test that writes a base file is CONSTRUCTING a
+// workspace state to drive something else against; it is not a write
+// path that a user's documents depend on, and forcing fixtures through
+// the guard would mean fixtures could only build states the guard
+// already believes in — which is the opposite of what a regression test
+// for this failure class needs.
+func TestBaseWritesGoThroughTheGuard(t *testing.T) {
+	root := moduleRoot(t)
+
+	for _, file := range goSourceFiles(t, root) {
+		relative := filepath.ToSlash(file)
+		if relative == baseWriteGuardFile ||
+			strings.HasSuffix(relative, "_test.go") ||
+			strings.HasPrefix(relative, "internal/infra/wsstate/") {
+			continue
+		}
+		content, err := os.ReadFile(filepath.Join(root, file))
+		if err != nil {
+			t.Fatalf("read %s: %v", file, err)
+		}
+		for _, writer := range guardedStateWriters {
+			if strings.Contains(string(content), writer) {
+				t.Errorf("%s calls %s directly.\n"+
+					"Every docs-base write must go through the guard in %s, which proves the candidate "+
+					"is not ahead of the docs the worktree carries before anything reaches disk. "+
+					"Use the statePort's SaveBase/SaveSyncTargetBase instead.",
+					file, writer, baseWriteGuardFile)
+			}
+		}
+	}
+}
+
+// stateMachinePackages are the packages that decide *what happens next*
+// — the case analysis, the sync/publication flows, and the provenance
+// rules. sanho-v0.2.md §9 rule 7 requires them to live outside
+// `interface/`, and this is that rule implemented.
+//
+// The reason is the one the guidance-closure suite rests on: a decision
+// made inside the CLI can only be tested by driving the CLI, so it
+// cannot be table-tested against the state space it actually covers.
+// Every time a decision drifted into interface/ it stopped having unit
+// tests — and the three reproductions this wave answers were all
+// decisions, not renderings.
+func TestStateMachinesLiveOutsideInterface(t *testing.T) {
+	root := moduleRoot(t)
+
+	// The vocabulary a state machine is written in. Finding one of these
+	// declared under interface/ means a decision moved there.
+	forbidden := []struct {
+		symbol string
+		why    string
+	}{
+		{"func Decide(", "publication case analysis belongs in domain/publish"},
+		{"type Case ", "a case enumeration is a domain decision"},
+		{"type Status ", "a flow's outcome states belong to the use case that produces them"},
+		{"type Resolution ", "the sync-resolution classification belongs to usecase/docsync"},
+		{"func ShouldStamp(", "the provenance stamping rule belongs in domain/provenance"},
+		{"func SelectBase(", "base selection belongs in domain/provenance"},
+	}
+
+	for _, file := range goSourceFiles(t, root) {
+		relative := filepath.ToSlash(file)
+		if !strings.HasPrefix(relative, "internal/interface/") || strings.HasSuffix(relative, "_test.go") {
+			continue
+		}
+		content, err := os.ReadFile(filepath.Join(root, file))
+		if err != nil {
+			t.Fatalf("read %s: %v", file, err)
+		}
+		for _, rule := range forbidden {
+			if strings.Contains(string(content), rule.symbol) {
+				t.Errorf("%s declares %q inside interface/: %s (sanho-v0.2.md §9 rule 7)",
+					file, strings.TrimSpace(rule.symbol), rule.why)
+			}
+		}
+	}
+}
+
+// goSourceFiles lists every Go file in the module, module-relative and
+// slash-separated.
+func goSourceFiles(t *testing.T, root string) []string {
+	t.Helper()
+
+	var files []string
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			switch entry.Name() {
+			case ".git", "bin", "data", "tmp":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(entry.Name(), ".go") {
+			return nil
+		}
+		relative, relErr := filepath.Rel(root, path)
+		if relErr != nil {
+			return relErr
+		}
+		files = append(files, filepath.ToSlash(relative))
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk %s: %v", root, err)
+	}
+	return files
+}
+
+func moduleRoot(t *testing.T) string {
 	t.Helper()
 
 	goModPath, err := exec.Command("go", "env", "GOMOD").Output()
 	if err != nil {
 		t.Fatalf("resolve go.mod: %v", err)
 	}
-	root := filepath.Dir(strings.TrimSpace(string(goModPath)))
+	return filepath.Dir(strings.TrimSpace(string(goModPath)))
+}
+
+func listInternalPackages(t *testing.T) []listedPackage {
+	t.Helper()
+
+	root := moduleRoot(t)
 
 	command := exec.Command("go", "list", "-json", "./internal/...")
 	command.Dir = root

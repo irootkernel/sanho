@@ -99,6 +99,12 @@ type fakeApp struct {
 	// different; diffErr makes the comparison itself fail.
 	changedPaths map[string]bool
 	diffErr      error
+	// treeDiffs is the count DocsTreeDifferences reports for two
+	// different trees, and ancestors is IsAncestor's answer table keyed
+	// "a->b".
+	treeDiffs   int
+	ancestors   map[string]bool
+	ancestryErr error
 
 	commitOID string
 
@@ -190,6 +196,31 @@ func (a *fakeApp) DocsPathsChangedBetween(ctx context.Context, fromTree, toTree 
 	return false, nil
 }
 
+// DocsTreeDifferences counts differing paths for the `--continue` drift
+// report. The doubles model trees as opaque OIDs, so "different" is
+// simply "not the same tree"; treeDiffs lets a test name a count.
+func (a *fakeApp) DocsTreeDifferences(ctx context.Context, fromTree, toTree string) (int, error) {
+	a.record("tree-diff")
+	if fromTree == "" || toTree == "" || fromTree == toTree {
+		return 0, nil
+	}
+	if a.treeDiffs != 0 {
+		return a.treeDiffs, nil
+	}
+	return 1, nil
+}
+
+// IsAncestor answers `--continue`'s history precondition. ancestors maps
+// "a->b" to the answer; anything unlisted is "not an ancestor", which is
+// the conservative reading and the one the refusal tests want.
+func (a *fakeApp) IsAncestor(ctx context.Context, first, second string) (bool, error) {
+	a.record("is-ancestor")
+	if a.ancestryErr != nil {
+		return false, a.ancestryErr
+	}
+	return a.ancestors[first+"->"+second], nil
+}
+
 type fakeState struct {
 	*journal
 
@@ -203,17 +234,32 @@ type fakeState struct {
 	// tests simulate a crash between the two writes of a completion.
 	saveBaseErr error
 
-	savedBases  []provenance.Base
-	savedNotes  []SyncNote
-	noteCleared int
+	savedBases      []provenance.Base
+	savedNotes      []SyncNote
+	completionHeads []string
+	noteCleared     int
 }
 
 func (s *fakeState) LoadBase() (provenance.Base, bool, error) {
 	return s.base, s.hasBase, nil
 }
 
-func (s *fakeState) SaveBase(base provenance.Base) error {
+func (s *fakeState) SaveBase(ctx context.Context, base provenance.Base) error {
 	s.record("save-base")
+	if s.saveBaseErr != nil {
+		return s.saveBaseErr
+	}
+	s.savedBases = append(s.savedBases, base)
+	s.base, s.hasBase = base, true
+	return nil
+}
+
+// SaveSyncTargetBase is the completion writer. The double records the
+// entry head it was offered, so a test can assert that Continue hands
+// the guard the note's own evidence rather than nothing.
+func (s *fakeState) SaveSyncTargetBase(ctx context.Context, base provenance.Base, entryHead string) error {
+	s.record("save-sync-target-base")
+	s.completionHeads = append(s.completionHeads, entryHead)
 	if s.saveBaseErr != nil {
 		return s.saveBaseErr
 	}

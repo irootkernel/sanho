@@ -25,6 +25,7 @@ import (
 	"github.com/irootkernel/sanho/internal/infra/fsx"
 	"github.com/irootkernel/sanho/internal/infra/gitx"
 	"github.com/irootkernel/sanho/internal/infra/registry"
+	"github.com/irootkernel/sanho/internal/infra/wsstate"
 	"github.com/irootkernel/sanho/internal/usecase/docsync"
 
 	"github.com/spf13/cobra"
@@ -109,17 +110,41 @@ func newDoctorCmd() *cobra.Command {
 	return cmd
 }
 
+// runDoctor resolves the workspace and reports on it.
+//
+// A CORRUPT config does not stop it (M4). Doctor is the command a user
+// reaches for when something is wrong, so the one state in which it
+// refused to run was the one it was most needed in: `.sanho.json`
+// parses as JSON and is neither a v0.1 config nor a v2 one, and every
+// other command says so and exits — including this one. What the rest of
+// the checks need is a docs directory and a git repository, both of
+// which survive a damaged config, so they run against the defaults and
+// the config itself is reported as the warning it is.
 func runDoctor(cmd *cobra.Command, fix, asJSON bool) error {
 	ctx := cmd.Context()
-	ws, err := requireV2Workspace(ctx)
-	if err != nil {
-		return finishCommand(cmd, nil, asJSON, err)
+	ws, configErr := requireV2Workspace(ctx)
+	if configErr != nil {
+		var degraded *workspace
+		if ws, degraded = nil, degradedWorkspace(ctx, configErr); degraded == nil {
+			return finishCommand(cmd, nil, asJSON, configErr)
+		}
+		ws = degraded
 	}
 
 	var out report
 	checkGitVersion(ctx, ws, &out)
-	out.ok("workspace-config", "schema version %d, docs dir %s, project %s",
-		ws.config.SchemaVersion, ws.config.DocsDir, ws.config.Project)
+	if configErr != nil {
+		// No command is named, and that is D3 rather than an omission:
+		// every route out of a corrupt config needs values the file was
+		// supposed to hold (the project, the docs repository URL), so
+		// anything printed here would be a shape rather than a runnable
+		// command. The backup is where those values are.
+		out.warn("workspace-config", "%s is unreadable and the checks below ran against the defaults: %s (a copy may be at %s%s)",
+			wsstate.ConfigFileName, causeOf(configErr), wsstate.ConfigFileName, backupSuffix)
+	} else {
+		out.ok("workspace-config", "schema version %d, docs dir %s, project %s",
+			ws.config.SchemaVersion, ws.config.DocsDir, ws.config.Project)
+	}
 	checkHooks(ctx, ws, fix, &out)
 	checkClone(ctx, ws, &out)
 	checkBase(ctx, ws, fix, &out)
@@ -136,6 +161,39 @@ func runDoctor(cmd *cobra.Command, fix, asJSON bool) error {
 	}
 	renderDoctor(cmd.OutOrStdout(), ws, out)
 	return nil
+}
+
+// degradedWorkspace assembles just enough workspace for doctor's other
+// checks when the config cannot be read.
+//
+// Only a CORRUPT config is degraded this way. "Not a workspace" and "a
+// v0.1 workspace" are answers rather than damage — each has its own
+// message naming the one command that works — so both keep failing the
+// command outright.
+func degradedWorkspace(ctx context.Context, configErr error) *workspace {
+	if !errors.Is(configErr, wsstate.ErrConfigCorrupt) {
+		return nil
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return nil
+	}
+	root, err := filepath.Abs(cwd)
+	if err != nil {
+		return nil
+	}
+	config := wsstate.Config{}
+	config.ApplyDefaults()
+
+	ws := &workspace{root: root, configRoot: root, config: config}
+	if err := ws.resolveGitDirs(ctx); err != nil {
+		return nil
+	}
+	if ws.homeDir, err = resolveHome(); err != nil {
+		return nil
+	}
+	ws.repo = appgit.New(root, config.DocsDir, gitx.New(root))
+	return ws
 }
 
 // checkGitVersion reports the installed git. §5.4 decided against
@@ -338,13 +396,24 @@ func repairBase(ctx context.Context, ws *workspace, out *report) {
 		return
 	}
 
-	derived, found, deriveErr := deriveBase(ctx, ws.root)
+	derived, found, deriveErr := deriveBase(ctx, ws)
 	if deriveErr != nil || !found {
 		out.warn("base-fix", "%s", baseNeedsSyncMessage(fmt.Sprintf(
 			"no commit in the last %d carries a docs-base or docs-version trailer", deriveScanDepth)))
 		return
 	}
-	if saveErr := ws.statePort().SaveBase(derived); saveErr != nil {
+	switch saveErr := ws.statePort().SaveBase(ctx, derived); {
+	case saveErr == nil:
+	case errors.Is(saveErr, docsync.ErrBaseNotCorroborated):
+		// The §5.7 guard refused: history names a base the documents in
+		// this worktree cannot account for. Reported as info and named
+		// with no command, because there is nothing for the user to run
+		// — the repair IS the derivation, and it is the derivation that
+		// is untrustworthy here. The base-derivation check above already
+		// states the disagreement.
+		out.info("base-fix", "the docs base was not re-derived: %s", causeOfBaseRefusal(saveErr))
+		return
+	default:
 		out.warn("base-fix", "could not write the base file: %s", causeOf(saveErr))
 		return
 	}
@@ -384,7 +453,7 @@ func checkBaseDerivation(ctx context.Context, ws *workspace, base provenance.Bas
 		return
 	}
 
-	derived, found, err := deriveBase(ctx, ws.root)
+	derived, found, err := deriveBase(ctx, ws)
 	if err != nil || !found || derived.Commit == base.Commit {
 		// No provenance in history is checkBase's business under --fix,
 		// not a second finding here.

@@ -593,7 +593,7 @@ func TestFlowMarkerGateRejectsCommittedMarkers(t *testing.T) {
 		"b.md": text("clean\n"),
 	})
 
-	paths, err := f.app.ScanDocsBlobsForMarkers(context.Background(), tip)
+	paths, err := f.app.ScanDocsBlobsAgainst(context.Background(), "", tip)
 	if err != nil {
 		t.Fatalf("ScanDocsBlobsForMarkers: %v", err)
 	}

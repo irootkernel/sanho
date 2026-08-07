@@ -276,14 +276,27 @@ func ClearBase(workDir string) error {
 
 // SyncNote records an in-progress conflicted sync (§5.5).
 //
-// EntryHead and EntryDocsTree are what make "has this sync been
-// resolved?" answerable. Resolution is ordinary git work that sanho does
-// not observe, so it is judged after the fact from the state — and
+// Its existence is the whole of "a sync is unfinished". Two commands
+// delete it — `sanho sync --continue` and `sanho sync --abort` — and
+// nothing else, including every hook, may write or clear it.
+//
+// EntryHead carries two different weights, and the second is the one
+// that decides anything.
+//
+// For REPORTING, it makes "has this sync been resolved?" answerable at
+// all: resolution is ordinary git work sanho does not observe, and
 // "no markers left, docs clean relative to HEAD" is a test that
-// `git stash push -- docs` passes without resolving anything. Recording
-// where HEAD stood when the markers were written turns the question into
-// "did a commit actually happen on top of this", which a stash, a
-// `git checkout HEAD -- docs`, or a revert cannot fake.
+// `git stash push -- docs` passes without resolving anything, while a
+// commit on top of the recorded head cannot be faked by a stash, a
+// revert, or a `git checkout HEAD -- docs`. Reading that wrongly costs a
+// misdirected sentence and nothing more.
+//
+// For COMPLETION, it is the precondition: `sanho sync --continue`
+// requires HEAD to be EntryHead or a descendant of it. Every other
+// precondition is a question about the worktree, and a branch switch
+// satisfies all of them while replacing the documents entirely — which
+// is how a sync came to be completed on history that never took part in
+// it, leaving a base ahead of the docs beneath it.
 type SyncNote struct {
 	PrevBase  provenance.Base `json:"prev_base"`
 	Target    provenance.Base `json:"target"`
@@ -295,6 +308,12 @@ type SyncNote struct {
 	EntryHead string `json:"entry_head"`
 	// EntryDocsTree is HEAD's docs tree at the same moment.
 	EntryDocsTree string `json:"entry_docs_tree"`
+	// MergedTree is the docs tree the conflicted merge produced, markers
+	// included. It is what `sanho sync --continue` compares the completed
+	// worktree against in order to report how far the completion drifted
+	// from the merge — a note written before the field existed simply
+	// carries "", which reads as "unknown" rather than as "no drift".
+	MergedTree string `json:"merged_tree"`
 	// Conflicts are the docs paths the merge could not settle,
 	// repository-relative. They are what makes the resolution test
 	// discriminating: a resolution is a commit that changed one of

@@ -89,12 +89,27 @@ type AppRepoPort interface {
 	// WorktreeDocsTree returns the current worktree docs tree OID (for
 	// the base-advance rule).
 	WorktreeDocsTree(ctx context.Context) (string, error)
+	// NewestDocsBase returns the base named by the newest docs-base (or
+	// legacy docs-version) trailer reachable from tip, which is the
+	// pushed branch's own account of where its docs came from.
+	//
+	// It is the corroboration a fast-forward needs. The base FILE is
+	// workspace state: one file, shared by every branch of the checkout,
+	// and a branch switch can leave it describing a canonical state the
+	// branch now standing there never derived from. The branch's own
+	// history cannot be swapped that way.
+	NewestDocsBase(ctx context.Context, tip string) (base provenance.Base, found bool, err error)
 }
 
 // StatePort is the workspace state publication needs.
 type StatePort interface {
 	LoadBase() (provenance.Base, bool, error)
-	SaveBase(provenance.Base) error
+	// SaveBase records a base only when the adapter can show, locally,
+	// that it is not ahead of the docs the worktree carries; a candidate
+	// it cannot vouch for is refused and nothing is written. Publication
+	// only ever offers one it has just proved identical to the worktree,
+	// so the guard is a second opinion here rather than a constraint.
+	SaveBase(ctx context.Context, base provenance.Base) error
 	SyncInProgress() (bool, error)
 }
 
@@ -199,6 +214,10 @@ const (
 	// ReasonNoBase: the workspace has no recorded base, so no merge base
 	// exists to publish from. `sanho sync` establishes one.
 	ReasonNoBase = "no_base"
+	// ReasonUncorroboratedBase: the recorded base would license a
+	// fast-forward, and the pushed branch's own provenance does not
+	// support it. See requireCorroboratedBase.
+	ReasonUncorroboratedBase = "uncorroborated_base"
 )
 
 // Outcome reports one pre-push evaluation.
@@ -216,6 +235,22 @@ type Outcome struct {
 	// case of the last tip processed, which for the ordinary
 	// single-branch push is simply "the" case.
 	Case pubdom.Case
+	// PublishedCases is the case decided for each entry of PublishedOIDs,
+	// positionally. Reporting Case beside every OID was a reuse of the
+	// LAST tip's label for all of them, so a two-branch push whose first
+	// publication was a fast-forward and whose second was a merge
+	// reported both as merges.
+	PublishedCases []pubdom.Case
+	// BaseAdvanceError reports a §5.3 step 6 base advance that could not
+	// be completed after the publication itself succeeded.
+	//
+	// It is carried rather than returned. The push HAS happened, canonical
+	// HAS moved, and failing the hook at that point would report a
+	// publication that landed as a rejected push — the one message that is
+	// simply false. The base is workspace state that `sanho pull` and the
+	// re-derivation hooks correct on their own, so the honest outcome is
+	// the success plus a line saying the pointer did not move.
+	BaseAdvanceError error
 	// Conflicts lists conflicted paths when the push is rejected with
 	// sync guidance.
 	Conflicts []string
@@ -247,11 +282,6 @@ type tip struct {
 	docsTree  string
 	branch    string
 	remoteOID string
-	// publishedTree is the tree actually written for this tip — docsTree
-	// for a fast-forward, the merge result for an auto-merge. The
-	// base-advance rule compares the worktree against what was
-	// published, not against what was pushed.
-	publishedTree string
 }
 
 // snapshot is the canonical state one evaluation is decided against. It
@@ -308,7 +338,9 @@ type pushPlan struct {
 // The base advances once, at the end, against the final publication.
 func (u *UseCase) Run(ctx context.Context, updates []RefUpdate) (Outcome, error) {
 	// Step 1 — filter. Tag pushes and branch deletions are not ours.
-	candidates := publishable(updates)
+	// The hook has normally applied this already; it is repeated here so
+	// the use case's own contract does not depend on its caller.
+	candidates := Publishable(updates)
 	if len(candidates) == 0 {
 		return Outcome{Case: pubdom.CaseUpToDate}, nil
 	}
@@ -385,6 +417,9 @@ func (u *UseCase) Run(ctx context.Context, updates []RefUpdate) (Outcome, error)
 
 		published, publishErr := u.publishPlan(ctx, plan, snap)
 		outcome.PublishedOIDs = append(outcome.PublishedOIDs, published...)
+		for i := range published {
+			outcome.PublishedCases = append(outcome.PublishedCases, plan.publications[i].decided)
+		}
 		if len(outcome.PublishedOIDs) > 0 {
 			outcome.Published = outcome.PublishedOIDs[len(outcome.PublishedOIDs)-1]
 		}
@@ -404,12 +439,19 @@ func (u *UseCase) Run(ctx context.Context, updates []RefUpdate) (Outcome, error)
 		}
 
 		// Step 6 — base-advance rule, once, against the final publication.
+		//
+		// A failure here is NOT fatal, and that is the fix for M2. The
+		// publication has landed: canonical moved, other workspaces can
+		// already see it, and returning an error would make the hook print
+		// the §5.9 rejection template — whose last line promises that no
+		// remote ref was changed — over a push that changed one. The base
+		// is local state with two independent repairs (`sanho pull` and
+		// the re-derivation hooks), so the truthful outcome is the
+		// publication plus a line saying the pointer stayed put.
 		final := plan.publications[len(plan.publications)-1]
 		advanced, err := u.advanceBase(ctx, outcome.Published, final.tree)
-		if err != nil {
-			return outcome, err
-		}
 		outcome.BaseAdvanced = advanced
+		outcome.BaseAdvanceError = err
 		return outcome, nil
 	}
 
@@ -460,6 +502,11 @@ func (u *UseCase) evaluate(ctx context.Context, tips []tip, base *provenance.Bas
 			decided = decideBootstrap(t.docsTree, snap.headTree)
 		} else if decided, err = u.decideWithReanchor(ctx, t, base, snap.head, snap.headTree); err != nil {
 			return pushPlan{}, err
+		}
+		if decided == pubdom.CaseFastForward && !snap.bootstrap {
+			if err := u.requireCorroboratedBase(ctx, t, *base, snap.head); err != nil {
+				return pushPlan{}, err
+			}
 		}
 
 		// Importing the tip writes objects into the workspace-private
@@ -567,7 +614,6 @@ func (u *UseCase) publishPlan(ctx context.Context, plan pushPlan, snap snapshot)
 			return published, fmt.Errorf("publish to canonical: %w", err)
 		}
 
-		step.tip.publishedTree = step.tree
 		published = append(published, newHead)
 		parent = newHead
 	}
@@ -584,9 +630,16 @@ func (u *UseCase) canonicalSnapshot(ctx context.Context) (snapshot, error) {
 	return snapshot{head: head, headTree: headTree, bootstrap: bootstrap}, nil
 }
 
-// publishable applies §5.3 step 1: branch updates only, deletions
+// Publishable applies §5.3 step 1: branch updates only, deletions
 // (all-zero local OID) excluded.
-func publishable(updates []RefUpdate) []RefUpdate {
+//
+// It is exported because the hook applies it before anything else: a
+// push carrying only tags or only branch deletions is not publication's
+// business at all, and deciding that at the boundary is what keeps such
+// a push out of the sync gate and out of `canonical.Ensure` — which
+// creates and fetches a clone, so an offline tag push used to fail for a
+// reason that had nothing to do with it (M1).
+func Publishable(updates []RefUpdate) []RefUpdate {
 	var kept []RefUpdate
 	for _, u := range updates {
 		if !strings.HasPrefix(u.LocalRef, headsPrefix) {
@@ -817,6 +870,57 @@ func (u *UseCase) commitPublication(ctx context.Context, t *tip, tree, parent st
 	return newHead, nil
 }
 
+// requireCorroboratedBase is the second half of the fourth review's C2.
+//
+// A fast-forward is the one case that publishes the tip's docs tree
+// *directly over* canonical head, with no merge — so everything canonical
+// holds and the tip does not is deleted. The whole justification for
+// that is the recorded base: base == head means nothing has landed
+// upstream since these docs derived from it.
+//
+// The base file cannot carry that justification alone. It is workspace
+// state — one file at the checkout root, shared by every branch — while
+// the thing being published is a BRANCH. `git checkout` a branch whose
+// docs predate sanho, or one whose provenance was never stamped, and the
+// file still names canonical head while the documents under it derive
+// from nothing of the sort. That is the reproduction: a long-lived
+// branch with one stale document replaced all six of canonical's, at
+// exit 0, reported as `(fast_forward)`.
+//
+// So the tip must vouch for the base out of its OWN history: the newest
+// docs-base trailer reachable from it must name the recorded base, or a
+// canonical ancestor of it. The ancestor half is not a loophole but the
+// ordinary state — publication's own base advance moves the file past
+// the commit the trailers name, so every workspace that has just pushed
+// is in it.
+//
+// Refusal routes to `sanho sync`, which reconciles the branch against
+// canonical and succeeds in this state (D3). Nothing else about the push
+// changes: an auto-merge combines both sides and never needed this, and
+// a docs-identical tip short-circuits as up-to-date before the base is
+// consulted at all.
+func (u *UseCase) requireCorroboratedBase(ctx context.Context, t *tip, base provenance.Base, head string) error {
+	stamped, found, err := u.App.NewestDocsBase(ctx, t.oid)
+	if err != nil {
+		return fmt.Errorf("read the docs provenance of %s: %w", shortOID(t.oid), err)
+	}
+	if found {
+		if stamped.Commit == base.Commit {
+			return nil
+		}
+		// A trailer naming a canonical ancestor of the recorded base is
+		// the post-publication state, not a mismatch.
+		ancestor, err := u.Canonical.IsAncestor(ctx, stamped.Commit, base.Commit)
+		if err != nil {
+			return fmt.Errorf("check whether %s precedes the recorded base: %w", shortOID(stamped.Commit), err)
+		}
+		if ancestor {
+			return nil
+		}
+	}
+	return &SyncRequiredError{Base: base.Commit, Head: head, Reason: ReasonUncorroboratedBase}
+}
+
 // advanceBase implements §5.3 step 6: the base file records which
 // canonical state the *worktree* docs derive from, so it may only move
 // when the worktree is byte-identical to what was just published.
@@ -830,7 +934,7 @@ func (u *UseCase) advanceBase(ctx context.Context, published, publishedTree stri
 	if worktree != publishedTree {
 		return false, nil
 	}
-	if err := u.State.SaveBase(provenance.Base{Commit: published, Tree: publishedTree}); err != nil {
+	if err := u.State.SaveBase(ctx, provenance.Base{Commit: published, Tree: publishedTree}); err != nil {
 		return false, fmt.Errorf("record new base: %w", err)
 	}
 	return true, nil
