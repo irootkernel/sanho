@@ -1,0 +1,60 @@
+version: "2"
+
+# Lint policy for sanho v0.2 (F-L10).
+#
+# The default set stays on. Three additions encode rules the codebase
+# already states in prose but could not previously enforce:
+#
+#   depguard    — os/exec belongs to internal/infra/gitx and nowhere
+#                 else (§7 L7: one git execution port, argv-only, no
+#                 shell). A second exec site is how a shell-quoted git
+#                 command gets built by accident.
+#   errcheck    — listed explicitly rather than inherited, so the intent
+#                 survives a change of defaults.
+#   gosmopolitan — user-facing text is English (audit L4). The catalog
+#                 test proves it for this package's literals; this
+#                 catches the rest.
+
+linters:
+  default: standard
+  enable:
+    - depguard
+    - errcheck
+    - gosmopolitan
+
+  settings:
+    depguard:
+      rules:
+        # Production code only. Tests legitimately exec `git` to build
+        # fixtures — every suite here runs against real repositories
+        # (§9 rule 1) — so the rule is scoped away from them rather than
+        # worked around with per-file nolint comments.
+        no-exec-outside-gitx:
+          files:
+            - "!$test"
+            - "!**/internal/infra/gitx/*.go"
+            - "!**/test/**"
+          deny:
+            - pkg: os/exec
+              desc: >-
+                git runs through internal/infra/gitx only (sanho-v0.2.md
+                §7 L7): argv-only, no shell, non-interactive environment,
+                bounded timeouts. Add the call to gitx instead.
+
+    gosmopolitan:
+      # The §5.9 templates use an em dash and a right arrow verbatim.
+      allow-time-local: false
+      escape-hatches:
+        - "fmt.Sprintf"
+
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+
+formatters:
+  enable:
+    - gofmt

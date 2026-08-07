@@ -1,0 +1,45 @@
+name: test
+
+# The full suite on every push and pull request (F-L10).
+#
+# `make test` is the whole gate — vet, the lint policy in .golangci.yml,
+# the package-ownership and architecture checks, then unit, integration
+# and e2e. There is deliberately no reduced "CI subset": every one of
+# those suites drives real git against real repositories, and a green
+# build that skipped them would be a green build that proves nothing
+# about the thing sanho actually is.
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # `make cli-build` stamps the version from `git describe`, and
+          # the e2e suite runs the binary it produces.
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          check-latest: true
+
+      # Every suite spawns real `git`, and several assert on messages git
+      # emits, so the identity and config have to be deterministic.
+      - name: Configure git
+        run: |
+          git --version
+          git config --global user.name  "CI"
+          git config --global user.email "ci@example.test"
+          git config --global init.defaultBranch main
+
+      - name: make test
+        run: make test
