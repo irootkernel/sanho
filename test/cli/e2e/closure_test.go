@@ -15,8 +15,15 @@ package e2e
 //     and requires success.
 //
 // Each advised command gets its own world. "In that state" is the whole
-// claim; running a second command after the first one has already
+// claim; running a second *alternative* after the first one has already
 // changed the state would prove something weaker.
+//
+// Sequences are the exception, and they are declared rather than
+// improvised: an entry's Prerequisites name the steps a command comes
+// after, and the suite runs them in order, in the same world, requiring
+// each to succeed. That is how `git add docs/ && git commit` followed by
+// `sanho sync --continue` is proven as the one procedure the conflict
+// template actually advises.
 //
 // Two entries name a command the message spells in prose — push_markers
 // ("resolve the markers before pushing") and canonical_unreachable
@@ -117,6 +124,25 @@ func runClosureCase(t *testing.T, entry cli.CatalogEntry, command string) {
 		prepare(t, state.ws)
 	}
 
+	// 3b. The steps this command comes after, where the guidance states a
+	//     sequence. The conflict template names `git add docs/ && git
+	//     commit` and then `sanho sync --continue`; running the second in
+	//     a world where the first never happened would prove something
+	//     the user was never advised to do.
+	for _, step := range entry.Prerequisites[command] {
+		invocation := substitute(step, state.substitutions)
+		if override, ok := state.runAs[step]; ok {
+			invocation = substitute(override, state.substitutions)
+		}
+		if res := state.ws.shell(invocation); res.exitCode != 0 {
+			t.Fatalf("GUIDANCE CLOSURE FAILURE (%s / %s)\n"+
+				"the message advised %q after %q, and that earlier step exited %d\n"+
+				"--- advising message ---\n%s\n--- step output ---\n%s\n%s",
+				entry.ID, entry.Scenario, command, invocation, res.exitCode,
+				state.output, res.stdout, res.stderr)
+		}
+	}
+
 	// 4. The advised command, verbatim, in the advising state.
 	invocation := resolved
 	if override, ok := state.runAs[command]; ok {
@@ -211,6 +237,8 @@ var closureFixtures = map[string]closureFixture{
 	"push_conflict":          reachPushConflict,
 	"push_sync_required":     reachPushSyncRequired,
 	"sync_not_committed":     reachSyncNotCommitted,
+	"sync_needs_continue":    reachSyncNeedsContinue,
+	"sync_continue_blocked":  reachSyncContinueBlocked,
 	"sync_note_corrupt":      reachSyncNoteCorrupt,
 	"push_markers":           reachPushMarkers,
 	"canonical_unreachable":  reachCanonicalUnreachable,
@@ -288,9 +316,10 @@ func reachNotAWorkspace(t *testing.T, w *world) closureState {
 func reachPushSyncInProgress(t *testing.T, w *world) closureState {
 	ws := conflictedSync(t, w)
 	return closureState{
-		ws:     ws,
-		output: ws.push().combined(),
-		verify: syncNoteCleared(),
+		ws:      ws,
+		output:  ws.push().combined(),
+		prepare: resolveMarkersFirst(),
+		verify:  syncEnded(),
 	}
 }
 
@@ -305,7 +334,12 @@ func reachCleanSyncInProgress(t *testing.T, w *world) closureState {
 	ws := conflictedSync(t, w)
 	out := ws.run("clean", "-y")
 	requireExit(t, "clean during a sync", out, 1)
-	return closureState{ws: ws, output: out.combined(), verify: syncNoteCleared()}
+	return closureState{
+		ws:      ws,
+		output:  out.combined(),
+		prepare: resolveMarkersFirst(),
+		verify:  syncEnded(),
+	}
 }
 
 // reachMigrateBlocked is §8 step 1: a live v0.1 transaction directory.
@@ -481,12 +515,16 @@ func reachPushConflict(t *testing.T, w *world) closureState {
 		verify: map[string]func(*testing.T, *workspace){
 			// The message says "run sanho sync, resolve, commit, then
 			// push again" — so the whole sentence is what gets proven,
-			// not only its first verb.
+			// not only its first verb. The sync it names ends with the
+			// completion the conflict template itself advises, which is
+			// why that step appears here too.
 			"sanho sync": func(t *testing.T, ws *workspace) {
 				requireContains(t, "docs after sync", ws.readDocs("api.md"), "<<<<<<< sanho-ours")
 				ws.writeDocs(map[string]string{"api.md": "line one\nRESOLVED\n"})
 				ws.git("add", "docs/api.md")
 				ws.git("commit", "-m", "docs: resolve the conflict")
+				requireExit(t, "the completion the sync's own message advised",
+					ws.run("sync", "--continue"), 0)
 
 				final := ws.push()
 				requireExit(t, "push after the advised sync", final, 0)
@@ -531,6 +569,10 @@ func reachPushSyncRequired(t *testing.T, w *world) closureState {
 // simplest way in; the second review wave widened the same message to
 // every unfinished sync with no markers left, including the one reached
 // by committing an unrelated document (see syncwindow_test.go).
+//
+// Three commands are proven from here, which is what the message now
+// offers: the ordered abort-then-sync route, and `--continue` for the
+// user whose docs already read the way they want them.
 func reachSyncNotCommitted(t *testing.T, w *world) closureState {
 	ws := conflictedSync(t, w)
 	ws.git("stash", "push", "--quiet", "--", "docs")
@@ -541,14 +583,6 @@ func reachSyncNotCommitted(t *testing.T, w *world) closureState {
 	return closureState{
 		ws:     ws,
 		output: push.combined(),
-		prepare: map[string]func(*testing.T, *workspace){
-			// "abort … then 'sanho sync'": the order is the advice, and
-			// sync refuses while a note exists, so the first half is
-			// performed before the second is run.
-			"sanho sync": func(t *testing.T, ws *workspace) {
-				requireExit(t, "the advised abort", ws.run("sync", "--abort"), 0)
-			},
-		},
 		verify: map[string]func(*testing.T, *workspace){
 			"sanho sync --abort": func(t *testing.T, ws *workspace) {
 				if fileExists(t, ws.path(".git", "sanho", "sync.json")) {
@@ -566,7 +600,76 @@ func reachSyncNotCommitted(t *testing.T, w *world) closureState {
 					t.Error("the re-run sync left no note")
 				}
 			},
+			"sanho sync --continue": func(t *testing.T, ws *workspace) {
+				// The take-ours-wholesale exit: nothing was committed and
+				// the sync still ends, because the user said so. The base
+				// adopts the target, which is what makes the next push a
+				// publication of their own decision rather than a silent
+				// revert of upstream.
+				if fileExists(t, ws.path(".git", "sanho", "sync.json")) {
+					t.Error("--continue left the sync note behind")
+				}
+				requireEqual(t, "base file", recordedBase(t, ws), ws.w.canonicalHead())
+				push := ws.push()
+				requireExit(t, "push after completing the sync", push, 0)
+				requireContains(t, "push output", push.combined(), "published docs")
+			},
 		},
+	}
+}
+
+// reachSyncNeedsContinue is the state the explicit-completion contract
+// creates: the conflict is resolved, the resolution is committed, and
+// the sync is still not finished. The push boundary says so.
+func reachSyncNeedsContinue(t *testing.T, w *world) closureState {
+	ws := conflictedSync(t, w)
+	ws.writeDocs(map[string]string{"api.md": "line one\nRESOLVED\n"})
+	ws.git("add", "docs/api.md")
+	ws.git("commit", "-m", "docs: resolve the conflict")
+
+	push := ws.push()
+	requireExit(t, "push after resolving but before completing", push, 1)
+
+	return closureState{
+		ws:     ws,
+		output: push.combined(),
+		verify: map[string]func(*testing.T, *workspace){
+			"sanho sync --continue": func(t *testing.T, ws *workspace) {
+				if fileExists(t, ws.path(".git", "sanho", "sync.json")) {
+					t.Error("--continue left the sync note behind")
+				}
+				final := ws.push()
+				requireExit(t, "push after completing the sync", final, 0)
+				requireContains(t, "push output", final.combined(), "published docs")
+				requireEqual(t, "canonical api.md",
+					ws.w.canonicalFile(ws.w.canonicalHead(), "api.md"), "line one\nRESOLVED\n")
+			},
+			"sanho sync --abort": func(t *testing.T, ws *workspace) {
+				// Abort undoes the sync, not the user's commit: the
+				// resolution stays in history and the note is gone.
+				if fileExists(t, ws.path(".git", "sanho", "sync.json")) {
+					t.Error("abort left the sync note behind")
+				}
+				requireEqual(t, "HEAD subject", ws.headSubject(), "docs: resolve the conflict")
+			},
+		},
+	}
+}
+
+// reachSyncContinueBlocked runs `sanho sync --continue` while the
+// markers are still in the worktree — the mistake the new verb makes
+// possible, refused by naming what is still outstanding.
+func reachSyncContinueBlocked(t *testing.T, w *world) closureState {
+	ws := conflictedSync(t, w)
+
+	out := ws.run("sync", "--continue")
+	requireExit(t, "--continue with markers still in the worktree", out, 1)
+
+	return closureState{
+		ws:      ws,
+		output:  out.combined(),
+		prepare: resolveMarkersFirst(),
+		verify:  resolutionOutcomes(),
 	}
 }
 
@@ -810,9 +913,10 @@ func reachDoctorHooks(t *testing.T, w *world) closureState {
 func reachSyncNotePending(t *testing.T, w *world) closureState {
 	ws := conflictedSync(t, w)
 	return closureState{
-		ws:     ws,
-		output: ws.sanho("status").combined(),
-		verify: syncNoteCleared(),
+		ws:      ws,
+		output:  ws.sanho("status").combined(),
+		prepare: resolveMarkersFirst(),
+		verify:  syncEnded(),
 	}
 }
 
@@ -875,7 +979,12 @@ func reachSyncInProgressCommand(t *testing.T, w *world) closureState {
 	out := ws.run("sync")
 	requireExit(t, "sync during a sync", out, 1)
 
-	return closureState{ws: ws, output: out.combined(), verify: syncNoteCleared()}
+	return closureState{
+		ws:      ws,
+		output:  out.combined(),
+		prepare: resolveMarkersFirst(),
+		verify:  syncEnded(),
+	}
 }
 
 // reachPullNeedsSync is F-H5: docs staged but not committed, which
@@ -1045,35 +1154,49 @@ func commitSomeCode(t *testing.T, ws *workspace) string {
 	return commit.combined()
 }
 
-// resolveMarkersFirst performs "resolve the markers" for the two
-// templates that ask for it before `git add … && git commit`.
+// resolveMarkersFirst performs "resolve the markers" for the templates
+// that ask for it before `git add … && git commit` — and for the
+// `--continue` that comes after that commit, whose Prerequisites run the
+// commit itself.
 func resolveMarkersFirst() map[string]func(*testing.T, *workspace) {
+	resolve := func(t *testing.T, ws *workspace) {
+		ws.writeDocs(map[string]string{"api.md": "line one\nRESOLVED\n"})
+	}
 	return map[string]func(*testing.T, *workspace){
-		"git add docs/ && git commit": func(t *testing.T, ws *workspace) {
-			ws.writeDocs(map[string]string{"api.md": "line one\nRESOLVED\n"})
-		},
+		"git add docs/ && git commit": resolve,
+		"sanho sync --continue":       resolve,
 	}
 }
 
 // resolutionOutcomes is the documented outcome of each of template 2's
-// two commands: the commit lands and clears the sync, or the abort puts
-// everything back.
+// three commands: the commit records the resolution and leaves the sync
+// unfinished, `--continue` ends it, and the abort puts everything back.
 func resolutionOutcomes() map[string]func(*testing.T, *workspace) {
 	return map[string]func(*testing.T, *workspace){
 		"git add docs/ && git commit": func(t *testing.T, ws *workspace) {
 			requireEqual(t, "docs/api.md", ws.readDocs("api.md"), "line one\nRESOLVED\n")
 
 			// §5.5 step 6: the resolution is an ordinary commit and
-			// nothing else must happen at commit time — v0.2 removed
-			// post-commit outright. The note is therefore cleared by the
-			// next hook that runs, which is the push that publishes the
-			// resolved tree via case ②.
-			push := ws.push()
-			requireExit(t, "push after resolving", push, 0)
-			requireContains(t, "push output", push.combined(), "published docs")
-			if fileExists(t, ws.path(".git", "sanho", "sync.json")) {
-				t.Error("the publishing push left the sync note behind")
+			// nothing else happens at commit time — v0.2 removed
+			// post-commit outright, and no hook writes sanho state. The
+			// sync therefore stands until `--continue` records it, and
+			// the push boundary says so rather than publishing.
+			if !fileExists(t, ws.path(".git", "sanho", "sync.json")) {
+				t.Error("the resolution commit cleared the sync note; only --continue may")
 			}
+			push := ws.push()
+			requireExit(t, "push after resolving but before completing", push, 1)
+			requireContains(t, "rejection", push.combined(), "sanho sync --continue")
+		},
+		"sanho sync --continue": func(t *testing.T, ws *workspace) {
+			if fileExists(t, ws.path(".git", "sanho", "sync.json")) {
+				t.Error("--continue left the sync note behind")
+			}
+			requireEqual(t, "base file", recordedBase(t, ws), ws.w.canonicalHead())
+
+			push := ws.push()
+			requireExit(t, "push after completing the sync", push, 0)
+			requireContains(t, "push output", push.combined(), "published docs")
 			requireEqual(t, "canonical api.md",
 				ws.w.canonicalFile(ws.w.canonicalHead(), "api.md"), "line one\nRESOLVED\n")
 		},
@@ -1086,13 +1209,18 @@ func resolutionOutcomes() map[string]func(*testing.T, *workspace) {
 	}
 }
 
-func syncNoteCleared() map[string]func(*testing.T, *workspace) {
+// syncEnded is the verification shared by every fixture whose message
+// names the two ways out of a sync: whichever one was run, no note is
+// left behind.
+func syncEnded() map[string]func(*testing.T, *workspace) {
+	ended := func(t *testing.T, ws *workspace) {
+		if fileExists(t, ws.path(".git", "sanho", "sync.json")) {
+			t.Error("the command that ends a sync left the sync note behind")
+		}
+	}
 	return map[string]func(*testing.T, *workspace){
-		"sanho sync --abort": func(t *testing.T, ws *workspace) {
-			if fileExists(t, ws.path(".git", "sanho", "sync.json")) {
-				t.Error("abort left the sync note behind")
-			}
-		},
+		"sanho sync --abort":    ended,
+		"sanho sync --continue": ended,
 	}
 }
 

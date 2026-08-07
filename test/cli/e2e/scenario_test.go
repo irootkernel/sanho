@@ -155,7 +155,18 @@ func TestS3SameFileConflictAcrossTwoWorkspaces(t *testing.T) {
 	second.writeDocs(map[string]string{"api.md": "line one\nFIRST\nSECOND\n"})
 	second.git("add", "docs/api.md")
 	second.git("commit", "-m", "docs: keep both edits")
-	requireExit(t, "push after resolving", second.push(), 0)
+
+	// The commit is the resolution; the sync ends when the user says so.
+	// Until then the push boundary refuses and names the missing step —
+	// which is the whole of the explicit-completion contract, met here in
+	// the S-matrix's ordinary two-workspace loop.
+	early := second.push()
+	requireExit(t, "push after resolving but before completing", early, 1)
+	requireContains(t, "rejection", early.combined(), "sanho sync --continue")
+
+	completed := second.sanho("sync", "--continue")
+	requireContains(t, "completion", completed.combined(), "sync completed")
+	requireExit(t, "push after completing the sync", second.push(), 0)
 
 	requireEqual(t, "canonical after resolution",
 		w.canonicalFile(w.canonicalHead(), "api.md"), "line one\nFIRST\nSECOND\n")
@@ -306,6 +317,7 @@ func TestS6TwoHunkConflictReachesResolution(t *testing.T) {
 	ws.writeDocs(map[string]string{"api.md": resolved})
 	ws.git("add", "docs/api.md")
 	ws.git("commit", "-m", "docs: resolve both hunks")
+	ws.sanho("sync", "--continue")
 
 	requireExit(t, "push after resolving both hunks", ws.push(), 0)
 	requireEqual(t, "canonical api.md", w.canonicalFile(w.canonicalHead(), "api.md"), resolved)

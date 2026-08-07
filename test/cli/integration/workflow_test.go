@@ -258,6 +258,7 @@ func TestConflictRouteFromPushRejectionToSuccessfulPush(t *testing.T) {
 	requireContains(t, "sync conflict", conflictOutput, "sanho: merged docs with upstream — 1 files have conflicts:")
 	requireContains(t, "sync conflict", conflictOutput, "  docs/api.md")
 	requireContains(t, "sync conflict", conflictOutput, "Resolve the markers, then:  git add docs/ && git commit")
+	requireContains(t, "sync conflict", conflictOutput, "Then complete the sync:     sanho sync --continue")
 	requireContains(t, "sync conflict", conflictOutput, "To undo this sync:          sanho sync --abort")
 
 	// The markers carry the §5.4 labels, not temp paths (audit L1).
@@ -278,12 +279,24 @@ func TestConflictRouteFromPushRejectionToSuccessfulPush(t *testing.T) {
 	requireContains(t, "marker gate", reminder, "sanho: a sync is in progress — 1 files still have conflicts:")
 	requireContains(t, "marker gate", reminder, "  docs/api.md")
 	requireContains(t, "marker gate", reminder, "Resolve the markers, then:  git add docs/ && git commit")
+	requireContains(t, "marker gate", reminder, "Then complete the sync:     sanho sync --continue")
 	requireContains(t, "marker gate", reminder, "To undo this sync:          sanho sync --abort")
 
-	// Resolve the standard way.
+	// Resolve the standard way, and then say so. The commit is ordinary
+	// git work; the sync ends when the user completes it, which is the
+	// step template 2 named two lines above.
 	writeFile(t, w.appPath("docs", "api.md"), "line one\nRESOLVED\n")
 	w.git(w.app, "add", "docs/api.md")
 	w.git(w.app, "commit", "-m", "docs: resolve the conflict")
+
+	early := w.push()
+	if early.exitCode == 0 {
+		t.Fatal("the push succeeded before the sync was completed, want a rejection")
+	}
+	requireContains(t, "rejection", early.combined(), "sanho sync --continue")
+
+	completed := w.sanho(w.app, "sync", "--continue")
+	requireContains(t, "completion", completed.stdout, "sync completed")
 
 	// And the push now succeeds.
 	final := w.push()

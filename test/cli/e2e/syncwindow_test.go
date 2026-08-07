@@ -21,9 +21,17 @@ package e2e
 //	        base because the base lived inside the note.
 //
 // The fix removes the state rather than the two symptoms: the base stays
-// where the sync found it until a resolution is confirmed. These tests
+// where the sync found it until the sync is completed. These tests
 // assert the base file directly, because it is the fact both paths were
 // really about.
+//
+// The THIRD wave then changed what "completed" means — it is
+// `sanho sync --continue`, not an inference — and two claims in this
+// file were inverted by that rather than reworded (see
+// TestCompletingTheSyncAdvancesTheBase and
+// TestAbortOverACorruptNoteLeavesASafeBase). Both say why in their own
+// comments; continuewave_test.go carries the reproductions that forced
+// the change.
 
 import (
 	"encoding/json"
@@ -95,17 +103,26 @@ func TestAnUnrelatedDocsCommitDoesNotResolveAStashedSync(t *testing.T) {
 	ws.git("add", "docs/notes.md")
 	commit := ws.gitExit("commit", "-m", "docs: an unrelated note")
 	requireExit(t, "an unrelated docs commit during the window", commit, 0)
-	requireContains(t, "pre-commit notice", commit.combined(), "was never resolved by a commit")
+	// The commit being prepared makes the docs dirty, so the notice is
+	// the one that asserts nothing about what has been committed. What it
+	// must not do is stay silent: the previous version suppressed exactly
+	// this line whenever the staged tree touched a conflicted path, which
+	// is the moment a user is most likely to think the sync ended.
+	requireContains(t, "pre-commit notice", commit.combined(), "is not completed")
+	requireContains(t, "pre-commit notice", commit.combined(), "sanho sync --continue")
 
 	// Its provenance describes the content it actually carries: pre-merge
-	// docs derive from the pre-merge base. Stamping the merge target here
-	// would let a later checkout re-derive the base onto the target and
-	// reopen this very path through the trailer.
+	// docs derive from the pre-merge base. That is now true of EVERY
+	// commit in the window, not only of the ones that leave the conflict
+	// alone — the third review found the exception (a commit that touched
+	// a conflicted path was stamped with the merge target) surviving the
+	// abort that the tool itself advises.
 	requireContains(t, "commit trailers", ws.headMessage(), "docs-base: "+preMerge)
+	requireNotContains(t, "commit trailers", ws.headMessage(), theirs)
 
 	push := ws.push()
 	requireExit(t, "push after an unrelated docs commit", push, 1)
-	requireContains(t, "rejection", push.combined(), "was never resolved by a commit")
+	requireContains(t, "rejection", push.combined(), "no commit has changed the files it conflicted on")
 	requireContains(t, "rejection", push.combined(), "no remote ref was changed")
 
 	if !syncNoteExists(t, ws) {
@@ -117,14 +134,18 @@ func TestAnUnrelatedDocsCommitDoesNotResolveAStashedSync(t *testing.T) {
 		w.canonicalFile(w.canonicalHead(), "api.md"), "line one\nTHEIRS\n")
 }
 
-// TestResolvingTheConflictAdvancesTheBase is Path 1's other half: the
-// window closes on a real resolution, and the base moves then.
+// TestCompletingTheSyncAdvancesTheBase is Path 1's other half, restated
+// for the contract that replaced the inference.
 //
-// It is the reason the base advance could be deferred at all — the
-// resolution commit must still end up describing the merge target, both
-// in the base file and in its own provenance trailer, or the next push
-// would report a conflict that nobody created.
-func TestResolvingTheConflictAdvancesTheBase(t *testing.T) {
+// The wave-2 version asserted two things this wave deliberately breaks:
+// that the resolution commit stamps the merge TARGET, and that the base
+// advances when the commit lands. Both were the inference in disguise —
+// the trailer outlived aborts (C2) and the advance rested on evidence a
+// stash could forge (C1). What survives is the property they were really
+// protecting: after the sync is completed, the base and the docs
+// describe the same canonical state, so the next push is not a conflict
+// nobody created.
+func TestCompletingTheSyncAdvancesTheBase(t *testing.T) {
 	t.Parallel()
 
 	w := newWorld(t, defaultCanonicalDocs())
@@ -141,21 +162,34 @@ func TestResolvingTheConflictAdvancesTheBase(t *testing.T) {
 	resolve := ws.gitExit("commit", "-m", "docs: resolve the conflict")
 	requireExit(t, "the resolution commit", resolve, 0)
 
-	// The resolution derives from the target, so that is what it stamps —
-	// otherwise a re-derivation would wind the base back and the next
-	// push would "merge" documents nobody reverted.
-	requireContains(t, "resolution trailers", ws.headMessage(), "docs-base: "+theirs)
-	// The commit that resolves the sync must not be told a sync is owed.
-	requireNotContains(t, "resolution commit output", resolve.combined(), "was never resolved by a commit")
+	// The resolution stamps the base file's value, like every other
+	// commit in the window. A later re-derivation that adopts it lands on
+	// a base that is at worst too OLD, which publication reconciles as an
+	// ordinary divergence — the direction the invariant chooses.
+	requireContains(t, "resolution trailers", ws.headMessage(), "docs-base: "+preMerge)
+	requireNotContains(t, "resolution trailers", ws.headMessage(), theirs)
+	// It is not accused of having abandoned the sync, either: the notice
+	// it gets names the one step that is actually outstanding.
+	requireNotContains(t, "resolution commit output", resolve.combined(), "no commit has changed the files it conflicted on")
+	requireContains(t, "resolution commit output", resolve.combined(), "sanho sync --continue")
+
+	requireEqual(t, "base file after the resolution commit", recordedBase(t, ws), preMerge)
+	ws.sanho("sync", "--continue")
+	requireEqual(t, "base file after the completion", recordedBase(t, ws), theirs)
+	if syncNoteExists(t, ws) {
+		t.Error("--continue left the sync note behind")
+	}
 
 	push := ws.push()
-	requireExit(t, "push after resolving", push, 0)
+	requireExit(t, "push after completing the sync", push, 0)
 	requireContains(t, "push output", push.combined(), "published docs")
-	if syncNoteExists(t, ws) {
-		t.Error("the publishing push left the sync note behind")
-	}
 	requireEqual(t, "canonical api.md",
 		w.canonicalFile(w.canonicalHead(), "api.md"), "line one\nRESOLVED\n")
+
+	// And the workspace is coherent: nothing owed, nothing behind.
+	doctor := ws.run("doctor")
+	requireExit(t, "doctor after the flow", doctor, 0)
+	requireContains(t, "doctor", doctor.combined(), "no problems found")
 }
 
 // TestTheOwedSyncNoticeReplacesTheFreshnessWarning is the consequence of
@@ -182,7 +216,7 @@ func TestTheOwedSyncNoticeReplacesTheFreshnessWarning(t *testing.T) {
 	commit := ws.gitExit("commit", "-m", "feat: unrelated code")
 	requireExit(t, "an unrelated code commit while a sync is owed", commit, 0)
 
-	requireContains(t, "pre-commit output", commit.combined(), "was never resolved by a commit")
+	requireContains(t, "pre-commit output", commit.combined(), "no commit has changed the files it conflicted on")
 	requireNotContains(t, "pre-commit output", commit.combined(), "commits behind")
 
 	// And the warning comes back the moment the sync is finished with.
@@ -207,7 +241,20 @@ func TestTheOwedSyncNoticeReplacesTheFreshnessWarning(t *testing.T) {
 // sync.
 //
 // So the three HEAD-moved hooks stand down for the duration. The note
-// survives every checkout, and the hook that settles it writes the base.
+// survives every checkout, and the base is written when the user
+// completes the sync.
+//
+// Kept, with its stakes re-stated. When it was written, this guard was
+// the last line of defense: sanho's own resolution commits carried the
+// merge target, so a re-derivation that ran inside the window would
+// adopt one. It is no longer load-bearing — every commit in the window
+// now stamps the base file's own value, and
+// TestAbortThenBranchSwitchDoesNotAdoptAPoisonedTrailer proves the
+// dangerous trailer cannot exist at all — but the guard stays, and so
+// does this test, because a third party writing the file a sync is
+// holding still is noise nobody needs. The `--no-verify` trailer below
+// is what keeps the test honest about that: it is the one way such a
+// trailer can still reach history.
 func TestACheckoutDoesNotReDeriveTheBaseWhileASyncIsOwed(t *testing.T) {
 	t.Parallel()
 
@@ -241,19 +288,21 @@ func TestACheckoutDoesNotReDeriveTheBaseWhileASyncIsOwed(t *testing.T) {
 // --- Path 2 -------------------------------------------------------------
 
 // TestAbortOverACorruptNoteLeavesASafeBase is the re-review's second
-// path.
+// path, and the third review's C3 on the same fixture.
 //
 // A `sync.json` nothing can parse is cleared by `sanho sync --abort` on
 // its existence alone — that is the abort's contract and it is right.
-// What made it dangerous was the base: the conflicted sync had already
-// moved it to the merge target, the previous value lived inside the note
-// that could not be read, and the abort therefore left a workspace whose
-// base claimed canonical head while its docs were pre-merge. The next
-// push fast-forwarded over upstream.
+// What made it dangerous was the base: the previous value lived inside
+// the note that could not be read, so the abort had to decide what to do
+// with a file it could not vouch for. Wave 2 answered "leave it", on the
+// premise that a conflicted sync never moves it; wave 3 found two states
+// where the premise is false and the leftover base is the merge target.
 //
-// With the base left alone at conflict time there is nothing to restore:
-// the abort is lossless, the follow-up repair line is gone, and the push
-// is refused as the ordinary case-③ conflict it always was.
+// The answer now is the invariant: where the base cannot be established,
+// take the older value, and none at all is the oldest there is. The
+// assertion below is therefore *not* the wave-2 one reworded — it is the
+// opposite claim about the same file, and the push refusal it produces
+// is `no_base` rather than a conflict.
 func TestAbortOverACorruptNoteLeavesASafeBase(t *testing.T) {
 	t.Parallel()
 
@@ -271,22 +320,31 @@ func TestAbortOverACorruptNoteLeavesASafeBase(t *testing.T) {
 	abort := ws.run("sync", "--abort")
 	requireExit(t, "abort over a corrupt note", abort, 0)
 	requireContains(t, "abort output", abort.combined(), "sync aborted; docs restored to HEAD")
-	// Nothing was lost, so nothing is owed: the degraded follow-up line
-	// described a base the abort no longer has to guess at.
+	// The old degraded follow-up line described a base the abort had left
+	// on the merge target and asked the user to repair. There is nothing
+	// left behind to repair now.
 	requireNotContains(t, "abort output", abort.combined(), "the docs base was left as the sync set it")
 	if syncNoteExists(t, ws) {
 		t.Error("abort left the corrupt sync note behind")
 	}
 	requireEqual(t, "docs/api.md after abort", ws.readDocs("api.md"), "line one\nMINE\n")
-	requireEqual(t, "base file after the degraded abort", recordedBase(t, ws), preMerge)
+	if fileExists(t, ws.basePath()) {
+		t.Errorf("abort kept a base it could not vouch for: %s", readFile(t, ws.basePath()))
+	}
 
 	push := ws.push()
 	requireExit(t, "push after the degraded abort", push, 1)
-	requireContains(t, "rejection", push.combined(), "your docs changes conflict with upstream")
-	requireContains(t, "rejection", push.combined(), "\n  docs/api.md\n")
+	requireContains(t, "rejection", push.combined(), "docs must be reconciled before publishing")
+	requireContains(t, "rejection", push.combined(), "no remote ref was changed")
 	requireEqual(t, "canonical head", w.canonicalHead(), theirs)
 	requireEqual(t, "canonical api.md",
 		w.canonicalFile(w.canonicalHead(), "api.md"), "line one\nTHEIRS\n")
+
+	// And the advised recovery works from there, which is what makes
+	// forgetting the base a closed answer rather than a wedge.
+	resync := ws.run("sync")
+	requireExit(t, "the advised sync", resync, 0)
+	requireContains(t, "sync output", resync.combined(), "have conflicts")
 }
 
 // --- the gates, re-confirmed --------------------------------------------
@@ -304,8 +362,8 @@ func TestEveryUnfinishedSyncNoteStillRefusesThePush(t *testing.T) {
 
 	tests := []struct {
 		name string
-		// derange puts the conflicted workspace into one of the three
-		// shapes an unfinished sync can have.
+		// derange puts the conflicted workspace into one of the shapes an
+		// unfinished sync can have.
 		derange func(t *testing.T, ws *workspace)
 		want    string
 	}{
@@ -317,7 +375,18 @@ func TestEveryUnfinishedSyncNoteStillRefusesThePush(t *testing.T) {
 		{
 			name:    "put aside without a resolution commit",
 			derange: func(t *testing.T, ws *workspace) { ws.git("stash", "push", "--quiet", "--", "docs") },
-			want:    "was never resolved by a commit",
+			want:    "no commit has changed the files it conflicted on",
+		},
+		{
+			// The shape the explicit-completion contract adds, and the one
+			// a user is most likely to believe is finished.
+			name: "resolved and committed, but never completed",
+			derange: func(t *testing.T, ws *workspace) {
+				ws.writeDocs(map[string]string{"api.md": "line one\nRESOLVED\n"})
+				ws.git("add", "docs/api.md")
+				ws.git("commit", "-m", "docs: resolve the conflict")
+			},
+			want: "is not completed — ",
 		},
 		{
 			name: "a note nothing can parse",

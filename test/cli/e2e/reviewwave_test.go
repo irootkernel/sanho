@@ -55,7 +55,7 @@ func TestStashingAConflictedSyncDoesNotCountAsResolving(t *testing.T) {
 
 	push := ws.push()
 	requireExit(t, "push after stashing the conflict away", push, 1)
-	requireContains(t, "rejection", push.combined(), "was never resolved by a commit")
+	requireContains(t, "rejection", push.combined(), "no commit has changed the files it conflicted on")
 	requireContains(t, "rejection", push.combined(), "no remote ref was changed")
 	if !fileExists(t, ws.path(".git", "sanho", "sync.json")) {
 		t.Error("the stash cleared the sync note; a sync is still owed and nothing records it")
@@ -89,7 +89,7 @@ func TestAnUnresolvedSyncDoesNotBlockUnrelatedCommits(t *testing.T) {
 	ws.git("add", "-A")
 	commit := ws.gitExit("commit", "-m", "feat: unrelated code")
 	requireExit(t, "an unrelated commit while a sync is owed", commit, 0)
-	requireContains(t, "pre-commit notice", commit.combined(), "was never resolved by a commit")
+	requireContains(t, "pre-commit notice", commit.combined(), "no commit has changed the files it conflicted on")
 
 	// HEAD moved, but nothing resolved the sync: the note stands and the
 	// push is still refused.
@@ -98,7 +98,7 @@ func TestAnUnresolvedSyncDoesNotBlockUnrelatedCommits(t *testing.T) {
 	}
 	push := ws.push()
 	requireExit(t, "push after an unrelated commit", push, 1)
-	requireContains(t, "rejection", push.combined(), "was never resolved by a commit")
+	requireContains(t, "rejection", push.combined(), "no commit has changed the files it conflicted on")
 }
 
 // TestAbortAfterAStashLeavesAnHonestConflict follows the advice through.
@@ -135,29 +135,52 @@ func TestAbortAfterAStashLeavesAnHonestConflict(t *testing.T) {
 	requireContains(t, "rejection", push.combined(), "\n  docs/api.md\n")
 }
 
-// TestCommittedResolutionStillClearsTheNote is the unchanged happy path:
-// the fix must not make an actual resolution stop counting.
-func TestCommittedResolutionStillClearsTheNote(t *testing.T) {
+// TestCommittedResolutionIsCompletedByContinue is the happy path under
+// the contract that replaced the inference.
+//
+// It used to assert that the resolution commit itself cleared the note,
+// via whichever hook ran next. That assertion cannot survive this wave
+// and must not be mechanically updated: what made the old flow dangerous
+// is precisely that "a commit that touches a conflicted path" was read
+// as a completed sync, and C1 showed the same evidence being produced by
+// a user who had abandoned the merge. So the claim is redesigned rather
+// than reworded — the commit records the resolution, `--continue`
+// completes the sync, and the push publishes only after it.
+func TestCommittedResolutionIsCompletedByContinue(t *testing.T) {
 	t.Parallel()
 
 	w := newWorld(t, defaultCanonicalDocs())
 	ws := w.setup("resolve")
 
 	ws.commitDocs("docs: my edit", map[string]string{"api.md": "line one\nMINE\n"})
-	w.advanceCanonical(map[string]string{"api.md": "line one\nTHEIRS\n"}, "canonical: their edit")
+	theirs := w.advanceCanonical(map[string]string{"api.md": "line one\nTHEIRS\n"}, "canonical: their edit")
 	ws.sanho("sync")
 
 	ws.writeDocs(map[string]string{"api.md": "line one\nRESOLVED\n"})
 	ws.git("add", "docs/api.md")
 	resolve := ws.gitExit("commit", "-m", "docs: resolve the conflict")
 	requireExit(t, "the resolution commit", resolve, 0)
+	requireContains(t, "resolution commit output", resolve.combined(), "sanho sync --continue")
+
+	refused := ws.push()
+	requireExit(t, "push before the sync is completed", refused, 1)
+	requireContains(t, "rejection", refused.combined(), "is not completed")
+	if !fileExists(t, ws.path(".git", "sanho", "sync.json")) {
+		t.Fatal("the resolution commit cleared the sync note; only --continue may")
+	}
+	requireEqual(t, "canonical api.md while the sync is unfinished",
+		w.canonicalFile(w.canonicalHead(), "api.md"), "line one\nTHEIRS\n")
+
+	completed := ws.sanho("sync", "--continue")
+	requireContains(t, "completion", completed.combined(), "sync completed")
+	if fileExists(t, ws.path(".git", "sanho", "sync.json")) {
+		t.Error("--continue left the sync note behind")
+	}
+	requireEqual(t, "base file after --continue", recordedBase(t, ws), theirs)
 
 	push := ws.push()
-	requireExit(t, "push after resolving", push, 0)
+	requireExit(t, "push after completing the sync", push, 0)
 	requireContains(t, "push output", push.combined(), "published docs")
-	if fileExists(t, ws.path(".git", "sanho", "sync.json")) {
-		t.Error("the publishing push left the sync note behind")
-	}
 	requireEqual(t, "canonical api.md",
 		w.canonicalFile(w.canonicalHead(), "api.md"), "line one\nRESOLVED\n")
 }
@@ -221,12 +244,12 @@ func TestAbortSucceedsWithACorruptSyncNote(t *testing.T) {
 	requireExit(t, "push with a corrupt note", push, 1)
 	requireContains(t, "push rejection", push.combined(), "record of the sync in progress is unreadable")
 
-	// The advised abort works, and it is now lossless: docs restored,
-	// note gone, and nothing left owing. The follow-up repair line it
-	// used to print described a base the conflicted sync had moved to the
-	// merge target and the unreadable note could no longer restore — a
-	// sync no longer moves it, so there is nothing to confess and nothing
-	// for `sanho doctor --fix` to correct.
+	// The advised abort works, and it says what it did rather than
+	// leaving a base it cannot vouch for. The old follow-up line asked
+	// the user to repair a base the abort had abandoned on the merge
+	// target; the abort now takes the older value the invariant demands —
+	// no base at all — and the next push refuses with a reason it can
+	// name.
 	abort := ws.run("sync", "--abort")
 	requireExit(t, "abort with a corrupt note", abort, 0)
 	requireNotContains(t, "abort output", abort.combined(), "the docs base was left as the sync set it")
@@ -234,12 +257,33 @@ func TestAbortSucceedsWithACorruptSyncNote(t *testing.T) {
 		t.Error("abort left the corrupt sync note behind")
 	}
 	requireEqual(t, "docs/api.md after abort", ws.readDocs("api.md"), "line one\nMINE\n")
+	if fileExists(t, ws.basePath()) {
+		t.Errorf("abort kept a base it could not vouch for: %s", readFile(t, ws.basePath()))
+	}
 
-	// Guidance closure for the state that replaces it: nothing is owed,
-	// so `sanho doctor` finds nothing to warn about.
+	// Guidance closure for the state that replaces it: the sync is gone,
+	// the missing base is reported, and the command doctor names is one
+	// that establishes it.
 	healthy := ws.run("doctor")
 	requireExit(t, "doctor after the abort", healthy, 0)
-	requireContains(t, "doctor after the abort", healthy.combined(), "no problems found")
+	requireContains(t, "doctor after the abort", healthy.combined(), "no docs base is recorded")
+	requireNotContains(t, "doctor after the abort", healthy.combined(), "sync in progress")
+
+	// With no base recorded, the merge base is the empty tree, so the
+	// local and upstream versions of api.md conflict — which is the
+	// honest outcome and a successful command. Completing that sync is
+	// what puts a base back.
+	resync := ws.run("sync")
+	requireExit(t, "the sync that re-establishes a base", resync, 0)
+	requireContains(t, "sync output", resync.combined(), "have conflicts")
+
+	ws.writeDocs(map[string]string{"api.md": "line one\nRESOLVED\n"})
+	ws.git("add", "docs/api.md")
+	ws.git("commit", "-m", "docs: resolve after the degraded abort")
+	ws.sanho("sync", "--continue")
+	if !fileExists(t, ws.basePath()) {
+		t.Error("completing the advised sync established no base")
+	}
 }
 
 // TestACorruptSyncNoteDoesNotBreakCommits is the P2 half of X2.

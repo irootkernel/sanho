@@ -142,14 +142,24 @@ func TestRunIgnoresNonBranchAndDeletedRefs(t *testing.T) {
 // it answers on the note's EXISTENCE — never on what the note says, or
 // on where the base happens to point.
 //
-// That independence is what the deferred base advance leans on: the base
-// no longer moves to the merge target while a resolution is owed, so a
-// push during the window is now decided against real history rather than
-// mistaken for a fast-forward. This gate is the layer above that, and it
-// is asserted here rather than assumed, together with the fact that it
-// writes nothing at all on the way out.
+// GATE TEST. It passed before the third review wave and it passes after,
+// and that is the claim rather than an oversight: publication is not
+// what the wave changed, and this refusal is the layer that has to hold
+// still while everything above it moves. Labelling it is the honest
+// alternative to inventing a way to make it fail — a test that is here
+// to detect a *future* regression, not to prove a present fix.
+//
+// The scenario it runs in is the dangerous one on purpose: the recorded
+// base already equals canonical head, so a push that slipped past would
+// be evaluated as a fast-forward. The second half is what keeps the
+// first from being vacuous — the identical state publishes once the sync
+// is over, so the note really is what stopped it.
 func TestRunRejectsWhileASyncIsInProgress(t *testing.T) {
 	s := newScenario(t)
+	if s.state.base.Commit != canonHead {
+		t.Fatalf("fixture base = %s, want canonical head %s so the refusal is the only thing stopping a fast-forward",
+			s.state.base.Commit, canonHead)
+	}
 	s.state.inSync = true
 
 	_, err := s.run(t)
@@ -167,6 +177,17 @@ func TestRunRejectsWhileASyncIsInProgress(t *testing.T) {
 	}
 	if len(s.state.saved) != 0 {
 		t.Errorf("a refused push moved the base: %v", s.state.saved)
+	}
+
+	// The same push, once the sync has ended: it publishes. Without this,
+	// the refusal above would still "pass" if publication had stopped for
+	// some entirely different reason.
+	finished := newScenario(t)
+	if _, err := finished.run(t); err != nil {
+		t.Fatalf("the same push once the sync is over: %v", err)
+	}
+	if finished.canonical.pushes == 0 {
+		t.Error("the post-sync push published nothing; the refusal above proves nothing")
 	}
 }
 

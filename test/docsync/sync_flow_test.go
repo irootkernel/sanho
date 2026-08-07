@@ -165,12 +165,13 @@ func TestSyncThreeWayMerge(t *testing.T) {
 	}
 }
 
-// TestSyncConflictThenResolve walks §5.5 step 6 and the resolution that
+// TestSyncConflictThenResolve walks §5.5 step 6 and the completion that
 // follows it: markers land in the worktree with ref labels, the note
 // records where the sync came from, where it is going and what it could
 // not settle, **the base does not move**, nothing is committed, and no
-// error is returned. Then the user resolves the standard git way, the
-// note clears, and the base adopts the target at that moment.
+// error is returned. Then the user resolves the standard git way and
+// says so with `--continue`, which is the moment — and the only moment —
+// the note clears and the base adopts the target.
 func TestSyncConflictThenResolve(t *testing.T) {
 	f := newFlow(t,
 		map[string]string{"a.md": hunkFile("A", "B", "C"), "b.md": hunkFile("A", "B", "C")},
@@ -242,9 +243,13 @@ func TestSyncConflictThenResolve(t *testing.T) {
 		t.Fatalf("note conflicts = %v, want %v", note.Conflicts, want)
 	}
 
-	// Not finished yet: markers are still there.
-	if got, err := f.use.CompleteIfResolved(context.Background()); err != nil || got != docsync.ResolutionPending {
-		t.Fatalf("CompleteIfResolved = (%v, %v) with markers present, want (pending, nil)", got, err)
+	// Not finished yet: markers are still there, and --continue says so
+	// rather than recording a base for a file full of markers.
+	if got, err := f.use.ResolutionState(context.Background()); err != nil || got != docsync.ResolutionPending {
+		t.Fatalf("ResolutionState = (%v, %v) with markers present, want (pending, nil)", got, err)
+	}
+	if _, err := f.use.Continue(context.Background()); !errors.Is(err, docsync.ErrMarkersRemain) {
+		t.Fatalf("Continue with markers present = %v, want ErrMarkersRemain", err)
 	}
 
 	// Resolve the standard git way.
@@ -255,9 +260,12 @@ func TestSyncConflictThenResolve(t *testing.T) {
 	gitRun(t, f.appDir, "add", "--", docsDir)
 
 	// Still not finished: resolved but uncommitted — and the base has
-	// still not moved, because nothing has confirmed the resolution.
-	if got, err := f.use.CompleteIfResolved(context.Background()); err != nil || got != docsync.ResolutionPending {
-		t.Fatalf("CompleteIfResolved = (%v, %v) before the commit, want (pending, nil)", got, err)
+	// still not moved, because nothing has recorded anything.
+	if got, err := f.use.ResolutionState(context.Background()); err != nil || got != docsync.ResolutionPending {
+		t.Fatalf("ResolutionState = (%v, %v) before the commit, want (pending, nil)", got, err)
+	}
+	if _, err := f.use.Continue(context.Background()); !errors.Is(err, docsync.ErrResolutionUncommitted) {
+		t.Fatalf("Continue before the commit = %v, want ErrResolutionUncommitted", err)
 	}
 	if got := f.base(t); got != previous {
 		t.Fatalf("base file before the resolution commit = %+v, want the previous base %+v", got, previous)
@@ -265,20 +273,41 @@ func TestSyncConflictThenResolve(t *testing.T) {
 
 	gitRun(t, f.appDir, "commit", "--quiet", "-m", "docs: resolve the sync conflict")
 
-	done, err := f.use.CompleteIfResolved(context.Background())
+	// The commit is a commit. It is now visible as a resolution, and it
+	// finishes nothing on its own: the note stands and the base is where
+	// the sync left it until the user says otherwise.
+	state, err := f.use.ResolutionState(context.Background())
 	if err != nil {
-		t.Fatalf("CompleteIfResolved: %v", err)
+		t.Fatalf("ResolutionState: %v", err)
 	}
-	if done != docsync.ResolutionCompleted {
-		t.Fatalf("CompleteIfResolved = %v after a committed resolution, want completed", done)
+	if state != docsync.ResolutionResolved {
+		t.Fatalf("ResolutionState = %v after a committed resolution, want resolved", state)
+	}
+	if _, ok := f.note(t); !ok {
+		t.Fatal("the resolution commit cleared the sync note; only --continue may")
+	}
+	if got := f.base(t); got != previous {
+		t.Fatalf("base file after the resolution commit = %+v, want the previous base %+v", got, previous)
+	}
+
+	done, err := f.use.Continue(context.Background())
+	if err != nil {
+		t.Fatalf("Continue: %v", err)
+	}
+	if done.Base != wantTarget {
+		t.Fatalf("Continue adopted %+v, want the target %+v", done.Base, wantTarget)
 	}
 	if _, ok := f.note(t); ok {
-		t.Fatal("the sync note survived the resolution")
+		t.Fatal("the sync note survived --continue")
 	}
-	// And the base moves exactly here: the resolution is the moment the
-	// worktree docs start deriving from the target.
+	// And the base moves exactly here: completing the sync is the moment
+	// the worktree docs start deriving from the target.
 	if got := f.base(t); got != wantTarget {
-		t.Fatalf("base file after the confirmed resolution = %+v, want the target %+v", got, wantTarget)
+		t.Fatalf("base file after --continue = %+v, want the target %+v", got, wantTarget)
+	}
+	// P3 holds: completing created nothing.
+	if n := f.commitsSince(t, before); n != 1 {
+		t.Fatalf("the resolution flow created %d commits, want exactly the user's own", n)
 	}
 }
 
@@ -312,12 +341,12 @@ func TestAnUnrelatedDocsCommitLeavesTheSyncOwed(t *testing.T) {
 	writeFile(t, f.appDir, docsDir+"/notes.md", "an unrelated note\n")
 	f.commitAll(t, "docs: an unrelated note")
 
-	got, err := f.use.CompleteIfResolved(context.Background())
+	got, err := f.use.ResolutionState(context.Background())
 	if err != nil {
-		t.Fatalf("CompleteIfResolved: %v", err)
+		t.Fatalf("ResolutionState: %v", err)
 	}
 	if got != docsync.ResolutionNotCommitted {
-		t.Fatalf("CompleteIfResolved = %v after an unrelated docs commit, want not_committed", got)
+		t.Fatalf("ResolutionState = %v after an unrelated docs commit, want not_committed", got)
 	}
 	if _, ok := f.note(t); !ok {
 		t.Fatal("an unrelated docs commit cleared the sync note")
