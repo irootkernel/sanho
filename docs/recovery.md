@@ -8,7 +8,8 @@ hook 파일 수동 편집은 사용하지 않는다.
 v0.2에서 복구 부담은 크게 줄었다. 도구가 애플리케이션 저장소에 commit을
 만들지 않고, ref를 조작하지 않으며, 여러 단계 transaction을 유지하지 않기
 때문이다. 중단 지점에서 남을 수 있는 상태는 **충돌 sync 진행 중** 하나뿐이고,
-그 상태를 되돌리는 명령은 구조적으로 실패할 수 없다.
+그 상태에서 나가는 명령은 둘이며(`sanho sync --continue`,
+`sanho sync --abort`) 둘 다 network를 열지 않는다.
 
 ## 우선 확인
 
@@ -22,11 +23,48 @@ sanho doctor
 `sanho doctor`는 경고를 찾아도 종료 코드가 0이므로 조사 도구로 바로 쓸 수
 있다.
 
-## 1. 충돌 sync를 되돌린다 — `sanho sync --abort`
+## 1. 충돌 sync에서 나간다 — `--continue` 또는 `--abort`
 
 **적용 상황**: `sync.json`이 남아 있는 모든 상태. `sanho status`의
 `sync : IN PROGRESS`, `sanho doctor`의 `[warn] sync`, push 거절 메시지
-`finish the sync first`가 모두 같은 상태를 가리킨다.
+`finish the sync first`와 `is not completed`가 모두 같은 상태를 가리킨다.
+
+나가는 길은 둘이고, 그 둘뿐이다. **끝낸다**(`sanho sync --continue`) 또는
+**되돌린다**(`sanho sync --abort`). hook은 어느 쪽도 대신 해 주지 않는다 —
+commit을 아무리 쌓아도 note는 남아 있고, push는 계속 거절된다.
+
+### 1-1. 끝낸다 — `sanho sync --continue`
+
+docs가 원하는 모양이고 commit까지 마쳤으면 그것으로 선언한다.
+
+```bash
+$EDITOR docs/…            # <<<<<<< sanho-ours … >>>>>>> sanho-upstream 제거
+git add docs/
+git commit -m "docs: resolve sync conflicts"
+sanho sync --continue
+```
+
+```text
+sanho: sync completed; docs base is now 9a41f2cbbbbb
+```
+
+note를 지우고 docs base를 병합 대상으로 옮기는 것이 전부다. commit을 만들지
+않고, ref를 움직이지 않고, network를 열지 않는다.
+
+**"전부 내 것으로" 해소도 이 길로 끝낸다.** 모든 충돌 경로를 상류 내용 없이
+그대로 두기로 했다면 이력에는 아무 흔적도 남지 않으므로 도구가 알아볼 방법이
+없다. 그때는 commit 없이 `sanho sync --continue`만 실행하면 된다. 그 다음 push가
+당신의 결정을 게시한다.
+
+마커가 남았거나 해소를 commit하지 않았으면 무엇이 남았는지 말하며 거절한다.
+
+```text
+sanho: the sync is not ready to be completed (the docs worktree still contains conflict markers: docs/api.md)
+Finish the resolution with 'git add docs/ && git commit', then run 'sanho sync --continue' again.
+Or run 'sanho sync --abort' to undo the sync.
+```
+
+### 1-2. 되돌린다 — `sanho sync --abort`
 
 ```bash
 sanho sync --abort
@@ -41,15 +79,29 @@ sanho: sync aborted; docs restored to HEAD
 abort는 세 가지만 한다.
 
 1. docs worktree와 index를 `HEAD` 기준으로 복원한다.
-2. base 파일을 note에 기록된 `prev_base`로 되돌린다. 충돌 sync는 base를 옮기지
-   않으므로 이것은 보통 이미 있는 값을 다시 쓰는 멱등 연산이고, 실제로 값이
-   바뀌는 경우는 둘뿐이다. base 없이 sync에 들어간 경우(파일을 삭제한다), 그리고
-   base를 선-전진시키던 이전 빌드가 남긴 옛 note를 정리하는 경우다.
+2. base 파일을 정리한다. note를 읽을 수 있으면 `prev_base`로 되돌리며, 충돌
+   sync는 base를 옮기지 않으므로 이것은 보통 이미 있는 값을 다시 쓰는 멱등
+   연산이다. 실제로 값이 바뀌는 경우는 둘뿐이다. base 없이 sync에 들어간
+   경우(파일을 삭제한다), 그리고 base를 선-전진시키던 이전 빌드가 남긴 옛
+   note를 정리하는 경우다.
 3. note를 지운다.
 
-note를 읽을 수 없어도 같다. 2단계만 건너뛰는데(값이 note 안에 있었다), 되돌릴
-것이 없으므로 **무손실**이다. 예전에 이 경우 붙던 "base가 sync가 둔 자리에
-남았다"는 후속 안내는 그 상태가 사라지면서 함께 없어졌다.
+**note를 읽을 수 없으면 base 파일을 지운다.** `prev_base`가 그 note 안에 있었고
+추측할 수 없기 때문이며, "base는 worktree docs보다 앞설 수 없다 — 확정할 수
+없으면 더 오래된 값"이라는 불변식에서 아무 base도 없는 것이 가장 오래된 값이다.
+막힌 상태가 아니다. 다음 push는 `no_base`로 거절하며 `sanho sync`를 안내하고,
+base 없는 sync는 empty tree를 병합 base로 삼아 성공한다.
+
+```text
+sanho: docs must be reconciled before publishing (no_base; base (none) → 9a41f2cbbbbb)
+Run 'sanho sync', resolve if needed, commit, then push again.
+error: push rejected — no remote ref was changed
+```
+
+건너뛰기(base를 그대로 두기)는 "충돌 sync는 base를 옮기지 않는다"는 전제 위에
+있었다. `SaveBase`와 note 삭제 사이의 크래시, 그리고 옛 빌드가 남긴 note에서
+그 전제가 깨지고, 그때 남는 것은 병합 대상에 올라간 base와 그 밑의 병합 이전
+docs다. 그 상태의 다음 push는 fast-forward로 판정되어 상류를 덮는다.
 
 ref를 움직이지 않고, commit을 만들지 않고, docs 밖의 파일을 건드리지 않는다.
 따라서 "abort가 실패하는 상태"가 존재하지 않는다. 순서도 재실행 가능하도록
@@ -61,16 +113,6 @@ note가 없는데 실행하면 그렇게 말할 뿐 아무것도 바꾸지 않�
 
 ```text
 sanho: no sync is in progress
-```
-
-### 되돌리는 대신 끝내려면
-
-해소는 표준 git 관용구다. 두 경로 모두 안전하고, 어느 쪽을 선택해도 된다.
-
-```bash
-$EDITOR docs/…            # <<<<<<< sanho-ours … >>>>>>> sanho-upstream 제거
-git add docs/
-git commit -m "docs: resolve sync conflicts"
 ```
 
 ## 2. canonical 이력이 rewrite된 경우 — `sanho sync --rebase-onto`
@@ -96,7 +138,7 @@ error: push rejected — no remote ref was changed
 
 ```bash
 sanho sync --rebase-onto 1111111111111111111111111111111111111111
-# 충돌이 있으면 해소 → git add docs/ → git commit
+# 충돌이 있으면 해소 → git add docs/ → git commit → sanho sync --continue
 git push
 ```
 
@@ -417,7 +459,7 @@ sanho: 'sanho clean' removes this workspace's sanho state; rerun with -y to conf
 충돌 sync가 밀려 있으면 먼저 정리해야 한다.
 
 ```text
-sanho: a conflicted sync is in progress; finish it, or run 'sanho sync --abort' first
+sanho: a conflicted sync is in progress; complete it with 'sanho sync --continue', or undo it with 'sanho sync --abort' first
 ```
 
 ## v0.1에서 사라진 복구 절차
@@ -427,7 +469,7 @@ sanho: a conflicted sync is in progress; finish it, or run 'sanho sync --abort' 
 
 | v0.1 절차 | v0.2에서의 상태 |
 |---|---|
-| `sanho pull-commit --continue / --abort / --recover` | 5단계 transaction이 없다. `sanho sync` + git 관용구 + `sanho sync --abort`가 대신한다. |
+| `sanho pull-commit --continue / --abort / --recover` | 5단계 transaction이 없다. `sanho sync` + git 관용구 + `sanho sync --continue` / `--abort`가 대신한다. |
 | `refs/sanho/recovery/<transaction-id>/` backup ref 조사 | recovery ref를 만들지 않는다. abort가 실패할 수 없기 때문이다. |
 | `sanho fix` / `.sanho_pending_fix` 처리 | 명령과 상태 모두 없다. migration이 남은 파일을 거부 사유로만 읽는다. |
 | main 선행 게시 실패 복구 | 애플리케이션 `main` 게시 계약이 없다. Sanho는 애플리케이션 ref를 움직이지 않는다. |

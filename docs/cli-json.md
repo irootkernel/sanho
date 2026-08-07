@@ -10,6 +10,7 @@ sanho status --refresh --json
 sanho state --json
 sanho state --all --json
 sanho sync --json
+sanho sync --continue --json
 sanho sync --abort --json
 sanho pull --json
 sanho doctor --json
@@ -90,6 +91,7 @@ v0.2가 분기용으로 보장하는 값은 다음과 같다. 문자열 그대�
 | `up_to_date` | 할 일이 없었다. canonical이 비어 있는 경우도 포함한다. |
 | `synced` | docs가 화해됐고 base가 전진했다. `commit`이 비어 있을 수 있다. |
 | `conflicts` | 마커가 worktree에 있고 해소가 밀려 있다. |
+| `completed` | `sync --continue`가 sync를 끝냈다. `base`가 채택된 값이고 `commit`은 빈 문자열이다(완료는 commit을 만들지 않는다). |
 | `aborted` | `sync --abort`가 완료됐다. |
 
 **게시 case** — 사람용 출력 `sanho: published docs <oid12> (<case>)`에 그대로
@@ -124,7 +126,7 @@ v0.2가 분기용으로 보장하는 값은 다음과 같다. 문자열 그대�
 | `unknown_target` | `--rebase-onto` 대상이 canonical commit이 아니거나, 건강한 base의 조상이다. |
 | `canonical_unreachable` | canonical에 닿지 못했거나 병합을 수행하지 못했다. |
 | `registry_lock_timeout` | 다른 Sanho 프로세스가 registry 잠금을 쥐고 있다. |
-| `markers_present` | push되는 docs에 충돌 마커가 있다. |
+| `markers_present` | push되는 docs에 충돌 마커가 있다. `sync --continue`가 마커를 이유로 거절할 때도 이 코드다. |
 | `too_large` | 텍스트 문서가 마커 스캔 한계를 넘었다. |
 | `internal` | 위 어디에도 속하지 않는다. 재시도하지 말고 보고한다. |
 
@@ -158,7 +160,7 @@ base가 어긋났을 때만 나타난다.
 ```text
 sanho: this workspace uses the v0.1 layout; run 'sanho migrate'
 sanho: not a sanho workspace (no .sanho.json here); run 'sanho init' to create one
-sanho: finish the sync first: resolve conflicts, then 'git add' and 'git commit' (or 'sanho sync --abort')
+sanho: finish the sync first: resolve the conflicts, 'git add' and 'git commit', then 'sanho sync --continue' (or 'sanho sync --abort' to undo it)
 sanho: docs base is N commits behind — …
 sanho: merged docs with upstream — N files have conflicts:
 sanho: your docs changes conflict with upstream (base <a> → <b>)
@@ -322,10 +324,28 @@ commit을 가리킬 수 있으며, 그때 관계는 `unknown`이다.
 
 | 필드 | 설명 |
 |---|---|
-| `status` | 위 "안정 어휘"의 네 값 중 하나. |
-| `base` | 적용된 새 base(canonical head 또는 `--rebase-onto` 대상). `up_to_date`에서도 현재 base를 그대로 반복한다. canonical이 비어 있으면 이름 붙일 commit이 없으므로 `null`이다. `--abort`에서도 `null`이다. **`conflicts`에서는 아직 채택되지 않은 병합 대상**을 가리킨다 — 충돌 sync는 base 파일을 옮기지 않고 sync note에 대상을 기록해 두었다가 해소가 확정될 때 채택한다. |
+| `status` | 위 "안정 어휘"의 다섯 값 중 하나. |
+| `base` | 적용된 새 base(canonical head 또는 `--rebase-onto` 대상). `up_to_date`에서도 현재 base를 그대로 반복한다. canonical이 비어 있으면 이름 붙일 commit이 없으므로 `null`이다. `--abort`에서도 `null`이다. **`conflicts`에서는 아직 채택되지 않은 병합 대상**을 가리킨다 — 충돌 sync는 base 파일을 옮기지 않고 sync note에 대상을 기록해 두었다가 `sanho sync --continue`가 채택한다. `completed`에서는 방금 채택된 값이다. |
 | `commit` | 만들어진 sync commit OID. 아무것도 commit하지 않았으면 빈 문자열이다. 병합 결과가 `HEAD`의 docs tree와 같으면 기록할 변경이 없으므로 `synced`이면서 `commit`이 비어 있을 수 있다. |
 | `conflicts` | 충돌 경로(저장소 기준 상대 경로). `conflicts` 상태가 아니면 `[]`. |
+
+`sync --continue --json`은 채택된 base와 함께 완료를 보고한다.
+
+```json
+{
+  "status": "completed",
+  "base": {
+    "commit": "9a41f2cbf0d1e2a3b4c5d6e7f8091a2b3c4d5e6f",
+    "tree": "aa11bb22cc33dd44ee55ff6677889900aabbccdd"
+  },
+  "commit": "",
+  "conflicts": []
+}
+```
+
+끝낼 수 없는 상태에서는 §5.8 오류 봉투로 거절하며, 코드가 무엇이 남았는지
+구분한다. 마커가 남아 있으면 `markers_present`, 해소를 commit하지 않았으면
+`docs_dirty`, note가 없으면 `sync_in_progress`다.
 
 `sync --abort --json`은 다음을 출력한다.
 
@@ -434,12 +454,15 @@ abort)은 사용자 확인 없이 고르지 않는다.
 sanho status --json          # 작업 시작 시, commit/push 전
 ```
 
-1. `sync_in_progress`가 `true`면 해소 또는 `sanho sync --abort` 중 하나를
-   사용자와 확인하고 진행한다.
+1. `sync_in_progress`가 `true`면 **끝내기**(해소 → `git add` → `git commit` →
+   `sanho sync --continue`) 또는 **되돌리기**(`sanho sync --abort`) 중 하나를
+   사용자와 확인하고 진행한다. commit만으로는 끝나지 않으며, 끝날 때까지 push는
+   거절된다.
 2. `relation.known && relation.behind > 0`이면 `sanho sync --json`을 실행한다.
    - `status == "synced"` → 계속 진행한다.
    - `status == "conflicts"` → `conflicts` 목록을 사용자에게 제시한다. 마커를
-     해소하고 `git add` + `git commit`으로 끝낸다.
+     해소하고 `git add` + `git commit` 뒤 `sanho sync --continue`로 끝낸다.
+     `--continue`가 `completed`를 돌려주기 전까지 sync는 끝나지 않았다.
    - `status == "up_to_date"` → 할 일이 없다.
 3. commit과 push는 **일반 git 명령**으로 한다. Sanho에는 `sanho push`가 없고,
    commit을 만드는 명령도 없다.
@@ -452,6 +475,8 @@ sanho status --json          # 작업 시작 시, commit/push 전
 - `.sanho.json`, `.sanho_base.json`, `.git/sanho/` 직접 수정·삭제.
 - 사람용 표 출력 파싱. `--json`을 쓴다.
 - 종료 코드만으로 sync 결과 판정. 충돌 sync는 0이다.
+- commit이 sync를 끝낸다는 가정. `sanho sync --continue`가 `completed`를
+  돌려주는 것이 완료의 유일한 신호다.
 - `detail` 문장 파싱. `name`과 `severity`로 분기한다.
 - `relation.known == false`를 "차이 없음"으로 해석. 모른다는 뜻이다.
 

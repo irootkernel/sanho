@@ -2,6 +2,61 @@
 
 ## v0.2.0 - 2026-08-07
 
+### Added before release (third external review wave)
+
+- **`sanho sync --continue` completes a conflicted sync, and nothing else
+  does.** Resolving stays ordinary git work — edit, `git add`, `git commit` —
+  and the sync ends when you say it has. It clears the sync note and moves the
+  docs base to the merge target; it creates no commit and opens no network
+  connection, so it works offline. Until it runs, `git push` is refused and
+  says which step is missing. This is a deliberate deviation from the "no new
+  vocabulary" rule, recorded in `docs/architecture.md`: three waves of
+  inferring completion from the state a resolution leaves behind each left a
+  smaller path to the same data loss, and the fourth narrowing would have
+  started rejecting genuine resolutions. It also opens the exit that was
+  missing entirely — a resolution that keeps every conflicted path exactly as
+  it was leaves no evidence at all, and can now simply be declared.
+
+### Fixed before release (third external review wave)
+
+- **Editing the conflicted file after a stash is no longer read as a
+  resolution.** With the markers stashed away, continuing to work on the same
+  document — the most natural next action — moved HEAD, moved the docs tree,
+  and changed a path the merge conflicted on, which is everything the
+  completion test asked for. The sync was declared finished and the next push
+  republished pre-merge content over upstream at exit 0, while `sanho status`
+  said "up to date". Hooks no longer complete or clear anything: the sync note
+  is deleted by `sanho sync --continue` and `sanho sync --abort` alone, and
+  every commit made inside the window says the sync is unfinished.
+- **A commit made during a sync can no longer poison the base through its
+  trailer.** The commit that resolved a sync used to be stamped with the merge
+  target, and that trailer outlived the sync: after `sanho sync --abort` — the
+  command the tool itself advises — one branch switch let base re-derivation
+  adopt the target with pre-merge documents beneath it. Every commit inside the
+  window now stamps the base file's own value, which is a true ancestor of what
+  it carries, so the worst a later re-derivation can do is adopt a base that is
+  too old.
+- **`sanho sync --abort` over an unreadable note clears the docs base.**
+  Skipping the base rested on "a conflicted sync never moves it", which is
+  false after a crash between the base write and the note clear, and false for
+  a note left by an older build. In both, the abort walked away from a base
+  sitting on the merge target and the next push fast-forwarded over upstream.
+  An abort that cannot read its note cannot know which value is right, so it
+  takes the oldest one there is: none. Publication then refuses with `no_base`
+  and names `sanho sync`, which establishes one.
+- Every base write now obeys one invariant — a recorded base may never be ahead
+  of the docs the worktree carries, and where neither can be established the
+  older value wins. `sanho sync --continue` therefore clears the note before it
+  writes the base (an interruption leaves the base too old, which publication
+  reconciles); `sanho doctor --fix` and `sanho init` stand down while a sync is
+  unfinished, as base re-derivation already did; and `sanho status` reports the
+  unfinished sync instead of a "N behind — run 'sanho sync'" line that names a
+  command refusing in that state.
+- A sync note written by an older build is no longer explained with a reason
+  nothing knows to be true ("no commit has changed the files it conflicted
+  on" — it never recorded those files), and `--continue` completes it, where
+  previously only an abort could end it.
+
 ### Fixed before release (second external review wave)
 
 A re-review found that the first wave had hardened the test for "is this sync

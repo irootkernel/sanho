@@ -31,7 +31,8 @@ daemon, socket, HTTP API, Web UI, 브라우저 터미널, 세션 실행 기능�
   일반 commit이다.
 - Sanho는 애플리케이션의 ref를 움직이지 않는다. `main`을 대신 push하지도
   않는다.
-- 충돌 해소는 표준 git 관용구다. 편집 → `git add` → `git commit`.
+- 충돌 해소는 표준 git 관용구다. 편집 → `git add` → `git commit`. 끝났다는
+  선언만 Sanho의 명령이다: `sanho sync --continue`.
 
 각 작업공간은 자기 `docs/`가 canonical의 어느 commit에서 **파생됐는지**를
 `.sanho_base.json`에 기록하고, 같은 값을 commit 메시지 trailer로도 남긴다.
@@ -229,6 +230,7 @@ sanho: merged docs with upstream — 2 files have conflicts:
   docs/api.md
   docs/schema.md
 Resolve the markers, then:  git add docs/ && git commit
+Then complete the sync:     sanho sync --continue
 To undo this sync:          sanho sync --abort
 ```
 
@@ -242,12 +244,14 @@ To undo this sync:          sanho sync --abort
 >>>>>>> sanho-upstream
 ```
 
-해소는 다른 merge 충돌과 똑같다. 배울 것이 없다.
+해소는 다른 merge 충돌과 똑같다. 배울 것이 하나 있고, `git rebase --continue`와
+같은 것이다: 끝났으면 끝났다고 말한다.
 
 ```bash
 $EDITOR docs/api.md docs/schema.md
 git add docs/
 git commit -m "docs: resolve sync conflicts"
+sanho sync --continue
 git push
 ```
 
@@ -265,12 +269,13 @@ sanho: sync aborted; docs restored to HEAD
 worktree와 상태 파일 둘만 되돌리기 때문이다. 중간에 중단되면 다시 실행하면
 된다.
 
-해소가 끝나기 전에 commit하면 막힌다. 안내는 같은 두 선택지를 반복한다.
+해소가 끝나기 전에 commit하면 막힌다. 안내는 같은 세 선택지를 반복한다.
 
 ```text
 sanho: a sync is in progress — 1 files still have conflicts:
   docs/api.md
 Resolve the markers, then:  git add docs/ && git commit
+Then complete the sync:     sanho sync --continue
 To undo this sync:          sanho sync --abort
 ```
 

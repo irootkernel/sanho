@@ -361,7 +361,7 @@ sanho: 'sanho clean' removes this workspace's sanho state; rerun with -y to conf
 충돌 sync가 밀려 있으면 먼저 정리하도록 거절한다.
 
 ```text
-sanho: a conflicted sync is in progress; finish it, or run 'sanho sync --abort' first
+sanho: a conflicted sync is in progress; complete it with 'sanho sync --continue', or undo it with 'sanho sync --abort' first
 ```
 
 hook 제거는 정확한 줄 일치로만 하므로 남의 hook 내용은 그대로 남고, shebang과

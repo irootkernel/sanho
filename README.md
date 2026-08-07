@@ -123,6 +123,7 @@ sanho: merged docs with upstream — 2 files have conflicts:
   docs/api.md
   docs/schema.md
 Resolve the markers, then:  git add docs/ && git commit
+Then complete the sync:     sanho sync --continue
 To undo this sync:          sanho sync --abort
 ```
 
@@ -136,14 +137,22 @@ the upstream sentence
 >>>>>>> sanho-upstream
 ```
 
-Resolve it exactly as you would any merge conflict:
+Resolve it exactly as you would any merge conflict, then say so — the same
+shape as `git rebase --continue`:
 
 ```bash
 $EDITOR docs/api.md docs/schema.md
 git add docs/
 git commit -m "docs: resolve sync conflicts"
+sanho sync --continue
 git push
 ```
+
+The commit is ordinary git work; `sanho sync --continue` is what ends the sync.
+It clears the sync note and moves the docs base to the merge target — no commit,
+no network — and until you run it, `git push` is refused and says so. That is
+also how you take your own side wholesale: if the docs already read the way you
+want them, `sanho sync --continue` completes the sync as it stands.
 
 Or undo it:
 

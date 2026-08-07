@@ -132,6 +132,7 @@ sanho: merged docs with upstream — 2 files have conflicts:
   docs/api.md
   docs/schema.md
 Resolve the markers, then:  git add docs/ && git commit
+Then complete the sync:     sanho sync --continue
 To undo this sync:          sanho sync --abort
 ```
 
@@ -145,21 +146,38 @@ To undo this sync:          sanho sync --abort
 >>>>>>> sanho-upstream
 ```
 
-해소는 완전히 표준 git 관용구다.
+해소는 완전히 표준 git 관용구다. **끝났다는 선언만 Sanho의 명령이다.**
 
 ```bash
 $EDITOR docs/api.md docs/schema.md
 git add docs/
 git commit -m "docs: resolve sync conflicts"
+sanho sync --continue
 ```
 
-해소가 끝나기 전에 commit하면 막힌다. 안내는 같은 두 선택지를 반복한다.
+```text
+sanho: sync completed; docs base is now 9a41f2cbbbbb
+```
+
+`--continue`가 하는 일은 둘뿐이다. sync note를 지우고, docs base를 병합 대상으로
+옮긴다. commit을 만들지 않고 network를 열지 않으므로 오프라인에서도 끝낼 수 있다.
+
+해소가 끝나기 전에 commit하면 막힌다. 안내는 같은 세 선택지를 반복한다.
 
 ```text
 sanho: a sync is in progress — 1 files still have conflicts:
   docs/api.md
 Resolve the markers, then:  git add docs/ && git commit
+Then complete the sync:     sanho sync --continue
 To undo this sync:          sanho sync --abort
+```
+
+`--continue`를 너무 일찍 실행해도 같은 이야기를 한다.
+
+```text
+sanho: the sync is not ready to be completed (the docs worktree still contains conflict markers: docs/api.md)
+Finish the resolution with 'git add docs/ && git commit', then run 'sanho sync --continue' again.
+Or run 'sanho sync --abort' to undo the sync.
 ```
 
 sync 중이 아닌데 staged docs에 마커가 있으면 별도 메시지로 막는다.
@@ -170,28 +188,35 @@ sanho: staged docs contain conflict markers:
 Resolve them, then 'git add' the files and commit again.
 ```
 
-해소가 commit되면 다음 `pre-commit` 또는 `pre-push`가 note를 정리하고, 그때
-docs base가 병합 대상으로 전진한다. 충돌 sync 자체는 base를 옮기지 않는다 —
-마커가 worktree에 있는 동안 docs는 여전히 병합 이전 상태에서 파생돼 있기
-때문이다.
+**commit만으로는 sync가 끝나지 않는다.** 해소를 commit한 뒤 `--continue` 전까지
+push는 거절되며, 그 사실을 그대로 말한다.
 
 ```text
-sanho: sync resolved; the sync note has been cleared
+sanho: the sync from 67c4bbfeada3 to 9a41f2cbbbbb is not completed — the resolution is committed, and only 'sanho sync --continue' records it
+Run 'sanho sync --continue' now, or 'sanho sync --abort' to undo the whole sync.
 ```
+
+충돌 sync 자체는 base를 옮기지 않는다. 마커가 worktree에 있는 동안 docs는 여전히
+병합 이전 상태에서 파생돼 있기 때문이고, base를 대상으로 옮기는 것은
+`--continue` 하나뿐이다.
 
 마커를 stash하거나 `git checkout HEAD -- docs`로 치워 두면 끝난 것처럼 보이지만
 끝난 것이 아니다. commit할 때마다 이렇게 알린다(막지는 않는다). push는 거절한다.
 
 ```text
-sanho: the sync from 67c4bbfeada3 to 9a41f2cbbbbb was never resolved by a commit; no commit has changed the files it conflicted on
+sanho: the sync from 67c4bbfeada3 to 9a41f2cbbbbb is not completed; no commit has changed the files it conflicted on
 Run 'sanho sync --abort' to undo it — anything you stashed stays in your stash — then 'sanho sync' to lay the conflicts out again.
+If the docs already read the way you want them, run 'sanho sync --continue' instead to complete the sync as it stands.
 ```
 
-해소로 치는 조건은 "충돌났던 파일 중 하나를 바꾼 commit이 있었는가"다. 무관한
-문서를 commit하는 것으로는 해소되지 않으며, 모든 충돌 경로를 그대로 두는
-"전부 내 것으로" 해소도 마찬가지다. 후자라면 위 안내대로 abort하고 다시 sync한
-뒤 해소를 만들면 된다. 창이 열려 있는 동안 신선도 경고(`docs base is N commits
-behind`)는 이 안내로 대체된다.
+마지막 줄이 **"전부 내 것으로"(take ours) 해소의 출구**다. 모든 충돌 경로를
+바이트 그대로 두는 해소는 아무 흔적도 남기지 않아서 도구가 알아볼 방법이 없고,
+그래서 예전에는 abort하고 다시 sync하는 길밖에 없었다. 지금은 docs가 원하는
+모양이면 `--continue`로 그대로 끝내면 된다.
+
+창이 열려 있는 동안 신선도 경고(`docs base is N commits behind`)와
+`sanho status`의 behind 줄은 이 안내로 대체된다. 창 안에서 `sanho sync`는
+거절되므로, 그 상태에서 `sanho sync`를 안내하는 줄은 출력되지 않는다.
 
 되돌리고 싶으면 언제든 abort할 수 있다.
 
@@ -252,7 +277,7 @@ error: push rejected — no remote ref was changed
 **(d) sync 미완료.**
 
 ```text
-sanho: finish the sync first: resolve conflicts, then 'git add' and 'git commit' (or 'sanho sync --abort')
+sanho: finish the sync first: resolve the conflicts, 'git add' and 'git commit', then 'sanho sync --continue' (or 'sanho sync --abort' to undo it)
 error: push rejected — no remote ref was changed
 ```
 
@@ -330,13 +355,14 @@ commit이나 force push를 만들지 않는다.
 `sync.json`이 남아 있는 동안에는 게시가 막히고, `sync`와 `pull`도 거절한다.
 
 ```text
-sanho: a conflicted sync is in progress: syncing 67c4bbfeada3 to 9a41f2cbbbbb; resolve the markers and commit, or run 'sanho sync --abort'
+sanho: a conflicted sync is in progress (syncing 67c4bbfeada3 to 9a41f2cbbbbb)
+Resolve the markers and commit, then run 'sanho sync --continue' — or 'sanho sync --abort' to undo it.
 ```
 
 `sanho doctor`도 같은 상태를 경고로 보고한다.
 
 ```text
-[warn] sync             a sync from 67c4bbfeada3 to 9a41f2cbbbbb is unresolved — resolve the markers and commit, or run 'sanho sync --abort'
+[warn] sync             a sync from 67c4bbfeada3 to 9a41f2cbbbbb is unresolved — complete it with 'sanho sync --continue', or undo it with 'sanho sync --abort'
 ```
 
 선택지는 둘뿐이고 둘 다 반드시 성공한다. 마커를 해소해 commit하거나,
@@ -346,7 +372,7 @@ sanho: a conflicted sync is in progress: syncing 67c4bbfeada3 to 9a41f2cbbbbb; r
 note 없이 남기게 되기 때문이다.
 
 ```text
-sanho: a conflicted sync is in progress; finish it, or run 'sanho sync --abort' first
+sanho: a conflicted sync is in progress; complete it with 'sanho sync --continue', or undo it with 'sanho sync --abort' first
 ```
 
 note가 없는데 abort를 실행하면 그렇게 말한다.
