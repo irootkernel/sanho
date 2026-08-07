@@ -288,6 +288,12 @@ func (ws *workspace) initWorkspace(extra ...string) result {
 func (ws *workspace) initAndAdopt(extra ...string) *workspace {
 	ws.w.t.Helper()
 	ws.initWorkspace(extra...)
+	// `git add .gitignore && git commit` is what init advises, and doing
+	// it here is not decoration: leaving .gitignore uncommitted means any
+	// checkout back past this commit deletes it, after which `git add -A`
+	// commits `.sanho.json` into a branch and a later checkout deletes
+	// the workspace out from under the hooks.
+	ws.git("add", ".gitignore")
 	ws.git("commit", "-m", "docs: adopt canonical docs")
 	return ws
 }

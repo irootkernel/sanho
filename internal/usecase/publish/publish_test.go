@@ -368,7 +368,9 @@ func TestRunCaseAutoMergePublishesTheMergedTree(t *testing.T) {
 	if outcome.Case != pubdom.CaseAutoMerge {
 		t.Fatalf("case = %v, want auto merge", outcome.Case)
 	}
-	if want := []string{canonRoot + "|" + tipTree + "|" + canonHead}; !reflect.DeepEqual(s.canonical.mergeCalls, want) {
+	// Trees, not commits: the evaluation pass merges tree-level so it can
+	// chain without writing a commit for the intermediate result.
+	if want := []string{rootTree + "|" + tipTree + "|" + canonTree}; !reflect.DeepEqual(s.canonical.mergeCalls, want) {
 		t.Fatalf("merge called with %v, want %v", s.canonical.mergeCalls, want)
 	}
 	if s.canonical.created[0].tree != mergedTree {
@@ -433,7 +435,7 @@ func TestRunCaseUnknownBaseReanchorsByDocsTree(t *testing.T) {
 	if outcome.Case != pubdom.CaseAutoMerge {
 		t.Fatalf("case = %v, want auto merge after re-anchoring", outcome.Case)
 	}
-	if want := []string{canonRoot + "|" + tipTree + "|" + canonHead}; !reflect.DeepEqual(s.canonical.mergeCalls, want) {
+	if want := []string{rootTree + "|" + tipTree + "|" + canonTree}; !reflect.DeepEqual(s.canonical.mergeCalls, want) {
 		t.Fatalf("merge called with %v, want the re-anchored base %v", s.canonical.mergeCalls, want)
 	}
 	if outcome.Published == "" {
@@ -604,8 +606,8 @@ func TestRunRetriesAfterALostRace(t *testing.T) {
 	if len(s.canonical.mergeCalls) != 2 {
 		t.Fatalf("merge calls = %v, want the merge recomputed on retry", s.canonical.mergeCalls)
 	}
-	if !strings.HasSuffix(s.canonical.mergeCalls[1], "|"+commitOID(500)) {
-		t.Errorf("retry merged against %q, want the racer's commit", s.canonical.mergeCalls[1])
+	if !strings.HasSuffix(s.canonical.mergeCalls[1], "|"+treeOID(500)) {
+		t.Errorf("retry merged against %q, want the racer's tree", s.canonical.mergeCalls[1])
 	}
 	if s.canonical.created[1].parent != commitOID(500) {
 		t.Errorf("retry parent = %s, want the racer's commit", s.canonical.created[1].parent)
@@ -707,28 +709,242 @@ func TestRunPropagatesWorktreeHashFailures(t *testing.T) {
 	}
 }
 
-// TestRunAdvancedBaseIsUsedByLaterTips: once the base moves, a second
-// tip in the same push is evaluated against the new base.
-func TestRunAdvancedBaseIsUsedByLaterTips(t *testing.T) {
-	s := newScenario(t)
-	s.app.worktree = tipTree
+// --- Multi-ref pushes (F-C1) ------------------------------------------
+//
+// The predecessor of this block asserted the opposite: that once the
+// first tip published and the base advanced to it, the second tip was
+// decided against the NEW base and fast-forwarded. That is the bug —
+// the second tree replaced the first one wholesale, deleting whatever
+// the first branch had contributed, with exit 0. What follows pins the
+// content instead of the mechanism: publishing tip 2 may never lose
+// tip 1's tree.
+
+// unionTree stands for "tip 2's docs merged with tip 1's".
+var unionTree = treeOID(30)
+
+// multiRef adds a second branch carrying a different docs tree.
+func (s *scenario) multiRef() *scenario {
 	s.updates = append(s.updates, RefUpdate{
 		LocalRef: "refs/heads/topic", LocalOID: appTipAlt, RemoteRef: "refs/heads/topic",
 	})
+	s.canonical.mergeResults = []string{unionTree}
+	return s
+}
+
+// TestRunChainsMultipleTipsWithoutClobbering is R2's two-branch repro:
+// one `git push` carrying two branches with different docs trees must
+// publish BOTH, chained, with the second merged onto the first.
+func TestRunChainsMultipleTipsWithoutClobbering(t *testing.T) {
+	s := newScenario(t).multiRef()
+	s.app.worktree = tipTree
 
 	outcome, err := s.run(t)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	// The first publication advanced the base to itself, so the second
-	// tip is a fast-forward rather than a merge.
-	if len(s.canonical.mergeCalls) != 0 {
-		t.Fatalf("merge calls = %v, want the advanced base to make the second tip a fast forward", s.canonical.mergeCalls)
+
+	if len(outcome.PublishedOIDs) != 2 {
+		t.Fatalf("published %v, want two publications (one per distinct docs tree)", outcome.PublishedOIDs)
 	}
-	if outcome.Case != pubdom.CaseFastForward {
-		t.Errorf("case = %v, want fast forward", outcome.Case)
+	if len(s.canonical.created) != 2 {
+		t.Fatalf("created %d canonical commits, want 2", len(s.canonical.created))
+	}
+
+	// The second publication is parented on the first: chained, never
+	// re-based on the frozen head.
+	if got, want := s.canonical.created[1].parent, outcome.PublishedOIDs[0]; got != want {
+		t.Errorf("second publication parent = %s, want the first publication %s", got, want)
+	}
+	// And its tree is the merge of tip 2 onto tip 1's tree, not tip 2's
+	// own tree — which is the whole point.
+	if got := s.canonical.created[1].tree; got != unionTree {
+		t.Fatalf("second publication tree = %s, want the union %s (tip 2's own tree would delete tip 1's docs)", got, unionTree)
+	}
+	if want := []string{canonTree + "|" + tipTreeB + "|" + tipTree}; !reflect.DeepEqual(s.canonical.mergeCalls, want) {
+		t.Fatalf("merge calls = %v, want tip 2 merged onto tip 1's tree with the frozen base %v",
+			s.canonical.mergeCalls, want)
+	}
+	// Canonical really ended up holding the union.
+	if got := s.canonical.head().tree; got != unionTree {
+		t.Errorf("canonical head tree = %s, want the union %s", got, unionTree)
 	}
 }
+
+// TestRunPublishesTheSameUnionInEitherRefOrder: git decides stdin order,
+// so the outcome must not.
+func TestRunPublishesTheSameUnionInEitherRefOrder(t *testing.T) {
+	forward := newScenario(t).multiRef()
+	if _, err := forward.run(t); err != nil {
+		t.Fatalf("Run (main, topic): %v", err)
+	}
+
+	reversed := newScenario(t).multiRef()
+	reversed.updates[0], reversed.updates[1] = reversed.updates[1], reversed.updates[0]
+	if _, err := reversed.run(t); err != nil {
+		t.Fatalf("Run (topic, main): %v", err)
+	}
+
+	if got := reversed.canonical.head().tree; got != unionTree {
+		t.Fatalf("reversed order published %s, want the same union %s", got, unionTree)
+	}
+	if len(reversed.canonical.created) != 2 {
+		t.Fatalf("reversed order created %d commits, want 2", len(reversed.canonical.created))
+	}
+	// Same merge shape, with the two sides swapped: still base | ours |
+	// accumulated, never a fast forward past the sibling.
+	if want := []string{canonTree + "|" + tipTree + "|" + tipTreeB}; !reflect.DeepEqual(reversed.canonical.mergeCalls, want) {
+		t.Fatalf("reversed merge calls = %v, want %v", reversed.canonical.mergeCalls, want)
+	}
+}
+
+// TestRunPushAllPublishesEveryDistinctTree is the `git push --all`
+// repro: four branches, four docs trees, nothing silently dropped.
+func TestRunPushAllPublishesEveryDistinctTree(t *testing.T) {
+	s := newScenario(t)
+	trees := []string{treeOID(41), treeOID(42), treeOID(43)}
+	for i, tree := range trees {
+		oid := commitOID(41 + i)
+		s.app.docsTrees[oid] = tree
+		s.updates = append(s.updates, RefUpdate{
+			LocalRef: "refs/heads/b" + itoaTest(i), LocalOID: oid, RemoteRef: "refs/heads/b" + itoaTest(i),
+		})
+	}
+	// Each chained merge yields a distinct accumulated tree.
+	s.canonical.mergeResults = []string{treeOID(51), treeOID(52), treeOID(53)}
+
+	outcome, err := s.run(t)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(outcome.PublishedOIDs) != 4 {
+		t.Fatalf("published %v, want one publication per distinct docs tree", outcome.PublishedOIDs)
+	}
+	// Every publication after the first is parented on the previous one,
+	// so no branch's content is ever replaced.
+	for i := 1; i < len(s.canonical.created); i++ {
+		if got, want := s.canonical.created[i].parent, outcome.PublishedOIDs[i-1]; got != want {
+			t.Errorf("publication %d parent = %s, want %s", i, got, want)
+		}
+	}
+	if got := s.canonical.head().tree; got != treeOID(53) {
+		t.Errorf("canonical head tree = %s, want the final accumulated tree", got)
+	}
+}
+
+// TestRunRejectsTheWholePushWhenALaterTipConflicts is F-H1: a clean tip
+// followed by a conflicting one must leave canonical exactly as it was,
+// so the template's "no remote ref was changed" stays true.
+func TestRunRejectsTheWholePushWhenALaterTipConflicts(t *testing.T) {
+	s := newScenario(t).multiRef()
+	s.canonical.mergeResults = nil
+	s.canonical.mergeConflicts = []string{"docs/api.md"}
+
+	outcome, err := s.run(t)
+	if !errors.Is(err, ErrSyncRequired) {
+		t.Fatalf("error = %v, want ErrSyncRequired", err)
+	}
+	if len(outcome.PublishedOIDs) != 0 || outcome.Published != "" {
+		t.Fatalf("published %v before the rejection; the whole push must be validated first", outcome.PublishedOIDs)
+	}
+	if s.canonical.pushes != 0 || len(s.canonical.created) != 0 {
+		t.Fatalf("the rejected push created %d commits and pushed %d times",
+			len(s.canonical.created), s.canonical.pushes)
+	}
+	if s.canonical.head().commit != canonHead {
+		t.Fatalf("canonical head moved to %s", s.canonical.head().commit)
+	}
+	if len(s.state.saved) != 0 {
+		t.Errorf("the rejected push still moved the base to %v", s.state.saved)
+	}
+}
+
+// TestRunDeduplicatesIdenticalTipOIDs is F-M6: two refs at one commit
+// cost one docs-tree resolution, not two.
+func TestRunDeduplicatesIdenticalTipOIDs(t *testing.T) {
+	s := newScenario(t)
+	s.updates = append(s.updates, RefUpdate{
+		LocalRef: "refs/heads/alias", LocalOID: appTip, RemoteRef: "refs/heads/alias",
+	})
+
+	if _, err := s.run(t); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(s.canonical.created) != 1 {
+		t.Fatalf("created %d commits for one commit under two refs, want 1", len(s.canonical.created))
+	}
+	if len(s.app.scanned) != 1 {
+		t.Fatalf("scanned %v, want the duplicate tip skipped", s.app.scanned)
+	}
+}
+
+// --- Empty publication refusal (F-H2) ---------------------------------
+
+// TestRunRefusesToPublishAnEmptyDocsTree: a branch that predates docs/
+// (or one where `git rm -r docs` was the last commit) would publish the
+// empty tree over a canonical full of documents. Fail closed.
+func TestRunRefusesToPublishAnEmptyDocsTree(t *testing.T) {
+	s := newScenario(t)
+	s.app.emptyTree = treeOID(0x1e)
+	s.app.docsTrees[appTip] = s.app.emptyTree
+	s.canonical.docsCount = 7
+
+	outcome, err := s.run(t)
+	if !errors.Is(err, ErrEmptyPublish) {
+		t.Fatalf("error = %v, want ErrEmptyPublish", err)
+	}
+	var emptyErr *EmptyPublishError
+	if !errors.As(err, &emptyErr) {
+		t.Fatalf("error = %v, want an *EmptyPublishError", err)
+	}
+	if emptyErr.Branch != "main" || emptyErr.DocsCount != 7 || emptyErr.Head != canonHead {
+		t.Errorf("refusal = %+v, want branch main, 7 docs, head %s", emptyErr, canonHead)
+	}
+	if s.canonical.pushes != 0 || len(s.canonical.created) != 0 {
+		t.Errorf("the refusal still wrote to canonical")
+	}
+	if outcome.Published != "" {
+		t.Errorf("Outcome.Published = %s, want nothing published", outcome.Published)
+	}
+}
+
+// TestRunPublishesAnEmptyDocsTreeWhenExplicitlyAllowed: deleting every
+// doc is a legitimate operation; it just has to be stated.
+func TestRunPublishesAnEmptyDocsTreeWhenExplicitlyAllowed(t *testing.T) {
+	s := newScenario(t)
+	s.app.emptyTree = treeOID(0x1e)
+	s.app.docsTrees[appTip] = s.app.emptyTree
+	s.useCase.AllowEmptyPublish = true
+
+	outcome, err := s.run(t)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if outcome.Published == "" {
+		t.Fatal("the explicit override published nothing")
+	}
+	if got := s.canonical.head().tree; got != s.app.emptyTree {
+		t.Errorf("published tree = %s, want the empty tree %s", got, s.app.emptyTree)
+	}
+}
+
+// TestRunAllowsAnEmptyDocsTreeAgainstEmptyCanonical: a docs-free push at
+// a canonical that has nothing to lose is case ①, not a refusal.
+func TestRunAllowsAnEmptyDocsTreeAgainstEmptyCanonical(t *testing.T) {
+	s := newScenario(t)
+	s.canonical.branch = nil
+	s.app.emptyTree = treeOID(0x1e)
+	s.app.docsTrees[appTip] = s.app.emptyTree
+
+	outcome, err := s.run(t)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if outcome.Published != "" {
+		t.Errorf("Outcome.Published = %s, want nothing to publish", outcome.Published)
+	}
+}
+
+func itoaTest(n int) string { return string(rune('0' + n)) }
 
 // --- Error vocabulary -------------------------------------------------
 

@@ -467,8 +467,10 @@ func TestSyncAfterAHistoryRewrite(t *testing.T) {
 		if !errors.Is(err, docsync.ErrUnknownBase) {
 			t.Fatalf("error = %v, want ErrUnknownBase", err)
 		}
-		if !strings.Contains(err.Error(), "sanho sync --rebase-onto") {
-			t.Errorf("message = %q, want it to name the recovery command", err)
+		// Command-free: `sync --rebase-onto <commit>` is named by the CLI
+		// catalog entry, which a closure fixture runs (F-H6).
+		if strings.Contains(err.Error(), "sanho ") {
+			t.Errorf("message = %q, want a command-free sentinel", err)
 		}
 		if got := f.base(t); got != stale {
 			t.Fatalf("a refused sync moved the base to %+v", got)

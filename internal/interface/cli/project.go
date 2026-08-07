@@ -4,6 +4,7 @@ package cli
 // administration, file-based. Same UX as v0.1, no daemon.
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/irootkernel/sanho/internal/infra/registry"
@@ -46,7 +47,7 @@ func runProjectAdd(cmd *cobra.Command, project, url string) error {
 	// upsertProject is the URL-conflict guard: registering a name that
 	// already points somewhere else would let two workspaces publish to
 	// different repositories under one project (audit M9).
-	if err := file.Update(cmd.Context(), func(state *registry.State) error {
+	if err := updateRegistry(cmd.Context(), file, func(state *registry.State) error {
 		return upsertProject(state, project, url)
 	}); err != nil {
 		return err
@@ -86,7 +87,7 @@ func runProjectDelete(cmd *cobra.Command, project string, force bool) error {
 	}
 
 	var referencing []string
-	if err := file.Update(cmd.Context(), func(state *registry.State) error {
+	if err := updateRegistry(cmd.Context(), file, func(state *registry.State) error {
 		if _, ok := state.Projects[project]; !ok {
 			return fmt.Errorf("project %q is not registered", project)
 		}
@@ -94,8 +95,7 @@ func runProjectDelete(cmd *cobra.Command, project string, force bool) error {
 			referencing = append(referencing, workspace.LocalPath)
 		}
 		if len(referencing) > 0 && !force {
-			return fmt.Errorf("project %q still has %d registered workspace(s) (%s); run 'sanho clean' in them, or rerun with --force",
-				project, len(referencing), referencing[0])
+			return errors.New(projectHasWorkspacesMessage(project, len(referencing), referencing[0]))
 		}
 		delete(state.Projects, project)
 		return nil

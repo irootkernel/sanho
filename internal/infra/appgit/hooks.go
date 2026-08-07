@@ -20,6 +20,7 @@ package appgit
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -141,22 +142,63 @@ func (r *Repo) RemoveHooks(ctx context.Context) error {
 	return nil
 }
 
-// HooksStatus reports the six v0.2 hooks for `sanho doctor`.
+// HooksStatus reports the six v0.2 hooks for `sanho doctor`, plus any
+// hook file that still carries a v0.1-only line (F-L3).
+//
+// `post-commit` is the case that matters: v0.2 removed it outright, so
+// it appears in no v0.2 inventory — and a workspace left holding one
+// after a partial migration invoked `sanho hook post-commit` on every
+// commit, a subcommand that no longer exists, forever. A check that only
+// looked at the six current hooks could not see it.
 func (r *Repo) HooksStatus(ctx context.Context) ([]HookState, error) {
 	dir, err := r.hooksDir(ctx)
 	if err != nil {
 		return nil, err
 	}
 
+	current := make(map[string]bool, len(Hooks()))
 	states := make([]HookState, 0, len(Hooks()))
 	for _, hook := range Hooks() {
+		current[hook.Name] = true
 		state, err := hookStatus(filepath.Join(dir, hook.Name), hook)
 		if err != nil {
 			return nil, err
 		}
 		states = append(states, state)
 	}
+
+	for _, legacy := range legacyHooks {
+		if current[legacy.Name] {
+			continue
+		}
+		state, err := legacyOnlyHookStatus(filepath.Join(dir, legacy.Name), legacy)
+		if err != nil {
+			return nil, err
+		}
+		if len(state.Legacy) > 0 {
+			states = append(states, state)
+		}
+	}
 	return states, nil
+}
+
+// legacyOnlyHookStatus inspects a hook v0.2 has no counterpart for. It
+// is reported as Installed so doctor does not also call it "missing" —
+// the problem is that it is PRESENT.
+func legacyOnlyHookStatus(path string, hook Hook) (HookState, error) {
+	state := HookState{Name: hook.Name, Line: hook.Line, Path: path, Installed: true, Executable: true}
+
+	existing, mode, present, err := readHookFile(path)
+	if err != nil || !present {
+		return state, err
+	}
+	state.Executable = mode&ownerExecute != 0
+	for _, line := range strings.Split(existing, "\n") {
+		if sameLine(line, hook.Line) {
+			state.Legacy = append(state.Legacy, strings.TrimSpace(line))
+		}
+	}
+	return state, nil
 }
 
 // removableLines groups every sanho-owned line by hook file name, so a
@@ -285,22 +327,35 @@ func hookStatus(path string, hook Hook) (HookState, error) {
 	return state, nil
 }
 
+// ErrHookIsSymlink reports a hook path that is a symbolic link.
+//
+// sanho rewrites hook files atomically, and an atomic rewrite is a
+// rename over the path — which replaces the LINK rather than the file it
+// points at. A user who symlinks `.git/hooks/pre-commit` into a shared
+// hooks repository means for edits to land there, so silently severing
+// the link is a change they did not ask for and would not see. Refuse
+// and name the path (F-L1).
+var ErrHookIsSymlink = errors.New("the hook path is a symbolic link")
+
 // readHookFile reads a hook script and its permissions. An absent file
 // is reported as present=false rather than as an error: "no hook yet" is
 // the ordinary state on a fresh repository.
 func readHookFile(path string) (content string, mode os.FileMode, present bool, err error) {
-	data, err := os.ReadFile(path)
+	info, err := os.Lstat(path)
 	switch {
 	case err == nil:
 	case os.IsNotExist(err):
 		return "", 0, false, nil
 	default:
-		return "", 0, false, fmt.Errorf("appgit: read hook file %s: %w", path, err)
+		return "", 0, false, fmt.Errorf("appgit: inspect hook file %s: %w", path, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return "", 0, false, fmt.Errorf("appgit: %s: %w", path, ErrHookIsSymlink)
 	}
 
-	info, err := os.Stat(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
-		return "", 0, false, fmt.Errorf("appgit: inspect hook file %s: %w", path, err)
+		return "", 0, false, fmt.Errorf("appgit: read hook file %s: %w", path, err)
 	}
 	return string(data), info.Mode().Perm(), true, nil
 }
@@ -329,13 +384,26 @@ func containsLine(lines []string, line string) bool {
 	return false
 }
 
+// isShebangOnly reports a residue that is exactly the shebang sanho
+// itself writes, and nothing else (F-L2).
+//
+// The previous rule treated any run of comments as deletable, so a hook
+// file whose only remaining content was the user's own documentation —
+// a header explaining what the hook is for, a commented-out line they
+// meant to restore — was removed along with sanho's line. Comments are
+// content. Only the one line sanho created counts as sanho's leftover.
 func isShebangOnly(lines []string) bool {
+	seenShebang := false
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+		switch {
+		case trimmed == "":
 			continue
+		case trimmed == hookShebang && !seenShebang:
+			seenShebang = true
+		default:
+			return false
 		}
-		return false
 	}
 	return true
 }

@@ -217,6 +217,25 @@ var closureFixtures = map[string]closureFixture{
 	"doctor_fix_hint":        reachDoctorFixHint,
 	"stale_data":             reachStaleData,
 	"never_fetched":          reachNeverFetched,
+
+	// The F-H6 wave: guidance that used to live outside messages.go, in
+	// doctor/status/init/migrate and in the use-case sentinels, where no
+	// fixture could reach it. Each row below is one message that now has
+	// to survive being run.
+	"push_empty_docs":           reachPushEmptyDocs,
+	"clone_missing":             reachCloneMissing,
+	"doctor_hooks":              reachDoctorHooks,
+	"sync_note_pending":         reachSyncNotePending,
+	"base_needs_sync":           reachBaseNeedsSync,
+	"base_unknown_to_canonical": reachBaseUnknownToCanonical,
+	"status_behind":             reachStatusBehind,
+	"sync_in_progress_command":  reachSyncInProgressCommand,
+	"pull_needs_sync":           reachPullNeedsSync,
+	"sync_unknown_base":         reachSyncUnknownBase,
+	"sync_unreachable":          reachSyncUnreachable,
+	"rebase_onto_healthy":       reachRebaseOntoHealthy,
+	"init_next_steps":           reachInitNextSteps,
+	"project_has_workspaces":    reachProjectHasWorkspaces,
 }
 
 // --- fixtures ---------------------------------------------------------
@@ -634,6 +653,288 @@ func reachNeverFetched(t *testing.T, w *world) closureState {
 	ws.removeFetchMarker()
 
 	return closureState{ws: ws, output: ws.sanho("status").combined(), verify: fetchMarkerFresh()}
+}
+
+// --- the F-H6 wave -----------------------------------------------------
+
+// reachPushEmptyDocs is F-H2: a branch that carries no docs at all,
+// pushed at a canonical that has them. Publishing it would delete every
+// document, which `git rm -r docs` may well have meant — and a branch
+// created before docs/ existed certainly did not.
+func reachPushEmptyDocs(t *testing.T, w *world) closureState {
+	ws := w.setup("empty-docs")
+	ws.git("rm", "--quiet", "-r", "docs")
+	ws.git("commit", "-m", "docs: remove the docs directory")
+
+	push := ws.push()
+	requireExit(t, "push of a docs-free branch", push, 1)
+
+	return closureState{
+		ws:     ws,
+		output: push.combined(),
+		verify: map[string]func(*testing.T, *workspace){
+			"sanho sync": func(t *testing.T, ws *workspace) {
+				// The refusal held: canonical still has its documents.
+				requireEqual(t, "canonical api.md",
+					ws.w.canonicalFile(ws.w.canonicalHead(), "api.md"), "line one\nline two\n")
+			},
+		},
+	}
+}
+
+// reachCloneMissing deletes the workspace-private clone, which is where
+// every canonical fact comes from.
+func reachCloneMissing(t *testing.T, w *world) closureState {
+	ws := w.setup("no-clone")
+	if err := os.RemoveAll(ws.cloneDir()); err != nil {
+		t.Fatalf("remove the clone: %v", err)
+	}
+
+	out := ws.run("status")
+	requireExit(t, "status with no clone", out, 1)
+
+	return closureState{
+		ws:     ws,
+		output: out.combined(),
+		verify: map[string]func(*testing.T, *workspace){
+			// The advice is `sanho sync`, not `sanho init`: sync is a
+			// write path and recreates the clone, while init refuses in an
+			// initialized workspace (F-H6b).
+			"sanho sync": func(t *testing.T, ws *workspace) {
+				if !fileExists(t, ws.cloneDir()) {
+					t.Error("the advised sync did not recreate the clone")
+				}
+			},
+		},
+	}
+}
+
+// reachDoctorHooks removes an installed hook line.
+func reachDoctorHooks(t *testing.T, w *world) closureState {
+	ws := w.setup("hooks")
+	removeFile(t, ws.hookPath("pre-commit"))
+
+	return closureState{
+		ws:     ws,
+		output: ws.sanho("doctor").combined(),
+		verify: map[string]func(*testing.T, *workspace){
+			"sanho doctor --fix": func(t *testing.T, ws *workspace) {
+				if !fileExists(t, ws.hookPath("pre-commit")) {
+					t.Fatal("doctor --fix did not reinstall the hook")
+				}
+				requireContains(t, "reinstalled hook",
+					readFile(t, ws.hookPath("pre-commit")), "sanho hook pre-commit")
+			},
+		},
+	}
+}
+
+// reachSyncNotePending is the unresolved-sync line `sanho status` prints.
+func reachSyncNotePending(t *testing.T, w *world) closureState {
+	ws := conflictedSync(t, w)
+	return closureState{
+		ws:     ws,
+		output: ws.sanho("status").combined(),
+		verify: syncNoteCleared(),
+	}
+}
+
+// reachBaseNeedsSync leaves a workspace whose history carries no
+// provenance at all, so `doctor --fix` has nothing to re-derive from.
+func reachBaseNeedsSync(t *testing.T, w *world) closureState {
+	ws := w.setup("no-provenance")
+	// Strip the trailer the adopt commit was stamped with; --no-verify
+	// keeps commit-msg from putting it straight back.
+	ws.git("commit", "--amend", "--no-verify", "-m", "docs: adopt canonical docs")
+	removeFile(t, ws.basePath())
+
+	out := ws.sanho("doctor", "--fix")
+	return closureState{
+		ws:     ws,
+		output: out.combined(),
+		verify: map[string]func(*testing.T, *workspace){
+			"sanho sync": func(t *testing.T, ws *workspace) {
+				if !fileExists(t, ws.basePath()) {
+					t.Error("the advised sync established no base")
+				}
+			},
+		},
+	}
+}
+
+// reachBaseUnknownToCanonical is `sanho init` in reuse mode over docs
+// whose provenance names a commit canonical has never had.
+func reachBaseUnknownToCanonical(t *testing.T, w *world) closureState {
+	ws := w.newWorkspace("reuse")
+	ws.writeDocs(map[string]string{"api.md": "line one\nlocal\n"})
+	ws.git("add", "-A")
+	ws.git("commit", "-m", "docs: local docs\n\ndocs-base: "+strings.Repeat("b", 40))
+
+	out := ws.initWorkspace()
+	requireExit(t, "init in reuse mode", out, 0)
+
+	return closureState{ws: ws, output: out.combined()}
+}
+
+// reachStatusBehind is the `sanho status` sync row when canonical has
+// moved on.
+func reachStatusBehind(t *testing.T, w *world) closureState {
+	ws := w.setup("status-behind")
+	w.advanceCanonical(map[string]string{
+		"api.md":   "line one\nline two\n",
+		"guide.md": "upstream guide\n",
+	}, "canonical: add guide")
+
+	return closureState{
+		ws:     ws,
+		output: ws.sanho("status", "--refresh").combined(),
+		verify: docsUpToDate(),
+	}
+}
+
+// reachSyncInProgressCommand runs `sanho sync` while one is unresolved.
+func reachSyncInProgressCommand(t *testing.T, w *world) closureState {
+	ws := conflictedSync(t, w)
+	out := ws.run("sync")
+	requireExit(t, "sync during a sync", out, 1)
+
+	return closureState{ws: ws, output: out.combined(), verify: syncNoteCleared()}
+}
+
+// reachPullNeedsSync is F-H5: docs staged but not committed, which
+// `sanho pull` would otherwise have overwritten.
+func reachPullNeedsSync(t *testing.T, w *world) closureState {
+	ws := w.setup("staged-pull")
+	ws.writeDocs(map[string]string{"api.md": "line one\nstaged edit\n"})
+	ws.git("add", "docs/api.md")
+
+	out := ws.run("pull")
+	requireExit(t, "pull with staged docs", out, 1)
+
+	return closureState{
+		ws:     ws,
+		output: out.combined(),
+		prepare: map[string]func(*testing.T, *workspace){
+			// "Commit or stash your docs changes, THEN run sanho sync" —
+			// the first half is the human's, and sync needs clean docs
+			// itself, so the fixture performs both halves in order.
+			"sanho sync": func(t *testing.T, ws *workspace) {
+				ws.git("commit", "-m", "docs: my staged edit")
+			},
+		},
+		verify: map[string]func(*testing.T, *workspace){
+			"sanho sync": func(t *testing.T, ws *workspace) {
+				requireEqual(t, "docs/api.md", ws.readDocs("api.md"), "line one\nstaged edit\n")
+			},
+		},
+	}
+}
+
+// reachSyncUnknownBase replaces canonical history wholesale, so neither
+// the recorded base nor its docs tree survives.
+func reachSyncUnknownBase(t *testing.T, w *world) closureState {
+	ws := w.setup("unknown-base")
+	ws.commitDocs("docs: my edit", map[string]string{"api.md": "line one\nmine\n"})
+
+	rewritten := w.rewriteCanonical(
+		map[string]string{"handbook.md": "an entirely new canonical\n"},
+		"canonical: rewritten history", true)
+
+	out := ws.run("sync")
+	requireExit(t, "sync after a canonical rewrite", out, 1)
+
+	return closureState{
+		ws:            ws,
+		output:        out.combined(),
+		substitutions: map[string]string{"<commit>": rewritten},
+		verify: map[string]func(*testing.T, *workspace){
+			"sanho sync --rebase-onto <commit>": func(t *testing.T, ws *workspace) {
+				// Zero data loss: the rewrite recovery merges rather than
+				// replaces, so the local edit is still there.
+				requireEqual(t, "docs/api.md", ws.readDocs("api.md"), "line one\nmine\n")
+				requireEqual(t, "docs/handbook.md", ws.readDocs("handbook.md"), "an entirely new canonical\n")
+			},
+		},
+	}
+}
+
+// reachSyncUnreachable is §5.2's fail-closed write path, met from the
+// command rather than from the hook (F-M3).
+func reachSyncUnreachable(t *testing.T, w *world) closureState {
+	ws := w.setup("sync-offline")
+	ws.commitDocs("docs: local edit", map[string]string{"api.md": "line one\nmine\n"})
+	w.takeCanonicalOffline()
+
+	out := ws.run("sync")
+	requireExit(t, "sync with canonical unreachable", out, 1)
+
+	return closureState{
+		ws:     ws,
+		output: out.combined(),
+		prepare: map[string]func(*testing.T, *workspace){
+			"sanho sync": func(t *testing.T, ws *workspace) { ws.w.bringCanonicalOnline() },
+		},
+	}
+}
+
+// reachRebaseOntoHealthy is F-M4: --rebase-onto pointed at an ancestor
+// of a base that is perfectly reachable.
+func reachRebaseOntoHealthy(t *testing.T, w *world) closureState {
+	ws := w.setup("healthy-base")
+	original := w.canonicalHead()
+
+	w.advanceCanonical(map[string]string{
+		"api.md":   "line one\nline two\n",
+		"guide.md": "upstream guide\n",
+	}, "canonical: add guide")
+	ws.sanho("sync")
+
+	out := ws.run("sync", "--rebase-onto", original)
+	requireExit(t, "--rebase-onto an ancestor of a healthy base", out, 1)
+
+	return closureState{ws: ws, output: out.combined()}
+}
+
+// reachInitNextSteps is the last line `sanho init` prints (F-L5).
+func reachInitNextSteps(t *testing.T, w *world) closureState {
+	ws := w.newWorkspace("init-steps")
+	out := ws.initWorkspace()
+	requireExit(t, "init", out, 0)
+
+	return closureState{
+		ws:     ws,
+		output: out.combined(),
+		verify: map[string]func(*testing.T, *workspace){
+			"git add .gitignore && git commit": func(t *testing.T, ws *workspace) {
+				requireContains(t, "committed tree",
+					ws.git("show", "--name-only", "--format=", "HEAD").stdout, ".gitignore")
+			},
+		},
+	}
+}
+
+// reachProjectHasWorkspaces refuses to unregister a project checkouts
+// still reference.
+func reachProjectHasWorkspaces(t *testing.T, w *world) closureState {
+	ws := w.setup("still-referenced")
+
+	out := ws.run("project", "delete", projectName)
+	requireExit(t, "project delete with a live workspace", out, 1)
+
+	return closureState{
+		ws:     ws,
+		output: out.combined(),
+		// `sanho clean` names the command; -y is the confirmation the
+		// command itself demands, exactly as `sanho init` needs its flags.
+		runAs: map[string]string{"sanho clean": "sanho clean -y"},
+		verify: map[string]func(*testing.T, *workspace){
+			"sanho clean": func(t *testing.T, ws *workspace) {
+				if fileExists(t, ws.path(".sanho.json")) {
+					t.Error("sanho clean left the workspace config behind")
+				}
+			},
+		},
+	}
 }
 
 // --- shared fixture pieces --------------------------------------------

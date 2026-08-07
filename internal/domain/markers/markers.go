@@ -48,17 +48,22 @@ func Scan(content []byte) Result {
 	return Result{HasMarkers: hasOrderedMarkers(content)}
 }
 
-// binarySniffSize is how much of the leading content is inspected for a
+// BinarySniffSize is how much of the leading content is inspected for a
 // NUL byte when classifying binary content (sanho-v0.2.md §5.4): "a NUL
 // byte in the first 8 KiB classifies the file as binary".
-const binarySniffSize = 8 << 10 // 8 KiB
+//
+// It is exported because callers need it: §5.4's ordering is sniff
+// first, size second (F-M8), so a file over MaxScanSize still has to be
+// classified — and reading exactly this many bytes is what lets that
+// happen without materializing a gigabyte.
+const BinarySniffSize = 8 << 10 // 8 KiB
 
 // isBinary reports a NUL byte within the first 8 KiB of content (or the
 // whole content, if shorter).
 func isBinary(content []byte) bool {
 	n := len(content)
-	if n > binarySniffSize {
-		n = binarySniffSize
+	if n > BinarySniffSize {
+		n = BinarySniffSize
 	}
 	return bytes.IndexByte(content[:n], 0) >= 0
 }

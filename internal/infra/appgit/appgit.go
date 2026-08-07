@@ -16,9 +16,11 @@
 package appgit
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -180,52 +182,102 @@ func (r *Repo) IndexDocsTree(ctx context.Context) (string, error) {
 }
 
 // ScanStagedDocsForMarkers applies the §5.4 detector to the docs content
-// of the INDEX — the pre-commit gate of §5.6 step 1, which is what stops
-// unresolved conflict markers from being committed in the first place.
+// the commit being prepared would ADD OR CHANGE — the pre-commit gate of
+// §5.6 step 1, which is what stops unresolved conflict markers from
+// being committed in the first place.
+//
+// The scope is the staged *diff*, not the whole index (F-H4a), and that
+// is a semantic decision as much as a performance one. The gate is about
+// what this commit introduces; a marker already sitting in HEAD arrived
+// through some earlier path (a `--no-verify` commit, a checkout, a
+// v0.1-era commit) and blocking every unrelated commit until the user
+// fixes a file they are not touching is a gate that punishes the wrong
+// action. §5.3's push gate is where the whole published tree is
+// protected. The cost side is the reason it was noticed: the old scan
+// spent two git processes per docs file in the index on every commit,
+// so a 4,000-file docs directory made `git commit` take 39 seconds.
 //
 // Unmerged entries (stage > 0) are skipped rather than scanned: their
 // stages are the *inputs* of a merge git has not resolved, so they carry
 // no marker text, and git refuses to commit from that index anyway. The
-// gate is fail-closed in the same two ways as the blob and worktree
-// scanners (audit H2): a blob over markers.MaxScanSize is an error naming
-// the file, never a silent pass, and read failures propagate. Symlink and
-// gitlink entries are skipped — their content is a path, not text.
+// gate stays fail-closed in the same two ways as the blob and worktree
+// scanners (audit H2): oversized text is an error naming the file, never
+// a silent pass, and read failures propagate. Symlink and gitlink
+// entries are skipped — their content is a path, not text.
 func (r *Repo) ScanStagedDocsForMarkers(ctx context.Context) ([]string, error) {
-	res, err := r.git.Run(ctx, "ls-files", "--stage", "-z", "--", r.docsDir)
+	changed, err := r.stagedDocsPaths(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("appgit: list staged docs in %s: %w", r.workDir, err)
+		return nil, err
+	}
+	if len(changed) == 0 {
+		return nil, nil
 	}
 
-	var conflicted []string
-	for _, record := range strings.Split(string(res.Stdout), "\x00") {
-		if strings.TrimSpace(record) == "" {
-			continue
-		}
-		entry, err := parseLsFilesStageEntry(record)
-		if err != nil {
-			return nil, fmt.Errorf("appgit: read staged docs listing in %s: %w", r.workDir, err)
-		}
-		if entry.stage != 0 || entry.mode == modeSymlink || entry.mode == modeGitlink {
-			continue
-		}
+	entries, err := r.stagedEntries(ctx, changed)
+	if err != nil {
+		return nil, err
+	}
+	return r.scanBlobs(ctx, entries, "staged")
+}
 
-		size, err := r.blobSize(ctx, entry.object)
-		if err != nil {
-			return nil, err
-		}
-		if size > markers.MaxScanSize {
-			return nil, fmt.Errorf("appgit: staged %s is %d bytes: %w", entry.path, size, markers.ErrTooLarge)
-		}
+// stagedDocsPaths lists the docs paths the staged commit adds, modifies,
+// or renames into place, relative to HEAD.
+//
+// An unborn HEAD has no tree to diff against, so the empty tree stands
+// in — which makes every staged docs path "added", exactly right for a
+// first commit. Deletions (D) are excluded: a path being removed cannot
+// carry a marker into the commit.
+func (r *Repo) stagedDocsPaths(ctx context.Context) ([]string, error) {
+	against, err := r.headOrEmptyTree(ctx)
+	if err != nil {
+		return nil, err
+	}
+	res, err := r.git.Run(ctx, "diff-index", "--cached", "-z", "--name-only",
+		"--diff-filter=ACMRT", against, "--", r.docsDir)
+	if err != nil {
+		return nil, fmt.Errorf("appgit: list staged docs changes in %s: %w", r.workDir, err)
+	}
+	return splitNULPaths(res.Stdout), nil
+}
 
-		content, err := r.git.Run(ctx, "cat-file", "blob", entry.object)
+// headOrEmptyTree names something diffable: HEAD when it exists, the
+// empty tree when it does not.
+func (r *Repo) headOrEmptyTree(ctx context.Context) (string, error) {
+	res, err := r.git.RunExit(ctx, "rev-parse", "--verify", "--quiet", "HEAD^{commit}")
+	if err != nil {
+		return "", fmt.Errorf("appgit: resolve HEAD in %s: %w", r.workDir, err)
+	}
+	if res.ExitCode == 0 {
+		return "HEAD", nil
+	}
+	return r.EmptyTree(ctx)
+}
+
+// stagedEntries reads the index rows for the named paths.
+func (r *Repo) stagedEntries(ctx context.Context, paths []string) ([]scanTarget, error) {
+	var targets []scanTarget
+
+	for batch := range batches(paths) {
+		args := append([]string{"ls-files", "--stage", "-z", "--"}, batch...)
+		res, err := r.git.Run(ctx, args...)
 		if err != nil {
-			return nil, fmt.Errorf("appgit: read staged %s: %w", entry.path, err)
+			return nil, fmt.Errorf("appgit: list staged docs in %s: %w", r.workDir, err)
 		}
-		if markers.Scan(content.Stdout).HasMarkers {
-			conflicted = append(conflicted, entry.path)
+		for _, record := range strings.Split(string(res.Stdout), "\x00") {
+			if strings.TrimSpace(record) == "" {
+				continue
+			}
+			entry, err := parseLsFilesStageEntry(record)
+			if err != nil {
+				return nil, fmt.Errorf("appgit: read staged docs listing in %s: %w", r.workDir, err)
+			}
+			if entry.stage != 0 || entry.mode == modeSymlink || entry.mode == modeGitlink {
+				continue
+			}
+			targets = append(targets, scanTarget{path: entry.path, object: entry.object})
 		}
 	}
-	return conflicted, nil
+	return targets, nil
 }
 
 // lsFilesStageEntry is one `git ls-files --stage -z` record:
@@ -254,35 +306,76 @@ func parseLsFilesStageEntry(record string) (lsFilesStageEntry, error) {
 	return lsFilesStageEntry{mode: fields[0], object: fields[1], stage: stage, path: path}, nil
 }
 
-// blobSize asks git for an object's size before its content is read, so
-// the size cap is enforced without ever materializing an oversized blob.
-func (r *Repo) blobSize(ctx context.Context, object string) (int64, error) {
-	line, err := r.git.Line(ctx, "cat-file", "-s", object)
-	if err != nil {
-		return 0, fmt.Errorf("appgit: read size of %s in %s: %w", object, r.workDir, err)
-	}
-	size, err := strconv.ParseInt(strings.TrimSpace(line), 10, 64)
-	if err != nil {
-		return 0, fmt.Errorf("appgit: parse size of %s in %s: %w", object, r.workDir, err)
-	}
-	return size, nil
-}
-
 // ScanDocsBlobsForMarkers scans a commit's docs blobs (§5.4 detector);
 // returns conflicted paths. Unreadable blobs error.
 //
 // The gate is fail-closed in both directions the v0.1 detector got wrong
-// (audit H2): a blob larger than markers.MaxScanSize is an error naming
-// the file rather than a silent pass, and any read failure propagates
-// instead of being swallowed. Symlink and gitlink entries are skipped —
-// their blob content is a path, not text that can carry markers.
+// (audit H2): oversized text is an error naming the file rather than a
+// silent pass, and any read failure propagates instead of being
+// swallowed. Symlink and gitlink entries are skipped — their blob
+// content is a path, not text that can carry markers.
 func (r *Repo) ScanDocsBlobsForMarkers(ctx context.Context, commit string) ([]string, error) {
-	res, err := r.git.Run(ctx, "ls-tree", "-r", "-z", "--long", commit, "--", r.docsDir)
+	return r.ScanDocsBlobsSince(ctx, "", commit)
+}
+
+// ScanDocsBlobsSince is the push-gate scan of §5.3 step 3, scoped to
+// what the push would actually introduce (F-H4b).
+//
+// since is the branch's previous remote tip. When it resolves, only the
+// docs files that DIFFER between it and the tip are scanned: everything
+// else was in the tree the previous push published, and a push carrying
+// markers is rejected, so anything already upstream passed this same
+// gate. When since is empty or unknown to this repository — a brand-new
+// branch, a rewritten history, a first push after installing sanho —
+// the whole tree is scanned, which is the fail-closed answer whenever
+// the induction cannot be relied on.
+//
+// The cost this removes is real: the full-tree scan ran one `cat-file
+// -s` plus one `cat-file blob` per docs file on every push. What
+// replaces it is one `cat-file --batch-check` and one `cat-file --batch`
+// for the whole set.
+func (r *Repo) ScanDocsBlobsSince(ctx context.Context, since, commit string) ([]string, error) {
+	entries, err := r.docsBlobsToScan(ctx, since, commit)
+	if err != nil {
+		return nil, err
+	}
+	return r.scanBlobs(ctx, entries, commit)
+}
+
+// docsBlobsToScan lists the blobs one push-gate scan must read.
+func (r *Repo) docsBlobsToScan(ctx context.Context, since, commit string) ([]scanTarget, error) {
+	if since != "" {
+		usable, err := r.commitExists(ctx, since)
+		if err != nil {
+			return nil, err
+		}
+		if usable {
+			return r.changedDocsBlobs(ctx, since, commit)
+		}
+	}
+	return r.allDocsBlobs(ctx, commit)
+}
+
+// changedDocsBlobs lists the docs blobs the tip adds or changes relative
+// to since. `diff-tree --raw` hands over the destination object id
+// directly, so no second lookup is needed to address the content.
+func (r *Repo) changedDocsBlobs(ctx context.Context, since, commit string) ([]scanTarget, error) {
+	res, err := r.git.Run(ctx, "diff-tree", "-r", "-z", "--no-renames",
+		"--diff-filter=ACMRT", since, commit, "--", r.docsDir)
+	if err != nil {
+		return nil, fmt.Errorf("appgit: diff docs of %s..%s: %w", since, commit, err)
+	}
+	return parseDiffTreeRaw(string(res.Stdout))
+}
+
+// allDocsBlobs lists every docs blob of a commit.
+func (r *Repo) allDocsBlobs(ctx context.Context, commit string) ([]scanTarget, error) {
+	res, err := r.git.Run(ctx, "ls-tree", "-r", "-z", commit, "--", r.docsDir)
 	if err != nil {
 		return nil, fmt.Errorf("appgit: list docs blobs of %s: %w", commit, err)
 	}
 
-	var conflicted []string
+	var targets []scanTarget
 	for _, entry := range strings.Split(string(res.Stdout), "\x00") {
 		if strings.TrimSpace(entry) == "" {
 			continue
@@ -294,20 +387,221 @@ func (r *Repo) ScanDocsBlobsForMarkers(ctx context.Context, commit string) ([]st
 		if !blob.scannable() {
 			continue
 		}
-		if blob.size > markers.MaxScanSize {
-			return nil, fmt.Errorf("appgit: %s in %s is %d bytes: %w",
-				blob.path, commit, blob.size, markers.ErrTooLarge)
-		}
+		targets = append(targets, scanTarget{path: blob.path, object: blob.object})
+	}
+	return targets, nil
+}
 
-		content, err := r.git.Run(ctx, "cat-file", "blob", blob.object)
-		if err != nil {
-			return nil, fmt.Errorf("appgit: read %s at %s: %w", blob.path, commit, err)
+// scanTarget is one blob a scan must classify: where it lives and what
+// object holds its content.
+type scanTarget struct {
+	path   string
+	object string
+}
+
+// scanBlobs applies the §5.4 detector to a set of blobs with two git
+// processes in total, whatever the set's size (F-H4c).
+//
+// The order is §5.4's as corrected by F-M8: sniff first, size second.
+// A NUL byte in the first 8 KiB means binary, and binary content is
+// skipped no matter how large — an illustration or a PDF under docs/ is
+// not a conflict and must not block a commit merely for being big.
+// Only content that is *text* and over markers.MaxScanSize is the
+// fail-closed error, which is the case the cap was written for.
+func (r *Repo) scanBlobs(ctx context.Context, targets []scanTarget, where string) ([]string, error) {
+	if len(targets) == 0 {
+		return nil, nil
+	}
+
+	sizes, err := r.batchSizes(ctx, targets)
+	if err != nil {
+		return nil, err
+	}
+
+	var small, large []scanTarget
+	for _, target := range targets {
+		if sizes[target.object] > markers.MaxScanSize {
+			large = append(large, target)
+			continue
 		}
-		if markers.Scan(content.Stdout).HasMarkers {
-			conflicted = append(conflicted, blob.path)
+		small = append(small, target)
+	}
+
+	contents, err := r.batchContents(ctx, small)
+	if err != nil {
+		return nil, err
+	}
+
+	var conflicted []string
+	for _, target := range small {
+		if markers.Scan(contents[target.object]).HasMarkers {
+			conflicted = append(conflicted, target.path)
 		}
 	}
+	// Oversized blobs are read only far enough to classify them.
+	for _, target := range large {
+		binary, err := r.sniffBinary(ctx, target.object)
+		if err != nil {
+			return nil, fmt.Errorf("appgit: read %s in %s: %w", target.path, where, err)
+		}
+		if binary {
+			continue
+		}
+		return nil, fmt.Errorf("appgit: %s in %s is %d bytes: %w",
+			target.path, where, sizes[target.object], markers.ErrTooLarge)
+	}
 	return conflicted, nil
+}
+
+// batchSizes asks one `git cat-file --batch-check` child for every
+// object's size. The object ids go in on stdin, which is the one thing
+// gitx lets a caller stream: data, never command construction.
+func (r *Repo) batchSizes(ctx context.Context, targets []scanTarget) (map[string]int64, error) {
+	res, err := r.git.RunWithStdin(ctx, objectRequestStream(targets), "cat-file", "--batch-check")
+	if err != nil {
+		return nil, fmt.Errorf("appgit: read docs object sizes in %s: %w", r.workDir, err)
+	}
+
+	sizes := make(map[string]int64, len(targets))
+	for _, line := range strings.Split(string(res.Stdout), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) != 3 {
+			continue
+		}
+		size, parseErr := strconv.ParseInt(fields[2], 10, 64)
+		if parseErr != nil {
+			return nil, fmt.Errorf("appgit: parse size of %s in %s: %w", fields[0], r.workDir, parseErr)
+		}
+		sizes[fields[0]] = size
+	}
+	for _, target := range targets {
+		if _, ok := sizes[target.object]; !ok {
+			return nil, fmt.Errorf("appgit: object %s for %s is missing from %s",
+				target.object, target.path, r.workDir)
+		}
+	}
+	return sizes, nil
+}
+
+// batchContents reads every object's bytes from one `git cat-file
+// --batch` child.
+//
+// The stream is `<oid> <type> <size>LF<content>LF` per request, so the
+// declared size is what delimits the content — a blob containing a
+// newline, or a header-shaped line, parses correctly because nothing is
+// looked for, only counted.
+func (r *Repo) batchContents(ctx context.Context, targets []scanTarget) (map[string][]byte, error) {
+	if len(targets) == 0 {
+		return map[string][]byte{}, nil
+	}
+	res, err := r.git.RunWithStdin(ctx, objectRequestStream(targets), "cat-file", "--batch")
+	if err != nil {
+		return nil, fmt.Errorf("appgit: read docs objects in %s: %w", r.workDir, err)
+	}
+	return parseCatFileBatch(res.Stdout, r.workDir)
+}
+
+// sniffBinary reads only the leading bytes of one object, which is all
+// the §5.4 binary classification needs, and is why an oversized blob can
+// be classified without being materialized.
+func (r *Repo) sniffBinary(ctx context.Context, object string) (bool, error) {
+	run := gitx.New(r.workDir, gitx.WithStdoutLimit(markers.BinarySniffSize))
+	res, err := run.Run(ctx, "cat-file", "blob", object)
+	if err != nil {
+		return false, err
+	}
+	return markers.Scan(res.Stdout).Binary, nil
+}
+
+// objectRequestStream renders the request side of `cat-file --batch`:
+// one object id per line, deduplicated so a tree holding the same blob
+// at two paths is fetched once.
+func objectRequestStream(targets []scanTarget) io.Reader {
+	var b strings.Builder
+	seen := make(map[string]bool, len(targets))
+	for _, target := range targets {
+		if seen[target.object] {
+			continue
+		}
+		seen[target.object] = true
+		b.WriteString(target.object)
+		b.WriteByte('\n')
+	}
+	return strings.NewReader(b.String())
+}
+
+// parseCatFileBatch splits a `git cat-file --batch` stream into objects.
+func parseCatFileBatch(stream []byte, workDir string) (map[string][]byte, error) {
+	contents := make(map[string][]byte)
+
+	for offset := 0; offset < len(stream); {
+		newline := bytes.IndexByte(stream[offset:], '\n')
+		if newline < 0 {
+			break
+		}
+		header := string(stream[offset : offset+newline])
+		offset += newline + 1
+
+		fields := strings.Fields(header)
+		if len(fields) == 2 && fields[1] == "missing" {
+			return nil, fmt.Errorf("appgit: object %s is missing from %s", fields[0], workDir)
+		}
+		if len(fields) != 3 {
+			return nil, fmt.Errorf("appgit: unreadable cat-file header %q in %s", header, workDir)
+		}
+		size, err := strconv.Atoi(fields[2])
+		if err != nil || size < 0 {
+			return nil, fmt.Errorf("appgit: unreadable cat-file size in %q in %s", header, workDir)
+		}
+		if offset+size > len(stream) {
+			return nil, fmt.Errorf("appgit: truncated cat-file content for %s in %s", fields[0], workDir)
+		}
+		contents[fields[0]] = stream[offset : offset+size]
+		// The content is followed by a single LF the size does not count.
+		offset += size + 1
+	}
+	return contents, nil
+}
+
+// parseDiffTreeRaw reads `git diff-tree -r -z --raw` output, whose
+// records are ":<srcmode> <dstmode> <srcoid> <dstoid> <status>" followed
+// by the path as its own NUL-terminated field.
+func parseDiffTreeRaw(stream string) ([]scanTarget, error) {
+	fields := strings.Split(stream, "\x00")
+	var targets []scanTarget
+
+	for i := 0; i < len(fields); i++ {
+		record := fields[i]
+		if !strings.HasPrefix(record, ":") {
+			continue
+		}
+		parts := strings.Fields(strings.TrimPrefix(record, ":"))
+		if len(parts) < 5 {
+			return nil, fmt.Errorf("appgit: unreadable diff-tree record %q", record)
+		}
+		i++
+		if i >= len(fields) {
+			return nil, fmt.Errorf("appgit: diff-tree record %q has no path", record)
+		}
+		dstMode, dstOID, path := parts[1], parts[3], fields[i]
+		if path == "" || dstMode == modeSymlink || dstMode == modeGitlink || strings.Trim(dstOID, "0") == "" {
+			continue
+		}
+		targets = append(targets, scanTarget{path: path, object: dstOID})
+	}
+	return targets, nil
+}
+
+// splitNULPaths reads a NUL-separated path list, dropping the empty
+// trailing field git leaves behind.
+func splitNULPaths(out []byte) []string {
+	var paths []string
+	for _, path := range strings.Split(string(out), "\x00") {
+		if path != "" {
+			paths = append(paths, path)
+		}
+	}
+	return paths
 }
 
 // lsTreeEntry is one `git ls-tree --long -z` record:
@@ -330,18 +624,22 @@ func (e lsTreeEntry) scannable() bool {
 	return e.kind == "blob" && e.mode != modeSymlink && e.mode != modeGitlink
 }
 
+// parseLsTreeEntry accepts both the plain three-column listing and the
+// `--long` one that adds a size. The scanners no longer ask for sizes
+// (one `cat-file --batch-check` answers for the whole set, F-H4c) while
+// the checkout path still does, so one parser serves both.
 func parseLsTreeEntry(entry string) (lsTreeEntry, error) {
 	head, path, ok := strings.Cut(entry, "\t")
 	if !ok {
 		return lsTreeEntry{}, fmt.Errorf("malformed ls-tree entry %q", entry)
 	}
 	fields := strings.Fields(head)
-	if len(fields) != 4 {
+	if len(fields) != 3 && len(fields) != 4 {
 		return lsTreeEntry{}, fmt.Errorf("malformed ls-tree entry %q", entry)
 	}
 
 	parsed := lsTreeEntry{mode: fields[0], kind: fields[1], object: fields[2], path: path}
-	if parsed.kind != "blob" {
+	if parsed.kind != "blob" || len(fields) == 3 {
 		return parsed, nil
 	}
 	size, err := strconv.ParseInt(fields[3], 10, 64)

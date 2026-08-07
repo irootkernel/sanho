@@ -300,3 +300,110 @@ func TestCommandsOutsideAWorkspaceNameInit(t *testing.T) {
 	requireContains(t, "refusal", out.stderr, "not a sanho workspace")
 	requireContains(t, "refusal", out.stderr, "run 'sanho init'")
 }
+
+// TestMigratePreservesOtherProjectsAndResumes is R1's lab3 scenario and
+// the F-H8 regression.
+//
+// A v0.1 machine holds ONE state.json describing every project. The old
+// migrate lifted this workspace's docs-repo URL out of it and then let
+// the first registry write replace the whole file with a v2 state
+// containing only this workspace — so project B's mapping was destroyed
+// by migrating project A, and migrating B afterwards demanded
+// --docs-repo-url for a value the machine had recorded all along.
+//
+// The same run also proves resumability: a migration interrupted by an
+// unreachable docs repository leaves a workspace that is still v0.1, and
+// re-running it finishes the job.
+func TestMigratePreservesOtherProjectsAndResumes(t *testing.T) {
+	w := newWorld(t, map[string]string{"api.md": "canonical api\n"})
+	baseCommit := w.canonicalHead()
+
+	// A v0.1 daemon state describing TWO projects. Only "product" is
+	// this workspace's; "sibling" belongs to a checkout elsewhere.
+	seedV1Workspace(t, w, baseCommit, false)
+	siblingURL := filepath.Join(filepath.Dir(w.origin), "sibling-docs.git")
+	writeFile(t, filepath.Join(w.home, "state.json"), `{
+  "docs_repos": {
+    "origin":  {"ID": "origin",  "Path": "`+w.origin+`",  "RepoURL": "`+w.origin+`"},
+    "sibling": {"ID": "sibling", "Path": "`+siblingURL+`", "RepoURL": "`+siblingURL+`"}
+  },
+  "project_to_docs_repo": {"product": "origin", "sibling": "sibling"},
+  "workspaces": {
+    "sibling:/elsewhere/checkout": {
+      "project": "sibling",
+      "local_path": "/elsewhere/checkout",
+      "docs_hash": "`+baseCommit+`",
+      "last_actor_email": "other@example.test"
+    }
+  }
+}
+`)
+
+	// --- resumability ---------------------------------------------------
+	//
+	// Point the config at a docs repository that does not exist. Migrate
+	// gets as far as the clone and stops.
+	interrupted := w.run(w.app, "migrate", "--docs-repo-url", filepath.Join(filepath.Dir(w.origin), "gone.git"))
+	if interrupted.exitCode == 0 {
+		t.Fatal("migrate with an unreachable docs repository succeeded, want a refusal")
+	}
+	// The workspace is still v0.1, so v0.1 can still read it and v0.2
+	// will still migrate it. Writing the v2 config first — the old order
+	// — left a workspace neither version could act on.
+	requireContains(t, "config after an interrupted migrate",
+		readFile(t, w.appPath(".sanho.json")), `"socket_path"`)
+
+	// Re-running completes it, and the URL comes from the legacy state
+	// rather than from the flag.
+	out := w.sanho(w.app, "migrate")
+	requireContains(t, "migrate", out.stdout, "migrated this workspace")
+	requireContains(t, "config after migrate", readFile(t, w.appPath(".sanho.json")), `"schema_version": 2`)
+
+	// --- the other project survives -------------------------------------
+	state := w.sanho(w.app, "state", "--all", "--json").stdout
+	for _, want := range []string{`"sibling"`, siblingURL, "/elsewhere/checkout"} {
+		requireContains(t, "converted registry", state, want)
+	}
+	requireContains(t, "converted registry", state, "other@example.test")
+
+	// And the v0.1 file itself is preserved for rollback, untouched by
+	// the conversion.
+	v1Backup := filepath.Join(w.home, "state.json.v1.bak")
+	requireContains(t, "v1 state backup", readFile(t, v1Backup), "project_to_docs_repo")
+	requireContains(t, "v1 state backup", readFile(t, v1Backup), siblingURL)
+
+	// Hook files are backed up before being rewritten (§8 step 6).
+	requireContains(t, "migrate summary", out.stdout, "pre-push.bak")
+	if !fileExists(t, w.hookPath("pre-push")+".bak") {
+		t.Error("migrate rewrote pre-push without leaving a .bak")
+	}
+}
+
+// TestOrdinaryCommandsRefuseALegacyRegistry is the other half of F-H8a:
+// nothing but `sanho migrate` may touch a v0.1 state.json, because a v2
+// write over it destroys every project mapping the daemon recorded.
+func TestOrdinaryCommandsRefuseALegacyRegistry(t *testing.T) {
+	w := newWorld(t, map[string]string{"api.md": "canonical api\n"})
+	w.initAndAdoptDocs()
+
+	// Put a v0.1 daemon state where the v2 registry lives.
+	legacy := `{
+  "docs_repos": {"origin": {"ID": "origin", "Path": "` + w.origin + `", "RepoURL": "` + w.origin + `"}},
+  "project_to_docs_repo": {"product": "origin"},
+  "workspaces": {}
+}
+`
+	statePath := filepath.Join(w.home, "state.json")
+	writeFile(t, statePath, legacy)
+
+	refused := w.run(w.app, "state")
+	if refused.exitCode == 0 {
+		t.Fatal("sanho state read a v0.1 registry successfully, want a refusal")
+	}
+	requireContains(t, "refusal", refused.stderr, "run 'sanho migrate'")
+
+	// The file is byte-identical: refusing is the whole point.
+	if got := readFile(t, statePath); got != legacy {
+		t.Fatalf("the v0.1 registry was rewritten:\n%s", got)
+	}
+}

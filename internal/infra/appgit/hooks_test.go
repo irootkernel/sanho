@@ -2,6 +2,7 @@ package appgit_test
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"sort"
@@ -318,5 +319,91 @@ func TestHooksStatusReportsInstalledMissingAndDuplicated(t *testing.T) {
 	}
 	if !byName["commit-msg"].Executable {
 		t.Error("commit-msg reported non-executable, want executable")
+	}
+}
+
+// --- F-L1 / F-L2: a hook file is the user's, and sanho is a guest ------
+
+// TestInstallHooksRefusesASymlinkedHook.
+//
+// sanho rewrites hook files atomically, and an atomic rewrite is a
+// rename over the path — which replaces the LINK, not the file it points
+// at. A user who symlinks .git/hooks/pre-commit into a shared hooks
+// repository means their edits to land there; severing that silently is
+// a change they did not ask for and would not see.
+func TestInstallHooksRefusesASymlinkedHook(t *testing.T) {
+	dir, _ := newRepoWithDocs(t)
+	repo := newRepoHandle(t, dir)
+
+	shared := filepath.Join(dir, "shared-pre-commit")
+	if err := os.WriteFile(shared, []byte("#!/bin/sh\necho shared\n"), 0755); err != nil {
+		t.Fatalf("write the shared hook: %v", err)
+	}
+	link := filepath.Join(dir, ".git", "hooks", "pre-commit")
+	if err := os.MkdirAll(filepath.Dir(link), 0755); err != nil {
+		t.Fatalf("create the hooks directory: %v", err)
+	}
+	if err := os.Symlink(shared, link); err != nil {
+		t.Skipf("symlinks are not available here: %v", err)
+	}
+
+	err := repo.InstallHooks(context.Background())
+	if !errors.Is(err, appgit.ErrHookIsSymlink) {
+		t.Fatalf("InstallHooks = %v, want ErrHookIsSymlink", err)
+	}
+	if !strings.Contains(err.Error(), link) {
+		t.Errorf("error = %v, want it to name the hook path", err)
+	}
+
+	// The link and its target are exactly as they were.
+	info, lstatErr := os.Lstat(link)
+	if lstatErr != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("the symlink was replaced (lstat err %v)", lstatErr)
+	}
+	data, readErr := os.ReadFile(shared)
+	if readErr != nil || !strings.Contains(string(data), "echo shared") {
+		t.Fatalf("the shared hook was rewritten: %q (%v)", data, readErr)
+	}
+}
+
+// TestRemoveHooksKeepsAUsersCommentOnlyHook.
+//
+// The deletion rule is "the file holds nothing but the shebang sanho
+// itself wrote". Treating any run of comments as deletable took the
+// user's own documentation with it — a header explaining what the hook
+// is for, a commented-out line they meant to restore. Comments are
+// content.
+func TestRemoveHooksKeepsAUsersCommentOnlyHook(t *testing.T) {
+	dir, _ := newRepoWithDocs(t)
+	repo := newRepoHandle(t, dir)
+	ctx := context.Background()
+
+	path := filepath.Join(dir, ".git", "hooks", "pre-commit")
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		t.Fatalf("create the hooks directory: %v", err)
+	}
+	original := "#!/bin/sh\n# our team's pre-commit notes live here\n# TODO: re-enable the linter\n"
+	if err := os.WriteFile(path, []byte(original), 0755); err != nil {
+		t.Fatalf("write the hook: %v", err)
+	}
+
+	if err := repo.InstallHooks(ctx); err != nil {
+		t.Fatalf("InstallHooks: %v", err)
+	}
+	if err := repo.RemoveHooks(ctx); err != nil {
+		t.Fatalf("RemoveHooks: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("the user's comment-only hook was deleted: %v", err)
+	}
+	for _, want := range []string{"our team's pre-commit notes", "re-enable the linter"} {
+		if !strings.Contains(string(data), want) {
+			t.Errorf("hook file lost %q:\n%s", want, data)
+		}
+	}
+	if strings.Contains(string(data), "sanho hook") {
+		t.Errorf("sanho's line survived removal:\n%s", data)
 	}
 }

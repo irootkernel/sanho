@@ -18,6 +18,20 @@ import (
 	"github.com/irootkernel/sanho/internal/infra/registry"
 )
 
+// readRegistry and updateRegistry are the only two ways this package
+// touches the registry file. Funnelling both through registryError is
+// what gives the two user-actionable failures — a lock somebody else
+// holds, and a state.json still in the v0.1 schema — one rendering each
+// instead of a raw error per call site (F-M2, F-H8a).
+func readRegistry(ctx context.Context, file *registry.File) (registry.State, error) {
+	state, err := file.Read(ctx)
+	return state, registryError(err)
+}
+
+func updateRegistry(ctx context.Context, file *registry.File, fn func(*registry.State) error) error {
+	return registryError(file.Update(ctx, fn))
+}
+
 // upsertProject records a project's docs repository URL, refusing a
 // conflicting one.
 //
@@ -40,13 +54,17 @@ func upsertProject(state *registry.State, project, url string) error {
 // upsertWorkspace refreshes this workspace's entry under the registry
 // lock.
 func upsertWorkspace(ctx context.Context, file *registry.File, ws *workspace, base provenance.Base) error {
-	return file.Update(ctx, func(state *registry.State) error {
+	return updateRegistry(ctx, file, func(state *registry.State) error {
 		if err := upsertProject(state, ws.config.Project, ws.config.DocsRepoURL); err != nil {
 			return err
 		}
 		state.Workspaces[ws.registryKey()] = registry.Workspace{
-			Project:       ws.config.Project,
-			LocalPath:     ws.root,
+			Project: ws.config.Project,
+			// configRoot, not root: the row is keyed by it, and a path
+			// that disagreed with its own key would send `sanho project
+			// delete`'s "run sanho clean in them" hint to a directory
+			// where no `.sanho.json` lives (F-H3).
+			LocalPath:     ws.configRoot,
 			BaseCommit:    base.Commit,
 			BaseTree:      base.Tree,
 			ActorEmail:    ws.config.ActorEmail,
@@ -60,7 +78,7 @@ func upsertWorkspace(ctx context.Context, file *registry.File, ws *workspace, ba
 // is left alone: other workspaces may still reference it, and
 // `sanho project delete` is the command that removes one deliberately.
 func removeWorkspace(ctx context.Context, file *registry.File, key string) error {
-	return file.Update(ctx, func(state *registry.State) error {
+	return updateRegistry(ctx, file, func(state *registry.State) error {
 		delete(state.Workspaces, key)
 		return nil
 	})

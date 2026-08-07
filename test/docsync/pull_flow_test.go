@@ -172,8 +172,11 @@ func TestPullRefuses(t *testing.T) {
 			if !errors.Is(err, test.want) {
 				t.Fatalf("error = %v, want %v", err, test.want)
 			}
-			if !strings.Contains(err.Error(), "sanho sync") {
-				t.Errorf("message = %q, want it to name 'sanho sync'", err)
+			// The sentinel states the fact and nothing more: the advice
+			// that names 'sanho sync' is the CLI catalog's, where the
+			// closure suite can prove it runnable (F-H6).
+			if strings.Contains(err.Error(), "sanho ") {
+				t.Errorf("message = %q, want a command-free sentinel", err)
 			}
 
 			requireDocs(t, f, docsBefore)

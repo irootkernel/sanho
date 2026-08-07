@@ -2,6 +2,65 @@
 
 ## v0.2.0 - 2026-08-07
 
+### Fixed before release (P7 review wave)
+
+An adversarial review of the v0.2 implementation found six correctness defects
+and a set of smaller ones. All are fixed on this release; none shipped.
+
+- **A multi-ref push no longer deletes a branch's documents.** Publishing two
+  branches with different docs trees in one `git push` (or one `git push --all`)
+  decided each branch against the head the previous one had just moved, so the
+  last branch's tree replaced the others wholesale — with exit 0 and no message.
+  Publication now evaluates every pushed tip against one frozen canonical
+  snapshot, chains the merges so a later tip is merged onto an earlier one
+  rather than fast-forwarded past it, and writes nothing to canonical until the
+  whole push validates. A push in which any tip conflicts is rejected whole, so
+  "no remote ref was changed" is true by construction.
+- **Concurrent merges no longer read each other's inputs.** The tree merge uses
+  fixed ref names (they are what git writes into the conflict markers), and two
+  merges in one ref store — the pre-commit preview against a concurrent push,
+  or two linked worktrees — could publish a tree built from the other's content.
+  The whole merge span now holds an exclusive lock on the shared git directory,
+  and clears the refs a crashed merge left behind rather than failing on them.
+- **A branch with no docs no longer empties the canonical repository.** Pushing
+  a branch created before `docs/` existed published the empty tree over
+  everything. It is refused, naming the branch and the number of documents at
+  stake; `SANHO_ALLOW_DOCS_DELETION=1` performs the deletion when that is the
+  intent.
+- **Linked worktrees are managed.** `.sanho.json` is gitignored, so
+  `git worktree add` produced a checkout where every hook silently did nothing:
+  no marker gate, no provenance stamp, no publication. Configuration now
+  resolves through the main worktree; the base file and the sync note stay
+  per-worktree, and the registry keeps one row per checkout.
+- **`sanho pull` no longer discards staged docs.** It compared only the worktree
+  against the base, then overwrote the index. It now requires clean docs and
+  says so in two steps, because `sanho sync` requires them too.
+- **`sanho init --force` no longer discards uncommitted docs.** It refuses while
+  the docs directory has changes that are in no commit.
+- **The commit and push gates cost what the change costs.** They spawned two git
+  processes per docs file in the whole tree — 39 seconds per commit at 4,000
+  files. The pre-commit gate now scans the staged diff, the push gate scans what
+  the push introduces, and both read every object through a single batched git
+  process. A 500-file gate runs in tens of milliseconds.
+- **`sanho migrate` is resumable and no longer destroys other projects'
+  registrations.** It converts the whole v0.1 registry rather than lifting out
+  one URL and letting the next write erase the rest, writes the v2 config last
+  so an interrupted run leaves a workspace both versions can still act on, and
+  backs up each hook file it rewrites. Ordinary commands refuse a v0.1 registry
+  instead of overwriting it.
+- **Guidance that named a command which fails where it is printed is gone.**
+  The closure gate now scans every CLI file and the use-case error sentinels,
+  not just the message catalog; `doctor` advises `sanho doctor --fix` and
+  `sanho sync` where it used to advise the destructive `sanho init --force`.
+- Smaller fixes: `--rebase-onto` refuses to adopt an ancestor of a healthy base;
+  the docs checkout validates every path before deleting anything and names the
+  recovery command on failure; large *binary* documents no longer fail the
+  marker scan (only oversized text does); hooks refuse to follow symlinks and
+  keep a user's comment-only hook file; a config with neither `schema_version`
+  nor `socket_path` is reported as corrupt rather than as v0.1; `sync --abort`
+  names untracked files it cannot remove; `--json` errors carry a machine
+  envelope on stdout.
+
 Sanho is now a single CLI. Publication moved from commit time to push time, the
 daemon is gone, and the tool no longer creates commits in application
 repositories.

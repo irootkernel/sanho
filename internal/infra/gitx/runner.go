@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -33,10 +34,11 @@ const killWaitDelay = 3 * time.Second
 
 // Runner executes git with a fixed working directory and policy.
 type Runner struct {
-	dir      string
-	timeout  time.Duration
-	network  bool
-	extraEnv []string
+	dir         string
+	timeout     time.Duration
+	network     bool
+	extraEnv    []string
+	stdoutLimit int64
 }
 
 // Option configures a Runner.
@@ -44,6 +46,15 @@ type Option func(*Runner)
 
 // WithTimeout overrides DefaultTimeout for this runner.
 func WithTimeout(d time.Duration) Option { return func(r *Runner) { r.timeout = d } }
+
+// WithStdoutLimit caps how many bytes of stdout are captured. Output
+// past the cap is drained and discarded rather than buffered, so a
+// command whose output is unbounded (reading a multi-gigabyte blob to
+// sniff its first bytes) cannot exhaust memory. Result.Stdout then holds
+// the first limit bytes; the process still runs to completion.
+//
+// A non-positive limit means "capture everything", which is the default.
+func WithStdoutLimit(limit int64) Option { return func(r *Runner) { r.stdoutLimit = limit } }
 
 // WithNetwork marks the runner as performing remote operations: adds
 // GIT_SSH_COMMAND with BatchMode=yes and ConnectTimeout, so a missing
@@ -68,6 +79,38 @@ type Result struct {
 	Stdout   []byte
 	Stderr   []byte
 	ExitCode int
+	// StdoutTruncated reports that WithStdoutLimit cut the capture
+	// short, so Stdout is a prefix of what git actually wrote.
+	StdoutTruncated bool
+}
+
+// limitedBuffer is the stdout sink. With limit <= 0 it is an ordinary
+// buffer; with a positive limit it keeps the first limit bytes and
+// discards the rest, which keeps the child's pipe drained (so it never
+// blocks) without growing without bound.
+type limitedBuffer struct {
+	bytes.Buffer
+	limit     int64
+	truncated bool
+}
+
+func (b *limitedBuffer) Write(p []byte) (int, error) {
+	if b.limit <= 0 {
+		return b.Buffer.Write(p)
+	}
+	room := b.limit - int64(b.Len())
+	if room <= 0 {
+		b.truncated = true
+		return len(p), nil
+	}
+	if int64(len(p)) <= room {
+		return b.Buffer.Write(p)
+	}
+	if _, err := b.Buffer.Write(p[:room]); err != nil {
+		return 0, err
+	}
+	b.truncated = true
+	return len(p), nil
 }
 
 // ExitError is returned by Run when git exits non-zero. Callers that
@@ -104,9 +147,15 @@ func (r *Runner) env() []string {
 // external signal death; Run and RunExit use it to decide how to wrap
 // err.
 //
+// stdin, when non-nil, is fed to the child. It carries DATA only — the
+// command line is still built entirely from argv (§7 L7), so nothing a
+// caller streams in can become part of the command. `git cat-file
+// --batch` is the reason it exists: one child answering many object
+// queries replaces one child per query.
+//
 // The returned Result reflects whatever stdout/stderr the process wrote
 // before it stopped, even when err is non-nil.
-func (r *Runner) invoke(ctx context.Context, args ...string) (res Result, err error, exited bool) {
+func (r *Runner) invoke(ctx context.Context, stdin io.Reader, args ...string) (res Result, err error, exited bool) {
 	timeout := r.timeout
 	if timeout <= 0 {
 		timeout = DefaultTimeout
@@ -117,8 +166,13 @@ func (r *Runner) invoke(ctx context.Context, args ...string) (res Result, err er
 	cmd := exec.CommandContext(runCtx, "git", args...)
 	cmd.Dir = r.dir
 	cmd.Env = r.env()
+	if stdin != nil {
+		cmd.Stdin = stdin
+	}
 
-	var stdout, stderr bytes.Buffer
+	var stdout limitedBuffer
+	stdout.limit = r.stdoutLimit
+	var stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
@@ -142,7 +196,7 @@ func (r *Runner) invoke(ctx context.Context, args ...string) (res Result, err er
 
 	runErr := cmd.Run()
 
-	res = Result{Stdout: stdout.Bytes(), Stderr: stderr.Bytes(), ExitCode: -1}
+	res = Result{Stdout: stdout.Bytes(), Stderr: stderr.Bytes(), ExitCode: -1, StdoutTruncated: stdout.truncated}
 	if cmd.ProcessState != nil {
 		res.ExitCode = cmd.ProcessState.ExitCode()
 	}
@@ -179,7 +233,20 @@ func (r *Runner) invoke(ctx context.Context, args ...string) (res Result, err er
 // (*ExitError); spawn failures, timeouts, and signal deaths return
 // other errors. Timeout kills the process group.
 func (r *Runner) Run(ctx context.Context, args ...string) (Result, error) {
-	res, err, exited := r.invoke(ctx, args...)
+	return r.RunWithStdin(ctx, nil, args...)
+}
+
+// RunWithStdin is Run with data streamed to the child's standard input.
+//
+// It is the one place a caller may hand git anything other than argv,
+// and the boundary is deliberate: stdin carries DATA, never command
+// construction. `git cat-file --batch` reads a list of object names from
+// it and answers them all from one child process, which is what turns
+// the per-file scanners from two spawns per docs file into two spawns
+// per scan. Nothing on stdin can add a flag, a pathspec, or a revision;
+// the argv-only rule of §7 L7 is unchanged.
+func (r *Runner) RunWithStdin(ctx context.Context, stdin io.Reader, args ...string) (Result, error) {
+	res, err, exited := r.invoke(ctx, stdin, args...)
 	if exited {
 		return res, &ExitError{Args: args, Result: res}
 	}
@@ -190,7 +257,7 @@ func (r *Runner) Run(ctx context.Context, args ...string) (Result, error) {
 // erroring only on spawn failure, timeout, or signal death. Use for
 // commands whose non-zero exits carry meaning.
 func (r *Runner) RunExit(ctx context.Context, args ...string) (Result, error) {
-	res, err, exited := r.invoke(ctx, args...)
+	res, err, exited := r.invoke(ctx, nil, args...)
 	if exited {
 		return res, nil
 	}

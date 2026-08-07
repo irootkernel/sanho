@@ -36,7 +36,7 @@ func TestRunGuardsRefuseBeforeTouchingAnything(t *testing.T) {
 			},
 			want:        ErrSyncInProgress,
 			wantTrace:   "",
-			wantMessage: "sanho sync --abort",
+			wantMessage: "syncing",
 		},
 		{
 			name:        "dirty docs refuse before the network",
@@ -189,8 +189,10 @@ func TestRunRejectsAnUnanchorableBase(t *testing.T) {
 			if !errors.Is(err, ErrUnknownBase) {
 				t.Fatalf("error = %v, want ErrUnknownBase", err)
 			}
-			if !strings.Contains(err.Error(), "sanho sync --rebase-onto") {
-				t.Errorf("message = %q, want it to name the recovery command", err)
+			// The sentinel states the fact; the recovery command is the
+			// CLI catalog's job (F-H6), so the message must NOT name one.
+			if strings.Contains(err.Error(), "sanho ") {
+				t.Errorf("message = %q, want a command-free sentinel", err)
 			}
 			if len(f.app.mergeCalls) != 0 || len(f.state.savedBases) != 0 {
 				t.Fatalf("a rejected sync acted: merges=%v bases=%v", f.app.mergeCalls, f.state.savedBases)
@@ -612,7 +614,7 @@ func TestPull(t *testing.T) {
 		if result.CommitOID != commitOID(9) {
 			t.Fatalf("CommitOID = %s, want the created commit", result.CommitOID)
 		}
-		if got := f.shared.trace(); got != "fetch import checkout save-base commit" {
+		if got := f.shared.trace(); got != "docs-clean fetch import checkout save-base commit" {
 			t.Fatalf("sequence = %q", got)
 		}
 	})
@@ -645,5 +647,61 @@ func TestStatusString(t *testing.T) {
 		if got := status.String(); got != want {
 			t.Errorf("Status(%d).String() = %q, want %q", status, got, want)
 		}
+	}
+}
+
+// --- F-H5: `sanho pull` must not discard staged docs -------------------
+
+// TestPullRefusesWhenDocsAreStaged is R1-G1's repro. The pre-fix Pull
+// tested only the worktree tree against the base tree, so a docs edit
+// that was `git add`ed and then restored in the worktree — or any staged
+// edit at all, since CheckoutDocsTree rewrites index entries — passed the
+// guard and was overwritten. There is no undo for a discarded index.
+func TestPullRefusesWhenDocsAreStaged(t *testing.T) {
+	f := newFixture()
+	f.app.docsClean = false
+
+	_, err := f.useCase().Pull(context.Background(), false)
+	if !errors.Is(err, ErrPullNeedsSync) {
+		t.Fatalf("error = %v, want ErrPullNeedsSync", err)
+	}
+	if !strings.Contains(err.Error(), "uncommitted changes") {
+		t.Errorf("message = %q, want it to name the uncommitted changes", err)
+	}
+	// And it refused before anything could be written: no checkout, no
+	// base write, not even a fetch.
+	if got := f.shared.trace(); got != "docs-clean" {
+		t.Fatalf("side effects = %q, want the refusal to precede every write", got)
+	}
+	if len(f.app.checkedOut) != 0 || len(f.state.savedBases) != 0 {
+		t.Fatalf("a refused pull acted: checkouts=%v bases=%v", f.app.checkedOut, f.state.savedBases)
+	}
+}
+
+// --- F-M4: --rebase-onto is rewrite recovery, not time travel ----------
+
+func TestRebaseOntoRefusesAnAncestorOfAHealthyBase(t *testing.T) {
+	f := newFixture()
+	// The recorded base is canonical head itself and perfectly
+	// reachable; commitOID(0) precedes it.
+	f.state.base = provenance.Base{Commit: commitOID(1), Tree: treeOID(1)}
+
+	_, err := f.useCase().Run(context.Background(), Options{RebaseOnto: commitOID(0)})
+	if !errors.Is(err, ErrRebaseOntoHealthy) {
+		t.Fatalf("error = %v, want ErrRebaseOntoHealthy", err)
+	}
+	if len(f.app.mergeCalls) != 0 || len(f.state.savedBases) != 0 {
+		t.Fatalf("the refused rebase acted: merges=%v bases=%v", f.app.mergeCalls, f.state.savedBases)
+	}
+}
+
+// TestRebaseOntoAllowsRecoveryWhenTheBaseIsUnreachable keeps the guard
+// from swallowing the flag's actual purpose.
+func TestRebaseOntoAllowsRecoveryWhenTheBaseIsUnreachable(t *testing.T) {
+	f := newFixture()
+	f.state.base = provenance.Base{Commit: commitOID(77), Tree: treeOID(77)}
+
+	if _, err := f.useCase().Run(context.Background(), Options{RebaseOnto: commitOID(1)}); err != nil {
+		t.Fatalf("Run with --rebase-onto against an unreachable base: %v", err)
 	}
 }

@@ -27,6 +27,7 @@ import (
 	pubdom "github.com/irootkernel/sanho/internal/domain/publish"
 	"github.com/irootkernel/sanho/internal/infra/appgit"
 	"github.com/irootkernel/sanho/internal/infra/canonical"
+	"github.com/irootkernel/sanho/internal/infra/fsx"
 	"github.com/irootkernel/sanho/internal/usecase/docsync"
 	"github.com/irootkernel/sanho/internal/usecase/publish"
 
@@ -253,7 +254,9 @@ func stampCommitMessage(ctx context.Context, ws *workspace, messagePath string) 
 		return errors.New("the recorded docs base is not a valid OID pair")
 	}
 
-	return os.WriteFile(messagePath, appendTrailers(message, base.Trailers()), 0644)
+	// Atomic: a truncated COMMIT_EDITMSG is a commit message the user
+	// loses, and this runs inside the commit git is about to make (F-L4).
+	return fsx.WriteFileAtomic(messagePath, appendTrailers(message, base.Trailers()), 0644)
 }
 
 // stampInputs gathers the three trees §5.1's stamping rule compares.
@@ -294,12 +297,20 @@ func stampInputs(ctx context.Context, ws *workspace, message string) (provenance
 	}, nil
 }
 
-// messageHasBaseTrailer reports an existing docs-base trailer. Any line
-// beginning with the key counts, so a message written by hand or carried
-// through a cherry-pick is not stamped twice.
+// messageHasBaseTrailer reports an existing docs-base trailer.
+//
+// The key must start the line, at column zero, exactly as git's own
+// trailer rules require and exactly as appendTrailers writes it (F-L6).
+// The previous version trimmed first, which made an INDENTED
+// `docs-base:` count — and indented trailers are what a squash-merge
+// body is full of, since git indents every squashed commit message. A
+// squash would then suppress its own stamp while parsing nothing, so the
+// commit ended up with neither a trailer nor a re-derivable base. Not
+// trimming keeps the two halves coherent: an indented line neither
+// suppresses stamping nor is read as a trailer.
 func messageHasBaseTrailer(message string) bool {
 	for _, line := range strings.Split(message, "\n") {
-		if strings.HasPrefix(strings.TrimSpace(line), provenance.TrailerBase+":") {
+		if strings.HasPrefix(line, provenance.TrailerBase+":") {
 			return true
 		}
 	}
@@ -367,23 +378,42 @@ func runPrePush(cmd *cobra.Command, _ []string) error {
 		return reportPushError(cmd, ws, err)
 	}
 	use := &publish.UseCase{
-		Canonical:   ws.canonicalPort(store),
-		App:         ws.appPort(),
-		State:       state,
-		ActorEmail:  ws.config.ActorEmail,
-		WorkspaceID: ws.config.WorkspaceID,
+		Canonical:         ws.canonicalPort(store),
+		App:               ws.appPort(),
+		State:             state,
+		ActorEmail:        ws.config.ActorEmail,
+		WorkspaceID:       ws.config.WorkspaceID,
+		AllowEmptyPublish: allowEmptyPublish(),
 	}
 
 	outcome, err := use.Run(ctx, updates)
 	if err != nil {
+		if len(outcome.PublishedOIDs) > 0 {
+			// Evaluate-then-publish makes this rare, but when part of a
+			// multi-ref push has already landed the rejection template's
+			// "no remote ref was changed" must not stand alone.
+			writeln(cmd.ErrOrStderr(), pushPartialPublicationLine(outcome.PublishedOIDs))
+		}
 		return reportPushError(cmd, ws, err)
 	}
-	if outcome.Published != "" {
-		writeln(cmd.ErrOrStderr(), pushPublishedMessage(outcome.Published, outcome.Case.String()))
+	if len(outcome.PublishedOIDs) > 0 {
+		// One line per publication: a multi-ref push writes one canonical
+		// commit per distinct docs tree, and reporting only the last one
+		// is how F-C1's clobber stayed invisible.
+		for _, oid := range outcome.PublishedOIDs {
+			writeln(cmd.ErrOrStderr(), pushPublishedMessage(oid, outcome.Case.String()))
+		}
 		recordWorkspaceState(ctx, ws)
 	}
 	return nil
 }
+
+// envAllowDocsDeletion is the F-H2 escape hatch: publishing a docs-free
+// branch over a canonical that has documents deletes all of them, so it
+// is refused unless the user says, for that one push, that they mean it.
+const envAllowDocsDeletion = "SANHO_ALLOW_DOCS_DELETION"
+
+func allowEmptyPublish() bool { return os.Getenv(envAllowDocsDeletion) == "1" }
 
 // readRefUpdates parses the pre-push hook's stdin, one
 // "<local ref> <local oid> <remote ref> <remote oid>" line per update.
@@ -459,6 +489,7 @@ func reportPushError(cmd *cobra.Command, ws *workspace, err error) error {
 
 	var markersErr *publish.MarkersPresentError
 	var syncErr *publish.SyncRequiredError
+	var emptyErr *publish.EmptyPublishError
 	switch {
 	case errors.Is(err, publish.ErrSyncInProgress):
 		writeln(stderr, msgSyncInProgressPush)
@@ -466,6 +497,15 @@ func reportPushError(cmd *cobra.Command, ws *workspace, err error) error {
 
 	case errors.As(err, &markersErr):
 		writeln(stderr, pushMarkersMessage(markersErr.Paths))
+
+	case errors.As(err, &emptyErr):
+		writeln(stderr, pushEmptyDocsMessage(emptyErr.Branch, emptyErr.Head, emptyErr.DocsCount))
+
+	case errors.Is(err, canonical.ErrMergeFailed):
+		// A merge that could not run at all (a contended ref store, a
+		// broken clone) is not a conflict, and printing the raw chain
+		// would be exactly the §5.9 violation F-C2 found.
+		writeln(stderr, pushMergeFailedMessage(ws.cloneDir(), causeLine(err)))
 
 	case errors.As(err, &syncErr):
 		if syncErr.Reason == publish.ReasonConflicts {

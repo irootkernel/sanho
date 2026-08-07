@@ -21,6 +21,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/irootkernel/sanho/internal/domain/provenance"
@@ -47,8 +48,19 @@ var errNotWorkspace = errors.New(msgNotInWorkspace)
 // it. Its zero value is never used; openWorkspace is the only
 // constructor.
 type workspace struct {
-	// root is the worktree root — the directory holding `.sanho.json`.
+	// root is THIS worktree's root — the directory the hooks run in and
+	// the docs live in. For a linked worktree it is the linked one.
 	root string
+	// configRoot is where `.sanho.json` was found. It equals root for an
+	// ordinary checkout and is the MAIN worktree root for a linked one
+	// (§5.2 as amended by F-H3), because `.sanho.json` is gitignored and
+	// therefore never travels into `git worktree add`.
+	//
+	// The split matters for exactly one thing: the registry key, which
+	// stays the main root so that N worktrees of one checkout are one
+	// registry row rather than N. Everything worktree-shaped — the base
+	// file, the sync note, the docs — stays on root.
+	configRoot string
 	// gitDir is `git rev-parse --git-dir` (worktree-private) and
 	// commonDir is `--git-common-dir` (shared by linked worktrees). The
 	// canonical clone lives under the common dir so linked worktrees
@@ -78,20 +90,18 @@ func openWorkspace(ctx context.Context) (*workspace, error) {
 		return nil, fmt.Errorf("resolve the current directory: %w", err)
 	}
 
-	if _, err := os.Stat(filepath.Join(root, wsstate.ConfigFileName)); err != nil {
-		if os.IsNotExist(err) {
-			return nil, errNotWorkspace
-		}
-		return nil, fmt.Errorf("read %s: %w", wsstate.ConfigFileName, err)
+	configRoot, err := resolveConfigRoot(ctx, root)
+	if err != nil {
+		return nil, err
 	}
 
-	cfg, err := wsstate.LoadConfig(root)
+	cfg, err := wsstate.LoadConfig(configRoot)
 	if err != nil {
 		return nil, err
 	}
 	cfg.ApplyDefaults()
 
-	ws := &workspace{root: root, config: cfg}
+	ws := &workspace{root: root, configRoot: configRoot, config: cfg}
 	if err := ws.resolveGitDirs(ctx); err != nil {
 		return nil, err
 	}
@@ -104,6 +114,69 @@ func openWorkspace(ctx context.Context) (*workspace, error) {
 		return ws, errV1Workspace
 	}
 	return ws, nil
+}
+
+// resolveConfigRoot finds the `.sanho.json` governing root.
+//
+// The ordinary answer is root itself. The other one is F-H3: `git
+// worktree add` produces a checkout with none of the gitignored files,
+// so a linked worktree never carries `.sanho.json` — and before this,
+// every hook in every linked worktree found no workspace and silently
+// did nothing. No marker gate, no provenance stamp, no publication, no
+// message. A tool that is installed and inert is worse than one that is
+// absent.
+//
+// So a directory with no config asks git for the MAIN worktree and uses
+// the config there. `git worktree list --porcelain` names it in its
+// first record, which is the documented order and answers correctly for
+// a linked worktree, an ordinary checkout, and a bare main repository
+// alike. A main worktree with no config is simply not a workspace, which
+// is the same answer as before.
+func resolveConfigRoot(ctx context.Context, root string) (string, error) {
+	switch found, err := hasConfig(root); {
+	case err != nil:
+		return "", err
+	case found:
+		return root, nil
+	}
+
+	main, err := mainWorktreeRoot(ctx, root)
+	if err != nil || main == "" || main == root {
+		return "", errNotWorkspace //nolint:nilerr // "not a workspace" is the answer for every failure to locate one
+	}
+	switch found, err := hasConfig(main); {
+	case err != nil:
+		return "", err
+	case !found:
+		return "", errNotWorkspace
+	}
+	return main, nil
+}
+
+func hasConfig(dir string) (bool, error) {
+	switch _, err := os.Stat(filepath.Join(dir, wsstate.ConfigFileName)); {
+	case err == nil:
+		return true, nil
+	case os.IsNotExist(err):
+		return false, nil
+	default:
+		return false, fmt.Errorf("read %s: %w", wsstate.ConfigFileName, err)
+	}
+}
+
+// mainWorktreeRoot reads the first record of `git worktree list
+// --porcelain`, which git documents as the main worktree.
+func mainWorktreeRoot(ctx context.Context, dir string) (string, error) {
+	res, err := gitx.New(dir).RunExit(ctx, "worktree", "list", "--porcelain")
+	if err != nil || res.ExitCode != 0 {
+		return "", err //nolint:nilerr // a non-git directory has no main worktree, which is not an error here
+	}
+	for _, line := range strings.Split(string(res.Stdout), "\n") {
+		if path, ok := strings.CutPrefix(strings.TrimSpace(line), "worktree "); ok {
+			return filepath.Clean(path), nil
+		}
+	}
+	return "", nil
 }
 
 // resolveGitDirs asks git for both directory forms at once. A workspace
@@ -182,7 +255,12 @@ func (w *workspace) link(store *canonical.Store) *canonical.Link {
 
 // registryKey is the `<project>:<abs-path>` key of §5.7, which is also
 // the workspace id stamped into canonical commit bodies (§5.3).
-func (w *workspace) registryKey() string { return registryKey(w.config.Project, w.root) }
+//
+// It keys on configRoot, so every linked worktree of one checkout maps
+// to the one registry row the user set up — the registry answers "which
+// checkouts of this project exist", and five worktrees of one clone are
+// one checkout by that question's own standard (F-H3).
+func (w *workspace) registryKey() string { return registryKey(w.config.Project, w.configRoot) }
 
 func registryKey(project, root string) string { return project + ":" + root }
 

@@ -27,21 +27,42 @@ sanho doctor --json
 
 - 성공 결과는 stdout에 **들여쓴 JSON 객체 하나**와 마지막 개행으로 출력한다
   (2칸 들여쓰기).
-- 오류는 stderr에 사람이 읽을 영어 한 줄 이상으로 출력하고 **stdout은 비운다**.
-  `--json`을 붙여도 오류가 JSON으로 나오지 않는다. 따라서 stdout은 언제나
-  "완전한 문서" 또는 "아무것도 없음" 둘 중 하나다.
+- 오류가 나면 사람이 읽을 영어 문장은 **언제나 stderr**로 간다. `--json`을
+  붙인 경우에 한해 stdout에는 아래의 오류 봉투 하나가 실린다. 즉 `--json`
+  stdout은 언제나 JSON 문서 하나이고, 그것이 결과 문서인지 오류 봉투인지는
+  `error` 키의 유무로 구별한다. `--json` 없이 실행하면 stdout은 비어 있다.
 - `--verbose`(`-v`) 진단도 stderr로 나간다. stdout은 machine 채널로 유지된다.
 - 배열은 값이 없어도 `[]`로 출력한다. `null`이 아니다.
 - 선택 객체(`base`)는 값이 없으면 `null`이다.
 - OID는 축약하지 않고 전체 값으로 출력한다. 축약(12자)은 사람용 출력 전용이다.
 - 사람용 문장, 표, 진행 메시지는 JSON에 섞지 않는다.
 
+### 오류 봉투
+
+`--json`으로 호출한 명령(`status`, `state`, `sync`, `pull`, `doctor`,
+`version`)이 실패하면 stdout에 다음 문서를 낸다. 종료 코드는 바뀌지 않고,
+stderr의 안내도 그대로 나간다.
+
+```json
+{
+  "error": {
+    "code": "sync_required",
+    "message": "local docs have changes a fast-forward cannot carry: docs have uncommitted changes"
+  }
+}
+```
+
+- `code`는 아래 "machine 오류 코드"의 값 중 하나다. 문자열 그대로 비교한다.
+- `message`는 사람용 문장에서 `sanho: ` 접두어와 내부 패키지 태그(`appgit:`
+  등)를 걷어낸 것이다. 표시용이며, 분기에 쓰지 않는다.
+- 상태를 바꾸는 안내(다음에 실행할 명령)는 stderr에만 있다. 봉투는 "무엇이
+  잘못됐는가"를 답하고, 안내는 사람 채널의 것이다.
+
 ### v0.1과의 차이
 
-v0.1의 `{"error":{"code":"…","message":"…"}}` 오류 문서는 **없다.** v0.2에는
-사용자에게 노출되는 machine 오류 코드가 없고, 오류는 stderr의 영어 문장이다.
-`docs_hash_not_found`, `pull_commit_state_failed`, `daemon_request_failed`
-같은 v0.1 코드를 분기에 쓰던 자동화는 아래 "안정 어휘"로 옮겨야 한다.
+v0.1의 오류 코드 어휘(`docs_hash_not_found`, `pull_commit_state_failed`,
+`daemon_request_failed` …)는 **없다.** 봉투의 모양은 같지만 값이 다르므로,
+그 코드로 분기하던 자동화는 아래 표로 옮겨야 한다.
 
 ## 종료 코드
 
@@ -90,6 +111,23 @@ v0.2가 분기용으로 보장하는 값은 다음과 같다. 문자열 그대�
 | `no_base` | 기록된 base가 없어 병합 base를 정할 수 없다. |
 | `cas_retry_exhausted` | 다른 게시자가 3회 연속 경합에서 이겼다. |
 
+**machine 오류 코드** — `--json` 오류 봉투의 `error.code`.
+
+| 값 | 언제 |
+|---|---|
+| `not_in_workspace` | 현재 디렉터리가 관리 대상 작업공간이 아니다. |
+| `v1_workspace` | v0.1 layout이다. `sanho migrate`만 성공한다. |
+| `sync_in_progress` | 충돌 sync가 미해소 상태다(없어야 할 때 없는 경우도 포함). |
+| `sync_required` | 화해가 필요하다. dirty pull, 충돌 push, docs를 지우는 게시가 여기다. |
+| `docs_dirty` | docs에 commit되지 않은 변경이 있어 sync를 시작할 수 없다. |
+| `history_rewritten` | 기록된 base가 canonical 이력에 없다. |
+| `unknown_target` | `--rebase-onto` 대상이 canonical commit이 아니거나, 건강한 base의 조상이다. |
+| `canonical_unreachable` | canonical에 닿지 못했거나 병합을 수행하지 못했다. |
+| `registry_lock_timeout` | 다른 Sanho 프로세스가 registry 잠금을 쥐고 있다. |
+| `markers_present` | push되는 docs에 충돌 마커가 있다. |
+| `too_large` | 텍스트 문서가 마커 스캔 한계를 넘었다. |
+| `internal` | 위 어디에도 속하지 않는다. 재시도하지 말고 보고한다. |
+
 **sibling 관계** — `vs_mine`, `vs_head`.
 
 | 값 | 의미 |
@@ -102,10 +140,12 @@ v0.2가 분기용으로 보장하는 값은 다음과 같다. 문자열 그대�
 
 **doctor severity**: `ok`, `warning` 두 값뿐이다.
 
-**doctor 검사 이름**: `git`, `workspace-config`, `hooks`, `clone`,
-`canonical-head`, `base`, `base-fix`, `registry`, `sync`, `docs`.
-`canonical-head`는 canonical에 commit이 없을 때만, `base-fix`는 `--fix`로
-복구를 시도했을 때만 나타난다.
+**doctor 검사 이름**: `git`, `workspace-config`, `hooks`, `hooks-fix`,
+`clone`, `canonical-head`, `origin`, `base`, `base-fix`, `registry`, `sync`,
+`docs`. `base-fix`와 `hooks-fix`는 `--fix`로 복구를 시도했을 때만 나타난다.
+`origin`은 canonical 저장소에 실제로 닿아 보는 검사이며 경고만 낸다 — 모든
+읽기 경로는 마지막 fetch로 동작하므로, 닿지 않는다는 사실은 보고할 가치가
+있을 뿐 진단 명령을 실패시킬 이유가 아니다.
 
 **고정 메시지 접두어** — 자동화가 상태를 식별해야 할 때 쓸 수 있는, 코드의
 메시지 카탈로그가 고정하는 문자열이다.
@@ -121,8 +161,14 @@ sanho: docs must be reconciled before publishing (<reason>; base <a> → <b>)
 sanho: pushed docs still contain conflict markers:
 sanho: canonical repository unreachable (<url>): <원인>
 sanho: canonical history was rewritten; base <oid> is no longer reachable
+sanho: branch <name> carries no docs; publishing it would delete …
 error: push rejected — no remote ref was changed
 ```
+
+`SANHO_ALLOW_DOCS_DELETION=1`을 환경에 두고 push하면 마지막에서 두 번째 줄의
+거절을 한 번만 무력화한다. docs가 없는 branch를 게시해 canonical의 모든 문서를
+삭제하는 일은 정당한 작업이지만, branch에 docs가 없다는 사실만으로 추론할 수
+있는 의도가 아니어서 명시를 요구한다.
 
 ## `version`
 

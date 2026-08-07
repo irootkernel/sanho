@@ -366,6 +366,36 @@ func (s *Store) Head(ctx context.Context) (commit, tree string, err error) {
 	return commit, tree, nil
 }
 
+// EmptyTree returns the clone's empty-tree OID, derived from git rather
+// than hardcoded so it stays correct under SHA-256 repositories. It is
+// the merge base for "these two sides share no history".
+func (s *Store) EmptyTree(ctx context.Context) (string, error) {
+	oid, err := gitx.New(s.dir).Line(ctx, "hash-object", "-t", "tree", os.DevNull)
+	if err != nil {
+		return "", fmt.Errorf("canonical: compute empty tree OID in %s: %w", s.dir, err)
+	}
+	return oid, nil
+}
+
+// DocsFileCount counts the files a canonical commit publishes. Canonical
+// is docs-only, so every blob in the tree is a document.
+func (s *Store) DocsFileCount(ctx context.Context, commit string) (int, error) {
+	if commit == "" {
+		return 0, nil
+	}
+	res, err := gitx.New(s.dir).Run(ctx, "ls-tree", "-r", "-z", "--name-only", commit)
+	if err != nil {
+		return 0, fmt.Errorf("canonical: count docs of %s in %s: %w", commit, s.dir, err)
+	}
+	count := 0
+	for _, name := range strings.Split(string(res.Stdout), "\x00") {
+		if strings.TrimSpace(name) != "" {
+			count++
+		}
+	}
+	return count, nil
+}
+
 // ResolveCommit reports whether oid exists in the clone, and
 // IsAncestor whether a is an ancestor of (or equal to) b.
 //

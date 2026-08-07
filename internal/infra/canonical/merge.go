@@ -2,10 +2,13 @@ package canonical
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
 
+	"github.com/irootkernel/sanho/internal/infra/fsx"
 	"github.com/irootkernel/sanho/internal/infra/gitx"
 )
 
@@ -32,7 +35,17 @@ const (
 	// encodes a conflict *count* (misreading that was audit Critical C2,
 	// §5.4).
 	mergeTreeConflictExit = 1
+
+	// mergeLockName is the file that serializes merges sharing one ref
+	// store. See MergeTree for why it exists and where it lives.
+	mergeLockName = "sanho-merge.lock"
 )
+
+// ErrMergeFailed marks a §5.4 merge that could not be performed at all —
+// as distinct from one that ran and reported conflicts. It exists so the
+// push path can render a §5.9-shaped message instead of leaking a raw
+// git chain to the user (F-C2).
+var ErrMergeFailed = errors.New("docs merge could not be performed")
 
 // syntheticIdentity pins the author/committer of the parentless commits
 // that wrap the three docs trees. Merge results must be reproducible —
@@ -70,11 +83,75 @@ type MergeResult struct {
 // nothing but the trees.
 //
 // The temp refs are fixed names, because §5.4 fixes the marker labels.
-// One repository therefore supports one merge at a time — which is the
-// real topology: the clone is workspace-private and publication runs
-// inside a single CLI invocation.
+// One ref store therefore supports one merge at a time — and, unlike
+// what v0.2's first cut assumed, that is NOT guaranteed by the topology.
+// Three real situations put two merges in one ref store at once:
+//
+//   - the pre-commit freshness preview merges in the private clone while
+//     a concurrent `git push` publishes through it,
+//   - two linked worktrees share both the clone and the app repo's
+//     common ref store (§5.2, F-H3),
+//   - two `sanho sync` invocations in one checkout.
+//
+// Fixed ref names plus concurrency means one merge silently reading the
+// other's inputs — a wrong tree published with exit 0. So the whole span
+// from writing the refs to deleting them is serialized by an exclusive
+// flock on <common-git-dir>/sanho-merge.lock, which is the same file for
+// every worktree that shares the ref store. Recovery is part of the
+// contract: a crash can leave the refs behind, so the first thing done
+// under the lock is to delete any leftovers rather than fail on them.
+//
+// The lock lives inside the git directory, never in the worktree: a lock
+// file next to the user's docs would be an untracked file sanho created
+// in a repository it promises not to write to.
 func MergeTree(ctx context.Context, repoDir string, baseTree, oursTree, theirsTree string) (MergeResult, error) {
+	lockPath, err := mergeLockPath(ctx, repoDir)
+	if err != nil {
+		return MergeResult{}, err
+	}
+
+	var result MergeResult
+	lockErr := fsx.WithFlock(ctx, lockPath, func() error {
+		var err error
+		result, err = mergeTreeLocked(ctx, repoDir, baseTree, oursTree, theirsTree)
+		return err
+	})
+	if lockErr != nil {
+		if errors.Is(lockErr, fsx.ErrLockTimeout) {
+			return MergeResult{}, fmt.Errorf("%w: another sanho process holds %s", ErrMergeFailed, lockPath)
+		}
+		return MergeResult{}, lockErr
+	}
+	return result, nil
+}
+
+// mergeLockPath resolves the lock file for repoDir's ref store.
+//
+// `--git-common-dir` rather than `--git-dir` is what makes two linked
+// worktrees contend on the same file: refs/sanho-ours is a common ref
+// (git's per-worktree ref namespaces are HEAD, refs/bisect/*,
+// refs/worktree/* and refs/rewritten/*), so the lock has to be common
+// too. In the bare clone the two answer the same thing.
+func mergeLockPath(ctx context.Context, repoDir string) (string, error) {
+	common, err := gitx.New(repoDir).Line(ctx, "rev-parse", "--git-common-dir")
+	if err != nil {
+		return "", fmt.Errorf("%w: resolve the git directory of %s: %v", ErrMergeFailed, repoDir, err)
+	}
+	if !filepath.IsAbs(common) {
+		common = filepath.Join(repoDir, common)
+	}
+	return filepath.Join(filepath.Clean(common), mergeLockName), nil
+}
+
+// mergeTreeLocked is MergeTree's body, run while holding the lock.
+func mergeTreeLocked(ctx context.Context, repoDir string, baseTree, oursTree, theirsTree string) (MergeResult, error) {
 	run := gitx.New(repoDir)
+
+	// Guarded recovery, not failure: a crashed or killed merge leaves the
+	// temp refs behind, and refusing on them would wedge the workspace
+	// permanently. Nothing else may hold them — the lock is exclusive and
+	// these two names belong to this function alone.
+	clearStaleMergeRefs(ctx, run)
 
 	baseCommit, err := wrapTree(ctx, repoDir, baseTree)
 	if err != nil {
@@ -104,26 +181,35 @@ func MergeTree(ctx context.Context, repoDir string, baseTree, oursTree, theirsTr
 	res, err := run.RunExit(ctx, "merge-tree", "-z", "--write-tree",
 		"--merge-base="+baseCommit, labelOurs, labelUpstream)
 	if err != nil {
-		return MergeResult{}, fmt.Errorf("canonical: merge-tree in %s: %w", repoDir, err)
+		return MergeResult{}, fmt.Errorf("%w: merge-tree in %s: %v", ErrMergeFailed, repoDir, err)
 	}
 
 	switch res.ExitCode {
 	case 0:
 		tree, _ := parseMergeTree(res.Stdout)
 		if tree == "" {
-			return MergeResult{}, fmt.Errorf("canonical: merge-tree in %s reported success without a tree", repoDir)
+			return MergeResult{}, fmt.Errorf("%w: merge-tree in %s reported success without a tree", ErrMergeFailed, repoDir)
 		}
 		return MergeResult{Tree: tree, Clean: true}, nil
 	case mergeTreeConflictExit:
 		tree, conflicts := parseMergeTree(res.Stdout)
 		if tree == "" {
-			return MergeResult{}, fmt.Errorf("canonical: merge-tree in %s reported conflicts without a tree", repoDir)
+			return MergeResult{}, fmt.Errorf("%w: merge-tree in %s reported conflicts without a tree", ErrMergeFailed, repoDir)
 		}
 		return MergeResult{Tree: tree, Clean: false, Conflicts: conflicts}, nil
 	default:
-		return MergeResult{}, fmt.Errorf("canonical: merge-tree in %s: exit %d: %s",
-			repoDir, res.ExitCode, firstMeaningfulLine(string(res.Stderr)))
+		return MergeResult{}, fmt.Errorf("%w: merge-tree in %s: exit %d: %s",
+			ErrMergeFailed, repoDir, res.ExitCode, firstMeaningfulLine(string(res.Stderr)))
 	}
+}
+
+// clearStaleMergeRefs deletes leftovers from an interrupted merge. Both
+// deletions are best-effort: an absent ref is the ordinary case, and a
+// deletion that genuinely fails will resurface as a writeRef failure a
+// few lines later, where it can be reported with its real context.
+func clearStaleMergeRefs(ctx context.Context, run *gitx.Runner) {
+	_ = deleteRef(ctx, run, refOurs)
+	_ = deleteRef(ctx, run, refUpstream)
 }
 
 // wrapTree creates the parentless synthetic commit that carries tree
@@ -132,14 +218,14 @@ func wrapTree(ctx context.Context, repoDir, tree string) (string, error) {
 	run := gitx.New(repoDir, gitx.WithEnv(syntheticIdentity...))
 	oid, err := run.Line(ctx, "commit-tree", tree, "-m", "sanho merge input")
 	if err != nil {
-		return "", fmt.Errorf("canonical: wrap tree %s for merge in %s: %w", tree, repoDir, err)
+		return "", fmt.Errorf("%w: wrap tree %s for merge in %s: %v", ErrMergeFailed, tree, repoDir, err)
 	}
 	return oid, nil
 }
 
 func writeRef(ctx context.Context, run *gitx.Runner, ref, oid string) error {
 	if _, err := run.Run(ctx, "update-ref", ref, oid); err != nil {
-		return fmt.Errorf("canonical: point %s at %s: %w", ref, oid, err)
+		return fmt.Errorf("%w: point %s at %s: %v", ErrMergeFailed, ref, oid, err)
 	}
 	return nil
 }

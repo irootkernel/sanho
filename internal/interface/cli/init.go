@@ -24,12 +24,14 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
 	"github.com/irootkernel/sanho/internal/domain/provenance"
 	"github.com/irootkernel/sanho/internal/infra/appgit"
 	"github.com/irootkernel/sanho/internal/infra/canonical"
+	"github.com/irootkernel/sanho/internal/infra/fsx"
 	"github.com/irootkernel/sanho/internal/infra/gitx"
 	"github.com/irootkernel/sanho/internal/infra/registry"
 	"github.com/irootkernel/sanho/internal/infra/wsstate"
@@ -45,6 +47,14 @@ var gitignoreEntries = []string{
 	wsstate.BaseFileName,
 	wsstate.LegacyHashFileName,
 	".sanho_pending_fix",
+	// fsx.WriteFileAtomic's temp files, which live beside their target
+	// for the moment between creation and rename (F-L12). A crash there
+	// leaves one behind, and an untracked `.  .sanho.json.tmp-1234` in
+	// `git status` is noise the user cannot explain. The patterns are
+	// deliberately narrow — `.*.tmp-*` would swallow half the world —
+	// and cover the two sanho files that live at the repository root.
+	".sanho*.tmp-*",
+	"..sanho*.tmp-*",
 }
 
 type initOptions struct {
@@ -84,11 +94,16 @@ func runInit(cmd *cobra.Command, opts initOptions) error {
 	if opts.project == "" || opts.docsRepoURL == "" {
 		return fmt.Errorf("--project and --docs-repo-url are required")
 	}
-	if opts.docsDir == "" {
-		opts.docsDir = appgit.DefaultDocsDir
+	if opts.docsDir, err = normalizeDocsDir(opts.docsDir); err != nil {
+		return err
 	}
 	if _, err := os.Stat(filepath.Join(root, wsstate.ConfigFileName)); err == nil && !opts.force {
 		return fmt.Errorf("%s already exists in %s; rerun with --force to reinitialize", wsstate.ConfigFileName, root)
+	}
+	if opts.force {
+		if err := refuseForceOnDirtyDocs(ctx, root, opts.docsDir); err != nil {
+			return err
+		}
 	}
 
 	if opts.actorEmail == "" {
@@ -112,10 +127,31 @@ func runInit(cmd *cobra.Command, opts initOptions) error {
 	if err != nil {
 		return err
 	}
-	if err := file.Update(ctx, func(state *registry.State) error {
+	if err := updateRegistry(ctx, file, func(state *registry.State) error {
 		return upsertProject(state, opts.project, opts.docsRepoURL)
 	}); err != nil {
 		return err
+	}
+
+	// Everything from here on can fail, and a half-initialized workspace
+	// is worse than none: its config makes every later command believe
+	// sanho is installed while the clone, the base or the hooks are
+	// missing. rollback undoes the two records this function wrote —
+	// nothing else has happened yet (F-M5).
+	existingConfig := configExists(root)
+	rollback := func(cause error) error {
+		if existingConfig {
+			// A --force re-init over a working workspace: leave what was
+			// already there rather than deleting a config we did not
+			// create.
+			return cause
+		}
+		_ = os.Remove(filepath.Join(root, wsstate.ConfigFileName))
+		_ = updateRegistry(ctx, file, func(state *registry.State) error {
+			delete(state.Workspaces, registryKey(opts.project, root))
+			return nil
+		})
+		return cause
 	}
 
 	if err := wsstate.SaveConfig(root, config); err != nil {
@@ -123,39 +159,94 @@ func runInit(cmd *cobra.Command, opts initOptions) error {
 	}
 	ws, err := openWorkspace(ctx)
 	if err != nil {
-		return err
+		return rollback(err)
 	}
 
 	store, err := canonical.Ensure(ctx, ws.commonDir, opts.docsRepoURL)
 	if err != nil {
-		return err
+		return rollback(initGitError("create the canonical clone", err))
 	}
 	if err := store.Fetch(ctx); err != nil {
-		return err
+		return rollback(initGitError("fetch the canonical repository", err))
 	}
 
 	base, hasBase, staged, err := establishBase(ctx, cmd, ws, store, opts)
 	if err != nil {
-		return err
+		return rollback(err)
 	}
 	if hasBase {
 		if err := ws.statePort().SaveBase(base); err != nil {
-			return err
+			return rollback(err)
 		}
 	}
 
 	if err := ws.repo.InstallHooks(ctx); err != nil {
-		return err
+		return rollback(initGitError("install the git hooks", err))
 	}
 	if err := ensureGitignoreEntries(root); err != nil {
-		return err
+		return rollback(err)
 	}
 	if err := upsertWorkspace(ctx, file, ws, base); err != nil {
-		return err
+		return rollback(err)
 	}
 
 	renderInitSummary(cmd, ws, store, base, hasBase, staged)
 	return nil
+}
+
+func configExists(root string) bool {
+	_, err := os.Stat(filepath.Join(root, wsstate.ConfigFileName))
+	return err == nil
+}
+
+// initGitError wraps a git-layer failure in the operation that was being
+// attempted, so the user reads "could not create the canonical clone:
+// …" rather than a bare transport message (F-M5).
+func initGitError(operation string, err error) error {
+	return fmt.Errorf("could not %s: %s", operation, stripInternalPrefixes(causeLine(err)))
+}
+
+// normalizeDocsDir validates --docs-dir up front (F-M5).
+//
+// The value is used as a git pathspec, as a filesystem path, and as a
+// prefix on every conflict path sanho prints, so a malformed one fails
+// deep inside a later git call with an error about something else
+// entirely. filepath.IsLocal is exactly the property wanted: inside the
+// repository, no `..`, not absolute, not a reserved device name.
+func normalizeDocsDir(docsDir string) (string, error) {
+	if docsDir == "" {
+		return appgit.DefaultDocsDir, nil
+	}
+	cleaned := path.Clean(filepath.ToSlash(strings.TrimRight(docsDir, "/")))
+	if cleaned == "" || cleaned == "." {
+		return "", fmt.Errorf("--docs-dir %q is the repository root; name a subdirectory", docsDir)
+	}
+	if !filepath.IsLocal(filepath.FromSlash(cleaned)) {
+		return "", fmt.Errorf("--docs-dir %q must be a path inside the repository (no leading '/', no '..')", docsDir)
+	}
+	return cleaned, nil
+}
+
+// refuseForceOnDirtyDocs is F-H7.
+//
+// `--force` replaces the docs directory with canonical's content. Doing
+// that over uncommitted work destroys it with no undo — the files are
+// not in any commit, so `git checkout` cannot bring them back — and
+// nothing about re-initializing requires it. The check is `DocsClean`,
+// the same one `sanho sync` uses, so worktree edits, staged edits and
+// untracked docs files all count.
+func refuseForceOnDirtyDocs(ctx context.Context, root, docsDir string) error {
+	repo := appgit.New(root, docsDir, gitx.New(root))
+	clean, err := repo.DocsClean(ctx)
+	if err != nil {
+		// Before the first commit there is nothing for `git status` to
+		// compare against and nothing committed to lose.
+		return nil //nolint:nilerr // an unreadable status is not evidence of dirty docs
+	}
+	if clean {
+		return nil
+	}
+	return fmt.Errorf("--force replaces %s with canonical content, and it has uncommitted changes; commit or stash your docs changes first", docsDir)
 }
 
 // requireGitWorktreeRoot resolves the current directory and insists it
@@ -184,7 +275,7 @@ func requireGitWorktreeRoot(ctx context.Context) (string, error) {
 		root = here
 	}
 	if top != root {
-		return "", fmt.Errorf("run 'sanho init' at the repository root (%s)", top)
+		return "", fmt.Errorf("a sanho workspace must be initialized at the repository root (%s), not at %s", top, root)
 	}
 	return root, nil
 }
@@ -269,9 +360,7 @@ func reuseExistingDocs(ctx context.Context, cmd *cobra.Command, ws *workspace, s
 		return provenance.Base{}, false, err
 	}
 	if !known {
-		writef(cmd.ErrOrStderr(),
-			"sanho: the derived docs base %s is not in the canonical repository; canonical history may have been rewritten. Run 'sanho status' to check, and 'sanho sync' to reconcile.\n",
-			shortOID(derived.Commit))
+		writeln(cmd.ErrOrStderr(), baseUnknownToCanonicalMessage(derived.Commit))
 	}
 	return derived, true, nil
 }
@@ -296,11 +385,11 @@ func docsDirHasContent(ws *workspace) (bool, error) {
 // skipping any line already present. Exact-line matching again: a
 // `.sanho.json` entry must not be mistaken for `.sanho_base.json`.
 func ensureGitignoreEntries(root string) error {
-	path := filepath.Join(root, ".gitignore")
+	gitignorePath := filepath.Join(root, ".gitignore")
 
-	existing, err := os.ReadFile(path)
+	existing, err := os.ReadFile(gitignorePath)
 	if err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("read %s: %w", path, err)
+		return fmt.Errorf("read %s: %w", gitignorePath, err)
 	}
 
 	present := map[string]bool{}
@@ -324,7 +413,9 @@ func ensureGitignoreEntries(root string) error {
 		content += "\n"
 	}
 	content += strings.Join(added, "\n") + "\n"
-	return os.WriteFile(path, []byte(content), 0644)
+	// Atomic: an interrupted append must not leave a truncated
+	// .gitignore, which would un-ignore the state files it names (F-L4).
+	return fsx.WriteFileAtomic(gitignorePath, []byte(content), 0644)
 }
 
 func renderInitSummary(cmd *cobra.Command, ws *workspace, store *canonical.Store, base provenance.Base, hasBase, staged bool) {
@@ -341,9 +432,8 @@ func renderInitSummary(cmd *cobra.Command, ws *workspace, store *canonical.Store
 		writeln(out, "  docs base  : (none yet)")
 	}
 	writef(out, "  hooks      : %d installed\n", len(appgit.Hooks()))
-	if staged {
-		// Fresh mode stages canonical's docs into the index; the commit
-		// is the user's to make (P3: the tool never authors commits).
-		writeln(out, "\nCanonical docs are staged. Commit them:  git commit -m 'docs: adopt canonical docs'")
-	}
+	// Fresh mode stages canonical's docs into the index and init always
+	// appends the ignore entries; both are the user's to commit (P3: the
+	// tool never authors commits).
+	writeln(out, initNextStepsMessage(staged))
 }

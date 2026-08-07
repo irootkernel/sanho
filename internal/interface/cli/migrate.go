@@ -26,10 +26,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
+	"time"
 
 	"github.com/irootkernel/sanho/internal/domain/provenance"
 	"github.com/irootkernel/sanho/internal/infra/appgit"
 	"github.com/irootkernel/sanho/internal/infra/canonical"
+	"github.com/irootkernel/sanho/internal/infra/fsx"
 	"github.com/irootkernel/sanho/internal/infra/gitx"
 	"github.com/irootkernel/sanho/internal/infra/registry"
 	"github.com/irootkernel/sanho/internal/infra/wsstate"
@@ -97,15 +101,25 @@ func runMigrate(cmd *cobra.Command, docsRepoURLFlag string) error {
 	if err != nil {
 		return err
 	}
-
 	config, err := wsstate.LoadConfig(root)
 	if err != nil {
 		return err
 	}
+
 	if config.SchemaVersion != 1 {
-		// Already migrated: idempotent success (§8).
-		writeln(cmd.OutOrStdout(), msgAlreadyMigrated)
-		return nil
+		// Idempotence is a claim about the whole migration, not about one
+		// file (F-H8b). A run interrupted after the config write used to
+		// report "already migrated" while the clone or the hooks were
+		// still missing — a workspace that looks migrated and behaves like
+		// nothing at all. Re-enter unless every step actually landed.
+		complete, checkErr := migrationComplete(ctx, root, config)
+		if checkErr != nil {
+			return checkErr
+		}
+		if complete {
+			writeln(cmd.OutOrStdout(), msgAlreadyMigrated)
+			return nil
+		}
 	}
 
 	if err := refuseOnLiveV1State(ctx, root); err != nil {
@@ -116,20 +130,26 @@ func runMigrate(cmd *cobra.Command, docsRepoURLFlag string) error {
 	if err != nil {
 		return err
 	}
-	docsRepoURL, err := resolveDocsRepoURL(legacy.Project, docsRepoURLFlag)
+	docsRepoURL, err := resolveDocsRepoURL(legacy.Project, docsRepoURLFlag, config.DocsRepoURL)
 	if err != nil {
 		return err
 	}
 
-	if err := writeV2Config(root, legacy, docsRepoURL); err != nil {
-		return err
-	}
-	ws, err := openWorkspace(ctx)
+	// The order below is the resumability order (F-H8b): the v2 config
+	// is written LAST, so an interruption anywhere leaves a workspace
+	// that is still recognizably v0.1 and that re-running completes.
+	// Writing it first — the previous order — made every failure produce
+	// a workspace v0.2 refused to migrate and v0.1 could no longer read.
+	preserved, err := preserveLegacyDaemonState()
 	if err != nil {
 		return err
 	}
 
-	store, err := canonical.Ensure(ctx, ws.commonDir, docsRepoURL)
+	site, err := openMigrationSite(ctx, root, legacy.DocsDir)
+	if err != nil {
+		return err
+	}
+	store, err := canonical.Ensure(ctx, site.commonDir, docsRepoURL)
 	if err != nil {
 		return err
 	}
@@ -137,41 +157,99 @@ func runMigrate(cmd *cobra.Command, docsRepoURLFlag string) error {
 		return err
 	}
 
-	base, hasBase, err := migrateBase(ctx, cmd, ws, store)
+	base, hasBase, err := migrateBase(ctx, cmd, root, store)
 	if err != nil {
 		return err
-	}
-
-	if err := swapHooks(ctx, ws); err != nil {
-		return err
-	}
-	if err := ensureGitignoreEntries(root); err != nil {
-		return err
-	}
-
-	preserved, err := preserveLegacyDaemonState()
-	if err != nil {
-		return err
-	}
-	if preserved != "" {
-		writeln(cmd.OutOrStdout(), "sanho: preserved the v0.1 daemon state at "+preserved)
 	}
 
 	file, err := openRegistry()
 	if err != nil {
 		return err
 	}
-	if err := file.Update(ctx, func(state *registry.State) error {
-		return upsertProject(state, ws.config.Project, docsRepoURL)
+	convertedRegistry, err := file.ConvertLegacy(ctx)
+	if err != nil {
+		return err
+	}
+	if err := updateRegistry(ctx, file, func(state *registry.State) error {
+		if err := upsertProject(state, legacy.Project, docsRepoURL); err != nil {
+			return err
+		}
+		state.Workspaces[registryKey(legacy.Project, root)] = registry.Workspace{
+			Project:       legacy.Project,
+			LocalPath:     root,
+			BaseCommit:    base.Commit,
+			BaseTree:      base.Tree,
+			ActorEmail:    legacy.ActorEmail,
+			LastUpdatedAt: time.Now().UTC(),
+		}
+		return nil
 	}); err != nil {
 		return err
 	}
-	if err := upsertWorkspace(ctx, file, ws, base); err != nil {
+
+	hookBackups, err := swapHooks(ctx, site.repo)
+	if err != nil {
+		return err
+	}
+	if err := ensureGitignoreEntries(root); err != nil {
+		return err
+	}
+	if err := writeV2Config(root, legacy, docsRepoURL); err != nil {
 		return err
 	}
 
-	renderMigrateSummary(cmd, ws, store, base, hasBase)
+	if preserved != "" {
+		writeln(cmd.OutOrStdout(), "sanho: preserved the v0.1 daemon state at "+preserved)
+	}
+	if convertedRegistry {
+		writeln(cmd.OutOrStdout(), "sanho: converted the v0.1 registry to the v0.2 schema")
+	}
+	renderMigrateSummary(cmd, root, legacy.Project, store, base, hasBase, hookBackups)
 	return nil
+}
+
+// migrationSite is the handful of facts migrate needs about a workspace
+// before it has a v2 config to open one from.
+type migrationSite struct {
+	commonDir string
+	repo      *appgit.Repo
+}
+
+func openMigrationSite(ctx context.Context, root, docsDir string) (migrationSite, error) {
+	run := gitx.New(root)
+	common, err := run.Line(ctx, "rev-parse", "--git-common-dir")
+	if err != nil {
+		return migrationSite{}, fmt.Errorf("resolve the git common directory of %s: %w", root, err)
+	}
+	if !filepath.IsAbs(common) {
+		common = filepath.Join(root, common)
+	}
+	return migrationSite{
+		commonDir: filepath.Clean(common),
+		repo:      appgit.New(root, docsDir, run),
+	}, nil
+}
+
+// migrationComplete reports whether a v2 workspace really finished
+// migrating: config, clone, and all six hooks (F-H8b).
+func migrationComplete(ctx context.Context, root string, config wsstate.Config) (bool, error) {
+	site, err := openMigrationSite(ctx, root, config.DocsDir)
+	if err != nil {
+		return false, err
+	}
+	if _, err := canonical.Open(site.commonDir, config.DocsRepoURL); err != nil {
+		return false, nil //nolint:nilerr // an absent clone means "not finished", not a failure
+	}
+	states, err := site.repo.HooksStatus(ctx)
+	if err != nil {
+		return false, err
+	}
+	for _, state := range states {
+		if !state.Installed {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 // refuseOnLiveV1State implements §8 step 1. Both states are things the
@@ -223,33 +301,50 @@ func readV1Config(root string) (v1Config, error) {
 // the daemon's state file, indexed project → docs-repo id → URL, because
 // the CLI never needed it. v0.2 has no daemon to ask, so the URL moves
 // into the workspace config here.
-func resolveDocsRepoURL(project, override string) (string, error) {
+func resolveDocsRepoURL(project, override, configured string) (string, error) {
 	if override != "" {
 		return override, nil
+	}
+	// A re-entered migration already carries the URL in its own v2
+	// config; asking for --docs-repo-url again would be a demand for
+	// something the workspace has already recorded (F-H8b).
+	if configured != "" {
+		return configured, nil
 	}
 
 	home, err := resolveHome()
 	if err != nil {
 		return "", err
 	}
-	data, err := os.ReadFile(filepath.Join(home, registry.StateFileName))
-	if err != nil {
-		return "", errors.New(msgMigrateNeedsURL)
+	// state.json first, then the backup this command itself makes. After
+	// the first workspace migrates, state.json is v2 and no longer holds
+	// the mapping — but state.json.v1.bak does, which is what lets the
+	// SECOND project migrate without --docs-repo-url (F-H8c, R1's lab3).
+	for _, name := range []string{registry.StateFileName, legacyStateBackupName} {
+		if url := docsRepoURLFrom(filepath.Join(home, name), project); url != "" {
+			return url, nil
+		}
 	}
+	return "", errors.New(msgMigrateNeedsURL)
+}
 
+// docsRepoURLFrom reads one project's docs repository URL out of a v0.1
+// daemon state file. Anything unreadable yields "", so the caller simply
+// tries the next candidate.
+func docsRepoURLFrom(path, project string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
 	var state legacyDaemonState
 	if err := json.Unmarshal(data, &state); err != nil {
-		return "", errors.New(msgMigrateNeedsURL)
+		return ""
 	}
 	repoID, ok := state.ProjectToDocsRepo[project]
 	if !ok {
-		return "", errors.New(msgMigrateNeedsURL)
+		return ""
 	}
-	repo, ok := state.DocsRepos[repoID]
-	if !ok || repo.RepoURL == "" {
-		return "", errors.New(msgMigrateNeedsURL)
-	}
-	return repo.RepoURL, nil
+	return state.DocsRepos[repoID].RepoURL
 }
 
 // writeV2Config backs the v0.1 config up and replaces it.
@@ -284,8 +379,8 @@ func writeV2Config(root string, legacy v1Config, docsRepoURL string) error {
 //
 // The legacy file itself is copied, never consumed: LoadBase prefers the
 // v2 file, so leaving it intact costs nothing and keeps rollback whole.
-func migrateBase(ctx context.Context, cmd *cobra.Command, ws *workspace, store *canonical.Store) (provenance.Base, bool, error) {
-	legacyPath := filepath.Join(ws.root, wsstate.LegacyHashFileName)
+func migrateBase(ctx context.Context, cmd *cobra.Command, root string, store *canonical.Store) (provenance.Base, bool, error) {
+	legacyPath := filepath.Join(root, wsstate.LegacyHashFileName)
 	if exists, err := pathExists(legacyPath); err != nil {
 		return provenance.Base{}, false, err
 	} else if exists {
@@ -294,13 +389,12 @@ func migrateBase(ctx context.Context, cmd *cobra.Command, ws *workspace, store *
 		}
 	}
 
-	base, hasBase, err := wsstate.LoadBase(ws.root)
+	base, hasBase, err := wsstate.LoadBase(root)
 	if err != nil || !hasBase {
 		// No usable v0.1 base. Deriving one from history is exactly what
 		// the post-checkout hook and `sanho doctor --fix` do, and both
 		// succeed later, so migration does not stop here.
-		writeln(cmd.ErrOrStderr(),
-			"sanho: no v0.1 docs base was found; run 'sanho sync' to establish one")
+		writef(cmd.ErrOrStderr(), "sanho: %s\n", baseNeedsSyncMessage("no v0.1 docs base was found"))
 		return provenance.Base{}, false, nil
 	}
 
@@ -309,16 +403,14 @@ func migrateBase(ctx context.Context, cmd *cobra.Command, ws *workspace, store *
 		return provenance.Base{}, false, err
 	}
 	if !known {
-		writef(cmd.ErrOrStderr(),
-			"sanho: the recorded docs base %s is no longer in the canonical repository; canonical history may have been rewritten. Run 'sanho sync' to reconcile.\n",
-			shortOID(base.Commit))
-		return base, true, wsstate.SaveBase(ws.root, base)
+		writeln(cmd.ErrOrStderr(), baseUnknownToCanonicalMessage(base.Commit))
+		return base, true, wsstate.SaveBase(root, base)
 	}
 
 	if tree, treeErr := commitTreeInClone(ctx, store, base.Commit); treeErr == nil {
 		base.Tree = tree
 	}
-	return base, true, wsstate.SaveBase(ws.root, base)
+	return base, true, wsstate.SaveBase(root, base)
 }
 
 // commitTreeInClone resolves a canonical commit's tree. The canonical
@@ -330,11 +422,36 @@ func commitTreeInClone(ctx context.Context, store *canonical.Store, commit strin
 // swapHooks removes the seven v0.1 lines and installs the six v0.2 ones.
 // Removal first, so a `pre-push` file carrying both forms ends up with
 // exactly one line rather than two (audit L3).
-func swapHooks(ctx context.Context, ws *workspace) error {
-	if err := ws.repo.RemoveHooks(ctx); err != nil {
-		return err
+//
+// Every hook file that exists is copied to `<name>.bak` beforehand
+// (F-H8d). §8 step 6 makes migration reversible by promising a .bak for
+// everything it rewrites, and hook files were the one thing it rewrote
+// without one — including a hook file the user wrote themselves, whose
+// foreign lines the installer preserves but whose shape it changes.
+func swapHooks(ctx context.Context, repo *appgit.Repo) ([]string, error) {
+	states, err := repo.HooksStatus(ctx)
+	if err != nil {
+		return nil, err
 	}
-	return ws.repo.InstallHooks(ctx)
+
+	var backups []string
+	for _, state := range states {
+		if exists, err := pathExists(state.Path); err != nil {
+			return nil, err
+		} else if !exists {
+			continue
+		}
+		if err := backupFile(state.Path); err != nil {
+			return nil, err
+		}
+		backups = append(backups, filepath.Base(state.Path)+backupSuffix)
+	}
+	sort.Strings(backups)
+
+	if err := repo.RemoveHooks(ctx); err != nil {
+		return nil, err
+	}
+	return backups, repo.InstallHooks(ctx)
 }
 
 // legacyStateBackupName is where preserveLegacyDaemonState keeps the
@@ -377,7 +494,7 @@ func preserveLegacyDaemonState() (string, error) {
 	} else if !os.IsNotExist(err) {
 		return "", fmt.Errorf("inspect %s: %w", backup, err)
 	}
-	if err := os.WriteFile(backup, data, 0600); err != nil {
+	if err := fsx.WriteFileAtomic(backup, data, 0600); err != nil {
 		return "", fmt.Errorf("write %s: %w", backup, err)
 	}
 	return backup, nil
@@ -398,17 +515,19 @@ func backupFile(path string) error {
 		return fmt.Errorf("inspect %s for backup: %w", path, err)
 	}
 	backup := path + backupSuffix
-	if err := os.WriteFile(backup, data, info.Mode().Perm()); err != nil {
+	// Atomic: a .bak is a rollback source, and a truncated one is worse
+	// than none because it looks like a rollback that exists (F-L4).
+	if err := fsx.WriteFileAtomic(backup, data, info.Mode().Perm()); err != nil {
 		return fmt.Errorf("write %s: %w", backup, err)
 	}
 	return nil
 }
 
-func renderMigrateSummary(cmd *cobra.Command, ws *workspace, store *canonical.Store, base provenance.Base, hasBase bool) {
+func renderMigrateSummary(cmd *cobra.Command, root, project string, store *canonical.Store, base provenance.Base, hasBase bool, hookBackups []string) {
 	out := cmd.OutOrStdout()
 	writeln(out, "sanho: migrated this workspace to the v0.2 layout")
-	writef(out, "  workspace : %s\n", ws.root)
-	writef(out, "  project   : %s\n", ws.config.Project)
+	writef(out, "  workspace : %s\n", root)
+	writef(out, "  project   : %s\n", project)
 	writef(out, "  docs repo : %s (branch %s)\n", store.URL(), store.Branch())
 	writef(out, "  clone     : %s\n", store.Dir())
 	if hasBase {
@@ -417,8 +536,11 @@ func renderMigrateSummary(cmd *cobra.Command, ws *workspace, store *canonical.St
 		writeln(out, "  docs base : (none yet)")
 	}
 	writef(out, "  hooks     : %d installed, v0.1 lines removed\n", len(appgit.Hooks()))
-	writef(out, "  backups   : %s%s, %s%s\n",
-		wsstate.ConfigFileName, backupSuffix, wsstate.LegacyHashFileName, backupSuffix)
+	backups := append([]string{
+		wsstate.ConfigFileName + backupSuffix,
+		wsstate.LegacyHashFileName + backupSuffix,
+	}, hookBackups...)
+	writef(out, "  backups   : %s\n", strings.Join(backups, ", "))
 
 	writeln(out)
 	for _, line := range daemonStopInstructions {

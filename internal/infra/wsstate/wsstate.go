@@ -57,6 +57,9 @@ var (
 	// instead of a generic "invalid" — the messaging lesson carried over
 	// from audit M5/A2.4.
 	ErrLegacyBaseEmpty = errors.New("legacy base file is empty")
+	// ErrConfigCorrupt covers a `.sanho.json` that parses as JSON but is
+	// neither a v0.1 config nor a v2 one (F-L7).
+	ErrConfigCorrupt = errors.New("workspace config is corrupt")
 )
 
 // Config is the v2 workspace configuration.
@@ -104,9 +107,15 @@ func LoadConfig(workDir string) (Config, error) {
 		return Config{}, fmt.Errorf("parse workspace config %s: %w", path, err)
 	}
 
-	// v0.1 configs never carry schema_version and always carry
-	// socket_path; either symptom alone is enough to route to migrate
-	// guidance rather than error (§8 pre-migration degradation).
+	// A v0.1 config is recognized by socket_path, which every one of them
+	// carried and no v2 one does. schema_version alone is not enough
+	// (F-L7): a v2 config that lost its version field — hand-edited,
+	// truncated, produced by a broken tool — is CORRUPT, and reporting it
+	// as v0.1 sent the user to `sanho migrate`, which would then rewrite
+	// the file from fields it does not have.
+	if raw.SocketPath == "" && raw.SchemaVersion == 0 {
+		return Config{}, fmt.Errorf("%w: %s records no schema_version and no socket_path", ErrConfigCorrupt, path)
+	}
 	if raw.SchemaVersion == 0 || raw.SocketPath != "" {
 		return Config{
 			SchemaVersion: 1,

@@ -5,9 +5,9 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
-	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -105,14 +105,14 @@ func runStatus(cmd *cobra.Command, refresh, asJSON bool) error {
 	ctx := cmd.Context()
 	ws, err := requireV2Workspace(ctx)
 	if err != nil {
-		return err
+		return finishCommand(cmd, nil, asJSON, err)
 	}
 
 	store, err := ws.openCanonical()
 	if err != nil {
-		// The clone is what every canonical fact comes from, and only
-		// `sanho init` (or `sanho migrate`) creates one.
-		return fmt.Errorf("the canonical clone is missing (%s); run 'sanho init' in this workspace", ws.cloneDir())
+		// The clone is what every canonical fact comes from; a write
+		// path recreates it (see cloneMissingMessage).
+		return finishCommand(cmd, nil, asJSON, errors.New(cloneMissingMessage(ws.cloneDir())))
 	}
 
 	query := &admin.StatusQuery{
@@ -126,7 +126,7 @@ func runStatus(cmd *cobra.Command, refresh, asJSON bool) error {
 	}
 	report, err := query.Run(ctx)
 	if err != nil {
-		return err
+		return finishCommand(cmd, nil, asJSON, err)
 	}
 
 	if asJSON {
@@ -147,7 +147,7 @@ func (r registryPort) Siblings(ctx context.Context) ([]admin.SiblingEntry, error
 	if err != nil {
 		return nil, err
 	}
-	state, err := file.Read(ctx)
+	state, err := readRegistry(ctx, file)
 	if err != nil {
 		return nil, err
 	}
@@ -221,7 +221,7 @@ func renderStatus(out io.Writer, ws *workspace, store *canonical.Store, report a
 
 	renderSyncPreview(out, report)
 	if report.SyncInProgress {
-		writeln(out, "sync      : IN PROGRESS — resolve the markers and commit, or run 'sanho sync --abort'")
+		writef(out, "sync      : %s\n", syncNotePendingMessage("IN PROGRESS"))
 	}
 	renderSiblings(out, report.Siblings)
 }
@@ -244,13 +244,9 @@ func renderSyncPreview(out io.Writer, report admin.StatusReport) {
 		return
 	case report.Behind == 0:
 		writeln(out, "sync      : up to date")
-	case !report.SyncPreviewKnown:
-		writef(out, "sync      : %d behind — run 'sanho sync' to reconcile\n", report.Behind)
-	case report.SyncClean:
-		writef(out, "sync      : %d behind — 'sanho sync' will merge cleanly\n", report.Behind)
 	default:
-		writef(out, "sync      : %d behind — 'sanho sync' will report conflicts in %s\n",
-			report.Behind, strings.Join(report.SyncConflicts, ", "))
+		writef(out, "sync      : %s\n", statusBehindLine(
+			report.Behind, report.SyncPreviewKnown, report.SyncClean, report.SyncConflicts))
 	}
 }
 

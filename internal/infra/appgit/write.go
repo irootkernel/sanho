@@ -39,7 +39,9 @@ package appgit
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -142,13 +144,58 @@ func (r *Repo) CheckoutDocsTree(ctx context.Context, tree string) error {
 		}
 	}
 
+	// Validate EVERY path before deleting anything (F-M7). The three
+	// passes below are ordered deletion-first, so a target rejected
+	// half-way through would leave the docs directory emptied of the
+	// files the deletion pass already removed and refilled with nothing
+	// — the one shape of data loss this file exists to prevent. A tree
+	// carrying `..`, an absolute path, or a `.git` segment is a hostile
+	// or corrupt tree; refusing it whole costs nothing.
+	for _, path := range append(append([]string{}, paths...), obsolete...) {
+		if err := validateDocsPath(path); err != nil {
+			return err
+		}
+	}
+
 	if err := r.removeDocsPaths(ctx, obsolete); err != nil {
-		return err
+		return checkoutRecoveryError(r.docsDir, err)
 	}
 	if err := r.stageDocsEntries(ctx, entries); err != nil {
-		return err
+		return checkoutRecoveryError(r.docsDir, err)
 	}
-	return r.materializeDocsPaths(ctx, paths)
+	if err := r.materializeDocsPaths(ctx, paths); err != nil {
+		return checkoutRecoveryError(r.docsDir, err)
+	}
+	return nil
+}
+
+// validateDocsPath rejects a tree entry that would address anything but
+// a file inside the docs directory.
+func validateDocsPath(path string) error {
+	switch {
+	case path == "":
+		return fmt.Errorf("appgit: refusing an empty path in the docs tree")
+	case filepath.IsAbs(path) || strings.HasPrefix(path, "/"):
+		return fmt.Errorf("appgit: refusing the absolute docs path %q", path)
+	}
+	for _, segment := range strings.Split(path, "/") {
+		if segment == ".." || segment == ".git" {
+			return fmt.Errorf("appgit: refusing the docs path %q (it contains a %q segment)", path, segment)
+		}
+	}
+	return nil
+}
+
+// checkoutRecoveryError names the way back.
+//
+// A checkout that fails between its passes leaves the docs directory
+// partially written, and the user needs one command that restores it.
+// `git checkout HEAD -- <docsDir>` is that command, it is scoped to the
+// docs pathspec exactly as everything here is, and it works whatever
+// pass failed.
+func checkoutRecoveryError(docsDir string, err error) error {
+	return fmt.Errorf("%w (the docs directory may be partially written; restore it with: git checkout HEAD -- %s)",
+		err, docsDir)
 }
 
 // RestoreDocsFromHead resets the docs worktree and index to HEAD
@@ -233,6 +280,19 @@ func (r *Repo) ScanWorktreeDocsForMarkers(ctx context.Context) ([]string, error)
 			return fmt.Errorf("appgit: stat %s: %w", name, err)
 		}
 		if info.Size() > markers.MaxScanSize {
+			// §5.4's order, as corrected by F-M8: classify first, then
+			// apply the size rule. A large *binary* file — an image, a
+			// PDF, a recording under docs/ — cannot carry a conflict
+			// marker, so refusing it would block the commit path over
+			// content the detector has nothing to say about. Only
+			// oversized TEXT is the fail-closed error (audit H2).
+			binary, sniffErr := sniffBinaryFile(path)
+			if sniffErr != nil {
+				return fmt.Errorf("appgit: read %s: %w", name, sniffErr)
+			}
+			if binary {
+				return nil
+			}
 			return fmt.Errorf("appgit: %s is %d bytes: %w", name, info.Size(), markers.ErrTooLarge)
 		}
 
@@ -249,6 +309,24 @@ func (r *Repo) ScanWorktreeDocsForMarkers(ctx context.Context) ([]string, error)
 		return nil, walkErr
 	}
 	return conflicted, nil
+}
+
+// sniffBinaryFile reads only the leading bytes §5.4's binary rule looks
+// at, which is what makes classifying an oversized file cheap enough to
+// do before refusing it.
+func sniffBinaryFile(path string) (bool, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = file.Close() }()
+
+	head := make([]byte, markers.BinarySniffSize)
+	n, err := io.ReadFull(file, head)
+	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
+		return false, err
+	}
+	return markers.Scan(head[:n]).Binary, nil
 }
 
 // docsTreeEntry is one file of a docs tree, already addressed by the

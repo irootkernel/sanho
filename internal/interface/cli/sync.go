@@ -7,7 +7,9 @@ package cli
 import (
 	"context"
 	"fmt"
+	"strings"
 
+	"github.com/irootkernel/sanho/internal/infra/gitx"
 	"github.com/irootkernel/sanho/internal/usecase/docsync"
 
 	"github.com/spf13/cobra"
@@ -70,7 +72,7 @@ func runSync(cmd *cobra.Command, abort bool, rebaseOnto string, asJSON bool) err
 	ctx := cmd.Context()
 	ws, err := requireV2Workspace(ctx)
 	if err != nil {
-		return err
+		return finishCommand(cmd, nil, asJSON, err)
 	}
 
 	if abort {
@@ -82,11 +84,11 @@ func runSync(cmd *cobra.Command, abort bool, rebaseOnto string, asJSON bool) err
 
 	use, err := ws.docsyncUseCase(ctx)
 	if err != nil {
-		return err
+		return finishCommand(cmd, ws, asJSON, err)
 	}
 	result, err := use.Run(ctx, docsync.Options{RebaseOnto: rebaseOnto})
 	if err != nil {
-		return err
+		return finishCommand(cmd, ws, asJSON, err)
 	}
 
 	recordWorkspaceState(ctx, ws)
@@ -106,15 +108,33 @@ func runSyncAbort(cmd *cobra.Command, ws *workspace, asJSON bool) error {
 	use := &docsync.UseCase{App: ws.appPort(), State: ws.statePort()}
 
 	if err := use.Abort(ctx); err != nil {
-		return err
+		return finishCommand(cmd, ws, asJSON, err)
 	}
 	recordWorkspaceState(ctx, ws)
 
 	if asJSON {
 		return writeJSON(cmd.OutOrStdout(), syncJSON{Status: statusAborted, Conflicts: []string{}})
 	}
-	writeln(cmd.OutOrStdout(), syncAbortedMessage())
+	writeln(cmd.OutOrStdout(), syncAbortedMessage(untrackedDocs(ctx, ws)))
 	return nil
+}
+
+// untrackedDocs lists docs files git does not track, for the abort
+// notice. A failure to ask is a reason to say nothing extra, never a
+// reason to fail an abort that already succeeded.
+func untrackedDocs(ctx context.Context, ws *workspace) []string {
+	res, err := gitx.New(ws.root).RunExit(ctx,
+		"ls-files", "--others", "--exclude-standard", "-z", "--", ws.config.DocsDir)
+	if err != nil || res.ExitCode != 0 {
+		return nil
+	}
+	var paths []string
+	for _, path := range strings.Split(string(res.Stdout), "\x00") {
+		if strings.TrimSpace(path) != "" {
+			paths = append(paths, path)
+		}
+	}
+	return paths
 }
 
 // renderSyncResult prints the §5.9 templates. A conflicted sync uses
@@ -169,16 +189,16 @@ func runPull(cmd *cobra.Command, withCommit, asJSON bool) error {
 	ctx := cmd.Context()
 	ws, err := requireV2Workspace(ctx)
 	if err != nil {
-		return err
+		return finishCommand(cmd, nil, asJSON, err)
 	}
 
 	use, err := ws.docsyncUseCase(ctx)
 	if err != nil {
-		return err
+		return finishCommand(cmd, ws, asJSON, err)
 	}
 	result, err := use.Pull(ctx, withCommit)
 	if err != nil {
-		return err
+		return finishCommand(cmd, ws, asJSON, err)
 	}
 
 	recordWorkspaceState(ctx, ws)

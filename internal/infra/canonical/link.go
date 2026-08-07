@@ -74,12 +74,39 @@ func (l *Link) MergeDocs(ctx context.Context, baseCommit, oursTree, theirsCommit
 	if err != nil {
 		return "", nil, false, err
 	}
+	return l.MergeDocsTrees(ctx, baseTree, oursTree, theirsTree)
+}
 
+// MergeDocsTrees is the §5.4 merge over three already-resolved docs
+// trees.
+//
+// It exists because publication's evaluation pass chains: the second
+// tip of a multi-ref push merges against the tree the first tip *would*
+// publish, and that tree has no commit yet. An empty baseTree means "no
+// shared history" and resolves to the empty tree, which is the honest
+// ancestor when canonical has never been published into.
+func (l *Link) MergeDocsTrees(ctx context.Context, baseTree, oursTree, theirsTree string) (tree string, conflicts []string, clean bool, err error) {
+	if baseTree == "" {
+		if baseTree, err = l.store.EmptyTree(ctx); err != nil {
+			return "", nil, false, err
+		}
+	}
 	result, err := MergeTree(ctx, l.store.dir, baseTree, oursTree, theirsTree)
 	if err != nil {
 		return "", nil, false, err
 	}
 	return result.Tree, result.Conflicts, result.Clean, nil
+}
+
+// DocsTreeOfCommit resolves a canonical commit's docs tree (its root
+// tree — canonical is docs-only).
+func (l *Link) DocsTreeOfCommit(ctx context.Context, commit string) (string, error) {
+	return l.store.docsTreeOf(ctx, commit)
+}
+
+// DocsFileCount reports how many files a canonical commit publishes.
+func (l *Link) DocsFileCount(ctx context.Context, commit string) (int, error) {
+	return l.store.DocsFileCount(ctx, commit)
 }
 
 func (l *Link) CommitDocsTree(ctx context.Context, tree, parent, authorName, authorEmail, message string) (string, error) {

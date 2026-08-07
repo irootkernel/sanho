@@ -241,6 +241,24 @@ func (w *world) advanceCanonical(files map[string]string, message string) string
 	return strings.TrimSpace(w.git(work, "rev-parse", "HEAD").stdout)
 }
 
+// rewriteCanonical replaces canonical history wholesale: an orphan
+// commit, force-pushed, so nothing previously published stays reachable.
+// It is the state `--rebase-onto` exists for.
+func (w *world) rewriteCanonical(files map[string]string, message string) string {
+	w.t.Helper()
+
+	work := filepath.Join(w.t.TempDir(), "rewrite")
+	mkdirAll(w.t, work)
+	w.git(work, "clone", "--quiet", w.origin, ".")
+	w.git(work, "checkout", "--quiet", "--orphan", "rewritten")
+	replaceContent(w.t, work, files)
+	w.git(work, "add", "-A")
+	w.git(work, "commit", "-m", message)
+	w.git(work, "push", "--quiet", "--force", "origin", "HEAD:main")
+
+	return strings.TrimSpace(w.git(work, "rev-parse", "HEAD").stdout)
+}
+
 // initWorkspace runs `sanho init` with this world's canonical origin.
 func (w *world) initWorkspace(extra ...string) result {
 	w.t.Helper()

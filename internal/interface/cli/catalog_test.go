@@ -18,6 +18,8 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -25,9 +27,44 @@ import (
 	"testing"
 )
 
-// messagesFile is the file the scan reads. The test runs with the
-// package directory as its working directory.
+// messagesFile is the file the catalog itself lives in. The test runs
+// with the package directory as its working directory.
 const messagesFile = "messages.go"
+
+// sentinelPackages are the two use-case packages whose error sentinels
+// reach a user through the CLI (F-H6a).
+//
+// They are scanned for the same reason the CLI files are: a sentinel
+// that spelled `run 'sanho sync'` was guidance, printed verbatim by
+// renderError, that no closure fixture could see — which is exactly how
+// `sanho pull`'s advice came to name a command that fails where it is
+// printed. Guidance belongs in the catalog; sentinels state facts.
+var sentinelPackages = []string{
+	"../../usecase/docsync",
+	"../../usecase/publish",
+}
+
+// helpTextFields are the cobra fields that carry documentation rather
+// than guidance. A `Long:` description explaining that `sanho sync
+// --abort` exists is a manual page, not a message printed in a state
+// that must make it runnable, so the scan does not descend into them.
+var helpTextFields = map[string]bool{
+	"Use": true, "Short": true, "Long": true, "Example": true,
+}
+
+// selfIdentifyingOutput are the two renderers whose literals name a
+// command because the output IS that command's own — `sanho doctor:
+// <path>` heads the doctor report, `sanho version <v>` is the version
+// line. Neither advises anything; both would otherwise trip the scan
+// for quoting their own name.
+//
+// The list is short and must stay short: anything added here is
+// guidance the closure suite cannot see, so a third entry is a signal
+// that the wording belongs in messages.go instead.
+var selfIdentifyingOutput = map[string]bool{
+	"renderDoctor":  true,
+	"newVersionCmd": true,
+}
 
 // advisedSanhoCommand and advisedGitCommand recognize a next command
 // named inside a message literal.
@@ -69,6 +106,18 @@ func TestEveryAdvisingMessageIsInTheCatalog(t *testing.T) {
 			t.Errorf("%s names a next command but has no Catalog entry; "+
 				"add one (with a closure scenario) or the guidance cannot be proven closed",
 				source)
+		}
+	}
+
+	// The other half of F-H6a: guidance must not exist anywhere else.
+	// A command named in doctor.go, in a sentinel, or in any renderer
+	// that is not in messages.go is guidance the closure suite cannot
+	// enumerate, and therefore guidance nothing proves runnable.
+	for _, file := range guidanceScanFiles(t) {
+		for _, name := range advisingDeclarations(t, file) {
+			t.Errorf("%s: %s names a next command outside %s; move the wording into a "+
+				"messages.go renderer with a Catalog entry and a closure fixture",
+				file, name, messagesFile)
 		}
 	}
 
@@ -230,6 +279,13 @@ func namesACommand(t *testing.T, node ast.Node) bool {
 
 	found := false
 	ast.Inspect(node, func(n ast.Node) bool {
+		// Cobra help text documents commands; it is not printed in a
+		// state that has to make them runnable.
+		if pair, ok := n.(*ast.KeyValueExpr); ok {
+			if key, isIdent := pair.Key.(*ast.Ident); isIdent && helpTextFields[key.Name] {
+				return false
+			}
+		}
 		literal, ok := n.(*ast.BasicLit)
 		if !ok || literal.Kind != token.STRING {
 			return true
@@ -245,4 +301,105 @@ func namesACommand(t *testing.T, node ast.Node) bool {
 		return true
 	})
 	return found
+}
+
+// guidanceScanFiles lists every non-test Go file the widened gate reads:
+// this package, plus the two use-case packages whose sentinels reach a
+// user (F-H6a). messages.go is excluded — it is scanned separately, by
+// name, and is the one place guidance is allowed to live.
+func guidanceScanFiles(t *testing.T) []string {
+	t.Helper()
+
+	var files []string
+	for _, dir := range append([]string{"."}, sentinelPackages...) {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			t.Fatalf("read %s: %v", dir, err)
+		}
+		for _, entry := range entries {
+			name := entry.Name()
+			if entry.IsDir() || !strings.HasSuffix(name, ".go") ||
+				strings.HasSuffix(name, "_test.go") || name == messagesFile {
+				continue
+			}
+			files = append(files, filepath.Join(dir, name))
+		}
+	}
+	sort.Strings(files)
+	return files
+}
+
+// advisingDeclarations parses one file and reports the declarations
+// whose string literals name a next command.
+func advisingDeclarations(t *testing.T, path string) []string {
+	t.Helper()
+
+	fileSet := token.NewFileSet()
+	parsed, err := parser.ParseFile(fileSet, path, nil, 0)
+	if err != nil {
+		t.Fatalf("parse %s: %v", path, err)
+	}
+
+	var advising []string
+	for _, decl := range parsed.Decls {
+		for name, node := range declarationBodies(decl) {
+			if selfIdentifyingOutput[name] {
+				continue
+			}
+			if namesACommand(t, node) {
+				advising = append(advising, name)
+			}
+		}
+	}
+	sort.Strings(advising)
+	return advising
+}
+
+// --- English-only hygiene (§5.9, audit L4; F-L9) ------------------------
+
+// allowedNonASCII are the two characters §5.9's normative templates use
+// verbatim: the em dash that separates a state from its advice, and the
+// right arrow that renders a base→head transition.
+var allowedNonASCII = map[rune]bool{'—': true, '→': true}
+
+// TestUserFacingStringsAreEnglishASCII replaces the hand-maintained
+// allow-list the previous version carried (F-L9).
+//
+// A list of "files we remembered to check" is a list that goes stale the
+// first time somebody adds a file. This walks the AST of every non-test
+// declaration in the package instead, so a message in a file nobody
+// thought about is covered the moment it is written.
+func TestUserFacingStringsAreEnglishASCII(t *testing.T) {
+	for _, path := range append([]string{messagesFile}, guidanceScanFiles(t)...) {
+		if !strings.HasPrefix(path, ".") && !strings.HasSuffix(filepath.Dir(path), "cli") {
+			// Only this package's own output is in scope; the use-case
+			// packages are scanned for guidance, not for typography.
+			continue
+		}
+		fileSet := token.NewFileSet()
+		parsed, err := parser.ParseFile(fileSet, path, nil, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", path, err)
+		}
+		ast.Inspect(parsed, func(n ast.Node) bool {
+			literal, ok := n.(*ast.BasicLit)
+			if !ok || literal.Kind != token.STRING {
+				return true
+			}
+			text, unquoteErr := strconv.Unquote(literal.Value)
+			if unquoteErr != nil {
+				return true
+			}
+			for _, r := range text {
+				if r < 128 || allowedNonASCII[r] {
+					continue
+				}
+				t.Errorf("%s:%d: string literal contains %q; user-facing text is English ASCII "+
+					"apart from the em dash and right arrow of the §5.9 templates",
+					path, fileSet.Position(literal.Pos()).Line, r)
+				return false
+			}
+			return true
+		})
+	}
 }

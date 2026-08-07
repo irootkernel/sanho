@@ -104,7 +104,10 @@ func renderError(stderr *os.File, err error) int {
 		return exitInternal
 	}
 
-	message := err.Error()
+	// §5.9: no raw Go error chain at user level. The infra packages tag
+	// their failures with a package name to locate them; that is a
+	// diagnostic for us, not information for the user (F-M3).
+	message := stripInternalPrefixes(err.Error())
 	if !strings.HasPrefix(message, errorPrefix) {
 		message = errorPrefix + message
 	}

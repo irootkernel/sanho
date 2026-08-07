@@ -184,7 +184,7 @@ func TestMessagesAreEnglishOnly(t *testing.T) {
 		upToDateMessage("abc"),
 		upToDateMessage(""),
 		pulledMessage("abc", ""),
-		syncAbortedMessage(),
+		syncAbortedMessage(nil),
 		syncCompletedMessage(),
 		baseRederivedMessage("abc"),
 		stagedMarkersMessage([]string{"docs/a.md"}),

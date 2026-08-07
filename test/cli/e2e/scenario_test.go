@@ -38,7 +38,7 @@ func TestS1OnboardingFreshAndReuse(t *testing.T) {
 	ws := w.newWorkspace("fresh")
 	out := ws.initWorkspace()
 	requireContains(t, "init output", out.stdout, "workspace initialized")
-	requireContains(t, "init output", out.stdout, "git commit -m 'docs: adopt canonical docs'")
+	requireContains(t, "init output", out.stdout, "git add .gitignore && git commit")
 	requireEqual(t, "docs/api.md", ws.readDocs("api.md"), "canonical api\n")
 	requireContains(t, "base file", readFile(t, ws.basePath()), w.canonicalHead())
 	ws.git("commit", "-m", "docs: adopt canonical docs")
@@ -681,7 +681,9 @@ func TestS11JSONSchemasAndErrorChannel(t *testing.T) {
 		t.Fatalf("abort status = %q, want %q", sync.Status, statusAborted)
 	}
 
-	// Errors never reach the JSON channel (§5.8).
+	// A failure under --json puts a machine-readable envelope on stdout
+	// and the prose on stderr (§5.8, F-M9). Before this an agent had
+	// nothing on the JSON channel to branch on and had to match English.
 	outside := w.newWorkspace("outside")
 	for _, args := range [][]string{
 		{"status", "--json"},
@@ -690,9 +692,24 @@ func TestS11JSONSchemasAndErrorChannel(t *testing.T) {
 	} {
 		res := outside.run(args...)
 		requireExit(t, "sanho "+strings.Join(args, " ")+" outside a workspace", res, 1)
-		if strings.TrimSpace(res.stdout) != "" {
-			t.Errorf("sanho %s wrote %q to stdout; --json stdout is a document or nothing",
-				strings.Join(args, " "), res.stdout)
+
+		var envelope struct {
+			Error struct {
+				Code    string `json:"code"`
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		if err := json.Unmarshal([]byte(res.stdout), &envelope); err != nil {
+			t.Errorf("sanho %s stdout is not a JSON document: %v\n%s",
+				strings.Join(args, " "), err, res.stdout)
+			continue
+		}
+		if envelope.Error.Code != "not_in_workspace" {
+			t.Errorf("sanho %s error code = %q, want not_in_workspace",
+				strings.Join(args, " "), envelope.Error.Code)
+		}
+		if envelope.Error.Message == "" {
+			t.Errorf("sanho %s error envelope carries no message", strings.Join(args, " "))
 		}
 		requireContains(t, "stderr", res.stderr, "not a sanho workspace")
 	}

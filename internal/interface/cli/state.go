@@ -82,11 +82,11 @@ func runState(cmd *cobra.Command, all, asJSON bool) error {
 
 	file, err := openRegistry()
 	if err != nil {
-		return err
+		return finishCommand(cmd, nil, asJSON, err)
 	}
-	state, err := file.Read(ctx)
+	state, err := readRegistry(ctx, file)
 	if err != nil {
-		return err
+		return finishCommand(cmd, nil, asJSON, err)
 	}
 
 	// `sanho state` reads the registry, which exists outside any
@@ -94,7 +94,7 @@ func runState(cmd *cobra.Command, all, asJSON bool) error {
 	// project to scope to and no clone to read heads from.
 	ws, wsErr := openWorkspace(ctx)
 	if wsErr != nil && !errors.Is(wsErr, errNotWorkspace) && !errors.Is(wsErr, errV1Workspace) {
-		return wsErr
+		return finishCommand(cmd, nil, asJSON, wsErr)
 	}
 	inWorkspace := wsErr == nil
 

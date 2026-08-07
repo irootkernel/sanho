@@ -74,12 +74,34 @@ func TestLoadConfig_DetectsV1FromRealLegacyShape(t *testing.T) {
 	}
 }
 
-func TestLoadConfig_DetectsV1WhenSchemaVersionAbsentEvenWithoutSocketPath(t *testing.T) {
+// TestLoadConfig_RejectsAConfigThatIsNeitherV1NorV2 is F-L7.
+//
+// "No schema_version" used to be sufficient to call a file v0.1, which
+// meant a v2 config that had lost its version field — hand-edited,
+// truncated, written by something broken — was reported as v0.1 and the
+// user was sent to `sanho migrate`, which would then rewrite it from
+// fields it does not contain. socket_path is the v0.1 marker; without
+// it, a versionless config is corrupt and says so, naming the file.
+func TestLoadConfig_RejectsAConfigThatIsNeitherV1NorV2(t *testing.T) {
 	dir := t.TempDir()
-	// A minimal/hypothetical file with no schema_version and no
-	// socket_path must still be treated as v1 — "lacks schema_version"
-	// is sufficient on its own per the detection rule.
 	raw := map[string]string{"workspace_id": "ws", "project": "proj"}
+	path := filepath.Join(dir, wsstate.ConfigFileName)
+	writeJSON(t, path, raw)
+
+	_, err := wsstate.LoadConfig(dir)
+	if !errors.Is(err, wsstate.ErrConfigCorrupt) {
+		t.Fatalf("LoadConfig() error = %v, want ErrConfigCorrupt", err)
+	}
+	if !strings.Contains(err.Error(), path) {
+		t.Errorf("error = %v, want it to name %s", err, path)
+	}
+}
+
+// TestLoadConfig_DetectsV1BySocketPath keeps the v0.1 route open for the
+// files that really are v0.1.
+func TestLoadConfig_DetectsV1BySocketPath(t *testing.T) {
+	dir := t.TempDir()
+	raw := map[string]string{"workspace_id": "ws", "project": "proj", "socket_path": "/tmp/sanhod.sock"}
 	writeJSON(t, filepath.Join(dir, wsstate.ConfigFileName), raw)
 
 	got, err := wsstate.LoadConfig(dir)

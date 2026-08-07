@@ -159,7 +159,10 @@ var (
 	ErrDocsDirty        = errors.New("docs have uncommitted changes")
 	ErrUnknownBase      = errors.New("the recorded docs base is unknown to the canonical repository")
 	ErrUnknownTarget    = errors.New("the requested target is not a canonical commit")
-	ErrPullNeedsSync    = errors.New("local docs have changes that 'sanho pull' cannot fast-forward")
+	ErrPullNeedsSync    = errors.New("local docs have changes a fast-forward cannot carry")
+	// ErrRebaseOntoHealthy refuses --rebase-onto when the recorded base
+	// is perfectly reachable and the target merely precedes it (F-M4).
+	ErrRebaseOntoHealthy = errors.New("--rebase-onto targets an ancestor of a healthy base")
 )
 
 // syncCommitPrefix is the fixed subject of the commit sync and
@@ -190,7 +193,7 @@ func (u *UseCase) Run(ctx context.Context, opts Options) (Result, error) {
 		return Result{}, fmt.Errorf("read sync state: %w", err)
 	}
 	if noteExists {
-		return Result{}, fmt.Errorf("%w: syncing %s to %s; resolve the markers and commit, or run 'sanho sync --abort'",
+		return Result{}, fmt.Errorf("%w: syncing %s to %s",
 			ErrSyncInProgress, shortOID(notePrev.Commit), shortOID(noteTarget.Commit))
 	}
 
@@ -407,8 +410,21 @@ func (u *UseCase) Pull(ctx context.Context, withCommit bool) (Result, error) {
 		return Result{}, fmt.Errorf("read sync state: %w", err)
 	}
 	if noteExists {
-		return Result{}, fmt.Errorf("%w: syncing %s to %s; resolve the markers and commit, or run 'sanho sync --abort'",
+		return Result{}, fmt.Errorf("%w: syncing %s to %s",
 			ErrSyncInProgress, shortOID(notePrev.Commit), shortOID(noteTarget.Commit))
+	}
+
+	// `pull` replaces the docs worktree AND the docs index entries, so
+	// staged docs changes are content it would silently discard. The
+	// worktree-versus-base test below cannot see them — a staged edit
+	// whose worktree copy was then restored hashes back to the base tree
+	// — which is exactly how F-H5 destroyed staged work. Ask git.
+	clean, err := u.App.DocsClean(ctx)
+	if err != nil {
+		return Result{}, fmt.Errorf("read docs status: %w", err)
+	}
+	if !clean {
+		return Result{}, fmt.Errorf("%w: docs have uncommitted changes", ErrPullNeedsSync)
 	}
 
 	if err := u.Canonical.Fetch(ctx); err != nil {
@@ -438,7 +454,7 @@ func (u *UseCase) Pull(ctx context.Context, withCommit bool) (Result, error) {
 		// Pull consumes from a known point; establishing one is exactly
 		// what sync does, and it succeeds in this state (D3 guidance
 		// closure).
-		return Result{}, fmt.Errorf("%w: no docs base is recorded; run 'sanho sync' first", ErrPullNeedsSync)
+		return Result{}, fmt.Errorf("%w: no docs base is recorded", ErrPullNeedsSync)
 	}
 	baseTree, err := u.resolveBaseTree(ctx, base, true, head, false)
 	if err != nil {
@@ -455,7 +471,7 @@ func (u *UseCase) Pull(ctx context.Context, withCommit bool) (Result, error) {
 		return Result{}, fmt.Errorf("hash worktree docs: %w", err)
 	}
 	if worktreeTree != baseTree {
-		return Result{}, fmt.Errorf("%w: local docs differ from base %s; run 'sanho sync' to reconcile them",
+		return Result{}, fmt.Errorf("%w: local docs differ from base %s",
 			ErrPullNeedsSync, shortOID(base.Commit))
 	}
 
@@ -519,11 +535,51 @@ func (u *UseCase) resolveTarget(ctx context.Context, rebaseOnto string) (head, t
 	if !known {
 		return "", "", "", fmt.Errorf("%w: %s", ErrUnknownTarget, shortOID(rebaseOnto))
 	}
+	if err := u.refuseHealthyRebase(ctx, rebaseOnto, head); err != nil {
+		return "", "", "", err
+	}
 	tree, err := u.App.CommitTree(ctx, rebaseOnto)
 	if err != nil {
 		return "", "", "", fmt.Errorf("resolve the docs tree of %s: %w", shortOID(rebaseOnto), err)
 	}
 	return head, rebaseOnto, tree, nil
+}
+
+// refuseHealthyRebase is the F-M4 guard.
+//
+// `--rebase-onto` is rewrite recovery: it exists so a workspace whose
+// recorded base vanished from canonical history can name a surviving
+// commit to reconcile against. Pointing it at an ancestor of a base that
+// is perfectly reachable is a different request — "adopt this older
+// canonical state as my base" — and honoring it would record a base
+// behind content the workspace already has, so the next push would
+// "merge" documents nobody reverted. Refuse, and describe the ordinary
+// route instead.
+//
+// A target that is NOT an ancestor of the base (a sibling line of
+// history, or something newer) is left alone: that is a genuine
+// re-anchor and the flag's purpose.
+func (u *UseCase) refuseHealthyRebase(ctx context.Context, target, head string) error {
+	base, hasBase, err := u.State.LoadBase()
+	if err != nil || !hasBase {
+		// No base, or an unreadable one: nothing healthy to protect.
+		return nil //nolint:nilerr // an unreadable base is precisely the state --rebase-onto repairs
+	}
+	healthy, err := u.baseIsReachable(ctx, base.Commit, head)
+	if err != nil || !healthy {
+		return nil //nolint:nilerr // an unreachable base is what the flag is for
+	}
+	if target == base.Commit {
+		return nil
+	}
+	ancestor, err := u.Canonical.IsAncestor(ctx, target, base.Commit)
+	if err != nil {
+		return fmt.Errorf("check whether %s precedes the recorded base: %w", shortOID(target), err)
+	}
+	if !ancestor {
+		return nil
+	}
+	return fmt.Errorf("%w: %s precedes base %s", ErrRebaseOntoHealthy, shortOID(target), shortOID(base.Commit))
 }
 
 // canonicalEmpty reports whether canonical carries no commits at all.
@@ -624,7 +680,7 @@ func (u *UseCase) resolveBaseTree(ctx context.Context, base provenance.Base, has
 		if explicitTarget {
 			return u.emptyBaseTree(ctx)
 		}
-		return "", fmt.Errorf("%w: %s carries no docs-base-tree to re-anchor by; pick a canonical commit and run 'sanho sync --rebase-onto <commit>'",
+		return "", fmt.Errorf("%w: %s carries no docs-base-tree to re-anchor by",
 			ErrUnknownBase, shortOID(base.Commit))
 	}
 	anchor, found, err := u.Canonical.FindCommitByDocsTree(ctx, base.Tree)
@@ -635,7 +691,7 @@ func (u *UseCase) resolveBaseTree(ctx context.Context, base provenance.Base, has
 		if explicitTarget {
 			return u.emptyBaseTree(ctx)
 		}
-		return "", fmt.Errorf("%w: neither %s nor its docs tree %s is in canonical history; pick a canonical commit and run 'sanho sync --rebase-onto <commit>'",
+		return "", fmt.Errorf("%w: neither %s nor its docs tree %s is in canonical history",
 			ErrUnknownBase, shortOID(base.Commit), shortOID(base.Tree))
 	}
 	tree, err := u.App.CommitTree(ctx, anchor)

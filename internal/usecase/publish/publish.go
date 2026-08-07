@@ -41,8 +41,19 @@ type CanonicalPort interface {
 	// FetchFromApp imports the pushed tip so its docs tree is
 	// addressable clone-side.
 	FetchFromApp(ctx context.Context, tipOID string) error
-	// MergeDocs runs the §5.4 merge clone-side.
-	MergeDocs(ctx context.Context, baseCommit, oursTree, theirsCommit string) (tree string, conflicts []string, clean bool, err error)
+	// MergeDocsTrees runs the §5.4 merge clone-side over three docs
+	// TREES. Trees rather than commits is what lets the evaluation pass
+	// chain several tips together without writing anything: the second
+	// tip merges against the tree the first one would publish, which has
+	// no commit yet. An empty baseTree means "no common history", i.e.
+	// the empty tree.
+	MergeDocsTrees(ctx context.Context, baseTree, oursTree, theirsTree string) (tree string, conflicts []string, clean bool, err error)
+	// DocsTreeOfCommit resolves a canonical commit's docs tree.
+	DocsTreeOfCommit(ctx context.Context, commit string) (string, error)
+	// DocsFileCount counts the files a canonical commit publishes. It
+	// exists for one message: the refusal that names how many docs an
+	// empty-tree publication would delete (§5.3, F-H2).
+	DocsFileCount(ctx context.Context, commit string) (int, error)
 	CommitDocsTree(ctx context.Context, tree, parent, authorName, authorEmail, message string) (string, error)
 	// PushHead CAS-publishes; returns canonical.ErrNonFastForward on a
 	// lost race.
@@ -54,9 +65,14 @@ type AppRepoPort interface {
 	// DocsTreeOf returns the docs tree OID of a commit (empty-tree OID
 	// when the docs dir is absent).
 	DocsTreeOf(ctx context.Context, commit string) (string, error)
-	// ScanDocsBlobsForMarkers scans a commit's docs blobs (§5.4
-	// detector); returns conflicted paths. Unreadable blobs error.
-	ScanDocsBlobsForMarkers(ctx context.Context, commit string) ([]string, error)
+	// ScanDocsBlobsSince scans the docs blobs a push would INTRODUCE
+	// (§5.4 detector); returns conflicted paths. Unreadable blobs error.
+	//
+	// since is the branch's previous remote tip, or "" for a branch the
+	// remote has never seen — in which case the whole tree is scanned.
+	// Scoping to the diff is what keeps the gate proportional to the
+	// push instead of to the docs directory (F-H4b).
+	ScanDocsBlobsSince(ctx context.Context, since, commit string) ([]string, error)
 	// DocsCommitSubjects lists subjects of commits since base that
 	// touched docs, oldest first (canonical commit body).
 	DocsCommitSubjects(ctx context.Context, base, tip string) ([]string, error)
@@ -86,18 +102,50 @@ type StatePort interface {
 //	ErrMarkersPresent   → markers_present
 //	ErrSyncRequired     → sync_required
 //	ErrHistoryRewritten → history_rewritten
+//	ErrEmptyPublish     → docs_would_be_deleted
 //
-// The two that carry file lists are raised as the struct errors below,
+// The three that carry detail are raised as the struct errors below,
 // which report themselves as these sentinels under errors.Is and hand
-// over their paths under errors.As. Canonical-unreachable is not
+// over their payload under errors.As. Canonical-unreachable is not
 // redefined here: the port surfaces domain/publish.ErrUnreachable and
 // this package wraps it unchanged.
+//
+// None of these strings names a command. Guidance is the CLI's job
+// (§5.9 catalog): a sentinel that spelled a next step would be a second,
+// uncataloged copy of it — which is exactly what the widened closure
+// gate now forbids.
 var (
 	ErrSyncInProgress   = errors.New("a conflicted sync is in progress")
 	ErrMarkersPresent   = errors.New("docs contain unresolved conflict markers")
-	ErrSyncRequired     = errors.New("docs changes must be reconciled with 'sanho sync' before publishing")
+	ErrSyncRequired     = errors.New("docs changes must be reconciled before publishing")
 	ErrHistoryRewritten = errors.New("canonical history was rewritten and the recorded base is unreachable")
+	ErrEmptyPublish     = errors.New("publishing this branch would delete every canonical doc")
 )
+
+// EmptyPublishError rejects a tip whose docs tree is empty while
+// canonical still holds documents (§5.3, F-H2).
+//
+// The state is ordinary and the intent is ambiguous, which is why it is
+// a refusal rather than a publication: pushing a branch created before
+// the docs directory existed, or one where `git rm -r docs` was the
+// point, look identical from here. Fail closed, name the branch, and let
+// SANHO_ALLOW_DOCS_DELETION say which it was.
+type EmptyPublishError struct {
+	// Branch and Tip identify the push that would empty canonical.
+	Branch string
+	Tip    string
+	// Head is the canonical head whose content would be deleted.
+	Head string
+	// DocsCount is how many files that head publishes, or -1 when it
+	// could not be counted (the refusal stands either way).
+	DocsCount int
+}
+
+func (e *EmptyPublishError) Error() string {
+	return fmt.Sprintf("%s: %s carries no docs (canonical head %s)", ErrEmptyPublish, e.Branch, shortOID(e.Head))
+}
+
+func (e *EmptyPublishError) Is(target error) bool { return target == ErrEmptyPublish }
 
 // MarkersPresentError names the committed docs files carrying conflict
 // markers (§5.3 step 3).
@@ -152,8 +200,15 @@ const (
 
 // Outcome reports one pre-push evaluation.
 type Outcome struct {
-	// Published is the new canonical head when a publication happened.
+	// Published is the FINAL canonical head when a publication happened
+	// — the last link of the chain, which is what the success line
+	// names.
 	Published string
+	// PublishedOIDs lists every canonical commit this push created, in
+	// order. A multi-ref push publishes once per distinct docs tree, and
+	// reporting only the last one is how the multi-ref clobber (F-C1)
+	// stayed invisible: the caller must be able to see the whole chain.
+	PublishedOIDs []string
 	// Case records the decided case for the (deduplicated) tips: the
 	// case of the last tip processed, which for the ordinary
 	// single-branch push is simply "the" case.
@@ -174,6 +229,12 @@ type UseCase struct {
 	ActorName   string
 	ActorEmail  string
 	WorkspaceID string
+	// AllowEmptyPublish disarms the §5.3 empty-docs refusal (F-H2) for
+	// one push. The CLI sets it from SANHO_ALLOW_DOCS_DELETION=1: the
+	// deletion of every canonical doc is a legitimate operation, it is
+	// just never one to infer from a branch that happens to carry no
+	// docs.
+	AllowEmptyPublish bool
 }
 
 // tip is one deduplicated publication candidate: the pushed commit, its
@@ -190,11 +251,58 @@ type tip struct {
 	publishedTree string
 }
 
+// snapshot is the canonical state one evaluation is decided against. It
+// is read once per attempt and then held still: every tip in a push is
+// judged against the same head, which is what stops a later tip from
+// being decided against a head its own siblings just moved (F-C1).
+type snapshot struct {
+	head      string
+	headTree  string
+	bootstrap bool
+}
+
+// publication is one validated write: the tip that motivates it and the
+// exact docs tree it will carry. The tree is computed in the evaluation
+// pass, so the publication pass has nothing left to decide.
+type publication struct {
+	tip     *tip
+	tree    string
+	decided pubdom.Case
+}
+
+// pushPlan is a whole push, validated before anything is written.
+type pushPlan struct {
+	publications []publication
+	// decided is the case of the last publication — "the" case for the
+	// ordinary single-branch push.
+	decided pubdom.Case
+}
+
 // Run evaluates the hook's ref updates per §5.3 steps 1–6. A nil error
 // means the push may proceed; a returned error carries the §5.9
 // guidance (sync required / markers present / canonical unreachable /
-// history rewritten) and the hook exits non-zero without any remote
-// ref changed.
+// history rewritten / empty publication) and the hook exits non-zero.
+//
+// The shape is **evaluate then publish**, and it is the fix for F-C1 and
+// F-H1 both.
+//
+// The first pass decides every tip against ONE frozen (head, base)
+// snapshot and computes, with tree-level merges only, the exact tree
+// each publication would write — chaining, so tip 2 is evaluated against
+// the tree tip 1 would leave rather than against the tree canonical
+// happens to hold. Nothing in that pass mutates canonical: it writes
+// objects into the private clone and no ref anywhere. So a push in which
+// any tip conflicts, lacks a base, would empty canonical, or sits on
+// rewritten history is rejected whole, with canonical untouched — which
+// is what makes the template's "no remote ref was changed" true by
+// construction.
+//
+// The second pass then commits and CAS-pushes the precomputed trees in
+// order, each one parented on the previous publication. A later tip is
+// never fast-forwarded past an earlier one: the chain is why pushing two
+// branches with different docs no longer silently deletes one of them.
+//
+// The base advances once, at the end, against the final publication.
 func (u *UseCase) Run(ctx context.Context, updates []RefUpdate) (Outcome, error) {
 	// Step 1 — filter. Tag pushes and branch deletions are not ours.
 	candidates := publishable(updates)
@@ -237,9 +345,17 @@ func (u *UseCase) Run(ctx context.Context, updates []RefUpdate) (Outcome, error)
 	}
 
 	outcome := Outcome{Case: pubdom.CaseUpToDate}
-	for i := range tips {
-		t := &tips[i]
-		published, decided, err := u.publishTip(ctx, t, &base, hasBase)
+	for attempt := 0; attempt < MaxCASRetries; attempt++ {
+		snap, err := u.canonicalSnapshot(ctx)
+		if err != nil {
+			return outcome, err
+		}
+
+		// Re-anchoring corrects the base in place, so each attempt starts
+		// from the recorded value rather than from the previous attempt's
+		// correction.
+		anchored := base
+		plan, err := u.evaluate(ctx, tips, &anchored, hasBase, snap)
 		if err != nil {
 			var syncErr *SyncRequiredError
 			if errors.As(err, &syncErr) {
@@ -247,24 +363,210 @@ func (u *UseCase) Run(ctx context.Context, updates []RefUpdate) (Outcome, error)
 			}
 			return outcome, err
 		}
-		outcome.Case = decided
-		if published == "" {
-			continue
+		outcome.Case = plan.decided
+		if len(plan.publications) == 0 {
+			return outcome, nil
 		}
-		outcome.Published = published
 
-		// Step 6 — base-advance rule.
-		advanced, err := u.advanceBase(ctx, published, t.publishedTree)
+		published, publishErr := u.publishPlan(ctx, plan, snap)
+		outcome.PublishedOIDs = append(outcome.PublishedOIDs, published...)
+		if len(outcome.PublishedOIDs) > 0 {
+			outcome.Published = outcome.PublishedOIDs[len(outcome.PublishedOIDs)-1]
+		}
+
+		switch {
+		case publishErr == nil:
+		case errors.Is(publishErr, pubdom.ErrNonFastForward):
+			// A racing publisher won. Refetch and re-enter the evaluation
+			// from scratch; the merge must be recomputed against the new
+			// head, never replayed.
+			if fetchErr := u.Canonical.Fetch(ctx); fetchErr != nil {
+				return outcome, fmt.Errorf("refresh canonical repository: %w", fetchErr)
+			}
+			continue
+		default:
+			return outcome, publishErr
+		}
+
+		// Step 6 — base-advance rule, once, against the final publication.
+		final := plan.publications[len(plan.publications)-1]
+		advanced, err := u.advanceBase(ctx, outcome.Published, final.tree)
 		if err != nil {
 			return outcome, err
 		}
-		if advanced {
-			base = provenance.Base{Commit: published, Tree: t.publishedTree}
-			hasBase = true
-			outcome.BaseAdvanced = true
+		outcome.BaseAdvanced = advanced
+		return outcome, nil
+	}
+
+	head, _, _, err := u.canonicalHead(ctx)
+	if err != nil {
+		return outcome, err
+	}
+	return outcome, &SyncRequiredError{Base: base.Commit, Head: head, Reason: ReasonCASExhausted}
+}
+
+// evaluate is pass 1: decide and compute, never write a ref.
+//
+// accTree is the tree the chain has reached — canonical's frozen head
+// tree before the first publication, then each computed publication in
+// turn. Every tip is merged against it rather than against the frozen
+// head tree, which is precisely what a fast-forward would have thrown
+// away.
+func (u *UseCase) evaluate(ctx context.Context, tips []tip, base *provenance.Base, hasBase bool, snap snapshot) (pushPlan, error) {
+	emptyTree, err := u.App.EmptyTree(ctx)
+	if err != nil {
+		return pushPlan{}, fmt.Errorf("resolve the empty tree: %w", err)
+	}
+
+	plan := pushPlan{decided: pubdom.CaseUpToDate}
+	accTree := snap.headTree
+
+	for i := range tips {
+		t := &tips[i]
+
+		// Case ① short-circuits before the base is consulted at all, so a
+		// workspace with a missing or orphaned base can still push
+		// docs-identical (or docs-free) commits.
+		if t.docsTree == accTree {
+			continue
+		}
+		if !hasBase && !snap.bootstrap {
+			// No merge base means no safe way to combine this tip with
+			// canonical. `sanho sync` establishes one and succeeds in this
+			// state, so the guidance stays closed (D3).
+			return pushPlan{}, &SyncRequiredError{Head: snap.head, Reason: ReasonNoBase}
+		}
+		if err := u.refuseEmptyPublication(ctx, t, emptyTree, accTree, snap); err != nil {
+			return pushPlan{}, err
+		}
+
+		var decided pubdom.Case
+		if snap.bootstrap {
+			decided = decideBootstrap(t.docsTree, snap.headTree)
+		} else if decided, err = u.decideWithReanchor(ctx, t, base, snap.head, snap.headTree); err != nil {
+			return pushPlan{}, err
+		}
+
+		// Importing the tip writes objects into the workspace-private
+		// clone. It changes no ref there and nothing at all on origin, so
+		// it is not a canonical mutation in the sense F-H1 is about.
+		if err := u.Canonical.FetchFromApp(ctx, t.oid); err != nil {
+			return pushPlan{}, fmt.Errorf("import %s into the canonical clone: %w", shortOID(t.oid), err)
+		}
+
+		tree := t.docsTree
+		chained := len(plan.publications) > 0
+		if decided == pubdom.CaseAutoMerge || chained {
+			// A second publication in the same push is always a merge,
+			// whatever the case analysis said against the frozen head: the
+			// content the first one added is not in this tip, and
+			// fast-forwarding over it is the data loss F-C1 names.
+			decided = pubdom.CaseAutoMerge
+			if tree, err = u.mergeOnto(ctx, t, *base, hasBase, snap, accTree); err != nil {
+				return pushPlan{}, err
+			}
+		}
+		if tree == accTree {
+			// The merge added nothing: this tip's content is already in
+			// what the chain will publish.
+			continue
+		}
+
+		plan.publications = append(plan.publications, publication{tip: t, tree: tree, decided: decided})
+		plan.decided = decided
+		accTree = tree
+	}
+	return plan, nil
+}
+
+// refuseEmptyPublication is the F-H2 gate: a tip with no docs at all,
+// pushed at a canonical that has them, would publish the empty tree and
+// delete every document. Fail closed and name the branch.
+func (u *UseCase) refuseEmptyPublication(ctx context.Context, t *tip, emptyTree, accTree string, snap snapshot) error {
+	if u.AllowEmptyPublish || t.docsTree != emptyTree || accTree == emptyTree {
+		return nil
+	}
+	count, err := u.Canonical.DocsFileCount(ctx, snap.head)
+	if err != nil {
+		// The refusal does not depend on the count; only its wording does.
+		count = -1
+	}
+	return &EmptyPublishError{Branch: t.branch, Tip: t.oid, Head: snap.head, DocsCount: count}
+}
+
+// mergeOnto three-way merges the tip's docs onto the tree the chain has
+// reached, taking the frozen base as the common ancestor.
+func (u *UseCase) mergeOnto(ctx context.Context, t *tip, base provenance.Base, hasBase bool, snap snapshot, ontoTree string) (string, error) {
+	baseTree, err := u.mergeBaseTree(ctx, base, hasBase, snap)
+	if err != nil {
+		return "", err
+	}
+	tree, conflicts, clean, err := u.Canonical.MergeDocsTrees(ctx, baseTree, t.docsTree, ontoTree)
+	if err != nil {
+		return "", fmt.Errorf("merge docs against canonical head: %w", err)
+	}
+	if !clean {
+		return "", &SyncRequiredError{
+			Base:      base.Commit,
+			Head:      snap.head,
+			Conflicts: conflicts,
+			Reason:    ReasonConflicts,
 		}
 	}
-	return outcome, nil
+	return tree, nil
+}
+
+// mergeBaseTree resolves the common ancestor of every merge in one push:
+// the docs tree of the frozen (possibly re-anchored) base. An empty
+// string means "no shared history", which MergeDocsTrees reads as the
+// empty tree — the honest ancestor when canonical has no commits.
+func (u *UseCase) mergeBaseTree(ctx context.Context, base provenance.Base, hasBase bool, snap snapshot) (string, error) {
+	if snap.bootstrap || !hasBase {
+		return "", nil
+	}
+	tree, err := u.Canonical.DocsTreeOfCommit(ctx, base.Commit)
+	if err != nil {
+		return "", fmt.Errorf("resolve the docs tree of base %s: %w", shortOID(base.Commit), err)
+	}
+	return tree, nil
+}
+
+// publishPlan is pass 2: commit and CAS-push the precomputed trees in
+// order, each parented on the one before. Nothing here decides anything.
+func (u *UseCase) publishPlan(ctx context.Context, plan pushPlan, snap snapshot) ([]string, error) {
+	parent := snap.head
+	var published []string
+
+	for i := range plan.publications {
+		step := &plan.publications[i]
+
+		newHead, err := u.commitPublication(ctx, step.tip, step.tree, parent)
+		if err != nil {
+			return published, err
+		}
+		switch err := u.Canonical.PushHead(ctx, newHead, parent); {
+		case err == nil:
+		case errors.Is(err, pubdom.ErrNonFastForward):
+			return published, err
+		default:
+			return published, fmt.Errorf("publish to canonical: %w", err)
+		}
+
+		step.tip.publishedTree = step.tree
+		published = append(published, newHead)
+		parent = newHead
+	}
+	return published, nil
+}
+
+// canonicalSnapshot freezes the canonical facts one evaluation pass is
+// decided against.
+func (u *UseCase) canonicalSnapshot(ctx context.Context) (snapshot, error) {
+	head, headTree, bootstrap, err := u.canonicalHead(ctx)
+	if err != nil {
+		return snapshot{}, err
+	}
+	return snapshot{head: head, headTree: headTree, bootstrap: bootstrap}, nil
 }
 
 // publishable applies §5.3 step 1: branch updates only, deletions
@@ -291,12 +593,21 @@ func isZeroOID(oid string) bool {
 func (u *UseCase) gateMarkers(ctx context.Context, updates []RefUpdate) error {
 	scanned := make(map[string]bool, len(updates))
 	for _, update := range updates {
-		if scanned[update.LocalOID] {
+		since := update.RemoteOID
+		if isZeroOID(since) {
+			since = ""
+		}
+		// One scan per (previous remote tip, tip) pair: the same tip
+		// pushed to two remotes with different previous states is two
+		// different diffs, and only re-scanning both keeps the gate
+		// honest.
+		key := since + ".." + update.LocalOID
+		if scanned[key] {
 			continue
 		}
-		scanned[update.LocalOID] = true
+		scanned[key] = true
 
-		paths, err := u.App.ScanDocsBlobsForMarkers(ctx, update.LocalOID)
+		paths, err := u.App.ScanDocsBlobsSince(ctx, since, update.LocalOID)
 		if err != nil {
 			return fmt.Errorf("scan docs of %s for conflict markers: %w", shortOID(update.LocalOID), err)
 		}
@@ -310,11 +621,22 @@ func (u *UseCase) gateMarkers(ctx context.Context, updates []RefUpdate) error {
 // resolveTips maps each pushed ref to its docs tree and drops later
 // duplicates of a tree already queued (§5.3 step 5 "deduplicate
 // identical Ts", in stdin order).
+//
+// Identical tip OIDs are dropped first (F-M6). `git push --all` on a
+// repository where two branches point at the same commit sends the same
+// OID twice; resolving its docs tree twice is a wasted git invocation
+// per duplicate before the tree-level dedup notices.
 func (u *UseCase) resolveTips(ctx context.Context, updates []RefUpdate) ([]tip, error) {
 	var tips []tip
 	seen := make(map[string]bool, len(updates))
+	seenOID := make(map[string]bool, len(updates))
 
 	for _, update := range updates {
+		if seenOID[update.LocalOID] {
+			continue
+		}
+		seenOID[update.LocalOID] = true
+
 		docsTree, err := u.App.DocsTreeOf(ctx, update.LocalOID)
 		if err != nil {
 			return nil, fmt.Errorf("resolve docs tree of %s: %w", shortOID(update.LocalOID), err)
@@ -336,73 +658,6 @@ func (u *UseCase) resolveTips(ctx context.Context, updates []RefUpdate) ([]tip, 
 		})
 	}
 	return tips, nil
-}
-
-// publishTip runs the §5.3 case analysis for one tip, with the bounded
-// CAS retry loop around it. It returns the published canonical commit
-// ("" when nothing needed publishing) and the case that decided the
-// outcome.
-func (u *UseCase) publishTip(ctx context.Context, t *tip, base *provenance.Base, hasBase bool) (string, pubdom.Case, error) {
-	decided := pubdom.CaseUpToDate
-
-	for attempt := 0; attempt < MaxCASRetries; attempt++ {
-		head, headTree, bootstrap, err := u.canonicalHead(ctx)
-		if err != nil {
-			return "", decided, err
-		}
-
-		// Case ① short-circuits before the base is consulted at all, so
-		// a workspace with a missing or orphaned base can still push
-		// docs-identical (or docs-free) commits. On an empty canonical
-		// this is the docs-free push: the tip has no docs, the canonical
-		// "tree" is the empty tree, and there is nothing to bootstrap.
-		if t.docsTree == headTree {
-			return "", pubdom.CaseUpToDate, nil
-		}
-		if !hasBase && !bootstrap {
-			// No merge base means no safe way to combine this tip with
-			// canonical. `sanho sync` establishes one and succeeds in
-			// this state, so the guidance stays closed (D3).
-			return "", pubdom.CaseUnknownBase, &SyncRequiredError{Head: head, Reason: ReasonNoBase}
-		}
-
-		if bootstrap {
-			decided = decideBootstrap(t.docsTree, headTree)
-		} else if decided, err = u.decideWithReanchor(ctx, t, base, head, headTree); err != nil {
-			return "", decided, err
-		}
-
-		publishedTree, err := u.treeToPublish(ctx, t, decided, *base, head)
-		if err != nil {
-			return "", decided, err
-		}
-
-		newHead, err := u.commitPublication(ctx, t, publishedTree, head)
-		if err != nil {
-			return "", decided, err
-		}
-
-		switch err := u.Canonical.PushHead(ctx, newHead, head); {
-		case err == nil:
-			t.publishedTree = publishedTree
-			return newHead, decided, nil
-		case errors.Is(err, pubdom.ErrNonFastForward):
-			// A racing publisher won. Refetch and re-enter the case
-			// analysis from scratch; the merge must be recomputed
-			// against the new head, never replayed.
-			if err := u.Canonical.Fetch(ctx); err != nil {
-				return "", decided, fmt.Errorf("refresh canonical repository: %w", err)
-			}
-		default:
-			return "", decided, fmt.Errorf("publish to canonical: %w", err)
-		}
-	}
-
-	head, _, _, err := u.canonicalHead(ctx)
-	if err != nil {
-		return "", decided, err
-	}
-	return "", decided, &SyncRequiredError{Base: base.Commit, Head: head, Reason: ReasonCASExhausted}
 }
 
 // canonicalHead reads canonical head, translating the "nothing has ever
@@ -517,34 +772,6 @@ func (u *UseCase) decide(ctx context.Context, t *tip, base provenance.Base, head
 		BaseKnown:      known,
 		BaseIsAncestor: ancestor,
 	}), nil
-}
-
-// treeToPublish produces the docs tree that will become the canonical
-// commit: the tip's own tree for a fast-forward, the merge result for an
-// auto-merge. Both first import the tip so its trees are addressable
-// clone-side.
-func (u *UseCase) treeToPublish(ctx context.Context, t *tip, decided pubdom.Case, base provenance.Base, head string) (string, error) {
-	if err := u.Canonical.FetchFromApp(ctx, t.oid); err != nil {
-		return "", fmt.Errorf("import %s into the canonical clone: %w", shortOID(t.oid), err)
-	}
-
-	if decided == pubdom.CaseFastForward {
-		return t.docsTree, nil
-	}
-
-	tree, conflicts, clean, err := u.Canonical.MergeDocs(ctx, base.Commit, t.docsTree, head)
-	if err != nil {
-		return "", fmt.Errorf("merge docs against canonical head: %w", err)
-	}
-	if !clean {
-		return "", &SyncRequiredError{
-			Base:      base.Commit,
-			Head:      head,
-			Conflicts: conflicts,
-			Reason:    ReasonConflicts,
-		}
-	}
-	return tree, nil
 }
 
 func (u *UseCase) commitPublication(ctx context.Context, t *tip, tree, parent string) (string, error) {

@@ -52,10 +52,15 @@ type fakeCanonical struct {
 	// racing publisher landing first.
 	onPush func(c *fakeCanonical, attempt int)
 
-	// merge results returned by MergeDocs.
+	// merge results returned by MergeDocs / MergeDocsTrees.
 	mergeTree      string
+	mergeResults   []string
 	mergeConflicts []string
 	mergeErr       error
+
+	// docsCount answers DocsFileCount (the empty-publish refusal).
+	docsCount    int
+	docsCountErr error
 
 	// recorded traffic
 	fetches    int
@@ -154,6 +159,55 @@ func (c *fakeCanonical) MergeDocs(ctx context.Context, baseCommit, oursTree, the
 	return c.mergeTree, nil, true, nil
 }
 
+// MergeDocsTrees models the tree-level merge the evaluation pass uses.
+// Recorded calls carry trees on every position, which is what lets a
+// test assert that the chain merged against the *accumulated* tree
+// rather than against canonical's frozen head tree (F-C1).
+//
+// mergeResults, when populated, answers successive calls in order, so a
+// multi-tip push can be given a distinct union tree per merge; otherwise
+// mergeTree answers every call, as before.
+func (c *fakeCanonical) MergeDocsTrees(ctx context.Context, baseTree, oursTree, theirsTree string) (string, []string, bool, error) {
+	c.mergeCalls = append(c.mergeCalls, baseTree+"|"+oursTree+"|"+theirsTree)
+	if c.mergeErr != nil {
+		return "", nil, false, c.mergeErr
+	}
+	if len(c.mergeConflicts) > 0 {
+		return c.mergeTree, c.mergeConflicts, false, nil
+	}
+	if len(c.mergeResults) > 0 {
+		tree := c.mergeResults[0]
+		c.mergeResults = c.mergeResults[1:]
+		return tree, nil, true, nil
+	}
+	return c.mergeTree, nil, true, nil
+}
+
+// DocsTreeOfCommit answers from the modeled branch and detached commits.
+func (c *fakeCanonical) DocsTreeOfCommit(ctx context.Context, commit string) (string, error) {
+	if commit == "" {
+		return "", fmt.Errorf("no commit given")
+	}
+	for _, pair := range append(append([]commitPair{}, c.branch...), c.detached...) {
+		if pair.commit == commit {
+			return pair.tree, nil
+		}
+	}
+	return "", fmt.Errorf("no tree recorded for %s", commit)
+}
+
+// DocsFileCount stands in for the canonical inventory the empty-publish
+// refusal quotes (F-H2).
+func (c *fakeCanonical) DocsFileCount(ctx context.Context, commit string) (int, error) {
+	if c.docsCountErr != nil {
+		return 0, c.docsCountErr
+	}
+	if commit == "" {
+		return 0, nil
+	}
+	return c.docsCount, nil
+}
+
 func (c *fakeCanonical) CommitDocsTree(ctx context.Context, tree, parent, authorName, authorEmail, message string) (string, error) {
 	c.created = append(c.created, createdCommit{
 		tree:       tree,
@@ -202,6 +256,7 @@ type fakeApp struct {
 	emptyTree   string
 
 	scanned       []string
+	scanRanges    []string
 	subjectCalls  []string
 	worktreeCalls int
 }
@@ -214,8 +269,9 @@ func (a *fakeApp) DocsTreeOf(ctx context.Context, commit string) (string, error)
 	return tree, nil
 }
 
-func (a *fakeApp) ScanDocsBlobsForMarkers(ctx context.Context, commit string) ([]string, error) {
+func (a *fakeApp) ScanDocsBlobsSince(ctx context.Context, since, commit string) ([]string, error) {
 	a.scanned = append(a.scanned, commit)
+	a.scanRanges = append(a.scanRanges, since+".."+commit)
 	if a.markerErr != nil {
 		return nil, a.markerErr
 	}

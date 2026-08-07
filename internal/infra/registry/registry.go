@@ -40,6 +40,47 @@ const currentStateVersion = 2
 // chance to intervene.
 var ErrRegistryUnreadable = errors.New("registry state is unreadable")
 
+// ErrLegacyState reports a state.json still in the v0.1 daemon schema.
+//
+// It is a refusal, not a recovery. The v0.1 file records every project's
+// docs repository under `docs_repos`/`project_to_docs_repo`, keys the v2
+// struct does not have — so unmarshalling it succeeds while producing an
+// EMPTY v2 state, and the first ordinary command that wrote the registry
+// would have replaced the whole file with that emptiness (F-H8a). Only
+// `sanho migrate` converts it; everything else stops here.
+var ErrLegacyState = errors.New("registry state uses the v0.1 daemon schema")
+
+// LegacyState is the v0.1 daemon's ~/.sanho/state.json, as much of it as
+// v0.2 has a place for. It exists so `sanho migrate` can convert the
+// WHOLE file in one pass rather than lifting out one project's URL and
+// letting the next write destroy the rest.
+type LegacyState struct {
+	DocsRepos         map[string]LegacyDocsRepo  `json:"docs_repos"`
+	ProjectToDocsRepo map[string]string          `json:"project_to_docs_repo"`
+	Workspaces        map[string]LegacyWorkspace `json:"workspaces"`
+}
+
+// LegacyDocsRepo is one v0.1 docs-repository registration. The field
+// names are the daemon's exported Go names, which is how they were
+// marshalled (no json tags in v0.1).
+type LegacyDocsRepo struct {
+	ID      string
+	Path    string
+	RepoURL string
+}
+
+// LegacyWorkspace is one v0.1 workspace row. Only the fields that have a
+// v2 counterpart are read; v0.1's transport bookkeeping has none.
+type LegacyWorkspace struct {
+	Project        string    `json:"project"`
+	LocalPath      string    `json:"local_path"`
+	DocsHash       string    `json:"docs_hash"`
+	LastActorEmail string    `json:"last_actor_email"`
+	OwnerEmail     string    `json:"owner_email"`
+	LastReportedAt time.Time `json:"last_reported_at"`
+	LastUpdatedAt  time.Time `json:"last_updated_at"`
+}
+
 // State is the v2 registry schema.
 type State struct {
 	Version    int                  `json:"version"`
@@ -148,31 +189,50 @@ func (f *File) Update(ctx context.Context, fn func(*State) error) error {
 		if err := fn(&st); err != nil {
 			return err
 		}
-		ensureMaps(&st)
-
-		data, err := json.MarshalIndent(&st, "", "  ")
-		if err != nil {
-			return fmt.Errorf("marshal registry state: %w", err)
-		}
-		// Primary first, then refresh the backup from the same bytes
-		// (§5.7) — both through the shared atomic writer.
-		if err := fsx.WriteFileAtomic(f.statePath(), data, registryFileMode); err != nil {
-			return fmt.Errorf("write registry state %s: %w", f.statePath(), err)
-		}
-		if err := fsx.WriteFileAtomic(f.backupPath(), data, registryFileMode); err != nil {
-			return fmt.Errorf("write registry backup %s: %w", f.backupPath(), err)
-		}
-		return nil
+		return f.persistLocked(st)
 	})
+}
+
+// persistLocked writes state and its backup. Callers hold the flock.
+//
+// Version is stamped rather than trusted (R1-G5, F-H8f): a State that
+// reached here through a callback, a legacy conversion, or a test always
+// leaves as version 2, so the on-disk schema marker can never disagree
+// with the bytes beside it.
+func (f *File) persistLocked(st State) error {
+	st.Version = currentStateVersion
+	ensureMaps(&st)
+
+	data, err := json.MarshalIndent(&st, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal registry state: %w", err)
+	}
+	// Primary first, then refresh the backup from the same bytes
+	// (§5.7) — both through the shared atomic writer.
+	if err := fsx.WriteFileAtomic(f.statePath(), data, registryFileMode); err != nil {
+		return fmt.Errorf("write registry state %s: %w", f.statePath(), err)
+	}
+	if err := fsx.WriteFileAtomic(f.backupPath(), data, registryFileMode); err != nil {
+		return fmt.Errorf("write registry backup %s: %w", f.backupPath(), err)
+	}
+	return nil
 }
 
 // loadLocked reads state.json, recovering from state.json.bak when the
 // primary exists but is corrupt. Callers must hold the registry's flock.
+//
+// A v0.1 file is neither valid nor corrupt: it parses cleanly into an
+// empty v2 State, because none of its keys are v2 keys. Detecting that
+// explicitly is what keeps an ordinary `sanho status` from rewriting the
+// daemon's whole project map as `{}` (F-H8a).
 func (f *File) loadLocked() (State, error) {
 	primaryPath := f.statePath()
 	data, err := os.ReadFile(primaryPath)
 	switch {
 	case err == nil:
+		if legacy, legacyErr := isLegacySchema(data); legacyErr == nil && legacy {
+			return State{}, fmt.Errorf("%w: %s", ErrLegacyState, primaryPath)
+		}
 		var st State
 		jsonErr := json.Unmarshal(data, &st)
 		if jsonErr != nil {
@@ -185,6 +245,103 @@ func (f *File) loadLocked() (State, error) {
 	default:
 		return State{}, fmt.Errorf("read registry state %s: %w", primaryPath, err)
 	}
+}
+
+// isLegacySchema recognizes the v0.1 daemon's file: no version field
+// (v0.1 had none, v2 always writes 2) plus at least one v0.1-only key.
+// Requiring both keeps a hand-written or truncated v2 file — which has
+// no version either — from being misread as legacy.
+func isLegacySchema(data []byte) (bool, error) {
+	var probe struct {
+		Version           int             `json:"version"`
+		DocsRepos         json.RawMessage `json:"docs_repos"`
+		ProjectToDocsRepo json.RawMessage `json:"project_to_docs_repo"`
+	}
+	if err := json.Unmarshal(data, &probe); err != nil {
+		return false, err
+	}
+	return probe.Version == 0 && (len(probe.DocsRepos) > 0 || len(probe.ProjectToDocsRepo) > 0), nil
+}
+
+// ReadLegacy returns the v0.1 daemon state, or ok=false when state.json
+// is absent or already v2. Only `sanho migrate` calls it.
+func (f *File) ReadLegacy() (LegacyState, bool, error) {
+	data, err := os.ReadFile(f.statePath())
+	if err != nil {
+		if os.IsNotExist(err) {
+			return LegacyState{}, false, nil
+		}
+		return LegacyState{}, false, fmt.Errorf("read registry state %s: %w", f.statePath(), err)
+	}
+	legacy, err := isLegacySchema(data)
+	if err != nil || !legacy {
+		return LegacyState{}, false, nil //nolint:nilerr // an unparsable file is not a legacy file
+	}
+
+	var state LegacyState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return LegacyState{}, false, fmt.Errorf("parse v0.1 registry state %s: %w", f.statePath(), err)
+	}
+	return state, true, nil
+}
+
+// ConvertLegacy replaces a v0.1 state.json with its v2 equivalent, under
+// the lock. It is migrate's only writer of the registry file and it
+// converts the WHOLE file: every project mapping and every workspace
+// row, not just the one being migrated.
+//
+// That completeness is the point. Migrating workspace A used to write a
+// v2 file holding A alone, silently erasing project B's docs-repository
+// URL — so migrating B afterwards demanded --docs-repo-url for a value
+// the machine had already recorded (F-H8a, R1's lab3).
+//
+// A file that is already v2 is left exactly as it is, so a second
+// migrate cannot undo the first.
+func (f *File) ConvertLegacy(ctx context.Context) (converted bool, err error) {
+	err = fsx.WithFlock(ctx, f.lockPath(), func() error {
+		legacy, ok, readErr := f.ReadLegacy()
+		if readErr != nil || !ok {
+			return readErr
+		}
+
+		st := emptyState()
+		for project, repoID := range legacy.ProjectToDocsRepo {
+			repo, known := legacy.DocsRepos[repoID]
+			if !known || repo.RepoURL == "" {
+				continue
+			}
+			st.Projects[project] = Project{DocsRepoURL: repo.RepoURL}
+		}
+		for key, ws := range legacy.Workspaces {
+			st.Workspaces[key] = Workspace{
+				Project:       ws.Project,
+				LocalPath:     ws.LocalPath,
+				BaseCommit:    ws.DocsHash,
+				ActorEmail:    firstNonEmpty(ws.LastActorEmail, ws.OwnerEmail),
+				LastUpdatedAt: laterOf(ws.LastReportedAt, ws.LastUpdatedAt),
+			}
+		}
+
+		converted = true
+		return f.persistLocked(st)
+	})
+	return converted, err
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func laterOf(a, b time.Time) time.Time {
+	if b.After(a) {
+		return b
+	}
+	return a
 }
 
 // recoverFromBackupLocked is entered once the primary has been read but

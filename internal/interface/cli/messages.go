@@ -260,6 +260,55 @@ func pushRewrittenMessage(base, anchor, cloneDir, branch string) string {
 		"%s", shortOID(base), cloneDir, branch, msgPushRejectedTrailer)
 }
 
+// pushEmptyDocsMessage is the §5.3 empty-publication refusal (F-H2).
+//
+// The state is genuinely ambiguous — a branch created before the docs
+// directory existed and a branch where `git rm -r docs` was the point
+// look identical from the push boundary — so the message states what
+// would happen, names the branch, and offers both readings. The
+// environment variable is spelled rather than embedded in a command
+// line, because the deliberate deletion is a decision, not a retry.
+func pushEmptyDocsMessage(branch, head string, docsCount int) string {
+	scope := "every canonical document"
+	if docsCount > 0 {
+		scope = fmt.Sprintf("all %d canonical documents", docsCount)
+	}
+	return fmt.Sprintf("sanho: branch %s carries no docs; publishing it would delete %s (canonical head %s)\n"+
+		"If that is not what you meant, push a docs-bearing branch, or run 'sanho sync' on this one first.\n"+
+		"If it is, set SANHO_ALLOW_DOCS_DELETION=1 in the environment for that one push.\n"+
+		"%s", branch, scope, shortOID(head), msgPushRejectedTrailer)
+}
+
+// pushMergeFailedMessage covers a §5.4 merge that could not run at all
+// — a locked ref store, a broken clone — as opposed to one that ran and
+// found conflicts (F-C2).
+//
+// It names no command deliberately. Every merge failure this can reach
+// is environmental, and D3 forbids printing a command that would fail
+// where it is printed; the clone directory is the fact the user needs.
+func pushMergeFailedMessage(cloneDir, cause string) string {
+	return fmt.Sprintf("sanho: could not merge docs with the canonical repository: %s\n"+
+		"Inspect the canonical clone at %s, then push again.\n"+
+		"%s", cause, cloneDir, msgPushRejectedTrailer)
+}
+
+// pushPartialPublicationLine precedes a rejection template when part of
+// a multi-ref push already landed.
+//
+// Evaluate-then-publish (F-C1) makes this rare — every tip is validated
+// before the first write — but a transport failure between two
+// publications of one push is still possible, and the template's "no
+// remote ref was changed" must not be the only thing the user reads
+// when canonical did move.
+func pushPartialPublicationLine(oids []string) string {
+	short := make([]string, 0, len(oids))
+	for _, oid := range oids {
+		short = append(short, shortOID(oid))
+	}
+	return fmt.Sprintf("sanho: %d of this push's publications already landed in canonical (%s)",
+		len(oids), strings.Join(short, ", "))
+}
+
 // pushPublishedMessage reports a successful publication.
 func pushPublishedMessage(newHead, decidedCase string) string {
 	return fmt.Sprintf("sanho: published docs %s (%s)", shortOID(newHead), decidedCase)
@@ -293,7 +342,19 @@ func pulledMessage(target, commit string) string {
 }
 
 // syncAbortedMessage reports a completed `sanho sync --abort`.
-func syncAbortedMessage() string { return "sanho: sync aborted; docs restored to HEAD" }
+//
+// Untracked docs files are named when any remain (F-L8). Abort restores
+// the docs worktree to HEAD, which cannot remove a file HEAD never had
+// — one the user created while resolving. Left unsaid, the next
+// `sanho sync` refuses with ErrDocsDirty for a reason the user has no
+// way to connect to the abort they just ran.
+func syncAbortedMessage(untracked []string) string {
+	line := "sanho: sync aborted; docs restored to HEAD"
+	if len(untracked) == 0 {
+		return line
+	}
+	return line + fmt.Sprintf("\nuntracked files you created remain: %s", strings.Join(untracked, ", "))
+}
 
 // baseRederivedMessage is the one line a post-checkout/merge/rewrite
 // hook prints, and only when the base actually moved (§5.10).
@@ -337,7 +398,172 @@ func commitMsgStampWarning(cause string) string {
 	return fmt.Sprintf("sanho: docs provenance not stamped (%s); run 'sanho doctor --fix' to restore it", cause)
 }
 
+// --- Sync and pull refusals (§5.5, §5.9) ------------------------------
+//
+// The use cases raise command-free sentinels; the guidance is composed
+// here, once, so the closure gate can enumerate it. Before F-H6 these
+// strings lived in usecase/docsync, where nothing could prove they named
+// a command that works.
+
+// syncInProgressMessage refuses a sync or pull while an earlier one is
+// still unresolved. Both next steps are the ones §5.9 template 2 named
+// when the conflict was created.
+func syncInProgressMessage(detail string) string {
+	return fmt.Sprintf("sanho: a conflicted sync is in progress (%s)\n"+
+		"Resolve the markers and commit, or run 'sanho sync --abort' to undo it.", detail)
+}
+
+// pullNeedsSyncMessage refuses a fast-forward-only pull.
+//
+// The advice is deliberately two-step. `sanho sync` requires clean docs
+// itself, so "run 'sanho sync'" alone would name a command that fails in
+// the very state it is printed in; committing or stashing first is what
+// makes it succeed (D3, and the closure fixture performs both halves).
+func pullNeedsSyncMessage(detail string) string {
+	return fmt.Sprintf("sanho: 'pull' can only fast-forward, and these docs have moved on (%s)\n"+
+		"Commit or stash your docs changes, then run 'sanho sync' to reconcile them.", detail)
+}
+
+// syncUnknownBaseMessage covers a recorded base canonical no longer
+// knows, with no docs-base-tree anchor to recover it (§5.5 step 8).
+func syncUnknownBaseMessage(detail string) string {
+	return fmt.Sprintf("sanho: the recorded docs base is not in canonical history (%s)\n"+
+		"Pick a canonical commit and run 'sanho sync --rebase-onto <commit>'.", detail)
+}
+
+// syncUnreachableMessage is the §5.9 cause/action pair for sync and pull
+// (F-M3): the same two-line shape the push path uses, so an offline
+// workspace reads the same whichever verb hit the network.
+func syncUnreachableMessage(url, cause string) string {
+	return fmt.Sprintf("sanho: canonical repository unreachable (%s): %s\n"+
+		"Check network access to the docs repository, then run 'sanho sync' again.", url, cause)
+}
+
+// rebaseOntoHealthyMessage refuses `--rebase-onto` against an ancestor
+// of a perfectly reachable base (F-M4).
+//
+// The flag exists for rewritten history. Pointing it at an older commit
+// on healthy history asks sanho to adopt a past state as the base, which
+// would make the next push "merge" content the user never reverted —
+// so it is refused and the ordinary route is described in prose (edit,
+// commit) rather than named as a command, because no single command does
+// it.
+func rebaseOntoHealthyMessage(base, target string) string {
+	return fmt.Sprintf("sanho: --rebase-onto is for recovering from rewritten history, and base %s is healthy: %s already precedes it\n"+
+		"To adopt an older state, edit the docs and commit the change. Run 'sanho status' to see where the base stands.",
+		shortOID(base), shortOID(target))
+}
+
+// syncMergeFailedMessage is pushMergeFailedMessage without the push
+// trailer: the same environmental failure, met from a command the user
+// typed rather than from a hook (F-C2).
+func syncMergeFailedMessage(cloneDir, cause string) string {
+	return fmt.Sprintf("sanho: could not merge docs with the canonical repository: %s\n"+
+		"Inspect the canonical clone at %s and try again.", cause, cloneDir)
+}
+
+// docsTooLargeMessage renders the §5.4 scan-size refusal at user level.
+//
+// The detector reads whole files, so a file past markers.MaxScanSize is
+// refused rather than silently skipped — but the raw error is an infra
+// diagnostic ("appgit: docs/big.md is 11534336 bytes: content too
+// large…"), and §5.9 does not let that reach a user (F-M3). No command
+// is named because none fixes it: the file has to move or shrink.
+func docsTooLargeMessage(cause string) string {
+	return fmt.Sprintf("sanho: %s\n"+
+		"Conflict-marker scanning has a size limit; move the file out of the docs directory, or split it, then try again.", cause)
+}
+
 // --- Status and doctor ------------------------------------------------
+
+// cloneMissingMessage covers the one repair both `sanho status` and
+// `sanho doctor` need to name: the workspace-private clone is gone.
+//
+// It advises `sanho sync`, not `sanho init` (F-H6b). Sync is a write
+// path and therefore opens the clone with Ensure, which recreates and
+// fetches it; `sanho init` refuses outright in an initialized workspace,
+// so the old advice named a command that could not work where it was
+// printed.
+func cloneMissingMessage(cloneDir string) string {
+	return fmt.Sprintf("the canonical clone is missing (%s) — run 'sanho sync' to recreate it", cloneDir)
+}
+
+// doctorHooksMessage reports hook problems and names the repair.
+//
+// `sanho doctor --fix` reinstalls, which is non-destructive: the
+// installer matches whole lines and preserves every foreign one, so a
+// hook file the user also owns comes out with their content intact
+// (F-H6b). The old advice, `sanho init --force`, replaced the docs
+// directory — a destructive answer to a cosmetic problem.
+func doctorHooksMessage(problems string) string {
+	return fmt.Sprintf("%s — run 'sanho doctor --fix' to reinstall them", problems)
+}
+
+// syncNotePendingMessage is the unresolved-sync line status and doctor
+// both print.
+func syncNotePendingMessage(detail string) string {
+	return fmt.Sprintf("%s — resolve the markers and commit, or run 'sanho sync --abort'", detail)
+}
+
+// baseNeedsSyncMessage covers every state in which no base can be
+// derived locally: doctor's failed --fix, and a migrated workspace whose
+// v0.1 layout recorded none. `sanho sync` establishes one from canonical
+// and succeeds in both.
+func baseNeedsSyncMessage(detail string) string {
+	return fmt.Sprintf("%s — run 'sanho sync' to establish one from canonical", detail)
+}
+
+// baseUnknownToCanonicalMessage covers a base that exists locally but
+// which canonical does not recognize, as `sanho init` (reuse mode) and
+// `sanho migrate` both find it.
+//
+// It names `sanho status` and nothing more. `sanho sync` is the tempting
+// advice and the wrong one: with the base unreachable and no canonical
+// commit carrying its docs tree, sync refuses and points at
+// `--rebase-onto <commit>`, so advising it here would hand the user a
+// command that fails. Status reports the state in every case.
+func baseUnknownToCanonicalMessage(base string) string {
+	return fmt.Sprintf("sanho: the docs base %s is not in the canonical repository; canonical history may have been rewritten. Run 'sanho status' to see where things stand.",
+		shortOID(base))
+}
+
+// statusBehindLine is the `sanho status` sync row when the base is
+// behind. The three renderings mirror the three commit-warning variants
+// of §5.9 template 1, and all of them quote 'sanho sync'.
+func statusBehindLine(behind int, known, clean bool, conflicts []string) string {
+	switch {
+	case !known:
+		return fmt.Sprintf("%d behind — run 'sanho sync' to reconcile", behind)
+	case clean:
+		return fmt.Sprintf("%d behind — 'sanho sync' will merge cleanly", behind)
+	default:
+		return fmt.Sprintf("%d behind — 'sanho sync' will report conflicts in %s",
+			behind, strings.Join(conflicts, ", "))
+	}
+}
+
+// --- Lifecycle --------------------------------------------------------
+
+// initNextStepsMessage is the last thing `sanho init` prints (F-L5).
+//
+// P3 is that the tool never authors commits, so init leaves two things
+// for the user: the ignore entries it appended, and — in fresh mode —
+// canonical's docs staged in the index. One command lands both.
+func initNextStepsMessage(staged bool) string {
+	if staged {
+		return "\nCanonical docs are staged, and the sanho state files were added to .gitignore.\n" +
+			"Commit both:  git add .gitignore && git commit"
+	}
+	return "\nThe sanho state files were added to .gitignore.\n" +
+		"Commit it:  git add .gitignore && git commit"
+}
+
+// projectHasWorkspacesMessage refuses `sanho project delete` while
+// checkouts still reference the project (§5.8).
+func projectHasWorkspacesMessage(project string, count int, example string) string {
+	return fmt.Sprintf("project %q still has %d registered workspace(s) (%s); run 'sanho clean' in them, or rerun with --force",
+		project, count, example)
+}
 
 // staleCanonicalLine is the §5.2 degraded-read line: cached results
 // always say how old they are and how to refresh.
@@ -602,6 +828,120 @@ var Catalog = []CatalogEntry{
 		Sample:       neverFetchedLine,
 		Match:        "canonical has never been fetched",
 		NextCommands: []string{"sanho status --refresh"},
+	},
+	{
+		ID:           "push_empty_docs",
+		Source:       "pushEmptyDocsMessage",
+		Scenario:     "push_empty_docs",
+		Sample:       pushEmptyDocsMessage("legacy", sampleHeadOID, 3),
+		Match:        "publishing it would delete",
+		NextCommands: []string{"sanho sync"},
+	},
+	{
+		ID:           "clone_missing",
+		Source:       "cloneMissingMessage",
+		Scenario:     "clone_missing",
+		Sample:       cloneMissingMessage(samplePlaceholderClone),
+		Match:        "the canonical clone is missing",
+		NextCommands: []string{"sanho sync"},
+	},
+	{
+		ID:           "doctor_hooks",
+		Source:       "doctorHooksMessage",
+		Scenario:     "doctor_hooks",
+		Sample:       doctorHooksMessage("pre-commit: missing"),
+		Match:        "to reinstall them",
+		NextCommands: []string{"sanho doctor --fix"},
+	},
+	{
+		ID:           "sync_note_pending",
+		Source:       "syncNotePendingMessage",
+		Scenario:     "sync_note_pending",
+		Sample:       syncNotePendingMessage("a sync from " + sampleBaseOID[:12] + " is unresolved"),
+		Match:        "resolve the markers and commit, or run 'sanho sync --abort'",
+		NextCommands: []string{"sanho sync --abort"},
+	},
+	{
+		ID:           "base_needs_sync",
+		Source:       "baseNeedsSyncMessage",
+		Scenario:     "base_needs_sync",
+		Sample:       baseNeedsSyncMessage("no docs base is recorded"),
+		Match:        "to establish one from canonical",
+		NextCommands: []string{"sanho sync"},
+	},
+	{
+		ID:           "base_unknown_to_canonical",
+		Source:       "baseUnknownToCanonicalMessage",
+		Scenario:     "base_unknown_to_canonical",
+		Sample:       baseUnknownToCanonicalMessage(sampleBaseOID),
+		Match:        "is not in the canonical repository",
+		NextCommands: []string{"sanho status"},
+	},
+	{
+		ID:           "status_behind",
+		Source:       "statusBehindLine",
+		Scenario:     "status_behind",
+		Sample:       statusBehindLine(2, true, true, nil),
+		Match:        "'sanho sync'",
+		NextCommands: []string{"sanho sync"},
+	},
+	{
+		ID:           "sync_in_progress_command",
+		Source:       "syncInProgressMessage",
+		Scenario:     "sync_in_progress_command",
+		Sample:       syncInProgressMessage("syncing " + sampleBaseOID[:12] + " to " + sampleHeadOID[:12]),
+		Match:        "a conflicted sync is in progress",
+		NextCommands: []string{"sanho sync --abort"},
+	},
+	{
+		ID:           "pull_needs_sync",
+		Source:       "pullNeedsSyncMessage",
+		Scenario:     "pull_needs_sync",
+		Sample:       pullNeedsSyncMessage("docs have uncommitted changes"),
+		Match:        "can only fast-forward",
+		NextCommands: []string{"sanho sync"},
+	},
+	{
+		ID:       "sync_unknown_base",
+		Source:   "syncUnknownBaseMessage",
+		Scenario: "sync_unknown_base",
+		Sample:   syncUnknownBaseMessage("neither " + sampleBaseOID[:12] + " nor its docs tree is in canonical history"),
+		Match:    "the recorded docs base is not in canonical history",
+		// The placeholder is the same one the rewrite-recovery entry
+		// carries: the fixture substitutes a real canonical commit.
+		NextCommands: []string{"sanho sync --rebase-onto <commit>"},
+	},
+	{
+		ID:           "sync_unreachable",
+		Source:       "syncUnreachableMessage",
+		Scenario:     "sync_unreachable",
+		Sample:       syncUnreachableMessage("git@host:docs.git", "connection refused"),
+		Match:        "canonical repository unreachable",
+		NextCommands: []string{"sanho sync"},
+	},
+	{
+		ID:           "rebase_onto_healthy",
+		Source:       "rebaseOntoHealthyMessage",
+		Scenario:     "rebase_onto_healthy",
+		Sample:       rebaseOntoHealthyMessage(sampleHeadOID, sampleBaseOID),
+		Match:        "--rebase-onto is for recovering from rewritten history",
+		NextCommands: []string{"sanho status"},
+	},
+	{
+		ID:           "init_next_steps",
+		Source:       "initNextStepsMessage",
+		Scenario:     "init_next_steps",
+		Sample:       initNextStepsMessage(true),
+		Match:        "git add .gitignore && git commit",
+		NextCommands: []string{"git add .gitignore && git commit"},
+	},
+	{
+		ID:           "project_has_workspaces",
+		Source:       "projectHasWorkspacesMessage",
+		Scenario:     "project_has_workspaces",
+		Sample:       projectHasWorkspacesMessage("product", 1, "/home/u/product"),
+		Match:        "run 'sanho clean' in them",
+		NextCommands: []string{"sanho clean"},
 	},
 }
 

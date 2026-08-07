@@ -84,18 +84,39 @@ func TestStatusJSONSchema(t *testing.T) {
 	}
 }
 
-// Errors go to stderr; stdout under --json is either a document or
-// nothing (§5.8).
-func TestJSONErrorsNeverReachStdout(t *testing.T) {
+// The prose goes to stderr; stdout under --json carries either the
+// command's document or the §5.8 error envelope (F-M9). Both are JSON,
+// so a machine reader never has to strip English off the channel it
+// parses.
+func TestJSONErrorsCarryAMachineEnvelope(t *testing.T) {
 	w := newWorld(t, map[string]string{"api.md": "canonical api\n"})
 
 	out := w.run(w.app, "status", "--json")
 	if out.exitCode == 0 {
 		t.Fatal("status outside a workspace succeeded, want a refusal")
 	}
-	if strings.TrimSpace(out.stdout) != "" {
-		t.Fatalf("stdout = %q, want nothing on the JSON channel", out.stdout)
+
+	var envelope struct {
+		Error struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
 	}
+	if err := json.Unmarshal([]byte(out.stdout), &envelope); err != nil {
+		t.Fatalf("stdout is not a JSON document: %v\n%s", err, out.stdout)
+	}
+	if envelope.Error.Code != "not_in_workspace" {
+		t.Fatalf("error code = %q, want not_in_workspace", envelope.Error.Code)
+	}
+	if envelope.Error.Message == "" {
+		t.Error("the envelope carries no message")
+	}
+	// stdout is a JSON document and nothing else: no bare prose line
+	// outside the envelope, which is what a parser would choke on.
+	if !strings.HasPrefix(strings.TrimSpace(out.stdout), "{") {
+		t.Errorf("stdout is not a bare JSON document: %s", out.stdout)
+	}
+	// The human channel is still stderr.
 	requireContains(t, "stderr", out.stderr, "not a sanho workspace")
 }
 
@@ -343,8 +364,27 @@ func TestPullCommitAndSyncRebaseOntoFlags(t *testing.T) {
 		t.Fatalf("pull --commit subject = %q, want 'docs: sync to %s'", subject, second[:12])
 	}
 
-	// --rebase-onto reconciles against an explicit canonical commit.
-	rebased := w.sanho(w.app, "sync", "--rebase-onto", first, "--json")
+	// --rebase-onto against an ancestor of a HEALTHY base is refused
+	// (F-M4). The flag is rewrite recovery; adopting an older canonical
+	// state as the base would make the next push "merge" documents nobody
+	// reverted.
+	backwards := w.run(w.app, "sync", "--rebase-onto", first)
+	if backwards.exitCode != 1 {
+		t.Fatalf("sync --rebase-onto <ancestor of a healthy base> exited %d, want 1", backwards.exitCode)
+	}
+	requireContains(t, "refusal", backwards.stderr, "--rebase-onto is for recovering from rewritten history")
+
+	// A target canonical does not carry is refused rather than adopted.
+	refused := w.run(w.app, "sync", "--rebase-onto", "0123456789abcdef0123456789abcdef01234567")
+	if refused.exitCode != 1 {
+		t.Fatalf("sync --rebase-onto <unknown> exited %d, want 1", refused.exitCode)
+	}
+	requireContains(t, "refusal", refused.stderr, "not a canonical commit")
+
+	// And it does reconcile against an explicit target once the recorded
+	// base is genuinely unusable — canonical history replaced wholesale.
+	rewritten := w.rewriteCanonical(map[string]string{"handbook.md": "new canonical\n"}, "canonical: rewritten")
+	rebased := w.sanho(w.app, "sync", "--rebase-onto", rewritten, "--json")
 	var document struct {
 		Status string `json:"status"`
 		Base   *struct {
@@ -354,14 +394,7 @@ func TestPullCommitAndSyncRebaseOntoFlags(t *testing.T) {
 	if err := json.Unmarshal([]byte(rebased.stdout), &document); err != nil {
 		t.Fatalf("parse sync JSON: %v\n%s", err, rebased.stdout)
 	}
-	if document.Base == nil || document.Base.Commit != first {
-		t.Fatalf("sync --rebase-onto base = %+v, want %s", document.Base, first)
+	if document.Base == nil || document.Base.Commit != rewritten {
+		t.Fatalf("sync --rebase-onto base = %+v, want %s", document.Base, rewritten)
 	}
-
-	// A target canonical does not carry is refused rather than adopted.
-	refused := w.run(w.app, "sync", "--rebase-onto", "0123456789abcdef0123456789abcdef01234567")
-	if refused.exitCode != 1 {
-		t.Fatalf("sync --rebase-onto <unknown> exited %d, want 1", refused.exitCode)
-	}
-	requireContains(t, "refusal", refused.stderr, "not a canonical commit")
 }
