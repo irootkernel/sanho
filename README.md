@@ -52,8 +52,9 @@ sanho version
 ```
 
 Go writes the binary to `GOBIN`, or to `$(go env GOPATH)/bin` when `GOBIN` is
-unset. That directory must be on `PATH` — including the `PATH` of whatever runs
-your Git hooks.
+unset. That directory must be on your interactive `PATH` for the `sanho`
+command. Hooks installed by Sanho record that binary's absolute path, so GUI
+Git clients do not need to reproduce the shell's `PATH`.
 
 From a checkout:
 

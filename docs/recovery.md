@@ -239,19 +239,20 @@ base가 정상일 때는 다음처럼 보고한다.
 ### hook과 clone이 어긋난 경우
 
 ```bash
-sanho init --force -y   # hook 재설치가 필요할 때
+sanho doctor --fix      # hook 재설치가 필요할 때
 ```
 
 `sanho doctor`가 다음을 보고하면 재설치 대상이다.
 
 ```text
-[warn] hooks            pre-push: missing; post-merge: installed 2 times — run 'sanho init --force' to reinstall
-[warn] hooks            pre-push: carries v0.1 lines — run 'sanho init --force' to reinstall
-[warn] clone            the private clone is missing (/path/.git/sanho/canonical) — run 'sanho init' in this workspace
+[warn] hooks            pre-push: missing; post-merge: installed 2 times — run 'sanho doctor --fix' to reinstall them
+[warn] hooks            pre-push: carries v0.1 lines — run 'sanho doctor --fix' to reinstall them
+[warn] clone            the canonical clone is missing (/path/.git/sanho/canonical) — run 'sanho sync' to recreate it
 ```
 
-hook 설치는 정확한 줄 일치로만 판단하고 남의 줄은 원문 그대로 보존하므로,
-재설치가 custom hook 내용을 지우지 않는다. private clone은 Sanho 소유이며
+hook 설치는 Sanho 호출 구조만 인식하고 남의 줄은 원문 그대로 보존하므로,
+재설치가 기존 hook 내용을 지우지 않는다. custom `core.hooksPath`에서는 소유권을
+가정하지 않고 `doctor --fix`가 경고만 한다. private clone은 Sanho 소유이며
 언제든 다시 만들 수 있다. `sanho sync`와 `sanho pull` 같은 쓰기 경로는 clone이
 없으면 스스로 만든다.
 

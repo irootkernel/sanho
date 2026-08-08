@@ -66,8 +66,9 @@ sanho version
 ```
 
 Go는 실행 파일을 `GOBIN`에, `GOBIN`이 비어 있으면 `$(go env GOPATH)/bin`에
-설치한다. 그 디렉터리가 `PATH`에 있어야 한다. **git hook이 `sanho`를 이름으로
-호출하므로, hook을 실행하는 환경의 `PATH`에도 포함돼야 한다.**
+설치한다. 대화형 shell에서 명령을 실행하려면 그 디렉터리가 `PATH`에 있어야
+한다. 설치되는 Git hook은 이 binary의 canonical 절대 경로를 기록하므로 hook
+실행 환경의 `PATH`에는 의존하지 않는다.
 
 ```bash
 command -v sanho

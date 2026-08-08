@@ -54,8 +54,9 @@ sanho version
 ```
 
 설치 위치는 `GOBIN`, 설정하지 않았다면 `$(go env GOPATH)/bin`이다. 이
-디렉터리를 `PATH`에 포함해야 한다. **Git hook이 `sanho`를 이름으로 호출하므로,
-hook을 실행하는 환경의 `PATH`에도 들어 있어야 한다.**
+디렉터리를 대화형 shell의 `PATH`에 포함해야 한다. Sanho가 설치하는 Git hook은
+설치를 수행한 binary의 절대 경로를 기록하므로 GUI Git 클라이언트가 shell의
+`PATH`를 재현할 필요는 없다.
 
 checkout에서 빌드하려면 다음을 쓴다.
 

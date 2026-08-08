@@ -534,14 +534,14 @@ sanho doctor --json
 hook 문제는 재설치를 안내한다.
 
 ```text
-[warn] hooks            pre-push: missing; post-merge: installed 2 times — run 'sanho init --force' to reinstall
-[warn] hooks            pre-push: carries v0.1 lines — run 'sanho init --force' to reinstall
+[warn] hooks            pre-push: missing; post-merge: installed 2 times — run 'sanho doctor --fix' to reinstall them
+[warn] hooks            pre-push: carries v0.1 lines — run 'sanho doctor --fix' to reinstall them
 ```
 
 clone 문제는 다음과 같다.
 
 ```text
-[warn] clone            the private clone is missing (/path/.git/sanho/canonical) — run 'sanho init' in this workspace
+[warn] clone            the canonical clone is missing (/path/.git/sanho/canonical) — run 'sanho sync' to recreate it
 [warn] clone            origin is <A> but the workspace config says <B>
 ```
 

@@ -64,6 +64,21 @@ func countLine(content, line string) int {
 	return count
 }
 
+func currentLine(t *testing.T, repo *appgit.Repo, name string) string {
+	t.Helper()
+	states, err := repo.HooksStatus(context.Background())
+	if err != nil {
+		t.Fatalf("HooksStatus: %v", err)
+	}
+	for _, state := range states {
+		if state.Name == name {
+			return state.Line
+		}
+	}
+	t.Fatalf("HooksStatus returned no %s", name)
+	return ""
+}
+
 func TestInstallHooksCreatesTheSixHooks(t *testing.T) {
 	dir, _ := newRepoWithDocs(t)
 	repo := newRepoHandle(t, dir)
@@ -73,12 +88,12 @@ func TestInstallHooksCreatesTheSixHooks(t *testing.T) {
 	}
 
 	want := map[string]string{
-		"pre-commit":    "sanho hook pre-commit",
-		"commit-msg":    `sanho hook commit-msg "$1"`,
-		"pre-push":      `sanho hook pre-push "$@"`,
-		"post-checkout": `sanho hook post-checkout "$@"`,
-		"post-merge":    "sanho hook post-merge",
-		"post-rewrite":  `sanho hook post-rewrite "$@"`,
+		"pre-commit":    "hook pre-commit",
+		"commit-msg":    `hook commit-msg "$1"`,
+		"pre-push":      `hook pre-push "$@"`,
+		"post-checkout": `hook post-checkout "$@"`,
+		"post-merge":    "hook post-merge",
+		"post-rewrite":  `hook post-rewrite "$@"`,
 	}
 	var installed []string
 	for name, line := range want {
@@ -86,8 +101,14 @@ func TestInstallHooksCreatesTheSixHooks(t *testing.T) {
 		if !strings.HasPrefix(content, "#!/bin/sh\n") {
 			t.Errorf("hook %s does not start with a shebang:\n%s", name, content)
 		}
-		if countLine(content, line) != 1 {
-			t.Errorf("hook %s = %q, want exactly one %q", name, content, line)
+		if !strings.Contains(content, line) || strings.Contains(content, "sanho "+line) {
+			t.Errorf("hook %s = %q, want an absolute-binary %q invocation", name, content, line)
+		}
+		if generated := currentLine(t, repo, name); !strings.Contains(generated, "'/") {
+			t.Errorf("generated hook %s line = %q, want an absolute executable path", name, generated)
+		}
+		if countLine(content, currentLine(t, repo, name)) != 1 {
+			t.Errorf("hook %s = %q, want exactly one current generated line", name, content)
 		}
 		info, err := os.Stat(filepath.Join(hooksDir(t, dir), name))
 		if err != nil {
@@ -109,6 +130,44 @@ func TestInstallHooksCreatesTheSixHooks(t *testing.T) {
 	}
 }
 
+func TestInstallHooksRefusesCustomHooksPathWithoutWritingIt(t *testing.T) {
+	dir, _ := newRepoWithDocs(t)
+	repo := newRepoHandle(t, dir)
+	custom := filepath.Join(dir, ".githooks")
+	gitRun(t, dir, "config", "core.hooksPath", custom)
+
+	_, err := repo.DefaultHooksDir(context.Background())
+	var pathErr *appgit.CustomHooksPathError
+	if !errors.As(err, &pathErr) {
+		t.Fatalf("DefaultHooksDir() = %v, want CustomHooksPathError", err)
+	}
+	if pathErr.Path != custom {
+		t.Errorf("custom path = %q, want %q", pathErr.Path, custom)
+	}
+	if err := repo.InstallHooks(context.Background()); !errors.Is(err, appgit.ErrCustomHooksPath) {
+		t.Fatalf("InstallHooks() = %v, want ErrCustomHooksPath", err)
+	}
+	if _, statErr := os.Stat(custom); !os.IsNotExist(statErr) {
+		t.Fatalf("custom hooks directory was mutated (stat error %v)", statErr)
+	}
+}
+
+func TestInstallHooksRefusesGlobalCustomHooksPath(t *testing.T) {
+	dir, _ := newRepoWithDocs(t)
+	globalConfig := filepath.Join(t.TempDir(), "gitconfig")
+	t.Setenv("GIT_CONFIG_GLOBAL", globalConfig)
+	custom := filepath.Join(t.TempDir(), "shared-hooks")
+	gitRun(t, dir, "config", "--global", "core.hooksPath", custom)
+
+	err := newRepoHandle(t, dir).InstallHooks(context.Background())
+	if !errors.Is(err, appgit.ErrCustomHooksPath) {
+		t.Fatalf("InstallHooks() = %v, want ErrCustomHooksPath", err)
+	}
+	if _, statErr := os.Stat(custom); !os.IsNotExist(statErr) {
+		t.Fatalf("global custom hooks directory was mutated (stat error %v)", statErr)
+	}
+}
+
 func TestInstallHooksIsIdempotent(t *testing.T) {
 	dir, _ := newRepoWithDocs(t)
 	repo := newRepoHandle(t, dir)
@@ -125,16 +184,15 @@ func TestInstallHooksIsIdempotent(t *testing.T) {
 	if second := readHook(t, dir, "pre-push"); second != first {
 		t.Fatalf("second install changed the hook:\nfirst:\n%s\nsecond:\n%s", first, second)
 	}
-	if got := countLine(first, `sanho hook pre-push "$@"`); got != 1 {
+	if got := countLine(first, currentLine(t, repo, "pre-push")); got != 1 {
 		t.Fatalf("pre-push carries %d sanho lines, want 1", got)
 	}
 }
 
 // The L3 regression: the unquoted v0.1 line is a *substring* of the v0.2
-// line. Exact-line matching must treat them as different lines — the
-// v0.2 line is added, and the presence of the old one does not make the
-// installer think its work is done.
-func TestInstallHooksTreatsTheLegacyPrePushLineAsADistinctLine(t *testing.T) {
+// line. Structured recognition must replace the old line rather than
+// confusing the substring for the current form or leaving both behind.
+func TestInstallHooksUpgradesTheLegacyPrePushLine(t *testing.T) {
 	dir, _ := newRepoWithDocs(t)
 	repo := newRepoHandle(t, dir)
 
@@ -144,11 +202,25 @@ func TestInstallHooksTreatsTheLegacyPrePushLineAsADistinctLine(t *testing.T) {
 	}
 
 	content := readHook(t, dir, "pre-push")
-	if got := countLine(content, `sanho hook pre-push "$@"`); got != 1 {
-		t.Fatalf("content = %q, want exactly one v0.2 pre-push line", content)
+	if got := countLine(content, currentLine(t, repo, "pre-push")); got != 1 {
+		t.Fatalf("content = %q, want exactly one current pre-push line", content)
 	}
-	if got := countLine(content, "sanho hook pre-push"); got != 1 {
-		t.Fatalf("content = %q, want the legacy line preserved until removal", content)
+	if got := countLine(content, "sanho hook pre-push"); got != 0 {
+		t.Fatalf("content = %q, want the legacy line replaced", content)
+	}
+}
+
+func TestInstallHooksMovesAnUpgradedLineAfterForeignCommands(t *testing.T) {
+	dir, _ := newRepoWithDocs(t)
+	repo := newRepoHandle(t, dir)
+	writeHook(t, dir, "pre-commit", "#!/bin/sh\nsanho hook pre-commit\necho still-runs\n", 0755)
+
+	if err := repo.InstallHooks(context.Background()); err != nil {
+		t.Fatalf("InstallHooks() error = %v", err)
+	}
+	content := readHook(t, dir, "pre-commit")
+	if strings.Index(content, "echo still-runs") > strings.Index(content, currentLine(t, repo, "pre-commit")) {
+		t.Fatalf("upgraded hook exits before later foreign content:\n%s", content)
 	}
 }
 
@@ -162,7 +234,7 @@ func TestInstallHooksPreservesForeignContent(t *testing.T) {
 	}
 
 	content := readHook(t, dir, "pre-commit")
-	for _, line := range []string{"make lint", "npm run check", "sanho hook pre-commit"} {
+	for _, line := range []string{"make lint", "npm run check", currentLine(t, repo, "pre-commit")} {
 		if countLine(content, line) != 1 {
 			t.Errorf("content = %q, want it to carry %q once", content, line)
 		}
@@ -180,7 +252,7 @@ func TestInstallHooksInsertsBeforeATrailingExit(t *testing.T) {
 
 	// An appended line after `exit 0` would never run.
 	lines := strings.Split(strings.TrimRight(readHook(t, dir, "post-merge"), "\n"), "\n")
-	want := []string{"#!/bin/sh", "make generate", "sanho hook post-merge", "exit 0"}
+	want := []string{"#!/bin/sh", "make generate", currentLine(t, repo, "post-merge"), "exit 0"}
 	if strings.Join(lines, "|") != strings.Join(want, "|") {
 		t.Fatalf("hook lines = %v, want %v", lines, want)
 	}
@@ -284,6 +356,40 @@ func TestRemoveHooksRemovesTheLegacyV01Lines(t *testing.T) {
 	}
 }
 
+func TestRemoveHooksRecognizesGeneratedLinesFromAnotherInstallation(t *testing.T) {
+	dir, _ := newRepoWithDocs(t)
+	repo := newRepoHandle(t, dir)
+
+	writeHook(t, dir, "pre-commit", "#!/bin/sh\n"+
+		"_sanho_prev=$?; ! [ -x '/Applications/Sanho old/bin/sanho' ] || '/Applications/Sanho old/bin/sanho' hook pre-commit; _sanho_rc=$?; [ $_sanho_prev -ne 0 ] && exit $_sanho_prev || exit $_sanho_rc\n"+
+		"echo foreign\n", 0755)
+	writeHook(t, dir, "pre-push", "#!/bin/sh\n/opt/sanho/bin/sanho hook pre-push \"$@\"\n", 0755)
+
+	if err := repo.RemoveHooks(context.Background()); err != nil {
+		t.Fatalf("RemoveHooks() error = %v", err)
+	}
+	if got := readHook(t, dir, "pre-commit"); got != "#!/bin/sh\necho foreign\n" {
+		t.Fatalf("pre-commit = %q, want only foreign content", got)
+	}
+	if hookExists(t, dir, "pre-push") {
+		t.Fatalf("generated pre-push survived removal:\n%s", readHook(t, dir, "pre-push"))
+	}
+}
+
+func TestRemoveHooksDoesNotClaimAnotherAbsoluteCommand(t *testing.T) {
+	dir, _ := newRepoWithDocs(t)
+	repo := newRepoHandle(t, dir)
+	foreign := "#!/bin/sh\n/usr/local/bin/team-tool hook pre-commit\n"
+	writeHook(t, dir, "pre-commit", foreign, 0755)
+
+	if err := repo.RemoveHooks(context.Background()); err != nil {
+		t.Fatalf("RemoveHooks() error = %v", err)
+	}
+	if got := readHook(t, dir, "pre-commit"); got != foreign {
+		t.Fatalf("foreign command changed from %q to %q", foreign, got)
+	}
+}
+
 func TestHooksStatusReportsInstalledMissingAndDuplicated(t *testing.T) {
 	dir, _ := newRepoWithDocs(t)
 	repo := newRepoHandle(t, dir)
@@ -292,12 +398,14 @@ func TestHooksStatusReportsInstalledMissingAndDuplicated(t *testing.T) {
 	if err := repo.InstallHooks(ctx); err != nil {
 		t.Fatalf("InstallHooks() error = %v", err)
 	}
+	preCommitLine := currentLine(t, repo, "pre-commit")
+	prePushLine := currentLine(t, repo, "pre-push")
 	// Hand-duplicate one line and drop another file entirely.
-	writeHook(t, dir, "pre-commit", "#!/bin/sh\nsanho hook pre-commit\nsanho hook pre-commit\n", 0755)
+	writeHook(t, dir, "pre-commit", "#!/bin/sh\n"+preCommitLine+"\n"+preCommitLine+"\n", 0755)
 	if err := os.Remove(filepath.Join(hooksDir(t, dir), "post-merge")); err != nil {
 		t.Fatalf("remove post-merge: %v", err)
 	}
-	writeHook(t, dir, "pre-push", "#!/bin/sh\nsanho hook pre-push \"$@\"\nsanho hook pre-push\n", 0755)
+	writeHook(t, dir, "pre-push", "#!/bin/sh\n"+prePushLine+"\nsanho hook pre-push\n", 0755)
 
 	states, err := repo.HooksStatus(ctx)
 	if err != nil {

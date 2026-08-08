@@ -699,6 +699,14 @@ func doctorHooksMessage(problems string) string {
 	return fmt.Sprintf("%s — run 'sanho doctor --fix' to reinstall them", problems)
 }
 
+// customHooksPathMessage explains why lifecycle and repair commands do
+// not write hooks into a path whose ownership may be shared or tracked.
+// It deliberately gives a condition rather than a command: the right
+// Git configuration scope is a user decision.
+func customHooksPathMessage(path string) string {
+	return fmt.Sprintf("custom core.hooksPath %q is unsupported; restore Git's default hooks directory before Sanho manages hooks in this workspace", path)
+}
+
 // syncNotePendingMessage is the unfinished-sync line `sanho status` and
 // `sanho doctor` both print, and the one `doctor --fix` prints when it
 // declines to re-derive a base a sync is holding still.

@@ -908,7 +908,7 @@ func reachDoctorHooks(t *testing.T, w *world) closureState {
 					t.Fatal("doctor --fix did not reinstall the hook")
 				}
 				requireContains(t, "reinstalled hook",
-					readFile(t, ws.hookPath("pre-commit")), "sanho hook pre-commit")
+					readFile(t, ws.hookPath("pre-commit")), "hook pre-commit")
 			},
 		},
 	}

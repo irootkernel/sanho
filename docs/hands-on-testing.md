@@ -278,21 +278,24 @@ migrate가 canonical 저장소를 조금이라도 바꾸면 FAIL이다.
 8. 한 worktree에서 `sanho clean -y`를 실행한 뒤 다른 worktree의 상태를
    확인하고 기록한다(공유 clone이 사라지므로 재생성이 필요하다).
 
-## H08. custom hook 공존 (변형)
+## H08. hook 소유권과 기존 hook 공존 (변형)
 
 1. repository-local `core.hooksPath`와 사용자 전역 hooksPath를 각각 사용하는
    폐기 가능한 clone을 준비한다.
-2. 기존 custom hook의 내용과 mode(예: `0644`)를 기록한 뒤 `sanho init`을
-   실행한다.
-3. custom 내용이 한 글자도 바뀌지 않고, owner execute 비트만 추가되고,
-   group/world 비트는 넓어지지 않았는지 확인한다.
-4. 실제 `git commit`과 `git push`에서 custom marker와 Sanho 검사가 모두
-   실행되는지 확인한다.
-5. 마지막 유효 문장이 `exit 0`인 hook 스크립트를 준비하고 `sanho init`을
-   실행한다. Sanho 라인이 `exit` **앞**에 삽입돼 실제로 실행되는지 확인한다.
+2. 기존 custom hook의 내용과 mode를 기록한 뒤 `sanho init`을 실행한다.
+   custom `core.hooksPath`를 이름지어 거절하고 config, registry, clone, docs,
+   hook을 한 글자도 바꾸지 않아야 한다.
+3. v0.1 workspace에서 같은 설정으로 `sanho migrate`를 실행한다. `.bak`과
+   v0.1 daemon state backup도 만들기 전에 거절하는지 확인한다.
+4. 이미 초기화한 workspace의 설정을 custom hooksPath로 바꾸고 `sanho doctor
+   --fix`를 실행한다. 경고만 출력하고 custom/default hook 모두 그대로여야 한다.
+5. 기본 hooks 디렉터리의 마지막 유효 문장이 `exit 0`인 스크립트를 준비하고
+   hook을 재설치한다. Sanho 라인이 `exit` **앞**에 삽입돼 실제로 실행되는지
+   확인한다. `false; exit $?`와 일반 fall-through 실패도 Sanho가 성공으로
+   덮어쓰지 않아야 한다.
 6. `sanho hook pre-push`(무인자, v0.1 구형)와
    `sanho hook pre-push "$@"`가 한 파일에 함께 있는 상태를 만든다.
-   `sanho doctor`가 v0.1 라인을 보고하고, `sanho init --force -y` 뒤에는 정확히
+   `sanho doctor`가 v0.1 라인을 보고하고, `sanho doctor --fix` 뒤에는 정확히
    한 줄만 남는지 확인한다. 부분 문자열 매칭으로 둘이 서로를 가리면 FAIL이다.
 7. `sanho clean -y` 후 Sanho 라인만 제거되고 custom 내용이 그대로 남는지
    확인한다.
@@ -380,9 +383,10 @@ git object로 옮기므로 구조적으로 해결됐지만, 실제 파일 시스
    `sanho version --json`, `go version -m`을 기록한다. checkout에서 빌드한
    binary와 섞지 않는다.
 2. 그 binary로 새 작업공간을 init하고 정상 흐름을 한 바퀴 돈다.
-3. **hook 실행 환경의 PATH**를 확인한다. GUI Git 클라이언트(예: 에디터 내장
-   Git, Sourcetree, Fork)에서 commit과 push를 실행해 hook이 `sanho`를 찾는지
-   확인한다. 찾지 못하면 실패 메시지가 어떻게 보이는지 기록한다.
+3. 설치된 hook이 release binary의 canonical 절대 경로를 shell 인용해 기록했는지
+   확인한다. GUI Git 클라이언트에서 PATH를 비운 채 commit과 push를 실행해도
+   같은 binary가 실행되어야 한다. 그 binary를 임시로 치우면 commit/post hook은
+   fail-open, `pre-push`는 fail-closed인지 확인한 뒤 즉시 복원한다.
 4. `SANHO_HOME`을 절대 경로로 지정해 격리된 레지스트리로 전체 흐름을 다시
    돌린다. 상대 경로를 주면 거절하는지도 확인한다.
    ```text

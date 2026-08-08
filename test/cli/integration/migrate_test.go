@@ -114,17 +114,18 @@ func TestMigrateConvertsAV1WorkspaceAndIsIdempotent(t *testing.T) {
 
 	// Hooks swapped: the six v0.2 lines in, all seven v0.1 lines out.
 	for name, line := range map[string]string{
-		"pre-commit":    "sanho hook pre-commit",
-		"commit-msg":    `sanho hook commit-msg "$1"`,
-		"pre-push":      `sanho hook pre-push "$@"`,
-		"post-checkout": "sanho hook post-checkout",
-		"post-merge":    "sanho hook post-merge",
-		"post-rewrite":  `sanho hook post-rewrite "$@"`,
+		"pre-commit":    "hook pre-commit",
+		"commit-msg":    `hook commit-msg "$1"`,
+		"pre-push":      `hook pre-push "$@"`,
+		"post-checkout": "hook post-checkout",
+		"post-merge":    "hook post-merge",
+		"post-rewrite":  `hook post-rewrite "$@"`,
 	} {
 		content := readFile(t, w.hookPath(name))
 		if strings.Count(content, line) != 1 {
 			t.Errorf("hook %s = %q, want exactly one %q", name, content, line)
 		}
+		requireNotContains(t, "hook "+name, content, "sanho "+line)
 	}
 	if fileExists(t, w.hookPath("post-commit")) {
 		t.Error("the v0.1 post-commit hook survived migration")
@@ -164,6 +165,38 @@ func TestMigrateConvertsAV1WorkspaceAndIsIdempotent(t *testing.T) {
 		t.Fatalf("second migrate said %q, want 'sanho: already migrated'", second.stdout)
 	}
 	requireContains(t, "v1 state backup after rerun", readFile(t, v1Backup), "project_to_docs_repo")
+}
+
+func TestMigrateRefusesCustomHooksPathBeforeMutation(t *testing.T) {
+	w := newWorld(t, map[string]string{"api.md": "canonical api\n"})
+	seedV1Workspace(t, w, w.canonicalHead(), true)
+	legacyPreCommit := readFile(t, w.hookPath("pre-commit"))
+	custom := w.appPath(".githooks")
+	mkdirAll(t, custom)
+	foreign := "#!/bin/sh\necho foreign\n"
+	writeFile(t, filepath.Join(custom, "pre-commit"), foreign)
+	w.git(w.app, "config", "core.hooksPath", custom)
+
+	refused := w.run(w.app, "migrate")
+	if refused.exitCode != 1 {
+		t.Fatalf("migrate exited %d, want 1\n%s", refused.exitCode, refused.combined())
+	}
+	requireContains(t, "migrate refusal", refused.stderr, "custom core.hooksPath")
+	requireContains(t, "config", readFile(t, w.appPath(".sanho.json")), "socket_path")
+	for _, path := range []string{".sanho.json.bak", ".sanho_base.json", filepath.Join(".git", "sanho", "canonical")} {
+		if fileExists(t, w.appPath(path)) {
+			t.Errorf("refused migration created %s", path)
+		}
+	}
+	if fileExists(t, filepath.Join(w.home, "state.json.v1.bak")) {
+		t.Fatal("refused migration preserved daemon state before refusing")
+	}
+	if got := readFile(t, w.hookPath("pre-commit")); got != legacyPreCommit {
+		t.Fatalf("default legacy hook changed from %q to %q", legacyPreCommit, got)
+	}
+	if got := readFile(t, filepath.Join(custom, "pre-commit")); got != foreign {
+		t.Fatalf("custom hook changed from %q to %q", foreign, got)
+	}
 }
 
 // migrate needs the docs repository URL, which only the daemon knew.

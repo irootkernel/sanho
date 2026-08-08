@@ -54,7 +54,7 @@ type world struct {
 	app string
 	// home is this test's SANHO_HOME.
 	home string
-	// binDir holds the `sanho` shim the installed hooks invoke.
+	// binDir holds a `sanho` shim for historical v0.1 hook fixtures.
 	binDir string
 }
 
@@ -99,9 +99,8 @@ func newWorld(t *testing.T, docsFiles map[string]string) *world {
 }
 
 // installShim puts a `sanho` executable on PATH that forwards to the
-// binary under test. The installed hook lines invoke `sanho` by name
-// (§5.10), so this is what makes real `git commit` and `git push` run
-// the code under test.
+// binary under test. Current hooks bind the installing binary by
+// absolute path; historical v0.1 hook fixtures still invoke this shim.
 func (w *world) installShim() {
 	w.t.Helper()
 

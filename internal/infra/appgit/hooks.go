@@ -2,21 +2,20 @@ package appgit
 
 // The v0.2 hook installer (sanho-v0.2.md §5.10).
 //
-// Six hooks, one line each, matched by EXACT LINE. That is the whole
-// design decision, and it is the fix for audit L3: v0.1 tested
-// idempotency with `strings.Contains`, so `sanho hook pre-push` matched
-// inside `sanho hook pre-push "$@"` and the two lines coexisted, each
-// installing the other's near-duplicate on the next run. Every
-// comparison here is between whole trimmed lines, never substrings, in
-// both directions — install (is my line already there?) and remove (is
-// this line one of mine?).
+// Six hooks, one generated line each. The invocation core is fixed, but
+// the installed line binds the binary that performed the installation
+// and, where necessary, preserves a foreign hook's preceding exit
+// status. Exact current-line matching keeps install idempotent; a
+// structured recognizer identifies older sanho forms for upgrade and
+// removal without falling back to substring matching (audit L3).
 //
 // Two more properties follow from what hook files actually are: they are
 // the user's shell scripts, which sanho is a guest in. Foreign lines are
 // preserved verbatim on install and on removal; a sanho line is inserted
-// *before* a trailing `exit` so it still runs; and a file left holding
-// nothing but its shebang after removal is deleted rather than left as a
-// no-op stub (audit L5).
+// *before* a trailing `exit` so it still runs; the user's prior failure
+// survives sanho's invocation; and a file left holding nothing but its
+// shebang after removal is deleted rather than left as a no-op stub
+// (audit L5).
 
 import (
 	"context"
@@ -48,8 +47,25 @@ const hookShebang = "#!/bin/sh"
 // sanho owns inside it.
 type Hook struct {
 	Name string
+	// Line is the historical PATH-based form. It remains the canonical
+	// invocation inventory and a recognizer fixture; InstallHooks
+	// replaces its leading `sanho` with the installing binary.
 	Line string
 }
+
+// ErrCustomHooksPath reports a core.hooksPath outside git's private
+// <common-dir>/hooks directory. Installing there would mutate a tracked
+// or shared script whose ownership extends beyond this workspace.
+var ErrCustomHooksPath = errors.New("custom core.hooksPath is unsupported")
+
+// CustomHooksPathError names the path InstallHooks refused.
+type CustomHooksPathError struct{ Path string }
+
+func (e *CustomHooksPathError) Error() string {
+	return fmt.Sprintf("%s: %s", ErrCustomHooksPath, e.Path)
+}
+
+func (e *CustomHooksPathError) Is(target error) bool { return target == ErrCustomHooksPath }
 
 // Hooks is the §5.10 inventory, in table order. The quoted argument
 // forms are git's own hook contracts, not decoration: `commit-msg`
@@ -123,7 +139,11 @@ type HookState struct {
 // alone. It is idempotent: a file that already carries the exact line is
 // left as it is (except for the executable bit, which is repaired).
 func (r *Repo) InstallHooks(ctx context.Context) error {
-	dir, err := r.hooksDir(ctx)
+	dir, err := r.DefaultHooksDir(ctx)
+	if err != nil {
+		return err
+	}
+	binary, err := hookBinaryToken()
 	if err != nil {
 		return err
 	}
@@ -132,7 +152,7 @@ func (r *Repo) InstallHooks(ctx context.Context) error {
 	}
 
 	for _, hook := range Hooks() {
-		if err := installHookLine(filepath.Join(dir, hook.Name), hook.Line); err != nil {
+		if err := installHookLine(filepath.Join(dir, hook.Name), hook, binary); err != nil {
 			return err
 		}
 	}
@@ -147,9 +167,13 @@ func (r *Repo) RemoveHooks(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	binary, err := hookBinaryToken()
+	if err != nil {
+		return err
+	}
 
-	for name, lines := range removableLines() {
-		if err := removeHookLines(filepath.Join(dir, name), lines); err != nil {
+	for _, name := range hookNames() {
+		if err := removeHookLines(filepath.Join(dir, name), name, binary); err != nil {
 			return err
 		}
 	}
@@ -169,12 +193,16 @@ func (r *Repo) HooksStatus(ctx context.Context) ([]HookState, error) {
 	if err != nil {
 		return nil, err
 	}
+	binary, err := hookBinaryToken()
+	if err != nil {
+		return nil, err
+	}
 
 	current := make(map[string]bool, len(Hooks()))
 	states := make([]HookState, 0, len(Hooks()))
 	for _, hook := range Hooks() {
 		current[hook.Name] = true
-		state, err := hookStatus(filepath.Join(dir, hook.Name), hook)
+		state, err := hookStatus(filepath.Join(dir, hook.Name), hook, binary)
 		if err != nil {
 			return nil, err
 		}
@@ -185,7 +213,7 @@ func (r *Repo) HooksStatus(ctx context.Context) ([]HookState, error) {
 		if current[legacy.Name] {
 			continue
 		}
-		state, err := legacyOnlyHookStatus(filepath.Join(dir, legacy.Name), legacy)
+		state, err := legacyOnlyHookStatus(filepath.Join(dir, legacy.Name), legacy.Name, binary)
 		if err != nil {
 			return nil, err
 		}
@@ -199,8 +227,8 @@ func (r *Repo) HooksStatus(ctx context.Context) ([]HookState, error) {
 // legacyOnlyHookStatus inspects a hook v0.2 has no counterpart for. It
 // is reported as Installed so doctor does not also call it "missing" —
 // the problem is that it is PRESENT.
-func legacyOnlyHookStatus(path string, hook Hook) (HookState, error) {
-	state := HookState{Name: hook.Name, Line: hook.Line, Path: path, Installed: true, Executable: true}
+func legacyOnlyHookStatus(path, name, binary string) (HookState, error) {
+	state := HookState{Name: name, Path: path, Installed: true, Executable: true}
 
 	existing, mode, present, err := readHookFile(path)
 	if err != nil || !present {
@@ -208,23 +236,11 @@ func legacyOnlyHookStatus(path string, hook Hook) (HookState, error) {
 	}
 	state.Executable = mode&ownerExecute != 0
 	for _, line := range strings.Split(existing, "\n") {
-		if sameLine(line, hook.Line) {
+		if isOwnedHookLine(name, line, binary) {
 			state.Legacy = append(state.Legacy, strings.TrimSpace(line))
 		}
 	}
 	return state, nil
-}
-
-// removableLines groups every sanho-owned line by hook file name, so a
-// file is rewritten once no matter how many lines it holds.
-func removableLines() map[string][]string {
-	owned := make(map[string][]string)
-	for _, hook := range append(Hooks(), legacyHooks...) {
-		if !containsLine(owned[hook.Name], hook.Line) {
-			owned[hook.Name] = append(owned[hook.Name], hook.Line)
-		}
-	}
-	return owned
 }
 
 // hooksDir asks git where hooks live. `rev-parse --git-path hooks`
@@ -242,19 +258,65 @@ func (r *Repo) hooksDir(ctx context.Context) (string, error) {
 	return path, nil
 }
 
-func installHookLine(path, line string) error {
+// DefaultHooksDir returns git's private hooks directory, refusing a
+// custom core.hooksPath. The check is public so lifecycle commands can
+// perform it before writing config, registry, backup, clone, or docs
+// state; InstallHooks repeats it as the final enforcement point.
+func (r *Repo) DefaultHooksDir(ctx context.Context) (string, error) {
+	actual, err := r.hooksDir(ctx)
+	if err != nil {
+		return "", err
+	}
+	common, err := r.git.Line(ctx, "rev-parse", "--git-common-dir")
+	if err != nil {
+		return "", fmt.Errorf("appgit: resolve git common directory of %s: %w", r.workDir, err)
+	}
+	if !filepath.IsAbs(common) {
+		common = filepath.Join(r.workDir, common)
+	}
+	expected := filepath.Join(common, "hooks")
+	if comparablePath(actual) != comparablePath(expected) {
+		return "", &CustomHooksPathError{Path: actual}
+	}
+	return actual, nil
+}
+
+func comparablePath(path string) string {
+	path = filepath.Clean(path)
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		path = resolved
+	}
+	if absolute, err := filepath.Abs(path); err == nil {
+		path = absolute
+	}
+	return filepath.Clean(path)
+}
+
+func installHookLine(path string, hook Hook, binary string) error {
 	existing, mode, present, err := readHookFile(path)
 	if err != nil {
 		return err
 	}
 
 	if !present {
+		line := currentHookLine(hook, binary, false)
 		content := hookShebang + "\n" + line + "\n"
 		return writeHookFile(path, content, hookFileMode)
 	}
 
 	lines := strings.Split(existing, "\n")
-	if containsLine(lines, line) {
+	foreign := withoutOwnedHookLines(lines, hook.Name, binary)
+	line := currentHookLine(hook, binary, needsStatusPreservation(foreign))
+	current, owned := 0, 0
+	for _, candidate := range lines {
+		if isOwnedHookLine(hook.Name, candidate, binary) {
+			owned++
+			if sameLine(candidate, line) {
+				current++
+			}
+		}
+	}
+	if current == 1 && owned == 1 {
 		// Already installed. The only thing worth repairing is a hook
 		// git would refuse to run.
 		if mode&ownerExecute != 0 {
@@ -262,7 +324,48 @@ func installHookLine(path, line string) error {
 		}
 		return writeHookFile(path, existing, mode|ownerExecute)
 	}
+	if owned > 0 {
+		// Reinsert after all foreign work (or before its trailing exit),
+		// rather than replacing the first historical line in place. The
+		// status-preserving form exits deliberately, so placing it in the
+		// middle would make later user commands unreachable.
+		return writeHookFile(path, insertHookLine(foreign, line), mode|ownerExecute)
+	}
 	return writeHookFile(path, insertHookLine(lines, line), mode|ownerExecute)
+}
+
+func hookBinaryToken() (string, error) {
+	binary, err := os.Executable()
+	if err != nil {
+		return "", fmt.Errorf("appgit: resolve the sanho executable: %w", err)
+	}
+	if resolved, resolveErr := filepath.EvalSymlinks(binary); resolveErr == nil {
+		binary = resolved
+	}
+	if binary, err = filepath.Abs(binary); err != nil {
+		return "", fmt.Errorf("appgit: resolve the absolute sanho executable path: %w", err)
+	}
+	if strings.ContainsAny(binary, "\r\n") {
+		return "", fmt.Errorf("appgit: the sanho executable path contains a newline")
+	}
+	return shellQuote(binary), nil
+}
+
+func shellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
+}
+
+func currentHookLine(hook Hook, binary string, preserve bool) string {
+	core := strings.TrimPrefix(hook.Line, "sanho ")
+	invocation := binary + " " + core
+	if hook.Name != "pre-push" {
+		invocation = "! [ -x " + binary + " ] || " + invocation
+	}
+	if !preserve {
+		return invocation
+	}
+	return "_sanho_prev=$?; " + invocation +
+		"; _sanho_rc=$?; [ $_sanho_prev -ne 0 ] && exit $_sanho_prev || exit $_sanho_rc"
 }
 
 // insertHookLine places line in a foreign hook script. A script whose
@@ -280,7 +383,7 @@ func insertHookLine(lines []string, line string) string {
 	return withTrailingNewline(withTrailingNewline(strings.Join(lines, "\n")) + line)
 }
 
-func removeHookLines(path string, owned []string) error {
+func removeHookLines(path, name, binary string) error {
 	existing, mode, present, err := readHookFile(path)
 	if err != nil || !present {
 		return err
@@ -289,7 +392,7 @@ func removeHookLines(path string, owned []string) error {
 	kept := make([]string, 0, len(existing))
 	removed := false
 	for _, line := range strings.Split(existing, "\n") {
-		if containsLine(owned, line) {
+		if isOwnedHookLine(name, line, binary) {
 			removed = true
 			continue
 		}
@@ -313,32 +416,205 @@ func removeHookLines(path string, owned []string) error {
 	return writeHookFile(path, withTrailingNewline(strings.Join(kept, "\n")), mode)
 }
 
-func hookStatus(path string, hook Hook) (HookState, error) {
-	state := HookState{Name: hook.Name, Line: hook.Line, Path: path}
+func hookStatus(path string, hook Hook, binary string) (HookState, error) {
+	state := HookState{Name: hook.Name, Path: path}
 
 	existing, mode, present, err := readHookFile(path)
 	if err != nil || !present {
 		return state, err
 	}
 	state.Executable = mode&ownerExecute != 0
+	lines := strings.Split(existing, "\n")
+	state.Line = currentHookLine(hook, binary, needsStatusPreservation(withoutOwnedHookLines(lines, hook.Name, binary)))
 
-	var legacyForHook []string
-	for _, legacy := range legacyHooks {
-		if legacy.Name == hook.Name && legacy.Line != hook.Line {
-			legacyForHook = append(legacyForHook, legacy.Line)
-		}
-	}
-
-	for _, line := range strings.Split(existing, "\n") {
+	for _, line := range lines {
 		switch {
-		case sameLine(line, hook.Line):
+		case sameLine(line, state.Line):
 			state.Occurrences++
-		case containsLine(legacyForHook, line):
+		case isOwnedHookLine(hook.Name, line, binary):
 			state.Legacy = append(state.Legacy, strings.TrimSpace(line))
 		}
 	}
 	state.Installed = state.Occurrences > 0
 	return state, nil
+}
+
+func withoutOwnedHookLines(lines []string, name, binary string) []string {
+	foreign := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if !isOwnedHookLine(name, line, binary) {
+			foreign = append(foreign, line)
+		}
+	}
+	return foreign
+}
+
+// needsStatusPreservation decides whether inserting sanho would replace
+// a foreign hook's final status. A fresh/shebang-only file has no status
+// to preserve. A constant exit is an explicit user choice; a dynamic or
+// bare exit and ordinary fall-through both depend on the preceding
+// command and therefore need the wrapper.
+func needsStatusPreservation(lines []string) bool {
+	index := lastEffectiveLineIndex(lines)
+	if index < 0 {
+		return false
+	}
+	line := strings.TrimSpace(lines[index])
+	if line == hookShebang {
+		return false
+	}
+	kind, exit := classifyExit(line)
+	if !exit {
+		return true
+	}
+	return kind == exitDynamic
+}
+
+type exitKind int
+
+const (
+	exitConstant exitKind = iota
+	exitDynamic
+)
+
+func classifyExit(line string) (exitKind, bool) {
+	line = strings.TrimSpace(line)
+	if comment := strings.Index(line, " #"); comment >= 0 {
+		line = strings.TrimSpace(line[:comment])
+	}
+	line = strings.TrimSuffix(line, ";")
+	fields := strings.Fields(line)
+	if len(fields) == 0 || fields[0] != "exit" {
+		return exitConstant, false
+	}
+	if len(fields) == 1 || (len(fields) == 2 && (fields[1] == "$?" || fields[1] == "${?}")) {
+		return exitDynamic, true
+	}
+	return exitConstant, true
+}
+
+func lastEffectiveLineIndex(lines []string) int {
+	for i := len(lines) - 1; i >= 0; i-- {
+		trimmed := strings.TrimSpace(lines[i])
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		return i
+	}
+	return -1
+}
+
+const statusWrapperPrefix = "_sanho_prev=$?; "
+const statusWrapperSuffix = "; _sanho_rc=$?; [ $_sanho_prev -ne 0 ] && exit $_sanho_prev || exit $_sanho_rc"
+
+func isOwnedHookLine(name, line, currentBinary string) bool {
+	line = strings.TrimSpace(line)
+	if strings.HasPrefix(line, statusWrapperPrefix) {
+		if !strings.HasSuffix(line, statusWrapperSuffix) {
+			return false
+		}
+		line = strings.TrimSuffix(strings.TrimPrefix(line, statusWrapperPrefix), statusWrapperSuffix)
+	}
+
+	guardToken := ""
+	if strings.HasPrefix(line, "! [ -x ") {
+		end := strings.Index(line, " ] || ")
+		if end < 0 {
+			return false
+		}
+		guardToken = strings.TrimPrefix(line[:end], "! [ -x ")
+		line = line[end+len(" ] || "):]
+	}
+
+	token, ok := invocationToken(name, line)
+	if !ok || (guardToken != "" && guardToken != token) {
+		return false
+	}
+	return token == "sanho" || token == currentBinary || validHistoricalBinaryToken(token)
+}
+
+func invocationToken(name, line string) (string, bool) {
+	for _, core := range hookCores(name) {
+		suffix := " " + core
+		if strings.HasSuffix(line, suffix) {
+			token := strings.TrimSuffix(line, suffix)
+			if token != "" {
+				return token, true
+			}
+		}
+	}
+	return "", false
+}
+
+func validHistoricalBinaryToken(token string) bool {
+	value := token
+	quoted := false
+	if strings.HasPrefix(token, "'") {
+		var ok bool
+		value, ok = unquoteShellToken(token)
+		if !ok {
+			return false
+		}
+		quoted = true
+	}
+	if !filepath.IsAbs(value) || strings.ContainsAny(value, "\r\n") {
+		return false
+	}
+	if !quoted && strings.ContainsAny(value, " \t") {
+		return false
+	}
+	base := strings.ToLower(filepath.Base(value))
+	return base == "sanho" || base == "sanho.exe"
+}
+
+func unquoteShellToken(token string) (string, bool) {
+	if len(token) < 2 || token[0] != '\'' {
+		return "", false
+	}
+	var value strings.Builder
+	for position := 1; ; {
+		end := strings.IndexByte(token[position:], '\'')
+		if end < 0 {
+			return "", false
+		}
+		end += position
+		value.WriteString(token[position:end])
+		if end == len(token)-1 {
+			return value.String(), true
+		}
+		if !strings.HasPrefix(token[end+1:], "\\''") {
+			return "", false
+		}
+		value.WriteByte('\'')
+		position = end + 4
+		if position > len(token) {
+			return "", false
+		}
+	}
+}
+
+func hookCores(name string) []string {
+	var cores []string
+	for _, hook := range append(Hooks(), legacyHooks...) {
+		if hook.Name != name {
+			continue
+		}
+		core := strings.TrimPrefix(hook.Line, "sanho ")
+		if !containsLine(cores, core) {
+			cores = append(cores, core)
+		}
+	}
+	return cores
+}
+
+func hookNames() []string {
+	var names []string
+	for _, hook := range append(Hooks(), legacyHooks...) {
+		if !containsLine(names, hook.Name) {
+			names = append(names, hook.Name)
+		}
+	}
+	return names
 }
 
 // ErrHookIsSymlink reports a hook path that is a symbolic link.
@@ -431,8 +707,7 @@ func lastExitLineIndex(lines []string) int {
 		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
 			continue
 		}
-		fields := strings.Fields(trimmed)
-		if len(fields) > 0 && strings.TrimRight(fields[0], ";") == "exit" {
+		if _, ok := classifyExit(trimmed); ok {
 			return i
 		}
 		return -1

@@ -32,15 +32,17 @@ func TestInitFreshOnSeededCanonical(t *testing.T) {
 
 	// The six hooks, one line each; post-commit is gone in v0.2.
 	wantHooks := map[string]string{
-		"pre-commit":    "sanho hook pre-commit",
-		"commit-msg":    `sanho hook commit-msg "$1"`,
-		"pre-push":      `sanho hook pre-push "$@"`,
-		"post-checkout": `sanho hook post-checkout "$@"`,
-		"post-merge":    "sanho hook post-merge",
-		"post-rewrite":  `sanho hook post-rewrite "$@"`,
+		"pre-commit":    "hook pre-commit",
+		"commit-msg":    `hook commit-msg "$1"`,
+		"pre-push":      `hook pre-push "$@"`,
+		"post-checkout": `hook post-checkout "$@"`,
+		"post-merge":    "hook post-merge",
+		"post-rewrite":  `hook post-rewrite "$@"`,
 	}
 	for name, line := range wantHooks {
-		requireContains(t, "hook "+name, readFile(t, w.hookPath(name)), line)
+		content := readFile(t, w.hookPath(name))
+		requireContains(t, "hook "+name, content, line)
+		requireNotContains(t, "hook "+name, content, "sanho "+line)
 	}
 	if fileExists(t, w.hookPath("post-commit")) {
 		t.Error("a post-commit hook was installed; v0.2 has none")
@@ -61,6 +63,58 @@ func TestInitFreshOnSeededCanonical(t *testing.T) {
 	state := w.sanho(w.app, "state", "--json").stdout
 	requireContains(t, "state", state, `"project": "product"`)
 	requireContains(t, "state", state, w.origin)
+}
+
+func TestInitRefusesCustomHooksPathBeforeMutation(t *testing.T) {
+	w := newWorld(t, map[string]string{"api.md": "canonical api\n"})
+	custom := w.appPath(".githooks")
+	mkdirAll(t, custom)
+	foreign := "#!/bin/sh\necho foreign\n"
+	writeFile(t, filepath.Join(custom, "pre-commit"), foreign)
+	w.git(w.app, "config", "core.hooksPath", custom)
+
+	refused := w.run(w.app, "init",
+		"--project", "product",
+		"--docs-repo-url", w.origin,
+		"--actor-email", "author@example.test")
+	if refused.exitCode != 1 {
+		t.Fatalf("init exited %d, want 1\n%s", refused.exitCode, refused.combined())
+	}
+	requireContains(t, "init refusal", refused.stderr, "custom core.hooksPath")
+	requireContains(t, "init refusal", refused.stderr, custom)
+	for _, path := range []string{".sanho.json", ".sanho_base.json", ".gitignore", filepath.Join(".git", "sanho", "canonical")} {
+		if fileExists(t, w.appPath(path)) {
+			t.Errorf("refused init created %s", path)
+		}
+	}
+	if got := readFile(t, filepath.Join(custom, "pre-commit")); got != foreign {
+		t.Fatalf("custom hook changed from %q to %q", foreign, got)
+	}
+	if fileExists(t, filepath.Join(w.home, "state.json")) {
+		t.Fatal("refused init wrote the registry")
+	}
+}
+
+func TestDoctorDoesNotRepairCustomHooksPath(t *testing.T) {
+	w := newWorld(t, map[string]string{"api.md": "canonical api\n"})
+	w.initAndAdoptDocs()
+	custom := w.appPath(".githooks")
+	mkdirAll(t, custom)
+	foreign := "#!/bin/sh\necho foreign\n"
+	writeFile(t, filepath.Join(custom, "pre-commit"), foreign)
+	w.git(w.app, "config", "core.hooksPath", custom)
+	defaultBefore := readFile(t, w.appPath(".git", "hooks", "pre-commit"))
+
+	for _, args := range [][]string{{"doctor"}, {"doctor", "--fix"}} {
+		out := w.sanho(w.app, args...)
+		requireContains(t, strings.Join(args, " "), out.stdout, "custom core.hooksPath")
+		if got := readFile(t, filepath.Join(custom, "pre-commit")); got != foreign {
+			t.Fatalf("%s changed custom hook from %q to %q", strings.Join(args, " "), foreign, got)
+		}
+		if got := readFile(t, w.appPath(".git", "hooks", "pre-commit")); got != defaultBefore {
+			t.Fatalf("%s changed the default hook", strings.Join(args, " "))
+		}
+	}
 }
 
 // Scenario 2 — init on an empty canonical, then the first push

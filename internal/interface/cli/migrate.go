@@ -105,7 +105,6 @@ func runMigrate(cmd *cobra.Command, docsRepoURLFlag string) error {
 	if err != nil {
 		return err
 	}
-
 	if config.SchemaVersion != 1 {
 		// Idempotence is a claim about the whole migration, not about one
 		// file (F-H8b). A run interrupted after the config write used to
@@ -120,6 +119,9 @@ func runMigrate(cmd *cobra.Command, docsRepoURLFlag string) error {
 			writeln(cmd.OutOrStdout(), msgAlreadyMigrated)
 			return nil
 		}
+	}
+	if err := requireDefaultHooksDir(ctx, appgit.New(root, config.DocsDir, gitx.New(root))); err != nil {
+		return err
 	}
 
 	if err := refuseOnLiveV1State(ctx, root); err != nil {
@@ -140,12 +142,11 @@ func runMigrate(cmd *cobra.Command, docsRepoURLFlag string) error {
 	// that is still recognizably v0.1 and that re-running completes.
 	// Writing it first — the previous order — made every failure produce
 	// a workspace v0.2 refused to migrate and v0.1 could no longer read.
-	preserved, err := preserveLegacyDaemonState()
+	site, err := openMigrationSite(ctx, root, legacy.DocsDir, docsRepoURL)
 	if err != nil {
 		return err
 	}
-
-	site, err := openMigrationSite(ctx, root, legacy.DocsDir, docsRepoURL)
+	preserved, err := preserveLegacyDaemonState()
 	if err != nil {
 		return err
 	}

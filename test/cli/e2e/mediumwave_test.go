@@ -164,7 +164,7 @@ func TestPostCheckoutStandsDownOnAFileCheckout(t *testing.T) {
 	// tell a file checkout from a branch checkout, and re-runs the whole
 	// derivation for a command that moved no ref.
 	requireContains(t, "post-checkout hook", readFile(t, ws.hookPath("post-checkout")),
-		`sanho hook post-checkout "$@"`)
+		`hook post-checkout "$@"`)
 
 	ws.writeDocs(map[string]string{"api.md": "line one\nedited\n"})
 	restore := ws.gitExit("checkout", "--", "docs/api.md")

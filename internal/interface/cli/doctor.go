@@ -216,6 +216,15 @@ func checkGitVersion(ctx context.Context, ws *workspace, out *report) {
 // replaces the docs directory — a destructive answer to "a hook line is
 // missing", and one that refuses outright in an initialized workspace.
 func checkHooks(ctx context.Context, ws *workspace, fix bool, out *report) {
+	if _, err := ws.repo.DefaultHooksDir(ctx); err != nil {
+		var custom *appgit.CustomHooksPathError
+		if errors.As(err, &custom) {
+			out.warn("hooks", "%s", customHooksPathMessage(custom.Path))
+			return
+		}
+		out.warn("hooks", "could not inspect the hooks directory: %s", causeOf(err))
+		return
+	}
 	problems, err := hookProblems(ctx, ws)
 	if err != nil {
 		out.warn("hooks", "could not inspect the hooks directory: %s", causeOf(err))

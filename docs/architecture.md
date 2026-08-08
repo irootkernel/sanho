@@ -1140,14 +1140,20 @@ primary가 깨지면 `.bak`에서 복구하고 primary를 즉시 되살린다. �
 
 ## hook 6종
 
-| hook | 설치 라인 | 역할 | 실패 정책 |
+| hook | 호출 핵심 | 역할 | 실패 정책 |
 |---|---|---|---|
-| `pre-commit` | `sanho hook pre-commit` | staged 마커 게이트 + 로컬 신선도 경고 | 마커 게이트만 차단, 그 외 항상 통과 |
-| `commit-msg` | `sanho hook commit-msg "$1"` | `docs-base` / `docs-base-tree` stamp | 절대 차단하지 않음 |
-| `pre-push` | `sanho hook pre-push "$@"` | 게시 + 마커 게이트 + sync 게이트 | 유일한 fail-closed hook |
-| `post-checkout` | `sanho hook post-checkout "$@"` | base 재유도 (파일 checkout이면 stand-down) | 항상 exit 0 |
-| `post-merge` | `sanho hook post-merge` | base 재유도 | 항상 exit 0 |
-| `post-rewrite` | `sanho hook post-rewrite "$@"` | base 재유도 | 항상 exit 0 |
+| `pre-commit` | `<설치-binary> hook pre-commit` | staged 마커 게이트 + 로컬 신선도 경고 | 마커 게이트만 차단, 그 외 항상 통과 |
+| `commit-msg` | `<설치-binary> hook commit-msg "$1"` | `docs-base` / `docs-base-tree` stamp | 절대 차단하지 않음 |
+| `pre-push` | `<설치-binary> hook pre-push "$@"` | 게시 + 마커 게이트 + sync 게이트 | 유일한 fail-closed hook |
+| `post-checkout` | `<설치-binary> hook post-checkout "$@"` | base 재유도 (파일 checkout이면 stand-down) | 항상 exit 0 |
+| `post-merge` | `<설치-binary> hook post-merge` | base 재유도 | 항상 exit 0 |
+| `post-rewrite` | `<설치-binary> hook post-rewrite "$@"` | base 재유도 | 항상 exit 0 |
+
+`<설치-binary>`는 `init` 또는 `migrate`를 실행한 executable의 canonical 절대
+경로를 shell 인용한 값이다. commit 계열과 post hook은 executable이 사라지면
+통과하도록 `! [ -x <설치-binary> ] || ...` guard를 두지만, 게시 경계인
+`pre-push`는 guard 없이 실패한다. 기존 사용자 hook에 끼워 넣을 때는 Sanho 호출
+전의 종료 코드를 보존해 사용자 검사가 실패한 상태를 성공으로 바꾸지 않는다.
 
 `post-commit` hook은 설치하지 않는다. commit은 base를 옮기지 않고, 레지스트리
 갱신은 sync/pull/게시에 얹혀 있기 때문이다. 다만 CLI에는 no-op 진입점
@@ -1155,10 +1161,11 @@ primary가 깨지면 `.bak`에서 복구하고 primary를 즉시 되살린다. �
 `sanho hook post-commit` 라인이 이 binary에 도달하기 때문이며, 아무것도 출력하지
 않고(v1 workspace면 migrate 힌트 한 줄) 항상 exit 0이다.
 
-hook 설치와 제거는 **정확한 줄 일치**로만 판단한다. 부분 문자열 검사는 어디에도
-없다. 그래서 `sanho hook pre-push`와 `sanho hook pre-push "$@"`가 서로를
-가리지 않고 각각 독립적으로 다뤄진다. hook 파일은 사용자 스크립트이고 Sanho는
-손님이므로:
+현재 설치 여부와 중복은 **정확한 생성 줄 일치**로 판단한다. 과거 PATH 호출,
+다른 위치의 설치 binary, 종료 코드 보존 wrapper는 명령 구조 전체를 인식해
+upgrade·제거한다. 부분 문자열 검사는 쓰지 않으므로 `sanho hook pre-push`와
+`sanho hook pre-push "$@"`가 서로를 가리지 않는다. hook 파일은 사용자
+스크립트이고 Sanho는 손님이므로:
 
 - 남의 줄은 설치와 제거 양쪽에서 원문 그대로 보존한다.
 - 스크립트가 `exit`으로 끝나면 그 앞에 삽입한다. 뒤에 붙이면 실행되지 않는다.
@@ -1169,6 +1176,12 @@ hook 설치와 제거는 **정확한 줄 일치**로만 판단한다. 부분 문
   둔 줄까지 지우는 것은 사용자 파일을 지우는 일이다(F-L2).
 - 제거 대상에는 v0.1의 7종 라인(구형 `sanho hook pre-push` 무인자 형태와
   `post-commit` 포함)도 들어간다.
+
+`core.hooksPath`가 Git의 `<common-dir>/hooks`가 아닌 곳을 가리키면 `init`과
+`migrate`는 workspace·registry·backup·clone을 쓰기 전에 거절한다. 그 경로는
+tracked이거나 여러 저장소가 공유할 수 있어 Sanho가 소유권을 가정할 수 없기
+때문이다. `doctor --fix`도 경고만 하고 그 경로를 수정하지 않는다. 명시적인
+`clean -y`는 정리 요청이므로 인식 가능한 기존 Sanho 줄만 제거할 수 있다.
 
 `sanho doctor`의 hooks 검사는 설치 여부, 중복 설치 횟수, 실행 비트,
 남아 있는 v0.1 라인을 각각 보고한다.

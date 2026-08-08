@@ -102,6 +102,9 @@ func runInit(cmd *cobra.Command, opts initOptions) error {
 	if _, err := os.Stat(filepath.Join(root, wsstate.ConfigFileName)); err == nil && !opts.force {
 		return fmt.Errorf("%s already exists in %s; rerun with --force to reinitialize", wsstate.ConfigFileName, root)
 	}
+	if err := requireDefaultHooksDir(ctx, appgit.New(root, opts.docsDir, gitx.New(root))); err != nil {
+		return err
+	}
 	// The sync note is consulted before the dirty-docs check, and the
 	// order is the same one `sanho sync` uses: an unfinished sync makes
 	// the docs dirty by construction, so asking about the docs first
@@ -210,6 +213,22 @@ func runInit(cmd *cobra.Command, opts initOptions) error {
 
 	renderInitSummary(cmd, ws, store, base, hasBase, staged)
 	return nil
+}
+
+// requireDefaultHooksDir keeps lifecycle commands out of custom hook
+// directories before they mutate workspace, registry, clone, or backup
+// state. Such directories are commonly tracked or shared across
+// worktrees, so Sanho cannot safely claim ownership of their scripts.
+func requireDefaultHooksDir(ctx context.Context, repo *appgit.Repo) error {
+	_, err := repo.DefaultHooksDir(ctx)
+	if err == nil {
+		return nil
+	}
+	var custom *appgit.CustomHooksPathError
+	if errors.As(err, &custom) {
+		return errors.New(customHooksPathMessage(custom.Path))
+	}
+	return initGitError("resolve the git hooks directory", err)
 }
 
 func configExists(root string) bool {
