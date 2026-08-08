@@ -367,7 +367,7 @@ func TestRunCaseFastForwardPublishes(t *testing.T) {
 		t.Errorf("author = %s <%s>, want the actor", created.authorName, created.authorMail)
 	}
 
-	want := "docs: product/main (2 app commits)\n" +
+	want := "[SANHO] Publish docs from product/main (2 app commits)\n" +
 		"\n" +
 		"source: product:/home/u/product @ " + appTip + "\n" +
 		"commits:\n" +
@@ -389,7 +389,7 @@ func TestRunUsesThePushedBranchName(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 	subject := strings.SplitN(s.canonical.created[0].message, "\n", 2)[0]
-	if want := "docs: product/feature/docs-rewrite (1 app commits)"; subject != want {
+	if want := "[SANHO] Publish docs from product/feature/docs-rewrite (1 app commits)"; subject != want {
 		t.Fatalf("subject = %q, want %q", subject, want)
 	}
 }
@@ -601,7 +601,7 @@ func TestRunDeduplicatesIdenticalDocsTrees(t *testing.T) {
 		t.Fatalf("created %d commits, want 1 for two tips carrying the same docs tree", len(s.canonical.created))
 	}
 	// stdin order decides which ref describes the publication.
-	if !strings.HasPrefix(s.canonical.created[0].message, "docs: product/main ") {
+	if !strings.HasPrefix(s.canonical.created[0].message, "[SANHO] Publish docs from product/main ") {
 		t.Errorf("subject = %q, want the first ref in stdin order", s.canonical.created[0].message)
 	}
 }

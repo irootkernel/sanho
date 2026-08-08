@@ -96,7 +96,7 @@ type AppRepoPort interface {
 	CheckoutDocsTree(ctx context.Context, tree string) error
 	// RestoreDocsFromHead resets docs worktree+index to HEAD (abort).
 	RestoreDocsFromHead(ctx context.Context) error
-	// CommitDocs creates the user's `docs: sync to <oid>` commit
+	// CommitDocs creates the user's `[SANHO] Sync docs to <oid>` commit
 	// restricted to the docs pathspec; returns the new commit OID.
 	CommitDocs(ctx context.Context, message string) (string, error)
 	// ScanWorktreeDocsForMarkers reports docs worktree files that still
@@ -366,7 +366,7 @@ func (r Resolution) String() string {
 // syncCommitPrefix is the fixed subject of the commit sync and
 // `pull --commit` create (the synchronization contract). It is a
 // machine-readable convention, so the OID width is fixed too.
-const syncCommitPrefix = "docs: sync to "
+const syncCommitPrefix = "[SANHO] Sync docs to "
 
 // shortOIDWidth is the guidance contract's "OIDs shortened to 12 chars".
 const shortOIDWidth = 12

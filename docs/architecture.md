@@ -131,7 +131,7 @@ The publication cases are:
 Canonical commits are linear and use:
 
 ```text
-docs: <repository>/<branch> (<N> app commits)
+[SANHO] Publish docs from <repository>/<branch> (<N> app commits)
 
 source: <workspace-id> @ <application-tip>
 commits:
@@ -168,7 +168,7 @@ database, and reconciles base, local docs, and canonical docs.
 
 - Up-to-date content changes nothing.
 - A clean merge writes docs and creates one explicit sync commit authored with
-  the user's Git identity: `docs: sync to <oid12>`.
+  the user's Git identity: `[SANHO] Sync docs to <oid12>`.
 - A conflict writes ordinary conflict markers and `sync.json`, then exits 0.
   Conflict is a successful sync outcome and must be read from output/JSON.
 

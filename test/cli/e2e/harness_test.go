@@ -286,8 +286,8 @@ func (ws *workspace) initWorkspace(extra ...string) result {
 }
 
 // initAndAdopt is initWorkspace followed by the commit init tells the
-// user to make: fresh mode stages canonical's docs and leaves the commit
-// to the user (P3 — the tool never authors commits).
+// user to make: fresh mode stages canonical's docs and leaves that commit
+// to the user.
 func (ws *workspace) initAndAdopt(extra ...string) *workspace {
 	ws.w.t.Helper()
 	ws.initWorkspace(extra...)

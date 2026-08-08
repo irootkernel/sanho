@@ -110,8 +110,8 @@ func TestSyncAdoptsUpstreamWhenLocalDocsAreUnchanged(t *testing.T) {
 	if result.CommitOID != head {
 		t.Fatalf("Result.CommitOID = %s, want HEAD %s", result.CommitOID, head)
 	}
-	if subject := gitLine(t, f.appDir, "log", "-1", "--format=%s", head); subject != "docs: sync to "+target[:12] {
-		t.Fatalf("subject = %q, want %q", subject, "docs: sync to "+target[:12])
+	if subject := gitLine(t, f.appDir, "log", "-1", "--format=%s", head); subject != "[SANHO] Sync docs to "+target[:12] {
+		t.Fatalf("subject = %q, want %q", subject, "[SANHO] Sync docs to "+target[:12])
 	}
 	for _, path := range f.changedPaths(t, head) {
 		if !strings.HasPrefix(path, docsDir+"/") {
@@ -620,7 +620,7 @@ func TestSyncRebaseOnto(t *testing.T) {
 	if got := f.base(t).Commit; got != middle {
 		t.Fatalf("base commit = %s, want the requested target %s", got, middle)
 	}
-	if subject := gitLine(t, f.appDir, "log", "-1", "--format=%s", "HEAD"); subject != "docs: sync to "+middle[:12] {
+	if subject := gitLine(t, f.appDir, "log", "-1", "--format=%s", "HEAD"); subject != "[SANHO] Sync docs to "+middle[:12] {
 		t.Fatalf("subject = %q, want the target's short OID", subject)
 	}
 

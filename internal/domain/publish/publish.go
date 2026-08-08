@@ -145,14 +145,14 @@ type CommitMeta struct {
 
 // Subject renders the one-line canonical commit subject:
 //
-//	docs: <repo-name>/<branch> (<N> app commits)
+//	[SANHO] Publish docs from <repo-name>/<branch> (<N> app commits)
 //
 // N is the number of Subjects. The wording is fixed by the publication contract
 // convention block and is deliberately not pluralized: the format is a
 // machine-readable contract that `sanho status` and canonical `git log`
 // readers match on, so "(1 app commits)" is correct output.
 func (m CommitMeta) Subject() string {
-	return "docs: " + m.RepoName + "/" + m.Branch + " (" + strconv.Itoa(len(m.Subjects)) + " app commits)"
+	return "[SANHO] Publish docs from " + m.RepoName + "/" + m.Branch + " (" + strconv.Itoa(len(m.Subjects)) + " app commits)"
 }
 
 // Message renders the full canonical commit message: the Subject, a

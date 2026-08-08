@@ -389,11 +389,12 @@ func TestCleanSyncCreatesTheSyncCommit(t *testing.T) {
 		t.Fatalf("docs/guide.md = %q, want the upstream content", got)
 	}
 	subject := strings.TrimSpace(w.git(w.app, "log", "-1", "--format=%s").stdout)
-	if subject != "docs: sync to "+target[:12] {
-		t.Fatalf("sync commit subject = %q, want 'docs: sync to %s'", subject, target[:12])
+	if subject != "[SANHO] Sync docs to "+target[:12] {
+		t.Fatalf("sync commit subject = %q, want '[SANHO] Sync docs to %s'", subject, target[:12])
 	}
-	// Sync creates an ordinary commit authored by the user — no [SANHO].
-	requireNotContains(t, "sync commit subject", subject, "[SANHO]")
+	// Sync creates an ordinary commit authored by the user under the
+	// company-wide Sanho subject convention.
+	requireContains(t, "sync commit subject", subject, "[SANHO]")
 }
 
 // Scenario 7 — push publishes, with the publication contract canonical subject format.
@@ -413,10 +414,10 @@ func TestPushPublishesWithTheCanonicalSubjectFormat(t *testing.T) {
 		t.Fatalf("canonical api.md = %q, want the pushed content", got)
 	}
 
-	// docs: <repo>/<branch> (<N> app commits)
+	// [SANHO] Publish docs from <repo>/<branch> (<N> app commits)
 	subject := w.canonicalSubject(head)
-	if !strings.HasPrefix(subject, "docs: code/main (") || !strings.HasSuffix(subject, " app commits)") {
-		t.Fatalf("canonical subject = %q, want 'docs: code/main (<N> app commits)'", subject)
+	if !strings.HasPrefix(subject, "[SANHO] Publish docs from code/main (") || !strings.HasSuffix(subject, " app commits)") {
+		t.Fatalf("canonical subject = %q, want '[SANHO] Publish docs from code/main (<N> app commits)'", subject)
 	}
 	body := w.git(w.origin, "log", "-1", "--format=%b", head).stdout
 	requireContains(t, "canonical body", body, "source: ")

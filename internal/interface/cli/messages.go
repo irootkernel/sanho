@@ -771,9 +771,9 @@ func statusBehindLine(behind int, known, clean bool, conflicts []string) string 
 
 // initNextStepsMessage is the last thing `sanho init` prints (F-L5).
 //
-// P3 is that the tool never authors commits, so init leaves two things
-// for the user: the ignore entries it appended, and — in fresh mode —
-// canonical's docs staged in the index. One command lands both.
+// Init leaves two things for the user to commit: the ignore entries it
+// appended, and — in fresh mode — canonical's docs staged in the index.
+// One command lands both.
 func initNextStepsMessage(staged bool) string {
 	if staged {
 		return "\nCanonical docs are staged, and the sanho state files were added to .gitignore.\n" +

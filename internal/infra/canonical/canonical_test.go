@@ -466,7 +466,7 @@ func TestCommitDocsTreeUsesActorIdentity(t *testing.T) {
 		t.Fatalf("Head: %v", err)
 	}
 
-	const message = "docs: app/main (1 app commits)\n\nsource: ws @ tip\n"
+	const message = "[SANHO] Publish docs from app/main (1 app commits)\n\nsource: ws @ tip\n"
 	newHead, err := store.CommitDocsTree(ctx, tree, head, "Publisher", "publisher@example.test", message)
 	if err != nil {
 		t.Fatalf("CommitDocsTree: %v", err)

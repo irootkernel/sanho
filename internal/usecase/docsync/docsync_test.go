@@ -264,7 +264,7 @@ func TestRunRebaseOnto(t *testing.T) {
 		if result.NewBase != want {
 			t.Fatalf("NewBase = %+v, want %+v", result.NewBase, want)
 		}
-		if got := f.app.commitMessages; len(got) != 1 || got[0] != "docs: sync to "+commitOID(2)[:12] {
+		if got := f.app.commitMessages; len(got) != 1 || got[0] != "[SANHO] Sync docs to "+commitOID(2)[:12] {
 			t.Fatalf("commit messages = %v, want the target's short OID", got)
 		}
 	})
@@ -296,7 +296,7 @@ func TestRunCleanMerge(t *testing.T) {
 	if got := f.app.checkedOut; len(got) != 1 || got[0] != treeOID(9) {
 		t.Fatalf("checked out %v, want the merge result", got)
 	}
-	if got := f.app.commitMessages; len(got) != 1 || got[0] != "docs: sync to "+commitOID(1)[:12] {
+	if got := f.app.commitMessages; len(got) != 1 || got[0] != "[SANHO] Sync docs to "+commitOID(1)[:12] {
 		t.Fatalf("commit messages = %v", got)
 	}
 	if len(f.state.savedNotes) != 0 {
@@ -1069,7 +1069,7 @@ func TestPull(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Pull: %v", err)
 		}
-		if got := f.app.commitMessages; len(got) != 1 || got[0] != "docs: sync to "+commitOID(1)[:12] {
+		if got := f.app.commitMessages; len(got) != 1 || got[0] != "[SANHO] Sync docs to "+commitOID(1)[:12] {
 			t.Fatalf("commit messages = %v, want the sync convention", got)
 		}
 		if result.CommitOID != commitOID(9) {

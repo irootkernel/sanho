@@ -69,7 +69,7 @@ func TestPullWithCommit(t *testing.T) {
 	if result.CommitOID != head {
 		t.Fatalf("CommitOID = %s, want HEAD %s", result.CommitOID, head)
 	}
-	if subject := gitLine(t, f.appDir, "log", "-1", "--format=%s", head); subject != "docs: sync to "+target[:12] {
+	if subject := gitLine(t, f.appDir, "log", "-1", "--format=%s", head); subject != "[SANHO] Sync docs to "+target[:12] {
 		t.Fatalf("subject = %q, want the sync convention", subject)
 	}
 	for _, path := range f.changedPaths(t, head) {

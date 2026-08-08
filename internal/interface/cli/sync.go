@@ -69,7 +69,7 @@ func newSyncCmd() *cobra.Command {
 		Long: `Fetch canonical docs, three-way merge them with your local docs, and lay a
 base-update commit under your work.
 
-A clean merge produces one ordinary commit ('docs: sync to <oid>') authored by
+A clean merge produces one ordinary commit ('[SANHO] Sync docs to <oid>') authored by
 you. A conflicted merge writes standard conflict markers into the docs
 directory; resolve them, 'git add' and 'git commit' as you would for any merge,
 then run 'sanho sync --continue' to complete the sync. 'sanho sync --abort'
@@ -274,7 +274,7 @@ have no edits relative to the recorded base. Refuses otherwise and points at
 			return runPull(cmd, withCommit, asJSON)
 		},
 	}
-	cmd.Flags().BoolVar(&withCommit, "commit", false, "Record the update as a 'docs: sync to <oid>' commit")
+	cmd.Flags().BoolVar(&withCommit, "commit", false, "Record the update as a '[SANHO] Sync docs to <oid>' commit")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "Print machine-readable JSON")
 	return cmd
 }

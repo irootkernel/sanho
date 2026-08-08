@@ -447,8 +447,8 @@ func TestPullCommitAndSyncRebaseOntoFlags(t *testing.T) {
 
 	w.sanho(w.app, "pull", "--commit")
 	subject := strings.TrimSpace(w.git(w.app, "log", "-1", "--format=%s").stdout)
-	if subject != "docs: sync to "+second[:12] {
-		t.Fatalf("pull --commit subject = %q, want 'docs: sync to %s'", subject, second[:12])
+	if subject != "[SANHO] Sync docs to "+second[:12] {
+		t.Fatalf("pull --commit subject = %q, want '[SANHO] Sync docs to %s'", subject, second[:12])
 	}
 
 	// --rebase-onto against an ancestor of a HEALTHY base is refused

@@ -511,7 +511,7 @@ func renderInitSummary(cmd *cobra.Command, ws *workspace, store *canonical.Store
 	}
 	writef(out, "  hooks      : %d installed\n", len(appgit.Hooks()))
 	// Fresh mode stages canonical's docs into the index and init always
-	// appends the ignore entries; both are the user's to commit (P3: the
-	// tool never authors commits).
+	// appends the ignore entries; both are the user's to commit. Init does
+	// not create the commit on their behalf.
 	writeln(out, initNextStepsMessage(staged))
 }

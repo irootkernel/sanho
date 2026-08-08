@@ -34,7 +34,7 @@ func TestS1OnboardingFreshAndReuse(t *testing.T) {
 	w := newWorld(t, map[string]string{"api.md": "canonical api\n"})
 
 	// Fresh: canonical's docs become this workspace's docs, staged for a
-	// commit the user makes (P3 — the tool never authors commits).
+	// commit the user makes; init does not create it on their behalf.
 	ws := w.newWorkspace("fresh")
 	out := ws.initWorkspace()
 	requireContains(t, "init output", out.stdout, "workspace initialized")
@@ -100,7 +100,7 @@ func TestS2PropagationBetweenTwoWorkspaces(t *testing.T) {
 	synced := reader.sanho("sync")
 	requireContains(t, "reader sync", synced.stdout, "synced docs to "+published[:12])
 	requireEqual(t, "reader docs/guide.md", reader.readDocs("guide.md"), "the guide\n")
-	requireEqual(t, "reader sync commit", reader.headSubject(), "docs: sync to "+published[:12])
+	requireEqual(t, "reader sync commit", reader.headSubject(), "[SANHO] Sync docs to "+published[:12])
 
 	// The registry carries both checkouts, and status renders the other
 	// one as a sibling (the state contract, the JSON contract).

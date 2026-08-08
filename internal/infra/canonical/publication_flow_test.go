@@ -244,7 +244,7 @@ func TestFlowCaseFastForward(t *testing.T) {
 	}
 
 	subject := gitLine(t, f.origin, "log", "-1", "--format=%s", newHead)
-	if want := "docs: app/main (2 app commits)"; subject != want {
+	if want := "[SANHO] Publish docs from app/main (2 app commits)"; subject != want {
 		t.Fatalf("subject = %q, want %q", subject, want)
 	}
 	body := gitRun(t, f.origin, "log", "-1", "--format=%B", newHead)

@@ -292,10 +292,10 @@ func (r *Repo) RestoreDocsFromHead(ctx context.Context) error {
 // has staged for other paths stay staged and uncommitted, because a
 // pathspec commit records only the listed paths. And the commit is the
 // *user's* — no identity is injected, so git resolves author and
-// committer from the repository's own configuration, which is what D3
-// means by "the tool never creates commits" in the sense that matters:
-// nothing here is attributed to sanho. Hooks run normally; this is a
-// real commit and is never made with --no-verify.
+// committer from the repository's own configuration. The `[SANHO]`
+// subject identifies the operation without attributing the author or
+// committer to Sanho. Hooks run normally; this is a real commit and is
+// never made with --no-verify.
 func (r *Repo) CommitDocs(ctx context.Context, message string) (string, error) {
 	if _, err := r.git.Run(ctx, "commit", "--quiet", "-m", message, "--", r.docsDir); err != nil {
 		return "", fmt.Errorf("appgit: commit docs in %s: %w", r.workDir, err)

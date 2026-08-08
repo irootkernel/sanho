@@ -78,7 +78,8 @@ Use real disposable or explicitly approved `sanho-server`, `sanho-client`, and
 1. Record all three starting refs and clean statuses.
 2. Initialize both application clones with the candidate and isolated home.
 3. Change docs in server, commit, and push. Confirm a canonical commit appears
-   with `docs: <repo>/<branch> (<N> app commits)` plus `source` and `commits`.
+   with `[SANHO] Publish docs from <repo>/<branch> (<N> app commits)` plus
+   `source` and `commits`.
 4. Refresh client status, sync, and confirm its docs tree equals canonical.
 5. Change docs in client, publish, then sync server.
 6. Push a code-only commit and confirm canonical does not move.

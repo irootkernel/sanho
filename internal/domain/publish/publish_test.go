@@ -214,17 +214,17 @@ func TestCommitMetaSubject(t *testing.T) {
 		{
 			name: "two commits",
 			meta: publish.CommitMeta{RepoName: "sanho", Branch: "main", Subjects: []string{"a", "b"}},
-			want: "docs: sanho/main (2 app commits)",
+			want: "[SANHO] Publish docs from sanho/main (2 app commits)",
 		},
 		{
 			name: "one commit keeps the fixed plural wording",
 			meta: publish.CommitMeta{RepoName: "sanho", Branch: "main", Subjects: []string{"a"}},
-			want: "docs: sanho/main (1 app commits)",
+			want: "[SANHO] Publish docs from sanho/main (1 app commits)",
 		},
 		{
 			name: "no commits",
 			meta: publish.CommitMeta{RepoName: "sanho", Branch: "feature/x"},
-			want: "docs: sanho/feature/x (0 app commits)",
+			want: "[SANHO] Publish docs from sanho/feature/x (0 app commits)",
 		},
 	}
 
@@ -246,7 +246,7 @@ func TestCommitMetaMessage(t *testing.T) {
 		Subjects:    []string{"docs: add api guide", "docs: fix typo"},
 	}
 
-	want := "docs: sanho/main (2 app commits)\n" +
+	want := "[SANHO] Publish docs from sanho/main (2 app commits)\n" +
 		"\n" +
 		"source: sanho:/home/u/sanho @ " + oidHead + "\n" +
 		"commits:\n" +
@@ -270,7 +270,7 @@ func TestCommitMetaMessageOmitsEmptyCommitsSection(t *testing.T) {
 	if strings.Contains(got, "commits:") {
 		t.Fatalf("Message() rendered a dangling commits header:\n%s", got)
 	}
-	want := "docs: sanho/main (0 app commits)\n\nsource: ws @ " + oidHead + "\n"
+	want := "[SANHO] Publish docs from sanho/main (0 app commits)\n\nsource: ws @ " + oidHead + "\n"
 	if got != want {
 		t.Fatalf("Message() = %q, want %q", got, want)
 	}

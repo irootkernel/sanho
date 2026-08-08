@@ -490,7 +490,7 @@ func TestCommitDocsRecordsOnlyDocs(t *testing.T) {
 		t.Fatalf("CheckoutDocsTree: %v", err)
 	}
 
-	const message = "docs: sync to 0123456789ab"
+	const message = "[SANHO] Sync docs to 0123456789ab"
 	commit, err := repo.CommitDocs(ctx, message)
 	if err != nil {
 		t.Fatalf("CommitDocs: %v", err)
