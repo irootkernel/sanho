@@ -176,6 +176,31 @@ func (f *File) Read(ctx context.Context) (State, error) {
 	return result, nil
 }
 
+// ReadCompatible returns the registry as an in-memory v2 view while also
+// accepting the v0.1 daemon schema. It never persists the conversion. The
+// state command uses this read-only path so users can inventory every
+// workspace before deciding migration order; all ordinary writers continue to
+// refuse legacy state through Read and Update.
+func (f *File) ReadCompatible(ctx context.Context) (State, error) {
+	var result State
+	err := fsx.WithFlock(ctx, f.lockPath(), func() error {
+		legacy, ok, err := f.ReadLegacy()
+		if err != nil {
+			return err
+		}
+		if ok {
+			result = convertLegacyState(legacy)
+			return nil
+		}
+		result, err = f.loadLocked()
+		return err
+	})
+	if err != nil {
+		return State{}, err
+	}
+	return result, nil
+}
+
 // Update applies fn to the state under the exclusive flock and persists
 // atomically (state + .bak). fn returning an error aborts without
 // writing.
@@ -304,28 +329,31 @@ func (f *File) ConvertLegacy(ctx context.Context) (converted bool, err error) {
 			return readErr
 		}
 
-		st := emptyState()
-		for project, repoID := range legacy.ProjectToDocsRepo {
-			repo, known := legacy.DocsRepos[repoID]
-			if !known || repo.RepoURL == "" {
-				continue
-			}
-			st.Projects[project] = Project{DocsRepoURL: repo.RepoURL}
-		}
-		for key, ws := range legacy.Workspaces {
-			st.Workspaces[key] = Workspace{
-				Project:       ws.Project,
-				LocalPath:     ws.LocalPath,
-				BaseCommit:    ws.DocsHash,
-				ActorEmail:    firstNonEmpty(ws.LastActorEmail, ws.OwnerEmail),
-				LastUpdatedAt: laterOf(ws.LastReportedAt, ws.LastUpdatedAt),
-			}
-		}
-
 		converted = true
-		return f.persistLocked(st)
+		return f.persistLocked(convertLegacyState(legacy))
 	})
 	return converted, err
+}
+
+func convertLegacyState(legacy LegacyState) State {
+	st := emptyState()
+	for project, repoID := range legacy.ProjectToDocsRepo {
+		repo, known := legacy.DocsRepos[repoID]
+		if !known || repo.RepoURL == "" {
+			continue
+		}
+		st.Projects[project] = Project{DocsRepoURL: repo.RepoURL}
+	}
+	for key, ws := range legacy.Workspaces {
+		st.Workspaces[key] = Workspace{
+			Project:       ws.Project,
+			LocalPath:     ws.LocalPath,
+			BaseCommit:    ws.DocsHash,
+			ActorEmail:    firstNonEmpty(ws.LastActorEmail, ws.OwnerEmail),
+			LastUpdatedAt: laterOf(ws.LastReportedAt, ws.LastUpdatedAt),
+		}
+	}
+	return st
 }
 
 func firstNonEmpty(values ...string) string {

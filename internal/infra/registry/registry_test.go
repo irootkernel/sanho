@@ -82,6 +82,49 @@ func TestRead_FreshHomeReturnsEmptyV2State(t *testing.T) {
 	}
 }
 
+func TestReadCompatible_ProjectsLegacyStateWithoutWritingIt(t *testing.T) {
+	f := openT(t)
+	legacy := []byte(`{
+  "docs_repos": {"docs": {"ID": "docs", "Path": "/cache/docs", "RepoURL": "ssh://example.test/docs.git"}},
+  "project_to_docs_repo": {"product": "docs"},
+  "workspaces": {
+    "product:/app": {
+      "project": "product",
+      "local_path": "/app",
+      "docs_hash": "abc123",
+      "owner_email": "owner@example.test",
+      "last_updated_at": "2026-08-08T00:00:00Z"
+    }
+  }
+}`)
+	path := filepath.Join(f.HomeDir(), registry.StateFileName)
+	if err := os.WriteFile(path, legacy, 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	state, err := f.ReadCompatible(context.Background())
+	if err != nil {
+		t.Fatalf("ReadCompatible: %v", err)
+	}
+	if got := state.Projects["product"].DocsRepoURL; got != "ssh://example.test/docs.git" {
+		t.Fatalf("project URL = %q", got)
+	}
+	workspace := state.Workspaces["product:/app"]
+	if workspace.LocalPath != "/app" || workspace.BaseCommit != "abc123" || workspace.ActorEmail != "owner@example.test" {
+		t.Fatalf("workspace = %+v", workspace)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(legacy) {
+		t.Fatalf("ReadCompatible rewrote legacy state:\n%s", after)
+	}
+	if _, err := f.Read(context.Background()); !errors.Is(err, registry.ErrLegacyState) {
+		t.Fatalf("ordinary Read = %v, want ErrLegacyState", err)
+	}
+}
+
 func TestUpdate_RoundTrip(t *testing.T) {
 	f := openT(t)
 	ctx := context.Background()

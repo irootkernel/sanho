@@ -391,6 +391,12 @@ func TestV1WorkspaceDegradesSafelyBeforeMigration(t *testing.T) {
 	}
 	requireContains(t, "status refusal", status.stderr, "run 'sanho migrate'")
 
+	// Registry inventory is the read-only exception. It shows every legacy
+	// registration without scoping to a v1 workspace or rewriting the file.
+	state := w.sanho(w.app, "state", "--all", "--json").stdout
+	requireContains(t, "legacy state", state, `"name": "product"`)
+	requireContains(t, "legacy state", state, w.origin)
+
 	// ...and the advised command is the one that succeeds (D3).
 	w.sanho(w.app, "migrate")
 	v2Hook := w.run(w.app, "hook", "post-commit")
@@ -510,10 +516,9 @@ func TestMigratePreservesOtherProjectsAndResumes(t *testing.T) {
 	}
 }
 
-// TestOrdinaryCommandsRefuseALegacyRegistry is the other half of F-H8a:
-// nothing but `sanho migrate` may touch a v0.1 state.json, because a v2
-// write over it destroys every project mapping the daemon recorded.
-func TestOrdinaryCommandsRefuseALegacyRegistry(t *testing.T) {
+// State provides the one read-only view of a v0.1 registry. Registry writers
+// still refuse so none can overwrite the daemon's project map before migrate.
+func TestStateReadsLegacyRegistryWithoutConvertingIt(t *testing.T) {
 	w := newWorld(t, map[string]string{"api.md": "canonical api\n"})
 	w.initAndAdoptDocs()
 
@@ -527,9 +532,13 @@ func TestOrdinaryCommandsRefuseALegacyRegistry(t *testing.T) {
 	statePath := filepath.Join(w.home, "state.json")
 	writeFile(t, statePath, legacy)
 
-	refused := w.run(w.app, "state")
+	state := w.sanho(w.app, "state", "--all", "--json").stdout
+	requireContains(t, "state", state, `"name": "product"`)
+	requireContains(t, "state", state, w.origin)
+
+	refused := w.run(w.app, "project", "add", "other", "--docs-repo-url", "ssh://example.test/other.git")
 	if refused.exitCode == 0 {
-		t.Fatal("sanho state read a v0.1 registry successfully, want a refusal")
+		t.Fatal("a registry writer accepted v0.1 state, want a refusal")
 	}
 	requireContains(t, "refusal", refused.stderr, "run 'sanho migrate'")
 

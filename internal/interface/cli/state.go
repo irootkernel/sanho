@@ -84,9 +84,9 @@ func runState(cmd *cobra.Command, all, asJSON bool) error {
 	if err != nil {
 		return finishCommand(cmd, nil, asJSON, err)
 	}
-	state, err := readRegistry(ctx, file)
+	state, err := file.ReadCompatible(ctx)
 	if err != nil {
-		return finishCommand(cmd, nil, asJSON, err)
+		return finishCommand(cmd, nil, asJSON, registryError(err))
 	}
 
 	// `sanho state` reads the registry, which exists outside any
