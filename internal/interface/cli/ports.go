@@ -1,7 +1,7 @@
 package cli
 
 // Workspace discovery and port wiring — the one place adapters are
-// built (sanho-v0.2.md §4, §5.2, §5.7).
+// built (docs/architecture.md "Package boundaries").
 //
 // A workspace is the current directory when it carries `.sanho.json`,
 // the same rule as v0.1: sanho is a per-checkout tool and the hooks
@@ -37,7 +37,7 @@ import (
 // home directory when SANHO_HOME is not set.
 const defaultHomeDirName = ".sanho"
 
-// errV1Workspace is the §8 pre-migration degradation signal: the
+// errV1Workspace is the legacy-workspace contract pre-migration degradation signal: the
 // workspace is a v0.1 one, and only `sanho migrate` can act on it.
 var errV1Workspace = errors.New(msgMigrateRequired)
 
@@ -54,7 +54,7 @@ type workspace struct {
 	root string
 	// configRoot is where `.sanho.json` was found. It equals root for an
 	// ordinary checkout and is the MAIN worktree root for a linked one
-	// (§5.2 as amended by F-H3), because `.sanho.json` is gitignored and
+	// (the private-clone contract as amended by F-H3), because `.sanho.json` is gitignored and
 	// therefore never travels into `git worktree add`.
 	//
 	// The split matters for exactly one thing: the registry key, which
@@ -65,7 +65,7 @@ type workspace struct {
 	// gitDir is `git rev-parse --git-dir` (worktree-private) and
 	// commonDir is `--git-common-dir` (shared by linked worktrees). The
 	// canonical clone lives under the common dir so linked worktrees
-	// share it (§5.2); the sync note lives under the private dir.
+	// share it (the private-clone contract); the sync note lives under the private dir.
 	gitDir    string
 	commonDir string
 
@@ -79,7 +79,7 @@ type workspace struct {
 //
 // A v0.1 config is not an error here — LoadConfig reports it as
 // SchemaVersion 1 and this returns errV1Workspace, which each entry
-// point routes according to §8: hooks degrade, commands refuse, and
+// point routes according to the legacy-workspace contract: hooks degrade, commands refuse, and
 // `sanho migrate` proceeds.
 func openWorkspace(ctx context.Context) (*workspace, error) {
 	cwd, err := os.Getwd()
@@ -114,7 +114,7 @@ func openWorkspace(ctx context.Context) (*workspace, error) {
 	// asked for here rather than inherited silently. The commit hooks run
 	// inside a PARTIAL commit (`git commit -- docs`), where git points
 	// GIT_INDEX_FILE at a temporary index holding exactly what that
-	// commit will contain — which is what the §5.1 stamp and the §5.6
+	// commit will contain — which is what the provenance contract stamp and the commit-hook contract
 	// staged-marker gate must read. Every other runner in the process,
 	// including every command against the private canonical clone, has it
 	// scrubbed (see gitx.scrubbedEnvVars).
@@ -312,7 +312,7 @@ func (w *workspace) resolveGitDirs(ctx context.Context) error {
 
 // resolveHome resolves the sanho home: SANHO_HOME when set (must be an
 // absolute path), else "~/.sanho". This is the one thing the CLI ever
-// needed from the retired internal/config package (sanho-v0.2.md §6); it
+// needed from the retired internal/config package (docs/architecture.md "Package boundaries"); it
 // is inlined here now that the package's only other caller, the daemon,
 // is gone.
 func resolveHome() (string, error) {
@@ -344,7 +344,7 @@ func (w *workspace) cloneDir() string { return canonical.CloneDir(w.commonDir) }
 
 // openCanonical opens the existing private clone. It never creates one
 // and never touches the network, which is what makes it the right call
-// for read paths and for the commit hook (§5.6: "canonical.Open, not
+// for read paths and for the commit hook (the commit-hook contract: "canonical.Open, not
 // Ensure").
 func (w *workspace) openCanonical() (*canonical.Store, error) {
 	return canonical.Open(w.commonDir, w.config.DocsRepoURL)
@@ -361,8 +361,8 @@ func (w *workspace) link(store *canonical.Store) *canonical.Link {
 	return canonical.NewLink(store, w.gitDir)
 }
 
-// registryKey is the `<project>:<abs-path>` key of §5.7, which is also
-// the workspace id stamped into canonical commit bodies (§5.3).
+// registryKey is the `<project>:<abs-path>` key of the state contract, which is also
+// the workspace id stamped into canonical commit bodies (the publication contract).
 //
 // It keys on configRoot, so every linked worktree of one checkout maps
 // to the one registry row the user set up — the registry answers "which
@@ -390,7 +390,7 @@ type statePort struct {
 
 func (s statePort) LoadBase() (provenance.Base, bool, error) { return wsstate.LoadBase(s.workDir) }
 
-// SaveBase records a base through the §5.7 guard. Every path in the
+// SaveBase records a base through the state contract guard. Every path in the
 // codebase that records one arrives here; nothing calls wsstate.SaveBase
 // directly, and `internal/architecture` fails the build if anything
 // starts to.
@@ -474,15 +474,15 @@ func (w *workspace) statePort() statePort {
 // Everything but the merge is appgit's own. MergeDocs is composed here
 // because it is the one operation spanning both infra packages:
 // canonical.MergeTree is told to run in the *app worktree*, which is
-// where §5.5 puts the sync merge and where all three trees live once
+// where the synchronization contract puts the sync merge and where all three trees live once
 // canonical objects have been imported. Conflict paths come out of the
 // merge relative to the docs root, so they are prefixed with the docs
 // directory — the port contract is repository-relative paths, matching
-// the marker scanners and §5.9's `docs/api.md` rendering.
+// the marker scanners and the guidance contract's `docs/api.md` rendering.
 type appPort struct{ *appgit.Repo }
 
 // NewestDocsBase is the pushed tip's own account of where its docs came
-// from: the newest provenance trailer reachable from it (§5.10's scan,
+// from: the newest provenance trailer reachable from it (the hook contract's scan,
 // applied to a tip rather than to HEAD). Publication's fast-forward gate
 // is the caller.
 func (a appPort) NewestDocsBase(ctx context.Context, tip string) (provenance.Base, bool, error) {

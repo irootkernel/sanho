@@ -14,7 +14,7 @@ import (
 )
 
 // legacyWorkspaceConfig mirrors the on-disk shape of a v0.1 `.sanho.json`
-// (formerly domain/client.WorkspaceConfig, retired by sanho-v0.2.md §6)
+// (formerly domain/client.WorkspaceConfig, retired by docs/architecture.md "Package boundaries")
 // just enough for the v1-detection test below: a config that carries
 // socket_path and no schema_version. Inlined here rather than imported so
 // this package's tests do not resurrect a dependency on the retired
@@ -210,7 +210,7 @@ func TestLoadBase_V2RoundTrip(t *testing.T) {
 		t.Fatalf("LoadBase() = %+v, want %+v", got, want)
 	}
 
-	// Confirm the on-disk schema matches §5.7 exactly.
+	// Confirm the on-disk schema matches the state contract exactly.
 	path := filepath.Join(dir, wsstate.BaseFileName)
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -240,7 +240,7 @@ func TestLoadBase_V2WithEmptyTreeIsValid(t *testing.T) {
 	dir := t.TempDir()
 	// Empty Tree is a legitimate state: adopted from a legacy
 	// docs-version trailer before the tree is resolved
-	// (sanho-v0.2.md §5.10; provenance.Base's own documented allowance).
+	// (docs/architecture.md "Git hooks"; provenance.Base's own documented allowance).
 	want := provenance.Base{Commit: "67c4bbfeada37f5dda8fb79aa43216ef062cd8df", Tree: ""}
 	if err := wsstate.SaveBase(dir, want); err != nil {
 		t.Fatalf("SaveBase() error = %v", err)
@@ -598,7 +598,7 @@ func TestClearBase_AbsentFileIsNotAnError(t *testing.T) {
 		t.Fatalf("ClearBase() on an absent file error = %v, want nil", err)
 	}
 	// Idempotence is what makes an interrupted `sanho sync --abort`
-	// re-runnable (§5.5 step 7).
+	// re-runnable (the synchronization contract).
 	if err := wsstate.ClearBase(dir); err != nil {
 		t.Fatalf("second ClearBase() error = %v, want nil", err)
 	}

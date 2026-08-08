@@ -12,7 +12,7 @@ import (
 	"github.com/irootkernel/sanho/internal/infra/gitx"
 )
 
-// Merge-side constants (sanho-v0.2.md §5.4).
+// Merge-side constants (docs/architecture.md "Merge and marker contracts").
 const (
 	// labelOurs / labelUpstream are the names git writes into conflict
 	// markers (`<<<<<<< sanho-ours` / `>>>>>>> sanho-upstream`) because
@@ -33,7 +33,7 @@ const (
 	// conflicts" status. 0 is clean, anything else is a real failure —
 	// note this is NOT git merge-file's exit contract, whose 1..127
 	// encodes a conflict *count* (misreading that was audit Critical C2,
-	// §5.4).
+	// the merge contract).
 	mergeTreeConflictExit = 1
 
 	// mergeLockName is the file that serializes merges sharing one ref
@@ -41,9 +41,9 @@ const (
 	mergeLockName = "sanho-merge.lock"
 )
 
-// ErrMergeFailed marks a §5.4 merge that could not be performed at all —
+// ErrMergeFailed marks a the merge contract merge that could not be performed at all —
 // as distinct from one that ran and reported conflicts. It exists so the
-// push path can render a §5.9-shaped message instead of leaking a raw
+// push path can render a the guidance contract-shaped message instead of leaking a raw
 // git chain to the user (F-C2).
 var ErrMergeFailed = errors.New("docs merge could not be performed")
 
@@ -73,7 +73,7 @@ type MergeResult struct {
 
 // MergeTree runs `git merge-tree --write-tree` over three docs trees,
 // wrapping them in synthetic parentless commits and labeling the sides
-// sanho-ours / sanho-upstream (§5.4). repoDir chooses where to run
+// sanho-ours / sanho-upstream (the merge contract). repoDir chooses where to run
 // (clone for publication, app repo for sync); all three trees must be
 // present in that repo's object database.
 //
@@ -82,7 +82,7 @@ type MergeResult struct {
 // or canonical history takes part in the merge and the result depends on
 // nothing but the trees.
 //
-// The temp refs are fixed names, because §5.4 fixes the marker labels.
+// The temp refs are fixed names, because the merge contract fixes the marker labels.
 // One ref store therefore supports one merge at a time — and, unlike
 // what v0.2's first cut assumed, that is NOT guaranteed by the topology.
 // Three real situations put two merges in one ref store at once:
@@ -90,7 +90,7 @@ type MergeResult struct {
 //   - the pre-commit freshness preview merges in the private clone while
 //     a concurrent `git push` publishes through it,
 //   - two linked worktrees share both the clone and the app repo's
-//     common ref store (§5.2, F-H3),
+//     common ref store (the private-clone contract, F-H3),
 //   - two `sanho sync` invocations in one checkout.
 //
 // Fixed ref names plus concurrency means one merge silently reading the

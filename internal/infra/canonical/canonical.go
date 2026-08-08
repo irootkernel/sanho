@@ -1,6 +1,6 @@
 // Package canonical manages the workspace-private clone of the
 // canonical docs repository and all git operations against it
-// (sanho-v0.2.md §5.2–§5.4): fetch policy and data-age, object exchange
+// (docs/architecture.md "Runtime layout" through "Merge and marker contracts"): fetch policy and data-age, object exchange
 // with the app repository, tree-level 3-way merges via
 // `git merge-tree --write-tree`, and low-level publication (commit-tree
 // + compare-and-swap push).
@@ -25,7 +25,7 @@ import (
 )
 
 // ErrNonFastForward is the CAS-loss sentinel: origin rejected the push
-// because its head moved. Callers refetch and retry (§5.3, ≤3 attempts).
+// because its head moved. Callers refetch and retry (the publication contract, ≤3 attempts).
 //
 // It is the domain sentinel re-exported here: usecase/publish must be
 // able to recognize it without importing infra (architecture layering),
@@ -33,7 +33,7 @@ import (
 var ErrNonFastForward = pubdom.ErrNonFastForward
 
 // ErrUnreachable wraps network failures reaching origin; write paths
-// fail closed on it with the §5.9 message. Re-exported from
+// fail closed on it with the guidance contract message. Re-exported from
 // domain/publish for the same reason as ErrNonFastForward.
 var ErrUnreachable = pubdom.ErrUnreachable
 
@@ -44,12 +44,12 @@ var ErrEmptyBranch = pubdom.ErrEmptyBranch
 
 const (
 	// CloneRelPath is the clone's location under the app repository's
-	// git common dir (§5.2). Linked worktrees share one clone because
+	// git common dir (the private-clone contract). Linked worktrees share one clone because
 	// they share the common dir.
 	CloneRelPath = "sanho/canonical"
 
 	// fetchMarkerName is the timestamp file recording the last
-	// successful fetch (§5.2 "fetch policy"). It lives inside the clone
+	// successful fetch (the private-clone contract "fetch policy"). It lives inside the clone
 	// directory and holds one RFC3339Nano line.
 	fetchMarkerName = "sanho-last-fetch"
 
@@ -69,7 +69,7 @@ const (
 	// for the clone itself.
 	cloneStagingPrefix = "canonical.building-"
 
-	// defaultBranch / fallbackBranch implement §5.2's "main, falling
+	// defaultBranch / fallbackBranch implement the private-clone contract's "main, falling
 	// back to master" publication-branch rule.
 	defaultBranch  = "main"
 	fallbackBranch = "master"
@@ -84,12 +84,12 @@ const (
 	// yet.
 	allHeadsRefspec = "+refs/heads/*:refs/remotes/origin/*"
 
-	// networkTimeout bounds a single fetch/push (§5.2 "bounded
+	// networkTimeout bounds a single fetch/push (the private-clone contract "bounded
 	// timeout"); local object exchange gets the gitx default.
 	networkTimeout = 120 * time.Second
 )
 
-// DefaultBranch is the publication branch §5.2 assumes before a clone
+// DefaultBranch is the publication branch the private-clone contract assumes before a clone
 // has been consulted. User-facing guidance that must name a ref while
 // the clone is unavailable uses it rather than inventing a name.
 const DefaultBranch = defaultBranch
@@ -199,7 +199,7 @@ func samePath(a, b string) bool {
 // than `git clone --bare`, because that is what gives the clone a normal
 // `+refs/heads/*:refs/remotes/origin/*` fetch refspec: canonical state
 // then lives under refs/remotes/origin/*, leaving refs/heads/* and the
-// merge temp refs (§5.4) free of remote content.
+// merge temp refs (the merge contract) free of remote content.
 // Creation is serialized, and — more importantly — the clone directory
 // is never observable in a partial state (M3).
 //
@@ -452,7 +452,7 @@ func (s *Store) hasOriginRemote(ctx context.Context) (bool, error) {
 	return false, nil
 }
 
-// detectBranch implements §5.2's publication-branch rule against the
+// detectBranch implements the private-clone contract's publication-branch rule against the
 // already-fetched remote-tracking refs: main when it exists, else
 // master, else main (the name a first publication will create).
 func (s *Store) detectBranch(ctx context.Context) (string, error) {
@@ -618,7 +618,7 @@ func (s *Store) DocsFileCount(ctx context.Context, commit string) (int, error) {
 //
 // A malformed or absent OID is reported as "not present" rather than as
 // an error: the caller's next move (re-anchoring by docs-base-tree,
-// §5.3 case ④) is the same either way.
+// the publication contract) is the same either way.
 func (s *Store) ResolveCommit(ctx context.Context, oid string) (bool, error) {
 	if oid == "" {
 		return false, nil
@@ -672,7 +672,7 @@ func (s *Store) Distance(ctx context.Context, a, b string) (behind, ahead int, e
 
 // FindCommitByDocsTree searches canonical history (newest first) for a
 // commit whose docs tree equals tree — the docs-base-tree re-anchoring
-// used for rewrite recovery (§5.3 case ④, D2).
+// used for rewrite recovery (the publication contract, D2).
 //
 // For a docs-only canonical repository the docs tree is the commit's
 // root tree, so the whole scan is one `git log --format=%H %T`.
@@ -698,7 +698,7 @@ func (s *Store) FindCommitByDocsTree(ctx context.Context, tree string) (commit s
 
 // FetchFromApp imports ref (an OID or ref name) from the app repository
 // into the clone's object database via local transport, making the app
-// tip's docs trees addressable here (§5.2 object exchange).
+// tip's docs trees addressable here (the private-clone contract object exchange).
 //
 // Fetching a bare OID works because the local transport lifts the
 // unadvertised-object restriction that applies to networked remotes;
@@ -840,7 +840,7 @@ func isRejection(stderr string) bool {
 }
 
 // firstMeaningfulLine picks the most informative single line out of git
-// stderr, skipping progress noise and the "hint:" block, so §5.9's "never
+// stderr, skipping progress noise and the "hint:" block, so the guidance contract's "never
 // print raw Go error chains" rule has a usable one-liner to wrap.
 func firstMeaningfulLine(stderr string) string {
 	var fallback string

@@ -145,7 +145,7 @@ func TestDecide(t *testing.T) {
 
 // TestDecideIsTotal walks the whole boolean/equality input space and
 // asserts every combination lands in exactly one of the four known
-// cases: Decide is specified as a total function (§5.3).
+// cases: Decide is specified as a total function (the publication contract).
 func TestDecideIsTotal(t *testing.T) {
 	trees := []string{treeHead, treeTip}
 	baseCommits := []string{oidHead, oidBase, ""}

@@ -1,6 +1,6 @@
 package cli
 
-// `sanho project add|delete` (sanho-v0.2.md §5.8): registry
+// `sanho project add|delete` (docs/cli-json.md): registry
 // administration, file-based. Same UX as v0.1, no daemon.
 
 import (

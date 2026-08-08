@@ -1,7 +1,7 @@
 package cli
 
-// The build-failing half of the guidance contract (sanho-v0.2.md §5.9,
-// §9 rule 2).
+// The build-failing half of the guidance contract documented in
+// architecture's "User guidance and exit codes" section.
 //
 // D3 is normative: every advised command must succeed in the state where
 // it is advised. The e2e closure suite (test/cli/e2e) proves the
@@ -90,7 +90,7 @@ var catalogInfrastructure = map[string]bool{
 	"samplePlaceholderClone": true,
 }
 
-// TestEveryAdvisingMessageIsInTheCatalog is the gate §9 rule 2 asks for:
+// TestEveryAdvisingMessageIsInTheCatalog is the gate the testing contract asks for:
 // adding a message that names a next command, without a catalog entry,
 // fails the build.
 func TestEveryAdvisingMessageIsInTheCatalog(t *testing.T) {
@@ -132,7 +132,7 @@ func TestEveryAdvisingMessageIsInTheCatalog(t *testing.T) {
 	}
 }
 
-// TestCatalogEntriesAreMarkedWithAClosureScenario is the §9 rule 2
+// TestCatalogEntriesAreMarkedWithAClosureScenario is the testing contract
 // marking requirement: an entry whose sample quotes a command must name
 // the scenario that proves it.
 func TestCatalogEntriesAreMarkedWithAClosureScenario(t *testing.T) {
@@ -384,9 +384,9 @@ func advisingDeclarations(t *testing.T, path string) []string {
 	return advising
 }
 
-// --- English-only hygiene (§5.9, audit L4; F-L9) ------------------------
+// --- English-only hygiene (the guidance contract, audit L4; F-L9) ------------------------
 
-// allowedNonASCII are the two characters §5.9's normative templates use
+// allowedNonASCII are the two characters the guidance contract's normative templates use
 // verbatim: the em dash that separates a state from its advice, and the
 // right arrow that renders a base→head transition.
 var allowedNonASCII = map[rune]bool{'—': true, '→': true}
@@ -424,7 +424,7 @@ func TestUserFacingStringsAreEnglishASCII(t *testing.T) {
 					continue
 				}
 				t.Errorf("%s:%d: string literal contains %q; user-facing text is English ASCII "+
-					"apart from the em dash and right arrow of the §5.9 templates",
+					"apart from the em dash and right arrow of the guidance contract templates",
 					path, fileSet.Position(literal.Pos()).Line, r)
 				return false
 			}

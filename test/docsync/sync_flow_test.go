@@ -13,7 +13,7 @@ import (
 
 // TestSyncUpToDate: the base is canonical head and the docs already
 // carry its tree, so sync reports and does nothing — in particular it
-// creates no commit (§5.5 step 3).
+// creates no commit (the synchronization contract).
 func TestSyncUpToDate(t *testing.T) {
 	files := map[string]string{"a.md": "alpha\n"}
 	f := newFlow(t, files, files)
@@ -69,7 +69,7 @@ func TestSyncWithLocalCommitsAndUnmovedCanonical(t *testing.T) {
 
 // TestSyncAdoptsUpstreamWhenLocalDocsAreUnchanged is the everyday case:
 // upstream moved, nothing local did, so the merge result is upstream's
-// tree. It pins the whole §5.5 step 5 contract — docs updated, base
+// tree. It pins the whole the synchronization contract — docs updated, base
 // file rewritten, exactly one commit with the exact subject, touching
 // only docs — while the user's staged non-docs work stays staged.
 func TestSyncAdoptsUpstreamWhenLocalDocsAreUnchanged(t *testing.T) {
@@ -165,7 +165,7 @@ func TestSyncThreeWayMerge(t *testing.T) {
 	}
 }
 
-// TestSyncConflictThenResolve walks §5.5 step 6 and the completion that
+// TestSyncConflictThenResolve walks the synchronization contract and the completion that
 // follows it: markers land in the worktree with ref labels, the note
 // records where the sync came from, where it is going and what it could
 // not settle, **the base does not move**, nothing is committed, and no
@@ -513,7 +513,7 @@ func TestSyncWithALegacyBase(t *testing.T) {
 	}
 }
 
-// TestSyncAfterAHistoryRewrite covers §5.3 case ④ as sync sees it: with
+// TestSyncAfterAHistoryRewrite covers the publication contract as sync sees it: with
 // a recorded docs-base-tree the base re-anchors by content and the sync
 // proceeds; without one there is nothing to anchor to and the user is
 // sent to --rebase-onto.
@@ -596,7 +596,7 @@ func TestSyncAfterAHistoryRewrite(t *testing.T) {
 }
 
 // TestSyncRebaseOnto aims the merge at an older canonical commit, which
-// is the manual escape from a rewrite (§5.5 step 8).
+// is the manual escape from a rewrite (the synchronization contract).
 func TestSyncRebaseOnto(t *testing.T) {
 	f := newFlow(t,
 		map[string]string{"a.md": "alpha\n"},
@@ -721,7 +721,7 @@ func TestSyncAppliesUpstreamDeletions(t *testing.T) {
 	}
 }
 
-// TestSyncRefusesDirtyDocs pins the §5.5 step 1 guard on both halves of
+// TestSyncRefusesDirtyDocs pins the synchronization contract guard on both halves of
 // "dirty", and pins that a refused sync is inert.
 func TestSyncRefusesDirtyDocs(t *testing.T) {
 	tests := []struct {
@@ -779,7 +779,7 @@ func TestSyncRefusesDirtyDocs(t *testing.T) {
 }
 
 // TestSyncFailsClosedWhenCanonicalIsUnreachable: write paths require a
-// successful fetch (§5.2), and a failed one must leave the workspace
+// successful fetch (the private-clone contract), and a failed one must leave the workspace
 // exactly as it was.
 func TestSyncFailsClosedWhenCanonicalIsUnreachable(t *testing.T) {
 	f := newFlow(t,

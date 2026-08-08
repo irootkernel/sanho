@@ -196,7 +196,7 @@ func TestCompletingTheSyncAdvancesTheBase(t *testing.T) {
 // holding the base still, dealt with rather than tolerated.
 //
 // For the whole of the window the base really is behind canonical — that
-// is the point of leaving it there — so the §5.6 freshness warning would
+// is the point of leaving it there — so the commit-hook contract freshness warning would
 // otherwise fire on every commit, under a notice describing the same
 // state more usefully, and would advise a `sanho sync` that refuses
 // while a note exists. One line about one state.
@@ -267,7 +267,7 @@ func TestACheckoutDoesNotReDeriveTheBaseWhileASyncIsOwed(t *testing.T) {
 	ws.sanho("sync")
 
 	// Put the conflict aside, so the docs worktree matches HEAD and the
-	// §5.10 step-1 guard is not what stops the re-derivation.
+	// the hook contract guard is not what stops the re-derivation.
 	ws.git("stash", "push", "--quiet", "--", "docs")
 
 	// A commit carrying the merge target as its docs base while the docs

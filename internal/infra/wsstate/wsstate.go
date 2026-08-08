@@ -1,5 +1,5 @@
 // Package wsstate owns the workspace-local state files of sanho v0.2
-// (sanho-v0.2.md §5.7): the base file, the v2 workspace config, and the
+// (docs/architecture.md "State and persistence"): the base file, the v2 workspace config, and the
 // sync-in-progress note. All writes go through fsx.WriteFileAtomic.
 package wsstate
 
@@ -19,7 +19,7 @@ import (
 // File names (workspace root unless noted).
 const (
 	// BaseFileName replaces v0.1's .sanho_docs_hash. Reads tolerate the
-	// legacy single-line format (§8): a bare OID loads as
+	// legacy single-line format (the legacy-workspace contract): a bare OID loads as
 	// {Commit: oid, Tree: ""}.
 	BaseFileName = ".sanho_base.json"
 	// LegacyHashFileName is read-only v0.1 compatibility input.
@@ -33,7 +33,7 @@ const (
 )
 
 // currentBaseFileVersion is the "version" field written to and expected
-// in BaseFileName (§5.7). LoadBase does not reject other values outright
+// in BaseFileName (the state contract). LoadBase does not reject other values outright
 // (forward compatibility for a field the schema itself may grow); the
 // OIDs are what is validated.
 const currentBaseFileVersion = 2
@@ -46,7 +46,7 @@ const defaultDocsDir = "docs"
 
 // Sentinel errors. All are wrapped with the offending path via %w so
 // callers and tests can both errors.Is() and read a precise message
-// (fail-closed reads never guess a base — sanho-v0.2.md §5.7).
+// (fail-closed reads never guess a base — docs/architecture.md "State and persistence").
 var (
 	// ErrBaseCorrupt covers a present BaseFileName that fails to parse as
 	// JSON, or a legacy/v2 base whose OIDs do not match
@@ -105,7 +105,7 @@ type v1ConfigFields struct {
 
 // LoadConfig reads ConfigFileName in workDir. A v0.1 config (no
 // schema_version / has socket_path) is returned with SchemaVersion 1 so
-// callers can route to the migrate guidance (§8 degradation).
+// callers can route to the migrate guidance (the legacy-workspace contract degradation).
 func LoadConfig(workDir string) (Config, error) {
 	path := filepath.Join(workDir, ConfigFileName)
 	data, err := os.ReadFile(path)
@@ -168,7 +168,7 @@ func SaveConfig(workDir string, c Config) error {
 	return nil
 }
 
-// baseFileV2 is the on-disk shape of BaseFileName (§5.7).
+// baseFileV2 is the on-disk shape of BaseFileName (the state contract).
 type baseFileV2 struct {
 	Version int    `json:"version"`
 	Commit  string `json:"commit"`
@@ -259,7 +259,7 @@ func SaveBase(workDir string, b provenance.Base) error {
 // ClearBase removes the base file, restoring the "no base recorded"
 // state. An absent file is not an error: what matters is the
 // post-condition, and `sanho sync --abort` must stay re-runnable after
-// an interruption (§5.5 step 7, guidance closure).
+// an interruption (the synchronization contract, guidance closure).
 //
 // It exists because a zero provenance.Base is not a writable value —
 // the schema has no representation for an empty commit OID and LoadBase
@@ -267,7 +267,7 @@ func SaveBase(workDir string, b provenance.Base) error {
 // SaveBase call.
 //
 // Only BaseFileName is removed. LegacyHashFileName is a read-only v0.1
-// compatibility input (§8) that sanho never writes; deleting it would
+// compatibility input (the legacy-workspace contract) that sanho never writes; deleting it would
 // destroy state a rollback still needs.
 func ClearBase(workDir string) error {
 	path := filepath.Join(workDir, BaseFileName)
@@ -280,7 +280,7 @@ func ClearBase(workDir string) error {
 	return nil
 }
 
-// SyncNote records an in-progress conflicted sync (§5.5).
+// SyncNote records an in-progress conflicted sync (the synchronization contract).
 //
 // Its existence is the whole of "a sync is unfinished". Two commands
 // delete it — `sanho sync --continue` and `sanho sync --abort` — and

@@ -201,7 +201,7 @@ func TestRunReportsTheOrdinaryCase(t *testing.T) {
 	if !report.FetchedEver || report.DataAge != time.Hour {
 		t.Fatalf("data age = (%v, fetched=%v), want (1h, true)", report.DataAge, report.FetchedEver)
 	}
-	// Without --refresh nothing goes to the network (§5.2 read paths).
+	// Without --refresh nothing goes to the network (the private-clone contract read paths).
 	if canonical.fetches != 0 {
 		t.Fatalf("Fetch called %d times without --refresh, want 0", canonical.fetches)
 	}
@@ -276,7 +276,7 @@ func TestRunFailsClosedOnAnUnreadableBaseFile(t *testing.T) {
 	query, _, _ := newQuery()
 	query.State = fakeState{loadErr: errors.New("base file is corrupt")}
 
-	// Never guess a base (§5.7): an unreadable one stops the report.
+	// Never guess a base (the state contract): an unreadable one stops the report.
 	if _, err := query.Run(context.Background()); err == nil {
 		t.Fatal("Run() error = nil for an unreadable base file, want a failure")
 	}

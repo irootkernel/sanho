@@ -1,5 +1,5 @@
 // Package publish orchestrates the pre-push publication flow of sanho
-// v0.2 (sanho-v0.2.md §5.3): gate checks, the four-case analysis
+// v0.2 (docs/architecture.md "Publication"): gate checks, the four-case analysis
 // (decided in domain/publish), canonical-side auto-merge, CAS push with
 // bounded retry, and the base-advance rule. It never touches the app
 // worktree, index, or refs (worktree inviolability).
@@ -23,12 +23,12 @@ type RefUpdate struct {
 	RemoteOID string
 }
 
-// MaxCASRetries bounds the refetch-and-retry loop on lost races (§5.3
-// step 5, case ②/③).
+// MaxCASRetries bounds the refetch-and-retry loop on lost races (the publication contract
+// step 5, case /).
 const MaxCASRetries = 3
 
 // headsPrefix is the only ref namespace publication considers; tag
-// pushes pass through untouched (§5.3 step 1).
+// pushes pass through untouched (the publication contract step 1).
 const headsPrefix = "refs/heads/"
 
 // CanonicalPort is the canonical-clone behavior publication needs.
@@ -49,7 +49,7 @@ type CanonicalPort interface {
 	// FetchFromApp imports the pushed tip so its docs tree is
 	// addressable clone-side.
 	FetchFromApp(ctx context.Context, tipOID string) error
-	// MergeDocsTrees runs the §5.4 merge clone-side over three docs
+	// MergeDocsTrees runs the merge contract merge clone-side over three docs
 	// TREES. Trees rather than commits is what lets the evaluation pass
 	// chain several tips together without writing anything: the second
 	// tip merges against the tree the first one would publish, which has
@@ -60,7 +60,7 @@ type CanonicalPort interface {
 	DocsTreeOfCommit(ctx context.Context, commit string) (string, error)
 	// DocsFileCount counts the files a canonical commit publishes. It
 	// exists for one message: the refusal that names how many docs an
-	// empty-tree publication would delete (§5.3, F-H2).
+	// empty-tree publication would delete (the publication contract, F-H2).
 	DocsFileCount(ctx context.Context, commit string) (int, error)
 	CommitDocsTree(ctx context.Context, tree, parent, authorName, authorEmail, message string) (string, error)
 	// PushHead CAS-publishes; returns canonical.ErrNonFastForward on a
@@ -74,7 +74,7 @@ type AppRepoPort interface {
 	// when the docs dir is absent).
 	DocsTreeOf(ctx context.Context, commit string) (string, error)
 	// ScanDocsBlobsAgainst scans the docs blobs a publication would
-	// INTRODUCE into canonical (§5.4 detector); returns conflicted paths.
+	// INTRODUCE into canonical (the merge contract detector); returns conflicted paths.
 	// Unreadable blobs error.
 	//
 	// publishedDocsTree is canonical head's docs tree — the state this
@@ -121,7 +121,7 @@ type StatePort interface {
 	SyncInProgress() (bool, error)
 }
 
-// Rejection sentinels. Each maps to one §5.9 machine error code, so the
+// Rejection sentinels. Each maps to one the guidance contract machine error code, so the
 // CLI can route on errors.Is without reading messages:
 //
 //	ErrSyncInProgress   → sync_in_progress
@@ -137,7 +137,7 @@ type StatePort interface {
 // this package wraps it unchanged.
 //
 // None of these strings names a command. Guidance is the CLI's job
-// (§5.9 catalog): a sentinel that spelled a next step would be a second,
+// (the guidance contract catalog): a sentinel that spelled a next step would be a second,
 // uncataloged copy of it — which is exactly what the widened closure
 // gate now forbids.
 var (
@@ -149,7 +149,7 @@ var (
 )
 
 // EmptyPublishError rejects a tip whose docs tree is empty while
-// canonical still holds documents (§5.3, F-H2).
+// canonical still holds documents (the publication contract, F-H2).
 //
 // The state is ordinary and the intent is ambiguous, which is why it is
 // a refusal rather than a publication: pushing a branch created before
@@ -174,7 +174,7 @@ func (e *EmptyPublishError) Error() string {
 func (e *EmptyPublishError) Is(target error) bool { return target == ErrEmptyPublish }
 
 // MarkersPresentError names the committed docs files carrying conflict
-// markers (§5.3 step 3).
+// markers (the publication contract step 3).
 type MarkersPresentError struct {
 	// Tip is the pushed tip the markers were found in.
 	Tip string
@@ -189,11 +189,11 @@ func (e *MarkersPresentError) Error() string {
 func (e *MarkersPresentError) Is(target error) bool { return target == ErrMarkersPresent }
 
 // SyncRequiredError rejects a push that cannot be published without the
-// user reconciling first (§5.3 case ③-conflict, and the exhausted CAS
+// user reconciling first (the publication contract-conflict, and the exhausted CAS
 // retry budget). Conflicts is empty when there is nothing file-specific
 // to report.
 type SyncRequiredError struct {
-	// Base and Head are the OIDs the §5.9 push-rejection message quotes.
+	// Base and Head are the OIDs the guidance contract push-rejection message quotes.
 	Base string
 	Head string
 	// Conflicts lists conflicted docs paths, if any.
@@ -249,7 +249,7 @@ type Outcome struct {
 	// publication was a fast-forward and whose second was a merge
 	// reported both as merges.
 	PublishedCases []pubdom.Case
-	// BaseAdvanceError reports a §5.3 step 6 base advance that could not
+	// BaseAdvanceError reports a the publication contract step 6 base advance that could not
 	// be completed after the publication itself succeeded.
 	//
 	// It is carried rather than returned. The push HAS happened, canonical
@@ -266,7 +266,7 @@ type Outcome struct {
 	// Conflicts lists conflicted paths when the push is rejected with
 	// sync guidance.
 	Conflicts []string
-	// BaseAdvanced reports whether §5.3 step 6 moved the base file.
+	// BaseAdvanced reports whether the publication contract step 6 moved the base file.
 	BaseAdvanced bool
 }
 
@@ -279,7 +279,7 @@ type UseCase struct {
 	ActorName   string
 	ActorEmail  string
 	WorkspaceID string
-	// AllowEmptyPublish disarms the §5.3 empty-docs refusal (F-H2) for
+	// AllowEmptyPublish disarms the publication contract empty-docs refusal (F-H2) for
 	// one push. The CLI sets it from SANHO_ALLOW_DOCS_DELETION=1: the
 	// deletion of every canonical doc is a legitimate operation, it is
 	// just never one to infer from a branch that happens to carry no
@@ -323,8 +323,8 @@ type pushPlan struct {
 	decided pubdom.Case
 }
 
-// Run evaluates the hook's ref updates per §5.3 steps 1–6. A nil error
-// means the push may proceed; a returned error carries the §5.9
+// Run evaluates the hook's ref updates per the publication contract steps 1–6. A nil error
+// means the push may proceed; a returned error carries the guidance contract
 // guidance (sync required / markers present / canonical unreachable /
 // history rewritten / empty publication) and the hook exits non-zero.
 //
@@ -368,14 +368,14 @@ func (u *UseCase) Run(ctx context.Context, updates []RefUpdate) (Outcome, error)
 	}
 
 	// Step 3 — fetch. Write paths fail closed on an unreachable
-	// canonical (§5.2); the port's ErrUnreachable travels up intact.
+	// canonical (the private-clone contract); the port's ErrUnreachable travels up intact.
 	if err := u.Canonical.Fetch(ctx); err != nil {
 		return Outcome{}, fmt.Errorf("refresh canonical repository: %w", err)
 	}
 
 	// Step 4 — marker gate on every pushed tip.
 	//
-	// It runs after the fetch, which reverses §5.3's listed order, and
+	// It runs after the fetch, which reverses the publication contract's listed order, and
 	// the reason is the gate's baseline: what a push introduces is
 	// measured against the docs canonical *already publishes*, so the
 	// gate needs a current canonical head to be sound at all. The
@@ -455,7 +455,7 @@ func (u *UseCase) Run(ctx context.Context, updates []RefUpdate) (Outcome, error)
 		// A failure here is NOT fatal, and that is the fix for M2. The
 		// publication has landed: canonical moved, other workspaces can
 		// already see it, and returning an error would make the hook print
-		// the §5.9 rejection template — whose last line promises that no
+		// the guidance contract rejection template — whose last line promises that no
 		// remote ref was changed — over a push that changed one. The base
 		// is local state with two independent repairs (`sanho pull` and
 		// the re-derivation hooks), so the truthful outcome is the
@@ -494,7 +494,7 @@ func (u *UseCase) evaluate(ctx context.Context, tips []tip, base *provenance.Bas
 	for i := range tips {
 		t := &tips[i]
 
-		// Case ① short-circuits before the base is consulted at all, so a
+		// Case  short-circuits before the base is consulted at all, so a
 		// workspace with a missing or orphaned base can still push
 		// docs-identical (or docs-free) commits.
 		if t.docsTree == accTree {
@@ -653,7 +653,7 @@ func (u *UseCase) canonicalSnapshot(ctx context.Context) (snapshot, error) {
 	return snapshot{head: head, headTree: headTree, bootstrap: bootstrap}, nil
 }
 
-// Publishable applies §5.3 step 1: branch updates only, deletions
+// Publishable applies the publication contract step 1: branch updates only, deletions
 // (all-zero local OID) excluded.
 //
 // It is exported because the hook applies it before anything else: a
@@ -682,7 +682,7 @@ func isZeroOID(oid string) bool {
 }
 
 // gateMarkers refuses any pushed tip that would introduce docs carrying
-// unresolved conflict markers into canonical (§5.3 step 3).
+// unresolved conflict markers into canonical (the publication contract step 3).
 //
 // The baseline is canonical head's docs tree, one value for the whole
 // push, so a tip is scanned exactly once however many refs point at it —
@@ -708,7 +708,7 @@ func (u *UseCase) gateMarkers(ctx context.Context, updates []RefUpdate, publishe
 }
 
 // resolveTips maps each pushed ref to its docs tree and drops later
-// duplicates of a tree already queued (§5.3 step 5 "deduplicate
+// duplicates of a tree already queued (the publication contract step 5 "deduplicate
 // identical Ts", in stdin order).
 //
 // Identical tip OIDs are dropped first (F-M6). `git push --all` on a
@@ -772,7 +772,7 @@ func (u *UseCase) canonicalHead(ctx context.Context) (head, headTree string, boo
 	return "", empty, true, nil
 }
 
-// decideBootstrap is the §5.3 case analysis against an empty canonical
+// decideBootstrap is the publication contract case analysis against an empty canonical
 // repository, and it deliberately disregards the recorded base.
 //
 // An empty canonical has no history, so there is nothing for a base to
@@ -802,8 +802,8 @@ func decideBootstrap(tipDocsTree, emptyTree string) pubdom.Case {
 	})
 }
 
-// decideWithReanchor runs domain Decide and, on case ④, attempts the
-// docs-base-tree re-anchoring of §5.3 before giving up. Re-anchoring
+// decideWithReanchor runs domain Decide and, on case , attempts the
+// docs-base-tree re-anchoring of the publication contract before giving up. Re-anchoring
 // does not consume a CAS attempt: it is a correction of local state, not
 // a lost race.
 func (u *UseCase) decideWithReanchor(ctx context.Context, t *tip, base *provenance.Base, head, headTree string) (pubdom.Case, error) {
@@ -954,10 +954,10 @@ func (u *UseCase) requireCorroboratedBase(ctx context.Context, t *tip, base prov
 	return &SyncRequiredError{Base: base.Commit, Head: head, Reason: ReasonUncorroboratedBase}
 }
 
-// advanceBase implements §5.3 step 6: the base file records which
+// advanceBase implements the publication contract step 6: the base file records which
 // canonical state the *worktree* docs derive from, so it may only move
 // when the worktree is byte-identical to what was just published.
-// Anything else (a case-③ merge the worktree has not seen, uncommitted
+// Anything else (a case- merge the worktree has not seen, uncommitted
 // edits) leaves it alone — `sanho pull` moves it later.
 func (u *UseCase) advanceBase(ctx context.Context, published, publishedTree string) (bool, error) {
 	worktree, err := u.App.WorktreeDocsTree(ctx)
@@ -973,7 +973,7 @@ func (u *UseCase) advanceBase(ctx context.Context, published, publishedTree stri
 	return true, nil
 }
 
-// shortOID renders an OID for user-facing messages at the §5.9 width.
+// shortOID renders an OID for user-facing messages at the guidance contract width.
 func shortOID(oid string) string {
 	const width = 12
 	if len(oid) <= width {

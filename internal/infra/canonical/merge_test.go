@@ -10,7 +10,7 @@ import (
 )
 
 // TestMergeTreeMatrix is the C2 regression ground: the merge matrix
-// sanho-v0.2.md §9 requires — 0/1/2/3-hunk conflicts, symlinks, mode
+// required by the AGENTS.md testing rules — 0/1/2/3-hunk conflicts, symlinks, mode
 // changes, binaries, delete-vs-edit, DELETES ON BOTH SIDES, and an empty
 // tree on one side — run against real git, with the exit-code and
 // conflict-path parsing asserted for each.
@@ -117,7 +117,7 @@ func TestMergeTreeMatrix(t *testing.T) {
 			wantConflicts: []string{"a.md"},
 		},
 		{
-			// §9.1's "deletes on both sides": the same removal from both
+			// Deleting on both sides is agreement: the same removal from both
 			// sides is agreement, not a conflict, and the path must be
 			// gone from the result rather than resurrected from the base.
 			// A merge that resurrects it republishes a document the team
@@ -144,7 +144,7 @@ func TestMergeTreeMatrix(t *testing.T) {
 			// Both sides delete the last document. The docs directory
 			// becomes empty, which is a legitimate merge result — the
 			// refusal to PUBLISH an empty docs tree is a separate gate
-			// (§5.3, F-H2) and must not be pre-empted by the merge
+			// (the publication contract, F-H2) and must not be pre-empted by the merge
 			// reporting a conflict here.
 			name:      "delete on both sides emptying the docs tree",
 			base:      map[string]entry{"a.md": text("a\n")},

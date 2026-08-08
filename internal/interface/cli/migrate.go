@@ -1,6 +1,6 @@
 package cli
 
-// `sanho migrate` (sanho-v0.2.md §8): convert one v0.1 workspace to the
+// `sanho migrate` (docs/architecture.md "Legacy workspace boundary"): convert one v0.1 workspace to the
 // v0.2 layout, in place, reversibly, without rewriting history.
 //
 // Three properties define the command.
@@ -11,13 +11,13 @@ package cli
 // It is reversible: every file it rewrites or removes gets a `.bak`
 // sibling first, and the legacy hash file is left in place as a
 // read-only input. Rollback is "reinstall v0.1, restore the .bak files,
-// restart the daemon" (§8 step 6) — which only works if nothing v0.1
+// restart the daemon" (the legacy-workspace contract step 6) — which only works if nothing v0.1
 // needs was consumed.
 //
 // It refuses rather than guesses: a live v0.1 transaction is the one
 // piece of state v0.2 has no vocabulary for, so it is a precondition
 // failure with the v0.1 binary named as the fix, not something to
-// interpret (§8 step 1).
+// interpret (the legacy-workspace contract step 1).
 
 import (
 	"context"
@@ -41,7 +41,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// backupSuffix marks the rollback copies §8 step 6 requires.
+// backupSuffix marks the rollback copies the legacy-workspace contract step 6 requires.
 const backupSuffix = ".bak"
 
 // legacyPendingFixFile and legacyTransactionPath are the two v0.1 states
@@ -318,7 +318,7 @@ func migrationComplete(ctx context.Context, root string, config wsstate.Config) 
 	return true, nil
 }
 
-// refuseOnLiveV1State implements §8 step 1. Both states are things the
+// refuseOnLiveV1State implements the legacy-workspace contract step 1. Both states are things the
 // v0.1 binary knows how to finish and v0.2 does not know how to read; a
 // half-interpreted transaction is exactly the wedge class the audit's
 // C3 documented, so the answer is to stop.
@@ -435,11 +435,11 @@ func writeV2Config(root string, legacy v1Config, docsRepoURL string, hooks appgi
 	})
 }
 
-// migrateBase carries the v0.1 base forward (§8 step 4).
+// migrateBase carries the v0.1 base forward (the legacy-workspace contract step 4).
 //
 // The legacy hash file holds a bare commit OID under *identity*
 // semantics — "my docs tree equals canonical X" — which makes X a
-// correct *ancestry* base for edits made on top of it (§5.1 legacy
+// correct *ancestry* base for edits made on top of it (the provenance contract legacy
 // coexistence). Its tree is resolved from the freshly fetched canonical
 // when the commit still exists; when it does not, the base is recorded
 // with an empty tree and the rewrite is called out, because a wrong tree
@@ -447,7 +447,7 @@ func writeV2Config(root string, legacy v1Config, docsRepoURL string, hooks appgi
 //
 // The legacy file itself is copied, never consumed: LoadBase prefers the
 // v2 file, so leaving it intact costs nothing and keeps rollback whole.
-// It writes through the §5.7 guard like every other base write, and the
+// It writes through the state contract guard like every other base write, and the
 // warrant it holds is the plainest one: LoadBase already reads the
 // legacy file, so the commit being written is the commit already
 // recorded and only the tree annotation is new. A guard refusal here
@@ -500,7 +500,7 @@ func commitTreeInClone(ctx context.Context, store *canonical.Store, commit strin
 // exactly one line rather than two (audit L3).
 //
 // Every hook file that exists is copied to `<name>.bak` beforehand
-// (F-H8d). §8 step 6 makes migration reversible by promising a .bak for
+// (F-H8d). the legacy-workspace contract step 6 makes migration reversible by promising a .bak for
 // everything it rewrites, and hook files were the one thing it rewrote
 // without one — including a hook file the user wrote themselves, whose
 // foreign lines the installer preserves but whose shape it changes.

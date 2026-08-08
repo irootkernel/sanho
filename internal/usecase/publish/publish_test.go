@@ -303,13 +303,13 @@ func TestRunCaseUpToDateIsANoOp(t *testing.T) {
 		t.Errorf("case = %v, want up to date", outcome.Case)
 	}
 	if outcome.Published != "" {
-		t.Errorf("published %s in case ①", outcome.Published)
+		t.Errorf("published %s in case ", outcome.Published)
 	}
 	if len(s.canonical.created) != 0 || s.canonical.pushes != 0 {
-		t.Errorf("case ① created %d commits and pushed %d times", len(s.canonical.created), s.canonical.pushes)
+		t.Errorf("case  created %d commits and pushed %d times", len(s.canonical.created), s.canonical.pushes)
 	}
 	if len(s.state.saved) != 0 {
-		t.Errorf("case ① moved the base to %v", s.state.saved)
+		t.Errorf("case  moved the base to %v", s.state.saved)
 	}
 }
 
@@ -464,7 +464,7 @@ func TestRunCaseAutoMergeConflictedRequiresSync(t *testing.T) {
 		t.Errorf("outcome conflicts = %v, want %v", outcome.Conflicts, want)
 	}
 
-	// A rejected push changes nothing remote (§5.9).
+	// A rejected push changes nothing remote (the guidance contract).
 	if s.canonical.pushes != 0 || len(s.canonical.created) != 0 {
 		t.Errorf("a conflicted merge still created %d commits and pushed %d times",
 			len(s.canonical.created), s.canonical.pushes)
@@ -754,9 +754,9 @@ func TestRunLeavesTheBaseWhenTheWorktreeDiffers(t *testing.T) {
 
 // TestRunReportsButDoesNotFailOnBaseAdvanceFailures is M2.
 //
-// The base advance is §5.3 step 6, and it runs AFTER the CAS push has
+// The base advance is the publication contract step 6, and it runs AFTER the CAS push has
 // succeeded. Returning its failure as the hook's error made `git push`
-// print the §5.9 rejection template — whose last line promises that no
+// print the guidance contract rejection template — whose last line promises that no
 // remote ref was changed — over a push that changed one, and left the
 // user with a publication they had been told did not happen.
 //
@@ -1123,7 +1123,7 @@ func TestRunPublishesAnEmptyDocsTreeWhenExplicitlyAllowed(t *testing.T) {
 }
 
 // TestRunAllowsAnEmptyDocsTreeAgainstEmptyCanonical: a docs-free push at
-// a canonical that has nothing to lose is case ①, not a refusal.
+// a canonical that has nothing to lose is case , not a refusal.
 func TestRunAllowsAnEmptyDocsTreeAgainstEmptyCanonical(t *testing.T) {
 	s := newScenario(t)
 	s.canonical.branch = nil
@@ -1187,7 +1187,7 @@ func TestErrorSentinelsAreDistinguishable(t *testing.T) {
 	}
 
 	// Wrapping must preserve recognition, which is what the hook layer
-	// relies on to pick the §5.9 template.
+	// relies on to pick the guidance contract template.
 	wrapped := errors.Join(errors.New("context"), syncErr)
 	if !errors.Is(wrapped, ErrSyncRequired) {
 		t.Error("a wrapped SyncRequiredError is no longer recognizable")
@@ -1232,7 +1232,7 @@ func TestIsZeroOID(t *testing.T) {
 
 // newBootstrapScenario is newScenario against a canonical repository
 // with no commits at all — a docs repository that has just been created
-// and never published into (sanho-v0.2.md §5.3).
+// and never published into (docs/architecture.md "Publication").
 func newBootstrapScenario(t *testing.T) *scenario {
 	t.Helper()
 	s := newScenario(t)

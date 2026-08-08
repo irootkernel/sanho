@@ -14,7 +14,7 @@ import (
 	"github.com/irootkernel/sanho/internal/infra/wsstate"
 )
 
-// The §5.3 publication flow, end to end over real git.
+// The the publication contract publication flow, end to end over real git.
 //
 // These tests live in infra rather than beside usecase/publish because
 // the repository's architecture gate (internal/architecture) forbids a
@@ -85,7 +85,7 @@ func (f *flow) commitDocs(t *testing.T, message string, docsFiles map[string]ent
 	return gitLine(t, f.appDir, "rev-parse", "HEAD")
 }
 
-// publish performs one §5.3 publication attempt for tip against the
+// publish performs one the publication contract publication attempt for tip against the
 // currently fetched canonical head, using base as the recorded base. It
 // returns the new canonical commit, the tree published, and the decided
 // case.
@@ -171,7 +171,7 @@ func (f *flow) publish(t *testing.T, tip, baseCommit string) (newHead, published
 }
 
 // TestFlowCaseUpToDate: a tip whose docs already equal canonical
-// publishes nothing (§5.3 case ①).
+// publishes nothing (the publication contract).
 func TestFlowCaseUpToDate(t *testing.T) {
 	files := map[string]entry{"a.md": text("alpha\n")}
 	f := newFlow(t, files, files)
@@ -195,7 +195,7 @@ func TestFlowCaseUpToDate(t *testing.T) {
 		t.Fatalf("case = %v, want up to date", decided)
 	}
 	if newHead != "" {
-		t.Fatalf("case ① published %s", newHead)
+		t.Fatalf("case  published %s", newHead)
 	}
 	if got := gitLine(t, f.origin, "rev-parse", "refs/heads/main"); got != head {
 		t.Fatalf("origin moved to %s, want %s", got, head)
@@ -203,7 +203,7 @@ func TestFlowCaseUpToDate(t *testing.T) {
 }
 
 // TestFlowCaseFastForward: base == canonical head, so the tip's own docs
-// tree is published on top of it (§5.3 case ②), with the §5.3 commit
+// tree is published on top of it (the publication contract), with the publication contract commit
 // convention and the actor as author.
 func TestFlowCaseFastForward(t *testing.T) {
 	f := newFlow(t,
@@ -263,7 +263,7 @@ func TestFlowCaseFastForward(t *testing.T) {
 
 // TestFlowCaseAutoMergeClean: upstream moved and the tip changed a
 // different file, so publication merges and continues without user
-// friction (§5.3 case ③ clean) — and never touches the worktree.
+// friction (the publication contract clean) — and never touches the worktree.
 func TestFlowCaseAutoMergeClean(t *testing.T) {
 	f := newFlow(t,
 		map[string]entry{"a.md": text("alpha\n"), "b.md": text("beta\n")},
@@ -323,7 +323,7 @@ func TestFlowCaseAutoMergeClean(t *testing.T) {
 	}
 
 	// The published tree differs from the worktree tree, which is
-	// exactly the state in which §5.3 step 6 must NOT advance the base.
+	// exactly the state in which the publication contract step 6 must NOT advance the base.
 	if publishedTree == worktreeAfter {
 		t.Fatal("fixture is wrong: a merged publish should differ from the worktree")
 	}
@@ -331,7 +331,7 @@ func TestFlowCaseAutoMergeClean(t *testing.T) {
 
 // TestFlowCaseAutoMergeConflicted: same region edited on both sides, so
 // the merge conflicts, the paths are named, and origin is untouched
-// (§5.3 case ③ conflicted).
+// (the publication contract conflicted).
 func TestFlowCaseAutoMergeConflicted(t *testing.T) {
 	f := newFlow(t,
 		map[string]entry{"a.md": hunkFile("A", "B", "C"), "b.md": hunkFile("A", "B", "C")},
@@ -392,7 +392,7 @@ func TestFlowCaseAutoMergeConflicted(t *testing.T) {
 		t.Fatalf("conflict markers are not labeled by ref:\n%s", body)
 	}
 
-	// A rejected publish changes no remote ref (§5.9).
+	// A rejected publish changes no remote ref (the guidance contract).
 	if after := gitLine(t, f.origin, "rev-parse", "refs/heads/main"); after != originBefore {
 		t.Fatalf("origin moved to %s during a rejected publish, want %s", after, originBefore)
 	}
@@ -400,7 +400,7 @@ func TestFlowCaseAutoMergeConflicted(t *testing.T) {
 
 // TestFlowCaseUnknownBaseReanchors: canonical history was rewritten, but
 // a commit with the recorded docs-base-tree still exists, so publication
-// re-anchors and proceeds (§5.3 case ④, D2).
+// re-anchors and proceeds (the publication contract, D2).
 func TestFlowCaseUnknownBaseReanchors(t *testing.T) {
 	f := newFlow(t,
 		map[string]entry{"a.md": text("alpha\n")},
@@ -467,7 +467,7 @@ func TestFlowCaseUnknownBaseReanchors(t *testing.T) {
 	}
 
 	// Publication resumes from the re-anchored base as an ordinary
-	// case ③.
+	// case .
 	tip := f.commitDocs(t, "docs: post-rewrite edit", map[string]entry{
 		"a.md": text("alpha local\n"),
 	})
@@ -484,7 +484,7 @@ func TestFlowCaseUnknownBaseReanchors(t *testing.T) {
 }
 
 // TestFlowCaseUnknownBaseWithoutAnAnchor: the recorded tree exists
-// nowhere in the rewritten history, which is the state §5.3 rejects with
+// nowhere in the rewritten history, which is the state the publication contract rejects with
 // the rewrite-recovery message.
 func TestFlowCaseUnknownBaseWithoutAnAnchor(t *testing.T) {
 	f := newFlow(t,
@@ -513,7 +513,7 @@ func TestFlowCaseUnknownBaseWithoutAnAnchor(t *testing.T) {
 }
 
 // TestFlowCASRaceRetrySucceeds: a publisher that loses the lease
-// refetches, re-merges against the winner and publishes — the §5.3
+// refetches, re-merges against the winner and publishes — the publication contract
 // bounded retry path over real git.
 func TestFlowCASRaceRetrySucceeds(t *testing.T) {
 	f := newFlow(t,
@@ -581,7 +581,7 @@ func TestFlowCASRaceRetrySucceeds(t *testing.T) {
 
 // TestFlowMarkerGateRejectsCommittedMarkers: the pre-push gate reads
 // committed docs blobs, so markers that were committed by mistake never
-// reach canonical (§5.3 step 3).
+// reach canonical (the publication contract step 3).
 func TestFlowMarkerGateRejectsCommittedMarkers(t *testing.T) {
 	f := newFlow(t,
 		map[string]entry{"a.md": text("alpha\n")},
@@ -602,11 +602,11 @@ func TestFlowMarkerGateRejectsCommittedMarkers(t *testing.T) {
 	}
 }
 
-// TestFlowBaseAdvanceRule exercises §5.3 step 6 on both sides, against
+// TestFlowBaseAdvanceRule exercises the publication contract step 6 on both sides, against
 // the real base file: the base moves only when the docs worktree equals
 // what was published.
 func TestFlowBaseAdvanceRule(t *testing.T) {
-	// advanceBase mirrors §5.3 step 6 over the real wsstate base file.
+	// advanceBase mirrors the publication contract step 6 over the real wsstate base file.
 	advanceBase := func(t *testing.T, f *flow, published, publishedTree string) bool {
 		t.Helper()
 		worktree, err := f.app.WorktreeDocsTree(context.Background())

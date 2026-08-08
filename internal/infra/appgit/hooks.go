@@ -1,6 +1,6 @@
 package appgit
 
-// The v0.2 hook installer (sanho-v0.2.md §5.10).
+// The v0.2 hook installer (docs/architecture.md "Git hooks").
 //
 // Six hooks, one generated line each. The invocation core is fixed, but
 // the installed line binds the binary that performed the installation
@@ -102,18 +102,18 @@ func (e *ManagedHooksPathError) Error() string {
 
 func (e *ManagedHooksPathError) Is(target error) bool { return target == ErrManagedHooksPath }
 
-// Hooks is the §5.10 inventory, in table order. The quoted argument
+// Hooks is the hook contract inventory, in table order. The quoted argument
 // forms are git's own hook contracts, not decoration: `commit-msg`
 // receives the message file as $1, and `pre-push`, `post-checkout` and
 // `post-rewrite` receive their arguments as "$@". `post-commit` is
-// deliberately absent — commits do not move the base (§5.7 invariant),
+// deliberately absent — commits do not move the base (the state contract invariant),
 // so v0.2 removed it.
 //
 // `post-checkout` gained its "$@" in the fourth review wave. Git's third
 // argument is 1 for a branch checkout and 0 for a FILE checkout, and
 // `git checkout -- docs/api.md` moves no ref at all — so there is no
 // HEAD movement to re-derive from, and restoring one document is exactly
-// the state §5.10 step 1 stands down for. Without the arguments the hook
+// the state the hook contract step 1 stands down for. Without the arguments the hook
 // could not tell the two apart and re-ran the whole derivation for a
 // command that changed no history.
 func Hooks() []Hook {
@@ -838,7 +838,7 @@ func readHookFile(path string) (content string, mode os.FileMode, present bool, 
 	return string(data), info.Mode().Perm(), true, nil
 }
 
-// writeHookFile replaces a hook through the shared atomic writer (§5.7,
+// writeHookFile replaces a hook through the shared atomic writer (the state contract,
 // audit M5), so an interrupted install never leaves a truncated script
 // that git would still try to run.
 func writeHookFile(path, content string, mode os.FileMode) error {

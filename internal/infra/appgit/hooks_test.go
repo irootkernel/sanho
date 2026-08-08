@@ -12,7 +12,7 @@ import (
 	"github.com/irootkernel/sanho/internal/infra/appgit"
 )
 
-// The §5.10 installer, against real git hook directories. The property
+// The the hook contract installer, against real git hook directories. The property
 // under test throughout is exact-line matching (audit L3) and the
 // preservation of foreign hook content.
 
@@ -124,7 +124,7 @@ func TestInstallHooksCreatesTheSixHooks(t *testing.T) {
 		t.Fatalf("installed %v, want six hooks", installed)
 	}
 
-	// post-commit is gone in v0.2 (§5.10) and must not be created.
+	// post-commit is gone in v0.2 (the hook contract) and must not be created.
 	if hookExists(t, dir, "post-commit") {
 		t.Error("InstallHooks() created a post-commit hook, want none")
 	}

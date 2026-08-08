@@ -1,6 +1,6 @@
 package cli
 
-// `sanho status` (sanho-v0.2.md §5.8) and the adapters that feed
+// `sanho status` (docs/cli-json.md) and the adapters that feed
 // usecase/admin.StatusQuery.
 
 import (
@@ -44,7 +44,7 @@ import (
 //	}
 //
 // Errors never appear here: they go to stderr, so stdout is either a
-// complete document or nothing (§5.8 "--json … errors to stderr").
+// complete document or nothing (the JSON contract "--json … errors to stderr").
 type statusJSON struct {
 	Project     string    `json:"project"`
 	WorkspaceID string    `json:"workspace_id"`
@@ -197,7 +197,7 @@ func sortSiblings(entries []admin.SiblingEntry) {
 	}
 }
 
-// previewPort adapts the shared §5.6 prediction to admin.PreviewPort, so
+// previewPort adapts the shared the commit-hook contract prediction to admin.PreviewPort, so
 // `sanho status` and the commit warning answer the same question the
 // same way.
 type previewPort struct {
@@ -264,7 +264,7 @@ func renderStatus(out io.Writer, ws *workspace, store *canonical.Store, report a
 	renderSiblings(out, report.Siblings)
 }
 
-// dataAgeLine always states how old the canonical view is (§5.9:
+// dataAgeLine always states how old the canonical view is (the guidance contract:
 // degraded-mode lines always include data age).
 func dataAgeLine(report admin.StatusReport) string {
 	if !report.FetchedEver {

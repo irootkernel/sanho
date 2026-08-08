@@ -218,7 +218,7 @@ func TestOversizedBinaryDocsAreSkipped(t *testing.T) {
 	repo := newRepoHandle(t, dir)
 
 	blob := make([]byte, markers.MaxScanSize+4096)
-	blob[10] = 0 // a NUL in the first 8 KiB: binary by §5.4's rule
+	blob[10] = 0 // a NUL in the first 8 KiB: binary by the merge contract's rule
 	for i := range blob {
 		if i != 10 {
 			blob[i] = 'x'

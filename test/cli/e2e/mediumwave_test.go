@@ -13,7 +13,7 @@ import (
 
 // TestTagPushIsNotPublicationsBusiness is M1.
 //
-// The §5.3 step-1 filter used to run INSIDE the use case, behind the
+// The the publication contract step-1 filter used to run INSIDE the use case, behind the
 // sync gate and behind `canonical.Ensure`. So a push carrying only tags
 // — which publishes nothing — was refused because an unrelated sync was
 // unfinished, and the same push with canonical unreachable failed on a
@@ -150,7 +150,7 @@ func TestPreCommitPredictsFromTheIndex(t *testing.T) {
 //
 // `git checkout -- docs/api.md` moves no ref, so there is no HEAD
 // movement to re-derive from — and restoring one document is precisely
-// the state §5.10 step 1 stands down for, reached by a route that used
+// the state the hook contract step 1 stands down for, reached by a route that used
 // to skip the test entirely.
 func TestPostCheckoutStandsDownOnAFileCheckout(t *testing.T) {
 	t.Parallel()

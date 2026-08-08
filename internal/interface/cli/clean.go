@@ -1,6 +1,6 @@
 package cli
 
-// `sanho clean` (sanho-v0.2.md §5.8): remove sanho from this workspace.
+// `sanho clean` (docs/cli-json.md): remove sanho from this workspace.
 //
 // --dry-run is STRICTLY READ-ONLY, and that is the point of the split
 // below rather than an aspiration. Audit M4 was a v0.1 dry-run that
@@ -96,7 +96,7 @@ func runClean(cmd *cobra.Command, dryRun, removeDocs, confirmed bool) error {
 
 	// Refuse while a sync is owed: cleaning would strand a docs worktree
 	// full of markers with no note explaining them. The named command
-	// cannot fail once its precondition holds (§5.5 step 7).
+	// cannot fail once its precondition holds (the synchronization contract).
 	if inProgress, err := ws.statePort().SyncInProgress(); err != nil {
 		return err
 	} else if inProgress {

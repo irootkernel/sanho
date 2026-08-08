@@ -12,7 +12,7 @@ import (
 	pubdom "github.com/irootkernel/sanho/internal/domain/publish"
 )
 
-// TestRunGuardsRefuseBeforeTouchingAnything walks §5.5 step 1 in order.
+// TestRunGuardsRefuseBeforeTouchingAnything walks the synchronization contract in order.
 // The order is the subject: a conflicted sync makes the docs dirty by
 // construction, so the note has to be consulted first or the user is
 // told to commit changes that are not theirs.
@@ -78,7 +78,7 @@ func TestRunGuardsRefuseBeforeTouchingAnything(t *testing.T) {
 }
 
 // TestRunShortCircuitsWhenUpToDate: base is canonical head and the docs
-// already carry its tree, so nothing at all happens (§5.5 step 3).
+// already carry its tree, so nothing at all happens (the synchronization contract).
 func TestRunShortCircuitsWhenUpToDate(t *testing.T) {
 	f := newFixture()
 	f.state.base = provenance.Base{Commit: commitOID(1), Tree: treeOID(1)}
@@ -350,7 +350,7 @@ func TestRunCleanMergeThatChangesNothing(t *testing.T) {
 	})
 }
 
-// TestRunConflictIsNotAnError pins the §5.5 step 6 contract: markers in
+// TestRunConflictIsNotAnError pins the synchronization contract: markers in
 // the worktree, a note recording everything the resolution will be
 // judged against, **the base left exactly where the sync found it**, no
 // commit, and a nil error so the CLI can render template 2 from the
@@ -1083,7 +1083,7 @@ func TestPull(t *testing.T) {
 	t.Run("--commit records nothing when HEAD already carries the tree", func(t *testing.T) {
 		f := newFixture()
 		// HEAD's docs already equal canonical; only the worktree and the
-		// base are behind (the state a case-③ publish leaves, §5.3).
+		// base are behind (the state a case- publish leaves, the publication contract).
 		f.app.headTree = treeOID(1)
 
 		if _, err := f.useCase().Pull(context.Background(), true); err != nil {

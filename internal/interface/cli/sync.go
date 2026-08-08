@@ -1,6 +1,6 @@
 package cli
 
-// `sanho sync` and `sanho pull` (sanho-v0.2.md §5.5): two verbs, two
+// `sanho sync` and `sanho pull` (docs/architecture.md "Synchronization"): two verbs, two
 // intents. Pull consumes when there is nothing local to preserve; sync
 // reconciles when there is.
 
@@ -114,7 +114,7 @@ func runSync(cmd *cobra.Command, flags syncFlags) error {
 	ctx := cmd.Context()
 	asJSON := flags.asJSON
 
-	// The flag-combination refusal owes the §5.8 envelope like every
+	// The flag-combination refusal owes the JSON contract envelope like every
 	// other `--json` failure. It used to return bare, so an agent that
 	// mis-combined the flags got prose on stderr, nothing on stdout, and
 	// no code to branch on — from the one command whose whole point is
@@ -154,7 +154,7 @@ func runSync(cmd *cobra.Command, flags syncFlags) error {
 	return nil
 }
 
-// runSyncAbort implements §5.5 step 7. Abort needs no network and no
+// runSyncAbort implements the synchronization contract. Abort needs no network and no
 // canonical clone: it restores the docs worktree from HEAD and settles
 // the base file, which is what makes it the exit from every broken sync
 // state — including one whose note is unreadable, where it clears the
@@ -183,7 +183,7 @@ func runSyncAbort(cmd *cobra.Command, ws *workspace, asJSON bool) error {
 	return nil
 }
 
-// runSyncContinue implements §5.5 step 6b: the explicit completion of a
+// runSyncContinue implements the synchronization contract: the explicit completion of a
 // conflicted sync.
 //
 // It needs no network and no canonical clone. Everything it decides is
@@ -231,7 +231,7 @@ func untrackedDocs(ctx context.Context, ws *workspace) []string {
 	return paths
 }
 
-// renderSyncResult prints the §5.9 templates. A conflicted sync uses
+// renderSyncResult prints the guidance contract templates. A conflicted sync uses
 // template 2 verbatim and still exits 0: the sync succeeded, and the
 // resolution is now the user's ordinary git work.
 func renderSyncResult(cmd *cobra.Command, ws *workspace, result docsync.Result) {
@@ -309,7 +309,7 @@ func runPull(cmd *cobra.Command, withCommit, asJSON bool) error {
 
 // docsyncUseCase wires sync and pull. Both are write paths, so they use
 // Ensure rather than Open: a workspace whose clone is missing is
-// repaired here rather than being told to re-init (§5.2).
+// repaired here rather than being told to re-init (the private-clone contract).
 func (w *workspace) docsyncUseCase(ctx context.Context) (*docsync.UseCase, error) {
 	store, err := w.ensureCanonical(ctx)
 	if err != nil {

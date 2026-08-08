@@ -1,6 +1,6 @@
 // Package appgit is the application-repository adapter of sanho v0.2:
-// the read side of publication (sanho-v0.2.md §5.3) and, later, of sync
-// (§5.5). It answers the questions the flow layer asks about the repo it
+// the read side of publication (docs/architecture.md "Publication") and, later, of sync
+// (the synchronization contract). It answers the questions the flow layer asks about the repo it
 // is installed in — the docs tree of a commit, whether a pushed tip
 // carries unresolved conflict markers, which app commits a publication
 // summarizes, how the repository names itself, and what the docs
@@ -11,7 +11,7 @@
 //   - Every git invocation goes through infra/gitx (audit L7: argv-only,
 //     no shell, non-interactive env, bounded timeouts).
 //   - Nothing writes to the app repository's refs, index, or worktree.
-//     "Worktree inviolability" (§5.3) is what lets publication run inside
+//     "Worktree inviolability" (the publication contract) is what lets publication run inside
 //     `pre-push` without behaving differently from git's own push.
 package appgit
 
@@ -39,7 +39,7 @@ import (
 // provenance from the index tree, and an unmerged index is a state git
 // itself will refuse to commit from — so the gate skips stamping and
 // stays out of the way rather than reporting a sanho failure for a
-// condition git is about to report itself (§5.1, §5.6 "never blocks").
+// condition git is about to report itself (the provenance contract, the commit-hook contract "never blocks").
 var ErrUnmergedIndex = errors.New("the index has unmerged entries")
 
 // DefaultDocsDir is the docs directory New falls back to, matching the
@@ -47,7 +47,7 @@ var ErrUnmergedIndex = errors.New("the index has unmerged entries")
 const DefaultDocsDir = "docs"
 
 // MaxSubjects caps how many app-commit subjects DocsCommitSubjects
-// returns. The canonical commit body embeds them (§5.3), and a first
+// returns. The canonical commit body embeds them (the publication contract), and a first
 // push of a long-lived branch can otherwise summarize an entire docs
 // history into one message; the cap keeps the newest MaxSubjects, which
 // is the part a reader of canonical `git log` is looking for.
@@ -194,7 +194,7 @@ func (r *Repo) IsAncestor(ctx context.Context, a, b string) (bool, error) {
 }
 
 // CommitTrailers walks tip's history newest-first, bounded by maxCount,
-// and returns each commit's parsed provenance trailers (§5.10).
+// and returns each commit's parsed provenance trailers (the hook contract).
 //
 // It is the one implementation of the history scan: base re-derivation
 // asks it about HEAD, and the publication gate asks it about a pushed
@@ -241,7 +241,7 @@ var trailerKeys = []string{
 // one of the three keys followed by a colon. Git's own trailer rules are
 // richer (block detection, folding, separators), but a stricter parser
 // would reject trailers that a looser one accepts, and these values are
-// a recovery source rather than a gate input (§5.1) — reading one that
+// a recovery source rather than a gate input (the provenance contract) — reading one that
 // git would not call a trailer is harmless, while missing one that git
 // would costs a recoverable base.
 func parseCommitTrailers(out string) []provenance.CommitTrailers {
@@ -276,7 +276,7 @@ func parseCommitTrailers(out string) []provenance.CommitTrailers {
 
 // IndexDocsTree returns the docs tree OID of the CURRENT index — the
 // tree the commit being prepared will carry, which is the first input of
-// the §5.1 stamping rule.
+// the provenance contract stamping rule.
 //
 // `git write-tree` is the whole mechanism, and it is safe to call from
 // inside `commit-msg` for two reasons. It writes tree objects to the
@@ -317,9 +317,9 @@ func (r *Repo) IndexDocsTree(ctx context.Context) (string, error) {
 	return firstLine(sub.Stdout), nil
 }
 
-// ScanStagedDocsForMarkers applies the §5.4 detector to the docs content
+// ScanStagedDocsForMarkers applies the merge contract detector to the docs content
 // the commit being prepared would ADD OR CHANGE — the pre-commit gate of
-// §5.6 step 1, which is what stops unresolved conflict markers from
+// the commit-hook contract step 1, which is what stops unresolved conflict markers from
 // being committed in the first place.
 //
 // The scope is the staged *diff*, not the whole index (F-H4a), and that
@@ -328,7 +328,7 @@ func (r *Repo) IndexDocsTree(ctx context.Context) (string, error) {
 // through some earlier path (a `--no-verify` commit, a checkout, a
 // v0.1-era commit) and blocking every unrelated commit until the user
 // fixes a file they are not touching is a gate that punishes the wrong
-// action. §5.3's push gate is where the whole published tree is
+// action. the publication contract's push gate is where the whole published tree is
 // protected. The cost side is the reason it was noticed: the old scan
 // spent two git processes per docs file in the index on every commit,
 // so a 4,000-file docs directory made `git commit` take 39 seconds.
@@ -442,7 +442,7 @@ func parseLsFilesStageEntry(record string) (lsFilesStageEntry, error) {
 	return lsFilesStageEntry{mode: fields[0], object: fields[1], stage: stage, path: path}, nil
 }
 
-// ScanDocsBlobsAgainst is the push-gate scan of §5.3 step 3, scoped to
+// ScanDocsBlobsAgainst is the push-gate scan of the publication contract step 3, scoped to
 // what publication would actually introduce *into canonical*.
 //
 // publishedDocsTree is the docs tree canonical head already carries.
@@ -499,7 +499,7 @@ func (r *Repo) docsBlobsToScan(ctx context.Context, publishedDocsTree, commit st
 // destination object id, so no second lookup is needed to address the
 // content — and the paths come out relative to the tree root, so they
 // are prefixed back to repository-relative form, which is what the
-// scanners and §5.9's `docs/api.md` rendering both use.
+// scanners and the guidance contract's `docs/api.md` rendering both use.
 func (r *Repo) docsBlobsAddedTo(ctx context.Context, publishedDocsTree, commit string) ([]scanTarget, error) {
 	tipDocsTree, err := r.DocsTreeOf(ctx, commit)
 	if err != nil {
@@ -568,10 +568,10 @@ type scanTarget struct {
 	object string
 }
 
-// scanBlobs applies the §5.4 detector to a set of blobs with two git
+// scanBlobs applies the merge contract detector to a set of blobs with two git
 // processes in total, whatever the set's size (F-H4c).
 //
-// The order is §5.4's as corrected by F-M8: sniff first, size second.
+// The order is the merge contract's as corrected by F-M8: sniff first, size second.
 // A NUL byte in the first 8 KiB means binary, and binary content is
 // skipped no matter how large — an illustration or a PDF under docs/ is
 // not a conflict and must not block a commit merely for being big.
@@ -694,7 +694,7 @@ func describeObject(object string, paths map[string]string) string {
 }
 
 // sniffBinary reads only the leading bytes of one object, which is all
-// the §5.4 binary classification needs, and is why an oversized blob can
+// the merge contract binary classification needs, and is why an oversized blob can
 // be classified without being materialized.
 func (r *Repo) sniffBinary(ctx context.Context, object string) (bool, error) {
 	run := gitx.New(r.workDir, gitx.WithStdoutLimit(markers.BinarySniffSize))
@@ -924,7 +924,7 @@ func repoNameFromURL(url string) string {
 }
 
 // WorktreeDocsTree returns the current worktree docs tree OID (for the
-// base-advance rule, §5.3 step 6).
+// base-advance rule, the publication contract step 6).
 //
 // Mechanism: a scratch index in a temp directory, selected with
 // GIT_INDEX_FILE, is loaded from HEAD and then refreshed from the

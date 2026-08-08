@@ -1,9 +1,9 @@
 // Package e2e is the sanho v0.2 scenario and guidance-closure suite
-// (sanho-v0.2.md §9 rules 2, 3 and 5).
+// (AGENTS.md testing rules).
 //
 // It drives the built binary as a black box, through real `git` against
 // real repositories on disk. Nothing here is mocked below the git
-// boundary, which is §9 rule 1 applied to the outermost layer: every
+// boundary, which is the testing contract applied to the outermost layer: every
 // assertion is about what a user or an agent would observe.
 //
 // The suite has three parts.
@@ -115,7 +115,7 @@ func newWorld(t *testing.T, docsFiles map[string]string) *world {
 //
 // The `sanho` shim is what makes real `git commit` and `git push` run
 // the code under test: the installed hook lines invoke `sanho` by name
-// (§5.10). The editor shim is what lets the closure suite run the
+// (the hook contract). The editor shim is what lets the closure suite run the
 // advised `git add docs/ && git commit` verbatim — with no -m, git needs
 // an editor, and a test that added -m would not be running the advised
 // command any more.
@@ -176,7 +176,7 @@ func (w *world) advanceCanonical(files map[string]string, message string) string
 	return w.rewriteCanonical(files, message, false)
 }
 
-// rewriteCanonical is advanceCanonical plus the §5.3 case ④ shape: with
+// rewriteCanonical is advanceCanonical plus the publication contract shape: with
 // orphan set, the new commit has no parent and is force-pushed, so every
 // previously published commit becomes unreachable.
 func (w *world) rewriteCanonical(files map[string]string, message string, orphan bool) string {
@@ -378,7 +378,7 @@ func (ws *workspace) gitExit(args ...string) result {
 
 // shell runs a command line verbatim through /bin/sh. It is how the
 // closure suite executes advised commands exactly as printed, including
-// the `&&` compounds that §5.9 template 2 names.
+// the `&&` compounds that the guidance contract template 2 names.
 func (ws *workspace) shell(command string) result {
 	ws.w.t.Helper()
 	return execute(ws.w.t, ws.dir, ws.env(), "/bin/sh", "-c", command)
@@ -422,7 +422,7 @@ func (ws *workspace) headMessage() string {
 }
 
 // staleFetchMarker backdates the clone's last-fetch stamp, which is the
-// only input to the §5.2 data-age line.
+// only input to the private-clone contract data-age line.
 func (ws *workspace) staleFetchMarker(stamp string) {
 	ws.w.t.Helper()
 	writeFile(ws.w.t, filepath.Join(ws.cloneDir(), "sanho-last-fetch"), stamp+"\n")
@@ -441,7 +441,7 @@ func (ws *workspace) removeFetchMarker() {
 //
 // Rewriting the *clone's* origin URL would not do: `canonical.Ensure`
 // reconciles the clone's remote back to the workspace config on every
-// write path (§5.2), so a doctored clone silently repairs itself. Moving
+// write path (the private-clone contract), so a doctored clone silently repairs itself. Moving
 // the repository leaves the configured URL intact and simply makes it
 // unreachable — which is what being offline is.
 func (w *world) takeCanonicalOffline() {
@@ -461,7 +461,7 @@ func (w *world) bringCanonicalOnline() {
 // freezeClone makes the private clone read-only for the rest of the
 // test. Reads (rev-parse, rev-list, log) still work; anything that must
 // write an object or a ref fails — which is the one state in which the
-// §5.6 freshness prediction cannot be computed.
+// the commit-hook contract freshness prediction cannot be computed.
 func (ws *workspace) freezeClone() {
 	t := ws.w.t
 	t.Helper()
@@ -685,7 +685,7 @@ func (e treeEntry) String() string {
 // snapshotTree records every path under root, skipping the parts of
 // `.git` that git itself churns on any read (index mtime cache, logs,
 // FETCH_HEAD). `.git/sanho` and `.git/hooks` — everything sanho owns
-// inside the git directory — are kept, which is what §9's dry-run check
+// inside the git directory — are kept, which is what the testing contract's dry-run check
 // is actually about.
 func snapshotTree(t *testing.T, root string) map[string]treeEntry {
 	t.Helper()

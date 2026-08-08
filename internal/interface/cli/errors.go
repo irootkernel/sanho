@@ -1,10 +1,10 @@
 package cli
 
 // Error rendering for the two flows that are not the push hook: the
-// sync/pull commands (§5.5) and the machine-readable envelope every
-// `--json` command owes an agent (§5.8, F-M9).
+// sync/pull commands (the synchronization contract) and the machine-readable envelope every
+// `--json` command owes an agent (the JSON contract, F-M9).
 //
-// The split from reportPushError is deliberate. Push renders §5.9's
+// The split from reportPushError is deliberate. Push renders the guidance contract's
 // *templates*, which end in git's own "push rejected" trailer; a command
 // the user typed renders guidance without one, because nothing was
 // rejected but the command itself.
@@ -26,7 +26,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// reportSyncError renders the §5.9 guidance for `sanho sync` and
+// reportSyncError renders the guidance contract guidance for `sanho sync` and
 // `sanho pull`.
 //
 // Every branch names a command that succeeds in the state it is printed
@@ -91,8 +91,8 @@ func reportSyncError(cmd *cobra.Command, ws *workspace, err error) error {
 	return errAlreadyReported
 }
 
-// finishCommand renders one command failure on both channels: the §5.8
-// machine envelope on stdout when --json was asked for, and the §5.9
+// finishCommand renders one command failure on both channels: the JSON contract
+// machine envelope on stdout when --json was asked for, and the guidance contract
 // prose on stderr.
 //
 // ws may be nil — for commands that have no sync guidance to give, and
@@ -123,7 +123,7 @@ func errDetail(err error, sentinel error) string {
 }
 
 // registryError translates the two registry failures a user can act on
-// (§5.7, F-M2 and F-H8a).
+// (the state contract, F-M2 and F-H8a).
 //
 // The lock timeout names the lock file, because the only useful action
 // is to wait for whatever is holding it. A legacy-schema state file is
@@ -145,7 +145,7 @@ func registryError(err error) error {
 	}
 }
 
-// lockTimeoutError carries the §5.9 wording without dropping the §5.8
+// lockTimeoutError carries the guidance contract wording without dropping the JSON contract
 // identity.
 //
 // Replacing the error with a plain errors.New(hint) reported the right
@@ -160,7 +160,7 @@ func (e *lockTimeoutError) Error() string { return e.hint }
 
 func (e *lockTimeoutError) Unwrap() error { return fsx.ErrLockTimeout }
 
-// --- machine-readable errors (§5.8, F-M9) ------------------------------
+// --- machine-readable errors (the JSON contract, F-M9) ------------------------------
 
 // errorJSON is the envelope a `--json` command prints on stdout when it
 // fails:
@@ -169,7 +169,7 @@ func (e *lockTimeoutError) Unwrap() error { return fsx.ErrLockTimeout }
 //
 // The exit code is unchanged and the prose still goes to stderr; this
 // only gives an agent something to branch on that is not a string match
-// against human wording. Codes come from the §5.9 vocabulary.
+// against human wording. Codes come from the guidance contract vocabulary.
 type errorJSON struct {
 	Error errorBodyJSON `json:"error"`
 }
@@ -179,7 +179,7 @@ type errorBodyJSON struct {
 	Message string `json:"message"`
 }
 
-// Machine error codes (§5.9). They are stable identifiers, so they are
+// Machine error codes (the guidance contract). They are stable identifiers, so they are
 // spelled once, here.
 const (
 	codeNotInWorkspace       = "not_in_workspace"
@@ -200,14 +200,14 @@ const (
 	// agent looking in the wrong place entirely.
 	codeConfigCorrupt = "config_corrupt"
 	codeBaseCorrupt   = "base_corrupt"
-	// codeBaseNotCorroborated is the §5.7 guard's refusal to record a
+	// codeBaseNotCorroborated is the state contract guard's refusal to record a
 	// base it cannot vouch for. It is a `sync_required`-family state:
 	// what establishes a base the workspace can stand behind is a sync.
 	codeBaseNotCorroborated = "base_not_corroborated"
 	codeInternal            = "internal"
 )
 
-// machineErrorCode maps an error to its §5.9 code. The order matters
+// machineErrorCode maps an error to its the guidance contract code. The order matters
 // where an error satisfies two sentinels: the more specific reading
 // comes first.
 func machineErrorCode(err error) string {
@@ -251,7 +251,7 @@ func machineErrorCode(err error) string {
 	}
 }
 
-// writeJSONError prints the §5.8 error envelope to stdout. The exit code
+// writeJSONError prints the JSON contract error envelope to stdout. The exit code
 // and the stderr prose are the caller's, unchanged: this only gives an
 // agent something to branch on that is not a string match against human
 // wording.
@@ -278,14 +278,14 @@ func userMessage(err error) string {
 // `sanho doctor` in particular reports failures it deliberately does not
 // fail on, and printing them raw put `appgit: ` and `gitx: ` in front of
 // sentences a user reads — package names that locate a failure for us
-// and mean nothing to them (§5.9, F-M3). causeLine is the narrower
+// and mean nothing to them (the guidance contract, F-M3). causeLine is the narrower
 // relative: it keeps only the innermost cause, for messages that pair a
 // one-line cause with an action line.
 func causeOf(err error) string { return stripInternalPrefixes(err.Error()) }
 
 // stripInternalPrefixes removes the package tags infra uses to locate
 // its own failures. They are diagnostics for us, not information for the
-// user, and §5.9 forbids leaking them into user-level output (F-M3).
+// user, and the guidance contract forbids leaking them into user-level output (F-M3).
 func stripInternalPrefixes(message string) string {
 	for _, tag := range []string{"appgit: ", "canonical: ", "gitx: ", "fsx: "} {
 		message = strings.ReplaceAll(message, tag, "")

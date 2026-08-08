@@ -16,7 +16,7 @@ import (
 )
 
 // Every test here runs against a real git binary in a temp repository;
-// nothing below the git boundary is faked (sanho-v0.2.md §9 rule 1).
+// nothing below the git boundary is faked (AGENTS.md Git-boundary testing rule).
 
 func TestMain(m *testing.M) {
 	for key, value := range map[string]string{
@@ -229,7 +229,7 @@ func TestScanDocsBlobsForMarkersSkipsSymlinks(t *testing.T) {
 	}
 }
 
-// TestScanDocsBlobsForMarkersFailsOnOversizedBlob pins §5.4: too-large
+// TestScanDocsBlobsForMarkersFailsOnOversizedBlob pins the merge contract: too-large
 // files are errors naming the file, never a silent pass.
 func TestScanDocsBlobsForMarkersFailsOnOversizedBlob(t *testing.T) {
 	dir := newRepo(t)
@@ -490,7 +490,7 @@ func TestWorktreeDocsTreeLeavesTheRealIndexAlone(t *testing.T) {
 }
 
 // TestWorktreeDocsTreeIgnoresAHostileInheritedIndexFile is the appgit
-// side of the C3 fix (sanho-v0.2.md §7 C3, gitx.Runner.env()).
+// side of the C3 fix (docs/architecture.md "Git execution policy", gitx.Runner.env()).
 //
 // GIT_INDEX_FILE is scrubbed from the inherited environment like every
 // other repository-identity variable, and the one caller that needs it —
@@ -639,7 +639,7 @@ func TestWorktreeDocsTreeOnUnbornHead(t *testing.T) {
 }
 
 // TestWorktreeDocsTreePreservesSymlinksAndModes keeps the git-native
-// content promise of §5.2 on the worktree side too.
+// content promise of the private-clone contract on the worktree side too.
 func TestWorktreeDocsTreePreservesSymlinksAndModes(t *testing.T) {
 	dir := newRepo(t)
 	writeFile(t, dir, "docs/target.md", []byte("target\n"))

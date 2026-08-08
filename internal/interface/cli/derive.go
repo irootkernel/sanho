@@ -1,7 +1,7 @@
 package cli
 
-// Base re-derivation (sanho-v0.2.md §5.10) and the sync preview shared
-// by the pre-commit warning and `sanho status` (§5.6 step 2).
+// Base re-derivation (docs/architecture.md "Git hooks") and the sync preview shared
+// by the pre-commit warning and `sanho status` (the commit-hook contract step 2).
 
 import (
 	"context"
@@ -18,13 +18,13 @@ import (
 const deriveScanDepth = 500
 
 // deriveBase re-derives the base from the newest reachable stamped
-// commit (§5.10): walk history, collect each commit's trailer values,
+// commit (the hook contract): walk history, collect each commit's trailer values,
 // and let domain/provenance pick.
 //
 // Both trailer keys are accepted. A legacy `docs-version: X` commit
 // asserted that its docs tree *equaled* canonical X, which makes X a
 // correct base for edits made on top of it — so mixed histories need no
-// rewrite (§5.1 "legacy coexistence").
+// rewrite (the provenance contract "legacy coexistence").
 //
 // The scan itself lives in appgit, which is also what the publication
 // gate asks about a pushed tip. One implementation is the point: a
@@ -55,13 +55,13 @@ const (
 )
 
 // rederiveBaseAfterHeadMoved is the post-checkout / post-merge /
-// post-rewrite body (§5.10). It reports what it did, so the hooks stay
+// post-rewrite body (the hook contract). It reports what it did, so the hooks stay
 // silent in the ordinary case and speak in the two that matter.
 //
 // Two states leave the base untouched, and both are spec rules rather
 // than caution. A docs worktree that differs from HEAD's docs carries
 // uncommitted edits that survived the checkout — the base answers "which
-// canonical state do the *worktree* docs derive from" (§5.7 invariant),
+// canonical state do the *worktree* docs derive from" (the state contract invariant),
 // so nothing derived from HEAD's history describes it; `sanho doctor`
 // flags any resulting inconsistency.
 //
@@ -198,12 +198,12 @@ func baseNeedsNoRederivation(ctx context.Context, ws *workspace, current provena
 	return err == nil && resolved && tree == worktreeTree
 }
 
-// syncPreview is the clean/conflict prediction of §5.6 step 2, shared by
+// syncPreview is the clean/conflict prediction of the commit-hook contract step 2, shared by
 // the commit warning and `sanho status`.
 type syncPreview struct {
 	// Known is false when the prediction could not be computed; callers
-	// then degrade to a behind-count-only message (§11 open question 3
-	// sanctions exactly that shape).
+	// then degrade to a behind-count-only message, which the guidance
+	// contract permits explicitly.
 	Known     bool
 	Clean     bool
 	Conflicts []string

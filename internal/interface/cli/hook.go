@@ -1,11 +1,11 @@
 package cli
 
-// The six hook entry points (sanho-v0.2.md §5.10).
+// The six hook entry points (docs/architecture.md "Git hooks").
 //
 // Two rules shape every one of them.
 //
 // Fail-open on the commit path (P2). `pre-commit`, `commit-msg` and the
-// three `post-*` hooks exit 0 for everything except the two gates §5.6
+// three `post-*` hooks exit 0 for everything except the two gates the commit-hook contract
 // makes blocking (staged markers, an unresolved sync). A commit that
 // fails because sanho had an internal problem is exactly Critical C1's
 // failure class, and v0.2 does not have it.
@@ -53,7 +53,7 @@ func newHookCmd() *cobra.Command {
 
 // hookWorkspace resolves the workspace for a hook.
 //
-// The three outcomes are the §8 degradation contract. A directory that
+// The three outcomes are the legacy-workspace contract degradation contract. A directory that
 // is not a workspace means the hook lines outlived their configuration,
 // which is the user's business and never git's: skip silently. A v0.1
 // workspace prints the migrate hint once and skips. Anything else is a
@@ -73,7 +73,7 @@ func hookWorkspace(ctx context.Context, cmd *cobra.Command) (ws *workspace, proc
 	}
 }
 
-// --- pre-commit (§5.6) ------------------------------------------------
+// --- pre-commit (the commit-hook contract) ------------------------------------------------
 
 func newPreCommitCmd() *cobra.Command {
 	return &cobra.Command{
@@ -84,7 +84,7 @@ func newPreCommitCmd() *cobra.Command {
 	}
 }
 
-// runPreCommit implements §5.6. It never opens a network connection and
+// runPreCommit implements the commit-hook contract. It never opens a network connection and
 // never blocks on canonical availability; exit is 0 for every freshness
 // state.
 func runPreCommit(cmd *cobra.Command) error {
@@ -121,7 +121,7 @@ func runPreCommit(cmd *cobra.Command) error {
 	return nil
 }
 
-// preCommitGates runs the two conditions §5.6 lets block a commit, in
+// preCommitGates runs the two conditions the commit-hook contract lets block a commit, in
 // the order that makes the state describe itself correctly, and reports
 // whether a sync is still owed at the end of it.
 //
@@ -139,7 +139,7 @@ func runPreCommit(cmd *cobra.Command) error {
 // Only markers block. A sync that was put aside, or resolved but not yet
 // completed, leaves no markers behind, so it is reported and the commit
 // proceeds: P2 makes the commit path non-blocking for everything except
-// the two §5.6 gates, and stopping every unrelated commit until a stash
+// the two the commit-hook contract gates, and stopping every unrelated commit until a stash
 // is dealt with would punish the wrong action. The state is refused
 // where it matters — `pre-push`, where shared state is created.
 //
@@ -229,7 +229,7 @@ func unfinishedSyncMessage(resolution docsync.Resolution, prev, target string) s
 	}
 }
 
-// warnStaleBase is §5.6 step 2: a single informational line when the
+// warnStaleBase is the commit-hook contract step 2: a single informational line when the
 // base is behind, silence when it is current, and never an error.
 //
 // Every failure path here is a silent pass. A missing clone, an
@@ -281,7 +281,7 @@ func warnStaleBase(ctx context.Context, cmd *cobra.Command, ws *workspace) {
 	writeln(cmd.ErrOrStderr(), line)
 }
 
-// --- commit-msg (§5.1) ------------------------------------------------
+// --- commit-msg (the provenance contract) ------------------------------------------------
 
 func newCommitMsgCmd() *cobra.Command {
 	return &cobra.Command{
@@ -292,7 +292,7 @@ func newCommitMsgCmd() *cobra.Command {
 	}
 }
 
-// runCommitMsg implements §5.1. It is purely local — no network, no
+// runCommitMsg implements the provenance contract. It is purely local — no network, no
 // clone access — and it NEVER exits non-zero: trailers are a durable
 // record and a recovery source, never a gate input, so a commit is worth
 // more than a stamp.
@@ -308,7 +308,7 @@ func runCommitMsg(cmd *cobra.Command, args []string) error {
 	}
 
 	if err := stampCommitMessage(ctx, ws, args[0]); err != nil {
-		// One line, the innermost cause, no package tags: §5.9 forbids a
+		// One line, the innermost cause, no package tags: the guidance contract forbids a
 		// raw Go chain at user level, and this one is printed inside
 		// `git commit` where it competes with git's own output.
 		writeln(cmd.ErrOrStderr(), commitMsgStampWarning(stripInternalPrefixes(causeLine(err))))
@@ -372,7 +372,7 @@ func stampCommitMessage(ctx context.Context, ws *workspace, messagePath string) 
 // merge target reaches the base file through `sanho sync --continue`,
 // and through nothing else.
 //
-// It is entirely local: one state file. §5.1's no-network contract for
+// It is entirely local: one state file. the provenance contract's no-network contract for
 // the commit path is untouched, and there is no longer a tree comparison
 // to run.
 func stampBase(ws *workspace) (provenance.Base, bool, error) {
@@ -383,10 +383,10 @@ func stampBase(ws *workspace) (provenance.Base, bool, error) {
 	return base, hasBase, nil
 }
 
-// stampInputs gathers the three trees §5.1's stamping rule compares.
+// stampInputs gathers the three trees the provenance contract's stamping rule compares.
 //
 // The HEAD~ term degrades to the empty tree whenever it cannot be
-// resolved — an unborn HEAD, a root commit, a shallow clone. §5.1 says
+// resolved — an unborn HEAD, a root commit, a shallow clone. the provenance contract says
 // to treat a missing HEAD~ as having empty docs, and using the empty
 // *tree* rather than the empty *string* is what makes a docs-free commit
 // on a root commit compare equal instead of spuriously stamping.
@@ -455,7 +455,7 @@ func messageHasBaseTrailer(message string) bool {
 //
 // The test for "is a trailer block" is git's own shape — `Key: value`
 // with a token key, or a folded continuation line — applied to the last
-// paragraph. It is a local string decision, so §5.1's no-network
+// paragraph. It is a local string decision, so the provenance contract's no-network
 // contract for the commit path is untouched.
 func appendTrailers(message []byte, trailers []string) []byte {
 	text := strings.TrimRight(string(message), "\n")
@@ -523,7 +523,7 @@ func isTrailerLine(line string) bool {
 	return true
 }
 
-// --- pre-push (§5.3) --------------------------------------------------
+// --- pre-push (the publication contract) --------------------------------------------------
 
 func newPrePushCmd() *cobra.Command {
 	return &cobra.Command{
@@ -534,7 +534,7 @@ func newPrePushCmd() *cobra.Command {
 	}
 }
 
-// runPrePush implements §5.3. It is the only hook that fails closed:
+// runPrePush implements the publication contract. It is the only hook that fails closed:
 // push is the boundary at which local work becomes shared, so a state
 // that must not be shared is stopped here.
 func runPrePush(cmd *cobra.Command, _ []string) error {
@@ -545,7 +545,7 @@ func runPrePush(cmd *cobra.Command, _ []string) error {
 	case errors.Is(err, errNotWorkspace):
 		return nil
 	case errors.Is(err, errV1Workspace):
-		// The push boundary is the natural migration prompt (§8): every
+		// The push boundary is the natural migration prompt (the legacy-workspace contract): every
 		// other entry point degrades quietly, this one stops.
 		writeln(cmd.ErrOrStderr(), msgMigrateRequired)
 		writeln(cmd.ErrOrStderr(), msgPushRejectedTrailer)
@@ -561,7 +561,7 @@ func runPrePush(cmd *cobra.Command, _ []string) error {
 	if updates, err = resolveSymbolicRefs(ctx, ws, updates); err != nil {
 		return err
 	}
-	// M1: the §5.3 step-1 filter, applied at the boundary rather than
+	// M1: the publication contract step-1 filter, applied at the boundary rather than
 	// inside the use case. A push carrying only tags, or only branch
 	// deletions, publishes nothing — so it must not be refused by the
 	// sync gate for a window it has no part in, and must not be made to
@@ -584,7 +584,7 @@ func runPrePush(cmd *cobra.Command, _ []string) error {
 	// refusal needs nothing but a local file. ensureCanonical creates and
 	// fetches a clone when there is none, so leaving the cheapest
 	// rejection behind it made an already-doomed push pay for a network
-	// round trip first (§5.3's ordering principle).
+	// round trip first (the publication contract's ordering principle).
 	if blocked, err := prePushSyncGate(ctx, cmd, ws, state); err != nil {
 		return err
 	} else if blocked {
@@ -746,7 +746,7 @@ func readRefUpdates(stdin io.Reader) ([]publish.RefUpdate, error) {
 // Git reports the *refspec source* as the local ref, so `git push origin
 // HEAD` and `git push <url> HEAD:refs/heads/x` both arrive as "HEAD"
 // rather than as a branch name. Publication considers only
-// refs/heads/* updates (§5.3 step 1), so without this a perfectly
+// refs/heads/* updates (the publication contract step 1), so without this a perfectly
 // ordinary push would silently publish nothing. A detached HEAD has no
 // branch to name and is left as it is — it is then filtered out, which
 // is the right answer for a push that is not from a branch.
@@ -777,7 +777,7 @@ func resolveSymbolicRefs(ctx context.Context, ws *workspace, updates []publish.R
 	return updates, nil
 }
 
-// reportPushError renders the §5.9 rejection templates. Every branch
+// reportPushError renders the guidance contract rejection templates. Every branch
 // names a command that succeeds in the state it is printed in (D3), and
 // every one ends with git's own "push rejected" line so the user sees a
 // familiar verdict rather than a tool-specific one.
@@ -801,7 +801,7 @@ func reportPushError(cmd *cobra.Command, ws *workspace, err error) error {
 	case errors.Is(err, canonical.ErrMergeFailed):
 		// A merge that could not run at all (a contended ref store, a
 		// broken clone) is not a conflict, and printing the raw chain
-		// would be exactly the §5.9 violation F-C2 found.
+		// would be exactly the guidance contract violation F-C2 found.
 		writeln(stderr, pushMergeFailedMessage(ws.cloneDir(), causeLine(err)))
 
 	case errors.As(err, &syncErr):
@@ -823,7 +823,7 @@ func reportPushError(cmd *cobra.Command, ws *workspace, err error) error {
 	return errAlreadyReported
 }
 
-// rewrittenGuidance builds the §5.3 case ④ message. It re-runs the
+// rewrittenGuidance builds the publication contract message. It re-runs the
 // docs-base-tree search the use case already attempted, for one reason:
 // a runnable command must name a real commit, and only the search can
 // say whether one exists. When it does not, the message says so rather
@@ -832,7 +832,7 @@ func rewrittenGuidance(ctx context.Context, ws *workspace) string {
 	// The publication branch names the ref the listing command reads.
 	// It comes from the clone whenever there is one — and there always
 	// is when this message is reached, since publication could not have
-	// got as far as case ④ otherwise.
+	// got as far as case  otherwise.
 	branch := canonical.DefaultBranch
 	store, openErr := ws.openCanonical()
 	if openErr == nil {
@@ -854,7 +854,7 @@ func rewrittenGuidance(ctx context.Context, ws *workspace) string {
 }
 
 // causeLine reduces an error chain to the one line worth showing, per
-// §5.9's "never print raw Go error chains at user level".
+// the guidance contract's "never print raw Go error chains at user level".
 func causeLine(err error) string {
 	message := err.Error()
 	if index := strings.LastIndex(message, ": "); index >= 0 {
@@ -863,7 +863,7 @@ func causeLine(err error) string {
 	return strings.TrimSpace(message)
 }
 
-// --- post-checkout / post-merge / post-rewrite (§5.10) ----------------
+// --- post-checkout / post-merge / post-rewrite (the hook contract) ----------------
 
 // newPostCheckoutCmd is the one HEAD-moved hook that receives arguments
 // worth reading. Git calls `post-checkout <prev> <new> <branch-flag>`,
@@ -873,7 +873,7 @@ func causeLine(err error) string {
 // Re-deriving there is wrong twice over (M8). HEAD did not move, so
 // there is nothing to re-derive from; and a file checkout is precisely
 // how a user restores one document, which changes the docs worktree
-// without changing history — the state §5.10 step 1 already stands down
+// without changing history — the state the hook contract step 1 already stands down
 // for, reached by a route that used to skip the test.
 func newPostCheckoutCmd() *cobra.Command {
 	return &cobra.Command{
@@ -916,10 +916,10 @@ func newPostRewriteCmd() *cobra.Command {
 }
 
 // newPostCommitCmd is a compatibility entry point, not a hook v0.2
-// installs: commits do not move the base (§5.10), so there is nothing
+// installs: commits do not move the base (the hook contract), so there is nothing
 // for it to do. It exists because a v0.1 hook file carries a
 // `sanho hook post-commit` line, and until `sanho migrate` rewrites the
-// hooks that line reaches this binary on every commit. The §8
+// hooks that line reaches this binary on every commit. The the legacy-workspace contract
 // degradation contract covers it: a v1 workspace gets the migrate hint,
 // anything else gets silence, and the exit is always 0.
 func newPostCommitCmd() *cobra.Command {
@@ -936,7 +936,7 @@ func newPostCommitCmd() *cobra.Command {
 
 // runRederiveHook is the shared body of the three HEAD-moved hooks. It
 // always exits 0 and prints exactly one line — only when the base
-// actually changed (§5.10).
+// actually changed (the hook contract).
 func runRederiveHook(cmd *cobra.Command) error {
 	ctx := cmd.Context()
 	ws, proceed, err := hookWorkspace(ctx, cmd)
@@ -959,7 +959,7 @@ func runRederiveHook(cmd *cobra.Command) error {
 }
 
 // recordWorkspaceState refreshes this workspace's registry entry after a
-// state-changing operation (§5.7). The registry is observational —
+// state-changing operation (the state contract). The registry is observational —
 // publication correctness never depends on it — so a failure to update
 // it is reported under --verbose and never fails the operation that
 // succeeded.

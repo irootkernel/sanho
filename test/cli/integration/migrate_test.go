@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// The §8 migration path, driven against a hand-built v0.1 workspace.
+// The the legacy-workspace contract migration path, driven against a hand-built v0.1 workspace.
 //
 // The fixture is written by hand rather than produced by a v0.1 binary
 // on purpose: the v0.1 client is deleted, so the *file formats* are what
@@ -57,8 +57,8 @@ func seedV1Workspace(t *testing.T, w *world, baseCommit string, withDaemonState 
 	}
 
 	if withDaemonState {
-		// The v0.1 daemon's state.json schema (retired, sanho-v0.2.md
-		// §6): project name → docs-repo id → repository URL.
+		// The v0.1 daemon's state.json schema (retired, docs/architecture.md "Legacy workspace boundary"
+		// the package-boundary contract): project name → docs-repo id → repository URL.
 		writeFile(t, filepath.Join(w.home, "state.json"), `{
   "docs_repos": {
     "origin": {"ID": "origin", "Path": "`+w.origin+`", "RepoURL": "`+w.origin+`"}
@@ -87,7 +87,7 @@ func TestMigrateConvertsAV1WorkspaceAndIsIdempotent(t *testing.T) {
 	requireContains(t, "migrate", out.stdout, "migrated this workspace to the v0.2 layout")
 
 	// The daemon-stop instruction is printed verbatim and nothing is
-	// executed on the user's behalf (§8 step 2).
+	// executed on the user's behalf (the legacy-workspace contract step 2).
 	requireContains(t, "migrate", out.stdout, "launchctl bootout")
 	requireContains(t, "migrate", out.stdout, "systemctl --user disable --now sanhod")
 
@@ -101,7 +101,7 @@ func TestMigrateConvertsAV1WorkspaceAndIsIdempotent(t *testing.T) {
 	requireContains(t, "base file", base, baseCommit)
 	requireContains(t, "base file", base, `"tree"`)
 
-	// .bak siblings for rollback (§8 step 6), and the legacy hash file
+	// .bak siblings for rollback (the legacy-workspace contract step 6), and the legacy hash file
 	// left intact as a read-only input.
 	requireContains(t, "config backup", readFile(t, w.appPath(".sanho.json.bak")), "socket_path")
 	requireContains(t, ".gitignore", readFile(t, w.appPath(".gitignore")), ".sanho.json.bak")
@@ -305,7 +305,7 @@ func TestMigrateRequiresTheDocsRepoURLWhenTheLegacyStateIsAbsent(t *testing.T) {
 	requireContains(t, "config", readFile(t, w.appPath(".sanho.json")), `"schema_version": 2`)
 }
 
-// §8 step 1: a live v0.1 transaction is the one thing v0.2 will not
+// the legacy-workspace contract step 1: a live v0.1 transaction is the one thing v0.2 will not
 // interpret, so migration refuses and names the v0.1 binary.
 func TestMigrateRefusesWhileV1TransactionStateExists(t *testing.T) {
 	w := newWorld(t, map[string]string{"api.md": "canonical api\n"})
@@ -338,7 +338,7 @@ func TestMigrateRefusesWhileAPendingFixFileExists(t *testing.T) {
 	requireContains(t, "refusal", refused.stderr, "pull-commit transaction or pending-fix state")
 }
 
-// Scenario 11 — §8 pre-migration degradation. The v0.2 binary is
+// Scenario 11 — the legacy-workspace contract pre-migration degradation. The v0.2 binary is
 // installed but `migrate` has not run: commits keep working, and the
 // push boundary is where the migration is demanded.
 func TestV1WorkspaceDegradesSafelyBeforeMigration(t *testing.T) {
@@ -374,7 +374,7 @@ func TestV1WorkspaceDegradesSafelyBeforeMigration(t *testing.T) {
 		}
 	}
 
-	// A commit succeeds and carries the migrate hint (§8, P2).
+	// A commit succeeds and carries the migrate hint (the legacy-workspace contract, P2).
 	writeFile(t, w.appPath("docs", "api.md"), "edited before migrating\n")
 	w.git(w.app, "add", "-A")
 	commit := w.gitExit(w.app, "commit", "-m", "docs: edit before migrating")
@@ -519,7 +519,7 @@ func TestMigratePreservesOtherProjectsAndResumes(t *testing.T) {
 	requireContains(t, "v1 state backup", readFile(t, v1Backup), "project_to_docs_repo")
 	requireContains(t, "v1 state backup", readFile(t, v1Backup), siblingURL)
 
-	// Hook files are backed up before being rewritten (§8 step 6).
+	// Hook files are backed up before being rewritten (the legacy-workspace contract step 6).
 	requireContains(t, "migrate summary", out.stdout, "pre-push.bak")
 	if !fileExists(t, w.hookPath("pre-push")+".bak") {
 		t.Error("migrate rewrote pre-push without leaving a .bak")

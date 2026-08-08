@@ -52,7 +52,7 @@ func TestParseCommitTrailersReadsBothKeys(t *testing.T) {
 }
 
 // The newest stamped commit wins, and a docs-free commit in between does
-// not hide the one behind it (§5.10).
+// not hide the one behind it (the hook contract).
 func TestSelectBasePicksTheNewestStampedCommit(t *testing.T) {
 	out := record(commitA, "feat: unrelated code\n") +
 		record(commitB, "docs: edit\n\ndocs-base: "+baseX+"\ndocs-base-tree: "+treeX+"\n")
@@ -67,7 +67,7 @@ func TestSelectBasePicksTheNewestStampedCommit(t *testing.T) {
 }
 
 // A legacy docs-version commit is adopted as a base with no tree: the
-// v0.1 trailer never carried one (§5.1 legacy coexistence).
+// v0.1 trailer never carried one (the provenance contract legacy coexistence).
 func TestSelectBaseAdoptsALegacyTrailer(t *testing.T) {
 	out := record(commitA, "docs: v0.1 era\n\ndocs-version: "+legacyY+"\n")
 

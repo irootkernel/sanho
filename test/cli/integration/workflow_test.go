@@ -54,7 +54,7 @@ func TestInitFreshOnSeededCanonical(t *testing.T) {
 		requireContains(t, ".gitignore", gitignore, entry)
 	}
 
-	// The private clone lives under the git common dir (§5.2).
+	// The private clone lives under the git common dir (the private-clone contract).
 	if !fileExists(t, w.appPath(".git", "sanho", "canonical")) {
 		t.Fatal("the private canonical clone was not created")
 	}
@@ -256,7 +256,7 @@ func TestStatusAndDoctorExposePublicationMissedDuringHookOutage(t *testing.T) {
 }
 
 // Scenario 2 — init on an empty canonical, then the first push
-// bootstraps it (§5.3 bootstrap).
+// bootstraps it (the publication contract bootstrap).
 func TestInitOnEmptyCanonicalThenFirstPushPublishes(t *testing.T) {
 	w := newWorld(t, nil)
 
@@ -288,7 +288,7 @@ func TestInitOnEmptyCanonicalThenFirstPushPublishes(t *testing.T) {
 		t.Fatalf("canonical history has %s commits, want 1 root commit", parents)
 	}
 
-	// The base advanced to what was published (§5.3 step 6).
+	// The base advanced to what was published (the publication contract step 6).
 	requireContains(t, "base file", readFile(t, w.appPath(".sanho_base.json")), head)
 }
 
@@ -326,7 +326,7 @@ func TestCommitSucceedsWhileCanonicalIsUnreachable(t *testing.T) {
 	}
 }
 
-// Scenario 4 — commit-msg stamps the trailer pair (§5.1).
+// Scenario 4 — commit-msg stamps the trailer pair (the provenance contract).
 func TestDocsCommitIsStampedWithProvenanceTrailers(t *testing.T) {
 	w := newWorld(t, map[string]string{"api.md": "canonical api\n"})
 	w.initAndAdoptDocs()
@@ -345,7 +345,7 @@ func TestDocsCommitIsStampedWithProvenanceTrailers(t *testing.T) {
 }
 
 // Scenario 5 — an out-of-band canonical advance shows up as a pre-commit
-// warning and in status (§5.6).
+// warning and in status (the commit-hook contract).
 func TestOutOfBandAdvanceWarnsOnCommitAndShowsInStatus(t *testing.T) {
 	w := newWorld(t, map[string]string{"api.md": "canonical api\n"})
 	w.initAndAdoptDocs()
@@ -396,7 +396,7 @@ func TestCleanSyncCreatesTheSyncCommit(t *testing.T) {
 	requireNotContains(t, "sync commit subject", subject, "[SANHO]")
 }
 
-// Scenario 7 — push publishes, with the §5.3 canonical subject format.
+// Scenario 7 — push publishes, with the publication contract canonical subject format.
 func TestPushPublishesWithTheCanonicalSubjectFormat(t *testing.T) {
 	w := newWorld(t, map[string]string{"api.md": "canonical api\n"})
 	w.initAndAdoptDocs()
@@ -435,7 +435,7 @@ func TestConflictRouteFromPushRejectionToSuccessfulPush(t *testing.T) {
 	w.commitDocs("docs: my edit", map[string]string{"api.md": "line one\nMINE\n"})
 	w.advanceCanonical(map[string]string{"api.md": "line one\nTHEIRS\n"}, "canonical: their edit")
 
-	// Push is rejected with §5.9 template 3.
+	// Push is rejected with the guidance contract template 3.
 	push := w.push()
 	if push.exitCode == 0 {
 		t.Fatal("the conflicting push succeeded, want a rejection")
@@ -450,7 +450,7 @@ func TestConflictRouteFromPushRejectionToSuccessfulPush(t *testing.T) {
 		t.Fatal("the rejected push changed canonical")
 	}
 
-	// The advised command runs, and reports §5.9 template 2.
+	// The advised command runs, and reports the guidance contract template 2.
 	sync := w.sanho(w.app, "sync")
 	conflictOutput := sync.stdout
 	requireContains(t, "sync conflict", conflictOutput, "sanho: merged docs with upstream — 1 files have conflicts:")
@@ -459,7 +459,7 @@ func TestConflictRouteFromPushRejectionToSuccessfulPush(t *testing.T) {
 	requireContains(t, "sync conflict", conflictOutput, "Then complete the sync:     sanho sync --continue")
 	requireContains(t, "sync conflict", conflictOutput, "To undo this sync:          sanho sync --abort")
 
-	// The markers carry the §5.4 labels, not temp paths (audit L1).
+	// The markers carry the merge contract labels, not temp paths (audit L1).
 	conflicted := readFile(t, w.appPath("docs", "api.md"))
 	requireContains(t, "conflict markers", conflicted, "<<<<<<< sanho-ours")
 	requireContains(t, "conflict markers", conflicted, ">>>>>>> sanho-upstream")
@@ -467,7 +467,7 @@ func TestConflictRouteFromPushRejectionToSuccessfulPush(t *testing.T) {
 	// Committing while markers remain is blocked. The sync-note gate
 	// answers first, on purpose: an unresolved sync leaves markers by
 	// construction, so "finish or abort the sync" is the useful reading
-	// of the state, not "you have markers" (§5.6).
+	// of the state, not "you have markers" (the commit-hook contract).
 	w.git(w.app, "add", "docs/api.md")
 	blocked := w.gitExit(w.app, "commit", "-m", "docs: resolve")
 	if blocked.exitCode == 0 {
@@ -668,7 +668,7 @@ func TestCleanFromBorrowingLinkedWorktreeKeepsMainRegistration(t *testing.T) {
 	requireContains(t, "registry", state, `"workspace_id": "product:`+w.app+`"`)
 }
 
-// The staged-marker gate on its own (§5.6 step 1), outside a sync: a
+// The staged-marker gate on its own (the commit-hook contract step 1), outside a sync: a
 // commit that stages conflict markers is blocked whether or not sanho
 // put them there.
 func TestStagedConflictMarkersBlockACommit(t *testing.T) {
@@ -711,7 +711,7 @@ func TestCompleteConflictMarkerTrioAfterLongLineBlocksACommit(t *testing.T) {
 }
 
 // `sanho sync --abort` restores the pre-sync state and cannot fail once
-// a sync note exists (§5.5 step 7).
+// a sync note exists (the synchronization contract).
 func TestSyncAbortRestoresThePreSyncState(t *testing.T) {
 	w := newWorld(t, map[string]string{"api.md": "line one\nline two\n"})
 	w.initAndAdoptDocs()
@@ -738,7 +738,7 @@ func TestSyncAbortRestoresThePreSyncState(t *testing.T) {
 }
 
 // `sanho doctor` reports and `--fix` re-derives a lost base from the
-// trailers already in history (§5.10, audit H4).
+// trailers already in history (the hook contract, audit H4).
 func TestDoctorFixReDerivesTheBase(t *testing.T) {
 	w := newWorld(t, map[string]string{"api.md": "canonical api\n"})
 	w.initAndAdoptDocs()
@@ -758,7 +758,7 @@ func TestDoctorFixReDerivesTheBase(t *testing.T) {
 }
 
 // `sanho pull` fast-forwards docs and refuses when there are local edits
-// it would overwrite (§5.5).
+// it would overwrite (the synchronization contract).
 func TestPullFastForwardsAndRefusesOnLocalEdits(t *testing.T) {
 	w := newWorld(t, map[string]string{"api.md": "canonical api\n"})
 	w.initAndAdoptDocs()

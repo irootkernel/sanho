@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// The rest of the §5.8 command surface: the --json schemas agents read,
+// The rest of the JSON contract command surface: the --json schemas agents read,
 // registry administration, and the base re-derivation hooks.
 
 func TestStatusJSONSchema(t *testing.T) {
@@ -172,7 +172,7 @@ func TestRegistryHidesAndPrunesSymlinkAliasesWithoutRewritingWorkspaceID(t *test
 }
 
 // The prose goes to stderr; stdout under --json carries either the
-// command's document or the §5.8 error envelope (F-M9). Both are JSON,
+// command's document or the JSON contract error envelope (F-M9). Both are JSON,
 // so a machine reader never has to strip English off the channel it
 // parses.
 func TestJSONErrorsCarryAMachineEnvelope(t *testing.T) {
@@ -306,7 +306,7 @@ func TestStateJSONScopesToTheWorkspaceProjectAndAllWithFlag(t *testing.T) {
 	if scoped.Scope != "product" || len(scoped.Projects) != 1 {
 		t.Fatalf("scoped state = %+v, want just the workspace's project", scoped)
 	}
-	// Heads come from the workspace's own clone (§5.2).
+	// Heads come from the workspace's own clone (the private-clone contract).
 	if scoped.Projects[0].Head != w.canonicalHead() {
 		t.Errorf("head = %q, want %q", scoped.Projects[0].Head, w.canonicalHead())
 	}
@@ -353,7 +353,7 @@ func TestProjectAddGuardsURLConflictsAndDeleteGuardsWorkspaces(t *testing.T) {
 	requireNotContains(t, "state", w.sanho(w.app, "state", "--all", "--json").stdout, `"name": "product"`)
 }
 
-// §5.10: the base is a property of the checked-out content, so after
+// the hook contract: the base is a property of the checked-out content, so after
 // HEAD moves it is recomputed from the trailers of the newly
 // checked-out history — not carried across from the previous branch.
 func TestBranchSwitchReDerivesTheBase(t *testing.T) {

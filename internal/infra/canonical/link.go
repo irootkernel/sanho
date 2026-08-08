@@ -68,18 +68,18 @@ func (l *Link) AbsorbedByTip(ctx context.Context, tipTree, head string) (bool, e
 func (l *Link) GcAuto(ctx context.Context) error { return l.store.GcAuto(ctx) }
 
 // FetchFromApp imports the pushed tip so its docs tree is addressable
-// clone-side (§5.3 step 5).
+// clone-side (the publication contract step 5).
 func (l *Link) FetchFromApp(ctx context.Context, tipOID string) error {
 	return l.store.FetchFromApp(ctx, l.appGitDir, tipOID)
 }
 
 // FetchIntoApp imports canonical head into the app repo's object
-// database and returns its commit OID (§5.5 step 2).
+// database and returns its commit OID (the synchronization contract).
 func (l *Link) FetchIntoApp(ctx context.Context) (string, error) {
 	return l.store.FetchIntoApp(ctx, l.appGitDir)
 }
 
-// MergeDocs runs the §5.4 merge clone-side over the docs trees of
+// MergeDocs runs the merge contract merge clone-side over the docs trees of
 // baseCommit and theirsCommit and the already-resolved oursTree (the
 // pushed tip's docs tree, imported by FetchFromApp).
 func (l *Link) MergeDocs(ctx context.Context, baseCommit, oursTree, theirsCommit string) (tree string, conflicts []string, clean bool, err error) {
@@ -94,7 +94,7 @@ func (l *Link) MergeDocs(ctx context.Context, baseCommit, oursTree, theirsCommit
 	return l.MergeDocsTrees(ctx, baseTree, oursTree, theirsTree)
 }
 
-// MergeDocsTrees is the §5.4 merge over three already-resolved docs
+// MergeDocsTrees is the merge contract merge over three already-resolved docs
 // trees.
 //
 // It exists because publication's evaluation pass chains: the second
@@ -135,7 +135,7 @@ func (l *Link) PushHead(ctx context.Context, newHead, expectedOld string) error 
 }
 
 // docsTreeOf resolves a canonical commit's docs tree. The canonical
-// repository is docs-only, so that is its root tree (§5.3 case ②).
+// repository is docs-only, so that is its root tree (the publication contract).
 func (s *Store) docsTreeOf(ctx context.Context, commit string) (string, error) {
 	tree, err := gitx.New(s.dir).Line(ctx, "rev-parse", "--verify", commit+"^{tree}")
 	if err != nil {

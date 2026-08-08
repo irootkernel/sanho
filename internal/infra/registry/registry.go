@@ -1,5 +1,5 @@
 // Package registry is the daemonless cross-workspace registry of sanho
-// v0.2 (sanho-v0.2.md §5.7, D4): ~/.sanho/state.json guarded by an
+// v0.2 (docs/architecture.md "State and persistence"): ~/.sanho/state.json guarded by an
 // exclusive flock, updated directly by each CLI invocation, with .bak
 // recovery. It is observational state — publication correctness never
 // depends on it.
@@ -25,7 +25,7 @@ const (
 )
 
 // registryFileMode is applied to both state.json and its .bak sibling
-// (§5.7): the registry lives under the private sanho home and, like the
+// (the state contract): the registry lives under the private sanho home and, like the
 // v0.1 daemon's state file, is not group/world readable.
 const registryFileMode = 0600
 
@@ -34,7 +34,7 @@ const registryFileMode = 0600
 const currentStateVersion = 2
 
 // ErrRegistryUnreadable is returned when neither state.json nor its
-// .bak backup can be read back into a valid State. Per §5.7 and the
+// .bak backup can be read back into a valid State. Per the state contract and the
 // v0.1 daemon semantics this carries over, the registry never silently
 // starts empty in this case — the caller must be told and given a
 // chance to intervene.
@@ -233,7 +233,7 @@ func (f *File) persistLocked(st State) error {
 		return fmt.Errorf("marshal registry state: %w", err)
 	}
 	// Primary first, then refresh the backup from the same bytes
-	// (§5.7) — both through the shared atomic writer.
+	// (the state contract) — both through the shared atomic writer.
 	if err := fsx.WriteFileAtomic(f.statePath(), data, registryFileMode); err != nil {
 		return fmt.Errorf("write registry state %s: %w", f.statePath(), err)
 	}

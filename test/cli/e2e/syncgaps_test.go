@@ -15,7 +15,7 @@ package e2e
 //	pull inside the window       only sync and push were covered
 //	linked worktree + conflict   two features that had never met
 //	post-merge / post-rewrite    only post-checkout stood down in tests
-//	a hook that cannot decide    the silent-failure branch of §5.10
+//	a hook that cannot decide    the silent-failure branch of the hook contract
 
 import (
 	"encoding/json"
@@ -352,7 +352,7 @@ func TestPostMergeAndPostRewriteStandDownDuringASync(t *testing.T) {
 	theirs := w.advanceCanonical(map[string]string{"api.md": "line one\nTHEIRS\n"}, "canonical: their edit")
 	ws.sanho("sync")
 
-	// Put the conflict aside so the docs match HEAD: the §5.10 step-1
+	// Put the conflict aside so the docs match HEAD: the hook contract
 	// guard must not be what stops the re-derivation.
 	ws.git("stash", "push", "--quiet", "--", "docs")
 
@@ -378,7 +378,7 @@ func TestPostMergeAndPostRewriteStandDownDuringASync(t *testing.T) {
 	requireEqual(t, "base file after the abort", recordedBase(t, ws), preMerge)
 }
 
-// TestARederivationThatCannotRunIsSilent covers §5.10's failure branch:
+// TestARederivationThatCannotRunIsSilent covers the hook contract's failure branch:
 // the hook could not decide, so it says nothing and exits 0.
 //
 // P2 is the whole point. A `post-checkout` that failed because sanho
@@ -499,7 +499,7 @@ func TestInitRefusesWhileASyncIsUnfinished(t *testing.T) {
 // --- the machine surface ------------------------------------------------
 
 // TestContinueJSONReportsTheAdoptedBase pins `--continue`'s half of the
-// §5.8 contract: an agent reads the outcome from the document.
+// the JSON contract: an agent reads the outcome from the document.
 func TestContinueJSONReportsTheAdoptedBase(t *testing.T) {
 	t.Parallel()
 

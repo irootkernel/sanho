@@ -1,5 +1,5 @@
 // Package docsync orchestrates the consume/reconcile flows of sanho
-// v0.2 (sanho-v0.2.md §5.5): `sanho sync`, `sanho sync --continue`,
+// v0.2 (docs/architecture.md "Synchronization"): `sanho sync`, `sanho sync --continue`,
 // `sanho sync --abort`, `sanho sync --rebase-onto`, and `sanho pull`.
 // Mechanics live behind ports implemented by infra (canonical, wsstate,
 // app-repo git); decisions live in domain.
@@ -50,7 +50,7 @@ type CanonicalPort interface {
 
 // AppRepoPort is the slice of app-repository behavior sync needs. All
 // mutating operations are docs-pathspec-scoped; nothing outside the
-// docs dir is ever touched (§5.5 step 1 requirement).
+// docs dir is ever touched (the synchronization contract requirement).
 type AppRepoPort interface {
 	// DocsClean reports whether worktree and index are clean for the
 	// docs paths relative to HEAD.
@@ -73,7 +73,7 @@ type AppRepoPort interface {
 	// object database. Canonical commits are docs-only, so after
 	// FetchIntoApp their root tree is the docs tree sync merges with.
 	CommitTree(ctx context.Context, commit string) (string, error)
-	// MergeDocs runs the §5.4 tree merge in the app repo and returns the
+	// MergeDocs runs the merge contract tree merge in the app repo and returns the
 	// result tree, conflict list, and cleanliness.
 	MergeDocs(ctx context.Context, baseTree, oursTree, theirsTree string) (tree string, conflicts []string, clean bool, err error)
 	// DocsPathsChangedBetween reports whether any of paths (docs paths as
@@ -100,7 +100,7 @@ type AppRepoPort interface {
 	// restricted to the docs pathspec; returns the new commit OID.
 	CommitDocs(ctx context.Context, message string) (string, error)
 	// ScanWorktreeDocsForMarkers reports docs worktree files that still
-	// carry conflict markers (§5.4 detector).
+	// carry conflict markers (the merge contract detector).
 	ScanWorktreeDocsForMarkers(ctx context.Context) ([]string, error)
 }
 
@@ -131,7 +131,7 @@ type StatePort interface {
 	// ClearBase removes the base file, restoring the "no base recorded"
 	// state. Abort needs it because a workspace can enter a sync with no
 	// base at all, and a zero Base is not a writable value: the base
-	// file schema (§5.7) has no representation for an empty commit OID
+	// file schema (the state contract) has no representation for an empty commit OID
 	// and reading one back is a corruption error.
 	ClearBase() error
 	// LoadSyncNote reports the note and whether one exists. A note that
@@ -248,11 +248,11 @@ type UseCase struct {
 // Options control a run.
 type Options struct {
 	// RebaseOnto overrides the merge target with an explicit canonical
-	// commit (rewrite recovery, §5.5 step 8). Empty = canonical head.
+	// commit (rewrite recovery, the synchronization contract). Empty = canonical head.
 	RebaseOnto string
 }
 
-// Guidance sentinels. Each maps to one §5.8 machine error code so the
+// Guidance sentinels. Each maps to one the JSON contract machine error code so the
 // CLI can route on errors.Is without reading messages:
 //
 //	ErrSyncInProgress   → sync_in_progress
@@ -364,14 +364,14 @@ func (r Resolution) String() string {
 }
 
 // syncCommitPrefix is the fixed subject of the commit sync and
-// `pull --commit` create (§5.5 steps 5 and the pull contract). It is a
+// `pull --commit` create (the synchronization contract). It is a
 // machine-readable convention, so the OID width is fixed too.
 const syncCommitPrefix = "docs: sync to "
 
-// shortOIDWidth is §5.9's "OIDs shortened to 12 chars".
+// shortOIDWidth is the guidance contract's "OIDs shortened to 12 chars".
 const shortOIDWidth = 12
 
-// Run executes §5.5 steps 1–6.
+// Run executes the synchronization contract.
 //
 // The guards run in a fixed order, and the order is load-bearing: a
 // conflicted sync leaves the docs worktree dirty by construction, so
@@ -382,7 +382,7 @@ const shortOIDWidth = 12
 // A conflicted merge is **not** an error. It returns
 // (Result{Status: StatusConflicts, Conflicts: …}, nil): the run did
 // exactly what it was asked to do, the markers are in the worktree, and
-// the CLI renders §5.9 template 2 from the Result. Errors are reserved
+// the CLI renders the guidance contract template 2 from the Result. Errors are reserved
 // for states in which sync did nothing.
 func (u *UseCase) Run(ctx context.Context, opts Options) (Result, error) {
 	// Step 1 — a sync already owns the docs worktree.
@@ -403,7 +403,7 @@ func (u *UseCase) Run(ctx context.Context, opts Options) (Result, error) {
 
 	// Step 2 — fetch, then import canonical objects into the app repo so
 	// the merge and the checkout can both run app-side. Write paths fail
-	// closed on an unreachable canonical (§5.2); the port's
+	// closed on an unreachable canonical (the private-clone contract); the port's
 	// ErrUnreachable travels up intact.
 	if err := u.Canonical.Fetch(ctx); err != nil {
 		return Result{}, fmt.Errorf("refresh canonical repository: %w", err)
@@ -464,7 +464,7 @@ func (u *UseCase) Run(ctx context.Context, opts Options) (Result, error) {
 	//
 	// Nothing is lost by waiting: the note carries Target, so the value
 	// is still recorded, and the base keeps answering the question it is
-	// defined by (§5.7) — which canonical state the *worktree* docs
+	// defined by (the state contract) — which canonical state the *worktree* docs
 	// derive from — which during the window is still the previous base.
 	// `sanho sync --continue` adopts Target, and nothing else does.
 	if !mergeClean {
@@ -570,7 +570,7 @@ type ContinueResult struct {
 // to report.
 type AbortResult struct{}
 
-// Abort executes §5.5 step 7. Valid whenever a sync note exists; by
+// Abort executes the synchronization contract. Valid whenever a sync note exists; by
 // construction it cannot fail after its precondition passes (guidance
 // closure, D3) — it moves no ref, creates no commit, and touches only
 // the docs worktree/index and two state files.
@@ -671,7 +671,7 @@ func (u *UseCase) restoreBase(ctx context.Context, note SyncNote) error {
 	}
 }
 
-// Continue completes a conflicted sync (§5.5 step 6b). It is the only
+// Continue completes a conflicted sync (the synchronization contract). It is the only
 // path by which a workspace adopts a merge target, and it exists because
 // the alternative does not work.
 //
@@ -928,7 +928,7 @@ func (u *UseCase) refuseWhileSyncing() error {
 	return nil
 }
 
-// Pull executes `sanho pull` (§5.5): fast-forward-only consume. It
+// Pull executes `sanho pull` (the synchronization contract): fast-forward-only consume. It
 // refuses when local docs are edited relative to the base and points at
 // sync; withCommit records the update as a sync-style commit.
 func (u *UseCase) Pull(ctx context.Context, withCommit bool) (Result, error) {
@@ -984,7 +984,7 @@ func (u *UseCase) Pull(ctx context.Context, withCommit bool) (Result, error) {
 	}
 
 	// The base file answers "which canonical state do the worktree docs
-	// derive from" (§5.7), so comparing the worktree tree against the
+	// derive from" (the state contract), so comparing the worktree tree against the
 	// base tree is the whole of pull's precondition: equal means the
 	// local docs are canonical content, unchanged, and may simply be
 	// replaced.
@@ -1123,7 +1123,7 @@ func (u *UseCase) canonicalEmpty(ctx context.Context) (bool, error) {
 }
 
 // noUpstreamYet is the answer both Run and Pull give for a canonical
-// repository nothing has ever published into (§5.3 bootstrap). There is
+// repository nothing has ever published into (the publication contract bootstrap). There is
 // no upstream content to consume and no commit to record as a base, so
 // the truthful outcome is "up to date" with an empty NewBase; the first
 // `git push` creates canonical's root commit.
@@ -1140,7 +1140,7 @@ func noUpstreamYet(rebaseOnto string) (Result, error) {
 }
 
 // resolveBaseTree answers "which canonical tree do the local docs
-// derive from" — the merge base of §5.5 step 4.
+// derive from" — the merge base of the synchronization contract.
 //
 // Three states, three answers:
 //
@@ -1253,7 +1253,7 @@ func (u *UseCase) baseIsReachable(ctx context.Context, base, head string) (bool,
 
 func syncCommitMessage(target string) string { return syncCommitPrefix + shortOID(target) }
 
-// shortOID renders an OID for user-facing messages at the §5.9 width.
+// shortOID renders an OID for user-facing messages at the guidance contract width.
 func shortOID(oid string) string {
 	if oid == "" {
 		return "(none)"

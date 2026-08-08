@@ -16,7 +16,7 @@ import (
 
 // No mocks below the git boundary: every test here drives the real git
 // binary against real temp-directory fixtures (project rule; see
-// sanho-v0.2.md §9.1).
+// docs/architecture.md "Git execution policy".
 
 // newFixtureRepo creates a fresh git repository under t.TempDir() using
 // a raw git invocation (not the Runner under test, to keep fixture
@@ -118,7 +118,7 @@ func writeLines(t *testing.T, path string, lines []string) {
 // are spaced far enough apart (verified empirically) that git's merge
 // treats them as n independent conflict hunks instead of coalescing
 // them into one, making this the exit-code sentinel for the C2 audit
-// finding (sanho-v0.2.md §7 C2: "merge-file exit-code misread").
+// finding documented under architecture's Git execution policy.
 func mergeFileFixture(t *testing.T, dir string, n int) (current, base, other string) {
 	t.Helper()
 	const total = 40
@@ -302,7 +302,7 @@ func TestNonZeroExit(t *testing.T) {
 }
 
 // TestRunExit_PreservesMergeFileExitCodes is the C2-contract sentinel at
-// runner level (sanho-v0.2.md §7 C2): a v0.1 bug misread merge-file's
+// runner level (docs/architecture.md "Git execution policy"): a v0.1 bug misread merge-file's
 // exit code, wedging on a 2-hunk conflict. RunExit must report the exact
 // exit code across the meaningful range (0 clean, 1 hunk, 2 hunks).
 func TestRunExit_PreservesMergeFileExitCodes(t *testing.T) {
@@ -391,7 +391,7 @@ func TestEnvironmentPolicy(t *testing.T) {
 	// repoScopedVars is deliberately spelled out again here, independent
 	// of the package's own scrubbedEnvVars, so a future shrink of that
 	// list shows up as a failing assertion here rather than a silently
-	// smaller thing this test iterates over (sanho-v0.2.md §7 C3).
+	// smaller thing this test iterates over (see the Git execution policy).
 	//
 	// GIT_INDEX_FILE is here too. It used to be the one exception,
 	// inherited silently because appgit's commit path needs a partial
@@ -447,8 +447,8 @@ func TestEnvironmentPolicy(t *testing.T) {
 		// The application-repository runner depends on exactly this: git
 		// points GIT_INDEX_FILE at a partial commit's temporary index for
 		// the hooks of that commit (CommitDocs always commits `-- docs`,
-		// i.e. always partially), and both the §5.1 provenance stamp and
-		// the §5.6 staged-marker gate inside those hooks have to see that
+		// i.e. always partially), and both the provenance contract provenance stamp and
+		// the commit-hook contract staged-marker gate inside those hooks have to see that
 		// same temporary index rather than the persisted one. Scrubbing
 		// it with nothing in its place was tried and measured: every
 		// `sanho sync` commit silently stopped carrying its docs-base
@@ -524,8 +524,8 @@ func TestEnvironmentPolicy(t *testing.T) {
 // repository keeps operating on THAT repository — never on whatever
 // repository an inherited, hook-exported value happens to name.
 //
-// The scenario is git 2.50.1's own behavior, verified in sanho-v0.2.md
-// §7 C3: git exports an absolute GIT_DIR (and friends) into the
+// The scenario is git 2.50.1's own behavior, verified in docs/architecture.md
+// the Git-execution contract C3: git exports an absolute GIT_DIR (and friends) into the
 // environment of hooks it runs inside a linked worktree. repoB stands in
 // for that other repository — e.g. the application repository whose
 // linked worktree exported the value — and repoA is this Runner's own,

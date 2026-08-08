@@ -1,5 +1,5 @@
 // Package integration drives the built `sanho` binary as a black box
-// against real git repositories (sanho-v0.2.md §9).
+// against real git repositories (AGENTS.md testing rules).
 //
 // Every test builds its own world: a bare canonical origin, an
 // application repository, an isolated SANHO_HOME, and its own git

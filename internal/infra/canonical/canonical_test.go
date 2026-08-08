@@ -210,7 +210,7 @@ func TestFetchRecordsAgeAndAdvancesHead(t *testing.T) {
 	advanced := commitToOrigin(t, origin, "main", map[string]entry{"a.md": text("a\n"), "b.md": text("b\n")})
 
 	// Before fetching, the clone still serves the previous head: reads
-	// are explicitly last-fetch based (§5.2).
+	// are explicitly last-fetch based (the private-clone contract).
 	cached, _, err := store.Head(ctx)
 	if err != nil {
 		t.Fatalf("Head before fetch: %v", err)

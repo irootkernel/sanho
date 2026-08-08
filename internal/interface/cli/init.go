@@ -1,6 +1,6 @@
 package cli
 
-// `sanho init` (sanho-v0.2.md §5.8): register the project and this
+// `sanho init` (docs/cli-json.md): register the project and this
 // workspace, write the v2 files, clone canonical, install the six hooks,
 // and establish a base.
 //
@@ -9,7 +9,7 @@ package cli
 //	fresh     canonical has content and this workspace has no docs of its
 //	          own — check canonical's docs out and adopt its head.
 //	bootstrap canonical is empty — record no base and say so; the first
-//	          push publishes (§5.3).
+//	          push publishes (the publication contract).
 //	reuse     local docs already exist — derive the base from the docs
 //	          provenance already in this repository's history, and never
 //	          overwrite the user's files.
@@ -42,7 +42,7 @@ import (
 
 // gitignoreEntries are added on init. The legacy v0.1 names stay listed
 // so that a workspace which still carries them (or is rolled back to
-// v0.1) never accidentally commits them (§8).
+// v0.1) never accidentally commits them (the legacy-workspace contract).
 var gitignoreEntries = []string{
 	wsstate.ConfigFileName,
 	wsstate.ConfigFileName + ".bak",
@@ -199,7 +199,7 @@ func runInit(cmd *cobra.Command, opts initOptions) error {
 		return rollback(err)
 	}
 	if hasBase {
-		// Through the §5.7 guard like every other base write. Fresh mode
+		// Through the state contract guard like every other base write. Fresh mode
 		// has just checked canonical's docs out, so the worktree IS the
 		// base's tree; reuse mode derived the value from this history's
 		// own trailer. Both are warrants the guard checks for itself.
@@ -383,7 +383,7 @@ func establishBase(ctx context.Context, cmd *cobra.Command, ws *workspace, store
 	switch {
 	case canonicalEmpty:
 		// Nothing to adopt and nothing to check out; the first push
-		// bootstraps canonical (§5.3).
+		// bootstraps canonical (the publication contract).
 		writeln(cmd.ErrOrStderr(), msgInitCanonicalEmpty)
 		return provenance.Base{}, false, false, nil
 
@@ -401,7 +401,7 @@ func establishBase(ctx context.Context, cmd *cobra.Command, ws *workspace, store
 		// Fresh mode: canonical's docs become this workspace's docs. The
 		// objects have to come across first — the tree lives in the
 		// private clone, and a checkout can only write what the app
-		// repository's own object database holds (§5.2 object exchange).
+		// repository's own object database holds (the private-clone contract object exchange).
 		if _, err := ws.link(store).FetchIntoApp(ctx); err != nil {
 			return provenance.Base{}, false, false, err
 		}
@@ -413,7 +413,7 @@ func establishBase(ctx context.Context, cmd *cobra.Command, ws *workspace, store
 }
 
 // reuseExistingDocs derives the base from provenance already present in
-// this repository's history (§5.10 derivation, §5.1 legacy coexistence),
+// this repository's history (the hook contract derivation, the provenance contract legacy coexistence),
 // and never touches the user's files.
 //
 // A derived base that canonical does not recognize is kept with a

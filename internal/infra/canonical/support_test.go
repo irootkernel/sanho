@@ -12,7 +12,7 @@ import (
 )
 
 // Every test in this package runs against a real git binary; there are
-// no fakes below the git boundary (sanho-v0.2.md §9 rule 1).
+// no fakes below the git boundary (AGENTS.md Git-boundary testing rule).
 
 // TestMain isolates the suite from the developer's git configuration.
 // Publication depends on default git behavior (merge drivers, autocrlf,

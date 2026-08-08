@@ -1,6 +1,6 @@
 package e2e
 
-// The scenario matrix (sanho-v0.2.md §9 rule 5): the sandbox S-matrix
+// The scenario matrix (AGENTS.md testing rules): the sandbox S-matrix
 // from the 2026-08-07 audit, rewritten for v0.2 semantics.
 //
 // Each scenario is named for the audit finding it keeps retired:
@@ -103,7 +103,7 @@ func TestS2PropagationBetweenTwoWorkspaces(t *testing.T) {
 	requireEqual(t, "reader sync commit", reader.headSubject(), "docs: sync to "+published[:12])
 
 	// The registry carries both checkouts, and status renders the other
-	// one as a sibling (§5.7, §5.8).
+	// one as a sibling (the state contract, the JSON contract).
 	siblings := reader.sanho("status", "--json").stdout
 	var document struct {
 		Siblings []struct {
@@ -178,7 +178,7 @@ func TestS3SameFileConflictAcrossTwoWorkspaces(t *testing.T) {
 
 // --- S4: different-file concurrency ------------------------------------
 
-// TestS4DifferentFileEditsBothPublish is §5.3 case ③ doing its job: the
+// TestS4DifferentFileEditsBothPublish is the publication contract doing its job: the
 // second push merges canonical-side and continues in the same
 // invocation, with zero user friction and — the invariant that matters —
 // without touching the worktree.
@@ -199,7 +199,7 @@ func TestS4DifferentFileEditsBothPublish(t *testing.T) {
 	requireExit(t, "bravo push", push, 0)
 	requireContains(t, "bravo push output", push.combined(), "published docs")
 
-	// Worktree inviolability (§5.3): pre-push merged in the private
+	// Worktree inviolability (the publication contract): pre-push merged in the private
 	// clone and published; the checkout is byte-for-byte as it was.
 	requireSameTree(t, "bravo docs after its own push", bravoDocsBefore, snapshotTree(t, bravo.docsPath()))
 
@@ -235,14 +235,14 @@ func TestS5OfflineCommitsSucceedAndPushFailsClosed(t *testing.T) {
 	code := ws.gitExit("commit", "-m", "feat: add main")
 	requireExit(t, "code commit while offline", code, 0)
 
-	// And a docs commit, stamped from purely local data (§5.1).
+	// And a docs commit, stamped from purely local data (the provenance contract).
 	ws.writeDocs(map[string]string{"api.md": "written while offline\n"})
 	ws.git("add", "-A")
 	docs := ws.gitExit("commit", "-m", "docs: offline edit")
 	requireExit(t, "docs commit while offline", docs, 0)
 	requireContains(t, "offline commit message", ws.headMessage(), "docs-base: ")
 
-	// The push fails closed with the §5.9 pair: a cause line naming the
+	// The push fails closed with the guidance contract pair: a cause line naming the
 	// repository, and an action line.
 	push := ws.push()
 	requireExit(t, "push while offline", push, 1)
@@ -339,7 +339,7 @@ func halfResolved(materialized, resolvedPrefix string) string {
 
 // TestS7AmendRewordAndRebaseStillPublish is audit H4: a message-only
 // amend wipes the trailer the previous commit carried, and v0.1 then
-// could not publish. §5.1's second stamping condition restores it, and
+// could not publish. the provenance contract's second stamping condition restores it, and
 // the push must still work.
 func TestS7AmendRewordAndRebaseStillPublish(t *testing.T) {
 	t.Parallel()
@@ -385,7 +385,7 @@ func TestS7AmendRewordAndRebaseStillPublish(t *testing.T) {
 
 // --- S8: branch switching ----------------------------------------------
 
-// TestS8BranchSwitchingReDerivesTheBase is §5.10: the base is a property
+// TestS8BranchSwitchingReDerivesTheBase is the hook contract: the base is a property
 // of the checked-out content, so it follows the trailers of whatever
 // history HEAD now names — it is never carried across from the branch
 // you left.
@@ -510,7 +510,7 @@ func TestS10SymlinkModeAndBinaryRoundTrip(t *testing.T) {
 	author.git("commit", "-m", "docs: add a symlink, a script and a binary")
 	requireExit(t, "author push", author.push(), 0)
 
-	// A binary blob must not trip the marker detector (§5.4 binary skip);
+	// A binary blob must not trip the marker detector (the merge contract binary skip);
 	// a false positive here would have rejected the push outright.
 	requireExit(t, "reader sync", reader.run("sync"), 0)
 
@@ -553,7 +553,7 @@ func TestS10SymlinkModeAndBinaryRoundTrip(t *testing.T) {
 
 // --- S11: JSON ---------------------------------------------------------
 
-// TestS11JSONSchemasAndErrorChannel is the agent-facing contract (§5.8):
+// TestS11JSONSchemasAndErrorChannel is the agent-facing contract (the JSON contract):
 // stable documents on stdout, diagnostics on stderr, and never both.
 func TestS11JSONSchemasAndErrorChannel(t *testing.T) {
 	t.Parallel()
@@ -694,7 +694,7 @@ func TestS11JSONSchemasAndErrorChannel(t *testing.T) {
 	}
 
 	// A failure under --json puts a machine-readable envelope on stdout
-	// and the prose on stderr (§5.8, F-M9). Before this an agent had
+	// and the prose on stderr (the JSON contract, F-M9). Before this an agent had
 	// nothing on the JSON channel to branch on and had to match English.
 	outside := w.newWorkspace("outside")
 	for _, args := range [][]string{

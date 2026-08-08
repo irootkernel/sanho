@@ -137,7 +137,7 @@ func TestBaseWritesGoThroughTheGuard(t *testing.T) {
 
 // stateMachinePackages are the packages that decide *what happens next*
 // — the case analysis, the sync/publication flows, and the provenance
-// rules. sanho-v0.2.md §9 rule 7 requires them to live outside
+// rules. The layering rules in AGENTS.md require them to live outside
 // `interface/`, and this is that rule implemented.
 //
 // The reason is the one the guidance-closure suite rests on: a decision
@@ -174,7 +174,7 @@ func TestStateMachinesLiveOutsideInterface(t *testing.T) {
 		}
 		for _, rule := range forbidden {
 			if strings.Contains(string(content), rule.symbol) {
-				t.Errorf("%s declares %q inside interface/: %s (sanho-v0.2.md §9 rule 7)",
+				t.Errorf("%s declares %q inside interface/: %s (AGENTS.md layering rules)",
 					file, strings.TrimSpace(rule.symbol), rule.why)
 			}
 		}

@@ -11,7 +11,7 @@ import (
 )
 
 // writeJSON renders v as an indented JSON document with a trailing
-// newline. It is only ever handed cmd.OutOrStdout(): §5.8 requires that
+// newline. It is only ever handed cmd.OutOrStdout(): the JSON contract requires that
 // stdout under --json carry the document and nothing else, with every
 // diagnostic on stderr, so a machine reader never has to strip prose.
 func writeJSON(out io.Writer, v any) error {
@@ -34,7 +34,7 @@ func orEmpty(values []string) []string {
 }
 
 // requireV2Workspace resolves the workspace for a command that needs a
-// migrated one. A v0.1 workspace is refused with the §8 hint, which
+// migrated one. A v0.1 workspace is refused with the legacy-workspace contract hint, which
 // names the only command that succeeds in that state.
 func requireV2Workspace(ctx context.Context) (*workspace, error) {
 	ws, err := openWorkspace(ctx)

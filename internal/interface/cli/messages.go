@@ -1,32 +1,32 @@
 package cli
 
-// The user-facing message catalog (sanho-v0.2.md §5.9).
+// The user-facing message catalog (docs/architecture.md "User guidance and exit codes").
 //
 // Every string sanho prints that names a next command lives here, as a
 // constant or a single renderer. Nothing is assembled inline at a call
 // site. That is a deliberate seed for P5's **guidance-closure suite**:
 // D3 makes it normative that *every advised command must succeed in the
-// state where it is advised*, and §9 rule 2 requires a table that
+// state where it is advised*, and the testing contract requires a table that
 // enumerates every (state, message) pair, parses the advised command out
 // of the message, runs it, and asserts success — with an unlisted
 // message failing the build. That test can only be written against a
 // catalog it can enumerate, so new guidance must be added here rather
 // than at the point of use.
 //
-// Hygiene rules this file enforces by construction (§5.9):
+// Hygiene rules this file enforces by construction (the guidance contract):
 //
 //   - English only (audit L4). The only non-ASCII characters are the em
-//     dash and right arrow that appear verbatim in the §5.9 normative
+//     dash and right arrow that appear verbatim in the guidance contract normative
 //     templates.
 //   - OIDs are shortened to 12 characters, via shortOID.
 //   - Never a raw Go error chain at user level: causes are wrapped with
 //     a cause line plus an action line.
 //   - Degraded-mode lines always carry the data age.
 //
-// The three numbered templates below are reproduced from §5.9 verbatim,
+// The three numbered templates below are reproduced from the guidance contract verbatim,
 // with two documented substitutions: the docs directory is the
 // workspace's configured one (the template's `docs/` is the default),
-// and OIDs render at the §5.9 hygiene width of 12 rather than the
+// and OIDs render at the guidance contract hygiene width of 12 rather than the
 // template's illustrative 7.
 
 import (
@@ -38,10 +38,10 @@ import (
 	"github.com/irootkernel/sanho/internal/usecase/publish"
 )
 
-// shortOIDWidth is §5.9's "OIDs shortened to 12 chars".
+// shortOIDWidth is the guidance contract's "OIDs shortened to 12 chars".
 const shortOIDWidth = 12
 
-// shortOID renders an OID at the §5.9 width. An absent OID is named
+// shortOID renders an OID at the guidance contract width. An absent OID is named
 // rather than printed as an empty gap.
 func shortOID(oid string) string {
 	if oid == "" {
@@ -56,7 +56,7 @@ func shortOID(oid string) string {
 // --- Fixed strings ----------------------------------------------------
 
 const (
-	// msgMigrateRequired is the §8 pre-migration degradation line. It is
+	// msgMigrateRequired is the legacy-workspace contract pre-migration degradation line. It is
 	// the single hint a v1 workspace gets from every entry point, and the
 	// only command that succeeds in that state.
 	msgMigrateRequired = "sanho: this workspace uses the v0.1 layout; run 'sanho migrate'"
@@ -66,7 +66,7 @@ const (
 	msgNotInWorkspace = "sanho: not a sanho workspace (no .sanho.json here); run 'sanho init' to create one"
 
 	// msgSyncInProgressPush rejects a push while a conflicted sync still
-	// has markers in the docs worktree (§5.3 step 2). It names the whole
+	// has markers in the docs worktree (the publication contract step 2). It names the whole
 	// sequence, because the commit is no longer the last step: a sync
 	// ends when 'sanho sync --continue' records it.
 	msgSyncInProgressPush = "sanho: finish the sync first: resolve the conflicts, 'git add' and 'git commit', " +
@@ -76,11 +76,11 @@ const (
 	msgMarkersBeforePush = "resolve the markers before pushing"
 
 	// msgCanonicalUnreachableAction is the action line paired with the
-	// canonical-unreachable cause line (§5.9).
+	// canonical-unreachable cause line (the guidance contract).
 	msgCanonicalUnreachableAction = "Check network access to the docs repository, then push again."
 
 	// msgPushRejectedTrailer is git's own idiom, and the last line of the
-	// §5.9 push-rejection template.
+	// the guidance contract push-rejection template.
 	msgPushRejectedTrailer = "error: push rejected — no remote ref was changed"
 
 	// msgCleanNeedsConfirmation guards the destructive path of
@@ -90,7 +90,7 @@ const (
 	// msgCleanSyncInProgress refuses to clean while a sync is owed, and
 	// is reused by `sanho init` for the same state (a re-init would write
 	// a base the unfinished sync is holding still). Both named commands
-	// cannot fail once their preconditions hold (§5.5 steps 6b and 7).
+	// cannot fail once their preconditions hold (the synchronization contract and 7).
 	msgCleanSyncInProgress = "sanho: a conflicted sync is in progress; complete it with 'sanho sync --continue', " +
 		"or undo it with 'sanho sync --abort' first"
 
@@ -104,15 +104,15 @@ const (
 	msgInitForceNeedsConfirmation = "sanho: --force replaces the existing docs directory with canonical content; rerun with -y to confirm"
 
 	// msgInitCanonicalEmpty is the bootstrap notice: nothing has been
-	// published yet, so there is no base to record (§5.3).
+	// published yet, so there is no base to record (the publication contract).
 	msgInitCanonicalEmpty = "sanho: canonical repository is empty; your first push will publish docs"
 
 	// msgAlreadyMigrated is `sanho migrate` on a workspace that is
-	// already v2 — an idempotent success, not a failure (§8).
+	// already v2 — an idempotent success, not a failure (the legacy-workspace contract).
 	msgAlreadyMigrated = "sanho: already migrated"
 
 	// msgMigrateBlockedByTransaction refuses migration while v0.1 state
-	// exists that v0.2 will not interpret (§8 step 1).
+	// exists that v0.2 will not interpret (the legacy-workspace contract step 1).
 	msgMigrateBlockedByTransaction = "sanho: a v0.1 pull-commit transaction or pending-fix state is still present; " +
 		"finish or abort it with the v0.1 binary, then run 'sanho migrate' again"
 
@@ -121,7 +121,7 @@ const (
 	msgMigrateNeedsURL = "sanho: the docs repository URL is not recorded in the legacy state; rerun with --docs-repo-url <url>"
 )
 
-// daemonStopInstructions is §8 step 2, printed verbatim and never
+// daemonStopInstructions is the legacy-workspace contract step 2, printed verbatim and never
 // executed: service ownership was explicitly the user's in v0.1, so
 // migrate names the command and stops there.
 var daemonStopInstructions = []string{
@@ -131,15 +131,15 @@ var daemonStopInstructions = []string{
 	"The 'sanhod' binary can be deleted at your leisure; nothing references it.",
 }
 
-// --- Template 1: commit warning (§5.9, §5.6) --------------------------
+// --- Template 1: commit warning (the guidance contract, the commit-hook contract) --------------------------
 
-// commitBehindClean is the §5.9 template-1 line, verbatim.
+// commitBehindClean is the guidance contract line, verbatim.
 func commitBehindClean(behind int) string {
 	return fmt.Sprintf("sanho: docs base is %d commits behind — 'sanho sync' will merge cleanly", behind)
 }
 
-// commitBehindConflicts is the §5.6 conflict-prediction variant. It says
-// what happens if the warning is ignored, which §5.9 requires whenever
+// commitBehindConflicts is the commit-hook contract conflict-prediction variant. It says
+// what happens if the warning is ignored, which the guidance contract requires whenever
 // there is something to say.
 func commitBehindConflicts(behind int, files []string) string {
 	return fmt.Sprintf("sanho: docs base is %d commits behind — 'sanho sync' will report conflicts in %s; syncing sooner keeps them small",
@@ -147,8 +147,8 @@ func commitBehindConflicts(behind int, files []string) string {
 }
 
 // commitBehindUnknown degrades to the behind count alone when the
-// clean/conflict prediction could not be computed (§11 open question 3
-// sanctions this shape). It still names the command that fixes the
+// clean/conflict prediction could not be computed; the guidance contract
+// permits this shape. It still names the command that fixes the
 // state, so guidance closure holds.
 func commitBehindUnknown(behind int) string {
 	return fmt.Sprintf("sanho: docs base is %d commits behind — run 'sanho sync' to reconcile", behind)
@@ -156,12 +156,12 @@ func commitBehindUnknown(behind int) string {
 
 // staleDataSuffix is appended to a freshness line when the last fetch is
 // older than staleDataThreshold: degraded-mode lines always include the
-// data age (§5.9).
+// data age (the guidance contract).
 func staleDataSuffix(age time.Duration) string {
 	return fmt.Sprintf(" (canonical last checked %s ago)", humanizeAge(age))
 }
 
-// staleDataThreshold is §5.6's 24-hour rule.
+// staleDataThreshold is the commit-hook contract's 24-hour rule.
 const staleDataThreshold = 24 * time.Hour
 
 // humanizeAge renders a fetch age at one significant unit — the
@@ -187,9 +187,9 @@ func plural(n int, unit string) string {
 	return fmt.Sprintf("%d %ss", n, unit)
 }
 
-// --- Template 2: sync conflict (§5.9) ---------------------------------
+// --- Template 2: sync conflict (the guidance contract) ---------------------------------
 
-// syncConflictMessage renders §5.9 template 2. docsDir is the
+// syncConflictMessage renders the guidance contract template 2. docsDir is the
 // workspace's configured docs directory, which for the default "docs"
 // reproduces the template's paths character for character.
 //
@@ -216,9 +216,9 @@ func syncConflictMessage(docsDir string, conflicts []string) string {
 	return b.String()
 }
 
-// --- Template 3: push rejection (§5.9) --------------------------------
+// --- Template 3: push rejection (the guidance contract) --------------------------------
 
-// pushConflictMessage renders §5.9 template 3 for the case ③-conflict
+// pushConflictMessage renders the guidance contract template 3 for the case -conflict
 // rejection, with the conflicted files listed between the state line and
 // the action line.
 //
@@ -263,7 +263,7 @@ func pushSyncRequiredMessage(reason, base, head string) string {
 }
 
 // pushMarkersMessage rejects a push whose docs carry committed conflict
-// markers (§5.3 step 3).
+// markers (the publication contract step 3).
 func pushMarkersMessage(paths []string) string {
 	var b strings.Builder
 	b.WriteString("sanho: pushed docs still contain conflict markers:\n")
@@ -274,7 +274,7 @@ func pushMarkersMessage(paths []string) string {
 	return b.String()
 }
 
-// pushUnreachableMessage is the §5.9 canonical-unreachable pair: a cause
+// pushUnreachableMessage is the guidance contract canonical-unreachable pair: a cause
 // line naming the URL and the failure, then an action line. The raw git
 // error never reaches the user unwrapped.
 func pushUnreachableMessage(url, cause string) string {
@@ -282,7 +282,7 @@ func pushUnreachableMessage(url, cause string) string {
 		url, cause, msgCanonicalUnreachableAction, msgPushRejectedTrailer)
 }
 
-// pushRewrittenMessage is §5.3 case ④. When a commit carrying the
+// pushRewrittenMessage is the publication contract. When a commit carrying the
 // recorded docs-base-tree still exists in canonical, it is named, so the
 // advised command is runnable as printed. When none does, no command can
 // succeed, so the message says "manual intervention required" and gives
@@ -290,7 +290,7 @@ func pushUnreachableMessage(url, cause string) string {
 // fail (D3).
 //
 // branch is the publication branch, and naming it is load-bearing. The
-// private clone is `git init --bare` plus a fetch (§5.2), so it holds
+// private clone is `git init --bare` plus a fetch (the private-clone contract), so it holds
 // `refs/remotes/origin/<branch>` and no `refs/remotes/origin/HEAD` at
 // all: a listing command naming HEAD exits 128 in the very state that
 // prints it, which is exactly the closure failure D3 forbids.
@@ -307,7 +307,7 @@ func pushRewrittenMessage(base, anchor, cloneDir, branch string) string {
 		"%s", shortOID(base), cloneDir, branch, msgPushRejectedTrailer)
 }
 
-// pushEmptyDocsMessage is the §5.3 empty-publication refusal (F-H2).
+// pushEmptyDocsMessage is the publication contract empty-publication refusal (F-H2).
 //
 // The state is genuinely ambiguous — a branch created before the docs
 // directory existed and a branch where `git rm -r docs` was the point
@@ -331,7 +331,7 @@ func pushEmptyDocsMessage(branch, head string, docsCount int) string {
 		"%s", branch, scope, shortOID(head), msgPushRejectedTrailer)
 }
 
-// pushMergeFailedMessage covers a §5.4 merge that could not run at all
+// pushMergeFailedMessage covers a the merge contract merge that could not run at all
 // — a locked ref store, a broken clone — as opposed to one that ran and
 // found conflicts (F-C2).
 //
@@ -417,7 +417,7 @@ func pulledMessage(target, commit string) string {
 // `sanho sync --continue` is how a user declares it.
 //
 // It is printed by `pre-commit`, which does NOT block on it, and by
-// `pre-push`, which does. The split follows P2 and §5.6: the commit path
+// `pre-push`, which does. The split follows P2 and the commit-hook contract: the commit path
 // blocks only for markers, and a sync put aside is no reason to stop
 // unrelated work — while the push boundary is where local work becomes
 // shared.
@@ -500,7 +500,7 @@ func syncAbortedMessage(untracked []string) string {
 }
 
 // baseRederivedMessage is the one line a post-checkout/merge/rewrite
-// hook prints, and only when the base actually moved (§5.10).
+// hook prints, and only when the base actually moved (the hook contract).
 func baseRederivedMessage(base string) string {
 	return fmt.Sprintf("sanho: docs base re-derived as %s after HEAD moved", shortOID(base))
 }
@@ -521,7 +521,7 @@ func baseClearedMessage() string {
 }
 
 // baseNotAdvancedMessage follows a SUCCESSFUL publication whose local
-// base pointer could not be moved (§5.3 step 6, M2).
+// base pointer could not be moved (the publication contract step 6, M2).
 //
 // It names no command, for the same reason pushMergeFailedMessage names
 // none: everything that can reach it is environmental — an unreadable
@@ -573,7 +573,7 @@ func syncContinueForeignHistoryMessage(detail string) string {
 }
 
 // stagedMarkersMessage blocks a commit whose staged docs still carry
-// conflict markers (§5.6 step 1).
+// conflict markers (the commit-hook contract step 1).
 func stagedMarkersMessage(paths []string) string {
 	var b strings.Builder
 	b.WriteString("sanho: staged docs contain conflict markers:\n")
@@ -600,12 +600,12 @@ func unresolvedSyncMessage(docsDir string, paths []string) string {
 }
 
 // commitMsgStampWarning is the one-line, never-blocking warning
-// `commit-msg` prints when it cannot stamp (§5.1).
+// `commit-msg` prints when it cannot stamp (the provenance contract).
 func commitMsgStampWarning(cause string) string {
 	return fmt.Sprintf("sanho: docs provenance not stamped (%s); run 'sanho doctor --fix' to restore it", cause)
 }
 
-// --- Sync and pull refusals (§5.5, §5.9) ------------------------------
+// --- Sync and pull refusals (the synchronization contract, the guidance contract) ------------------------------
 //
 // The use cases raise command-free sentinels; the guidance is composed
 // here, once, so the closure gate can enumerate it. Before F-H6 these
@@ -613,7 +613,7 @@ func commitMsgStampWarning(cause string) string {
 // a command that works.
 
 // syncInProgressMessage refuses a sync or pull while an earlier one is
-// still unfinished. The next steps are the ones §5.9 template 2 named
+// still unfinished. The next steps are the ones the guidance contract template 2 named
 // when the conflict was created, in the same order.
 func syncInProgressMessage(detail string) string {
 	return fmt.Sprintf("sanho: a conflicted sync is in progress (%s)\n"+
@@ -632,13 +632,13 @@ func pullNeedsSyncMessage(detail string) string {
 }
 
 // syncUnknownBaseMessage covers a recorded base canonical no longer
-// knows, with no docs-base-tree anchor to recover it (§5.5 step 8).
+// knows, with no docs-base-tree anchor to recover it (the synchronization contract).
 func syncUnknownBaseMessage(detail string) string {
 	return fmt.Sprintf("sanho: the recorded docs base is not in canonical history (%s)\n"+
 		"Pick a canonical commit and run 'sanho sync --rebase-onto <commit>'.", detail)
 }
 
-// syncUnreachableMessage is the §5.9 cause/action pair for sync and pull
+// syncUnreachableMessage is the guidance contract cause/action pair for sync and pull
 // (F-M3): the same two-line shape the push path uses, so an offline
 // workspace reads the same whichever verb hit the network.
 func syncUnreachableMessage(url, cause string) string {
@@ -669,12 +669,12 @@ func syncMergeFailedMessage(cloneDir, cause string) string {
 		"Inspect the canonical clone at %s and try again.", cause, cloneDir)
 }
 
-// docsTooLargeMessage renders the §5.4 scan-size refusal at user level.
+// docsTooLargeMessage renders the merge contract scan-size refusal at user level.
 //
 // The detector reads whole files, so a file past markers.MaxScanSize is
 // refused rather than silently skipped — but the raw error is an infra
 // diagnostic ("appgit: docs/big.md is 11534336 bytes: content too
-// large…"), and §5.9 does not let that reach a user (F-M3). No command
+// large…"), and the guidance contract does not let that reach a user (F-M3). No command
 // is named because none fixes it: the file has to move or shrink.
 func docsTooLargeMessage(cause string) string {
 	return fmt.Sprintf("sanho: %s\n"+
@@ -754,7 +754,7 @@ func baseUnknownToCanonicalMessage(base string) string {
 
 // statusBehindLine is the `sanho status` sync row when the base is
 // behind. The three renderings mirror the three commit-warning variants
-// of §5.9 template 1, and all of them quote 'sanho sync'.
+// of the guidance contract template 1, and all of them quote 'sanho sync'.
 func statusBehindLine(behind int, known, clean bool, conflicts []string) string {
 	switch {
 	case !known:
@@ -784,13 +784,13 @@ func initNextStepsMessage(staged bool) string {
 }
 
 // projectHasWorkspacesMessage refuses `sanho project delete` while
-// checkouts still reference the project (§5.8).
+// checkouts still reference the project (the JSON contract).
 func projectHasWorkspacesMessage(project string, count int, example string) string {
 	return fmt.Sprintf("project %q still has %d registered workspace(s) (%s); run 'sanho clean' in them, or rerun with --force",
 		project, count, example)
 }
 
-// staleCanonicalLine is the §5.2 degraded-read line: cached results
+// staleCanonicalLine is the private-clone contract degraded-read line: cached results
 // always say how old they are and how to refresh.
 func staleCanonicalLine(age time.Duration) string {
 	return fmt.Sprintf("canonical data is %s old — run 'sanho status --refresh'", humanizeAge(age))
@@ -802,12 +802,12 @@ const neverFetchedLine = "canonical has never been fetched — run 'sanho status
 // doctorFixHint names the repair for a base file doctor found wanting.
 const doctorFixHint = "run 'sanho doctor --fix' to re-derive the base from commit history"
 
-// registryLockHint names the lock path in a timeout message (§5.7).
+// registryLockHint names the lock path in a timeout message (the state contract).
 func registryLockHint(lockPath string) string {
 	return fmt.Sprintf("another sanho process holds %s; retry in a moment", lockPath)
 }
 
-// --- The guidance catalog (§5.9 closure, §9 rule 2) --------------------
+// --- The guidance catalog (the guidance contract closure, the testing contract) --------------------
 //
 // D3 makes it normative that *every advised command must succeed in the
 // state where it is advised*. A test can only enforce that against a

@@ -1,6 +1,6 @@
 package canonical
 
-// F-C2: the §5.4 merge uses FIXED ref names, and fixed names are only
+// F-C2: the merge contract merge uses FIXED ref names, and fixed names are only
 // safe under a lock.
 //
 // The reviewer's repro was two merges in one ref store at the same time

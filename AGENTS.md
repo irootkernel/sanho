@@ -67,8 +67,7 @@ Every changed line must be traceable to the requested outcome or its verificatio
 - Use `README.md` for the product boundary, supported components, public workflows, and top-level validation entrypoint.
 - Use `docs/architecture.md` for runtime, Git, provenance, publication, synchronization, persistence, concurrency, and safety contracts. It is the implementation authority.
 - Use `docs/operations.md`, `docs/recovery.md`, `docs/deployment.md`, `docs/cli-json.md`, and `docs/hands-on-testing.md` for their respective operational, recovery, deployment, interface, and real-environment verification details.
-- Treat `sanho-v0.2.md` as the historical design record for the v0.2 re-architecture, not as a description of current behavior. Where it and the code disagree, the code is correct and `docs/architecture.md` states the outcome.
-- Use `CHANGELOG.md` for released behavior and compatibility history, not as authority for unimplemented future work.
+- Use `CHANGELOG.md` and Git history for released behavior and compatibility history, not as authority for current implementation or unimplemented future work.
 - Use `Makefile` as the entry point for repository-standard generation, lint, build, and test commands.
 - Read the nearest relevant implementation and tests instead of copying detailed feature behavior into this file.
 - If authorities or implementation disagree, surface the mismatch and resolve it before changing behavior; do not silently choose the convenient source.
@@ -82,7 +81,7 @@ Every changed line must be traceable to the requested outcome or its verificatio
 
 ## Language Policy
 - Code, inline comments, and all CLI/HTTP interfaces stay in English.
-- Documentation under `docs/` and team communication, including conversations, should be written in Korean. Keep this repository guidance file in English.
+- Documentation under `docs/`, the root README, code, inline comments, and all CLI/HTTP interfaces must be written in English. Team communication may use the user's language. Keep this repository guidance file in English.
 
 ## Project-Specific Operating Rules
 

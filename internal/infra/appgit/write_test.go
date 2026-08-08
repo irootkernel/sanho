@@ -1,7 +1,7 @@
 package appgit_test
 
 // Real-git coverage for the write side of the app-repository adapter
-// (sanho-v0.2.md §5.5). Two properties dominate: docs paths must end up
+// (docs/architecture.md "Synchronization"). Two properties dominate: docs paths must end up
 // exactly at the requested tree — additions, modifications *and*
 // deletions — and nothing outside the docs directory may move, not even
 // content the user has already staged.
@@ -474,7 +474,7 @@ func TestRestoreDocsFromHeadDropsFilesHeadNeverHad(t *testing.T) {
 	}
 }
 
-// TestCommitDocsRecordsOnlyDocs pins the §5.5 step 5 commit: the docs
+// TestCommitDocsRecordsOnlyDocs pins the synchronization contract commit: the docs
 // pathspec goes in, staged non-docs work stays staged.
 func TestCommitDocsRecordsOnlyDocs(t *testing.T) {
 	dir := seedWorkspace(t)

@@ -1,6 +1,6 @@
 package cli
 
-// `sanho state` (sanho-v0.2.md §5.8): the registry dump. It reads
+// `sanho state` (docs/cli-json.md): the registry dump. It reads
 // ~/.sanho/state.json under the shared lock — no daemon, no socket.
 
 import (
@@ -30,7 +30,7 @@ import (
 //	}
 //
 // `head` is present only when the command runs inside a workspace of
-// that project — canonical heads live in per-workspace clones (§5.2), so
+// that project — canonical heads live in per-workspace clones (the private-clone contract), so
 // there is nowhere else to read one from. It is omitted rather than
 // guessed.
 type stateJSON struct {

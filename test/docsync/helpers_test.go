@@ -1,7 +1,7 @@
 // Package docsync_test drives usecase/docsync end to end over real
 // git: a real canonical origin, a real workspace-private clone, a real
 // application repository, and the real workspace state files
-// (sanho-v0.2.md §5.5).
+// (docs/architecture.md "Synchronization").
 //
 // It lives under test/ rather than beside either half because the
 // repository's architecture gate (internal/architecture) forbids the
@@ -61,11 +61,11 @@ const docsDir = "docs"
 // Everything but the merge is appgit's own. The merge is composed here
 // because it is the one operation that spans both infra packages:
 // canonical.MergeTree is told to run in the *app worktree*, which is
-// where §5.5 puts the sync merge and where all three trees live once
+// where the synchronization contract puts the sync merge and where all three trees live once
 // FetchIntoApp has imported canonical. Conflict paths come out of the
 // merge relative to the docs root, so they are prefixed here — the port
 // contract is repository-relative paths, matching the marker scanner
-// and §5.9's `docs/api.md` rendering.
+// and the guidance contract's `docs/api.md` rendering.
 type appPort struct{ *appgit.Repo }
 
 func (a appPort) MergeDocs(ctx context.Context, baseTree, oursTree, theirsTree string) (string, []string, bool, error) {
@@ -87,7 +87,7 @@ func (a appPort) MergeDocs(ctx context.Context, baseTree, oursTree, theirsTree s
 // statePort is the flow suite's state adapter.
 //
 // It is deliberately the UNGUARDED writer. `interface/cli`'s production
-// adapter puts every base through the §5.7 guard, which is covered end
+// adapter puts every base through the state contract guard, which is covered end
 // to end by the e2e suite against the real binary; what this suite is
 // for is the flow layer's own decisions — which writes happen, in which
 // order, with which values — and routing them through a guard would mean
@@ -163,7 +163,7 @@ func newFlow(t *testing.T, canonicalFiles, docsFiles map[string]string) *flow {
 
 // newEmptyCanonicalFlow is newFlow against a canonical repository that
 // has never been published into — the state a brand-new docs repo is in
-// (sanho-v0.2.md §5.3 bootstrap).
+// (docs/architecture.md "Publication" bootstrap).
 func newEmptyCanonicalFlow(t *testing.T, docsFiles map[string]string) *flow {
 	t.Helper()
 	return newFlowAt(t, newEmptyOrigin(t), docsFiles)

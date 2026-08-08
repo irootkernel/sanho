@@ -1,5 +1,5 @@
 // Package admin holds the status computation of sanho v0.2
-// (sanho-v0.2.md §5.8): what `sanho status` reports about a workspace,
+// (docs/cli-json.md): what `sanho status` reports about a workspace,
 // its canonical relation, and its siblings.
 //
 // # Why only status lives here
@@ -43,7 +43,7 @@ import (
 
 // CanonicalPort is the canonical-clone behavior status needs. Every
 // method except Fetch is local: `sanho status` answers from the last
-// fetch unless --refresh was asked for (§5.2 offline behavior).
+// fetch unless --refresh was asked for (the private-clone contract offline behavior).
 type CanonicalPort interface {
 	// Fetch updates the clone from origin. Only --refresh calls it.
 	Fetch(ctx context.Context) error
@@ -81,7 +81,7 @@ type SiblingEntry struct {
 	LastUpdatedAt time.Time
 }
 
-// PreviewPort predicts what `sanho sync` would do (§5.6 step 2). It is a
+// PreviewPort predicts what `sanho sync` would do (the commit-hook contract step 2). It is a
 // port of its own because the prediction is optional: when it cannot be
 // computed the report degrades to a behind count rather than failing.
 type PreviewPort interface {
@@ -119,14 +119,14 @@ const (
 	RelationUnknown  = "unknown"
 )
 
-// StatusReport is the data behind `sanho status` (§5.8): local facts,
+// StatusReport is the data behind `sanho status` (the JSON contract): local facts,
 // cached canonical facts with age, sync preview, and sibling rows.
 type StatusReport struct {
 	Project     string
 	WorkspaceID string
 	Base        provenance.Base
 	// HasBase is false for a workspace that has never recorded one —
-	// a fresh init against an empty canonical (§5.3 bootstrap).
+	// a fresh init against an empty canonical (the publication contract bootstrap).
 	HasBase bool
 	// Head/HeadTree are from the last fetch; DataAge tells how old.
 	Head        string
@@ -167,7 +167,7 @@ type SiblingRow struct {
 	LastUpdatedAt time.Time
 }
 
-// StatusQuery answers `sanho status` (§5.8).
+// StatusQuery answers `sanho status` (the JSON contract).
 type StatusQuery struct {
 	Canonical CanonicalPort
 	State     StatePort
@@ -186,7 +186,7 @@ type StatusQuery struct {
 //
 // Everything after the base file is best-effort in one specific sense:
 // a fact that cannot be established is reported as *unknown* rather than
-// guessed or raised as an error. That is the §5.2 asymmetry — read paths
+// guessed or raised as an error. That is the private-clone contract asymmetry — read paths
 // serve what they have with an explicit staleness signal — and it is
 // what makes `sanho status` work offline, on a workspace whose clone was
 // never created, and on one whose base was orphaned by a rewrite.
@@ -305,7 +305,7 @@ func (q *StatusQuery) relation(ctx context.Context, a, b string) string {
 	return describeDistance(behind, ahead)
 }
 
-// describeDistance turns a (behind, ahead) pair into the §5.8 vocabulary.
+// describeDistance turns a (behind, ahead) pair into the JSON contract vocabulary.
 func describeDistance(behind, ahead int) string {
 	switch {
 	case behind == 0 && ahead == 0:

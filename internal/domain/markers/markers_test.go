@@ -137,7 +137,7 @@ func TestScan(t *testing.T) {
 }
 
 func TestScan_BinarySniffBoundary(t *testing.T) {
-	const sniffSize = 8 << 10 // documented in sanho-v0.2.md §5.4 as "the first 8 KiB"
+	const sniffSize = 8 << 10 // docs/architecture.md fixes the sniff window at 8 KiB.
 
 	withNULAt := func(totalLen, nulIndex int) []byte {
 		content := bytes.Repeat([]byte("a"), totalLen)
@@ -210,7 +210,7 @@ func TestMaxScanSizeAndErrTooLarge(t *testing.T) {
 
 // TestMarkerConstants pins the exported byte sequences to their
 // documented values, since the marker detector's correctness (and every
-// example in sanho-v0.2.md §5.4) depends on their exact spelling.
+// documented marker example depends on their exact spelling.
 func TestMarkerConstants(t *testing.T) {
 	if markers.Start != "<<<<<<< " {
 		t.Errorf("Start = %q, want %q", markers.Start, "<<<<<<< ")

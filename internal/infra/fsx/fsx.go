@@ -1,5 +1,5 @@
 // Package fsx provides the durable-write and file-locking primitives
-// shared by every sanho state store (sanho-v0.2.md §5.7; audit M5/M3).
+// shared by every sanho state store (docs/architecture.md "State and persistence"; audit M5/M3).
 //
 // WriteFileAtomic is the v0.1 daemon writeAtomic promoted to a shared
 // utility: unique temp name in the target directory → chmod → write →
@@ -29,7 +29,7 @@ const DefaultLockTimeout = 5 * time.Second
 const lockPollInterval = 20 * time.Millisecond
 
 // ErrLockTimeout is returned when the lock is not acquired in time.
-// Callers surface it with the lock path and a next step (§5.9).
+// Callers surface it with the lock path and a next step (the guidance contract).
 var ErrLockTimeout = errors.New("timed out waiting for file lock")
 
 // WriteFileAtomic durably replaces path with data: unique temp file in

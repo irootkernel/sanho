@@ -22,7 +22,7 @@ import (
 	"github.com/irootkernel/sanho/internal/infra/registry"
 )
 
-// markerDoc is a docs file carrying an unresolved conflict, in the §5.4
+// markerDoc is a docs file carrying an unresolved conflict, in the merge contract
 // detector's own marker vocabulary.
 const markerDoc = "<<<<<<< sanho-ours\nmine\n=======\ntheirs\n>>>>>>> sanho-upstream\n"
 
@@ -106,7 +106,7 @@ func TestAnUnresolvedSyncDoesNotBlockUnrelatedCommits(t *testing.T) {
 // `sanho sync --abort` restores the pre-sync state; popping the stash
 // brings the user's own markers back into the worktree (they are not
 // committed, so the push gate does not see them); and the push is then
-// refused as the ordinary case-③ conflict it always was — with the
+// refused as the ordinary case- conflict it always was — with the
 // conflicted file named (X4).
 func TestAbortAfterAStashLeavesAnHonestConflict(t *testing.T) {
 	t.Parallel()
@@ -293,7 +293,7 @@ func TestAbortSucceedsWithACorruptSyncNote(t *testing.T) {
 // surface as a blocked commit. The notice appears, the commit lands.
 //
 // The note is corrupted in a workspace with no markers anywhere, so the
-// commit's own content is not what is being tested: the §5.6 gates are
+// commit's own content is not what is being tested: the commit-hook contract gates are
 // unaffected and still block staged markers, as their own tests pin.
 func TestACorruptSyncNoteDoesNotBreakCommits(t *testing.T) {
 	t.Parallel()
@@ -399,7 +399,7 @@ func TestPushConflictRejectionNamesTheConflictedFiles(t *testing.T) {
 
 // TestDoctorReportsABaseHistoryDisagreesWith is the fifth finding.
 //
-// §5.10 withholds base re-derivation whenever the docs worktree differs
+// the hook contract withholds base re-derivation whenever the docs worktree differs
 // from HEAD's, and derive.go promises that `sanho doctor` flags the
 // resulting inconsistency. Nothing did.
 func TestDoctorReportsABaseHistoryDisagreesWith(t *testing.T) {
@@ -429,7 +429,7 @@ func TestDoctorReportsABaseHistoryDisagreesWith(t *testing.T) {
 }
 
 // TestDoctorTreatsAWithheldRederivationAsInformational is the dirty-docs
-// half: re-derivation is deliberately withheld there (§5.10 step 1), so
+// half: re-derivation is deliberately withheld there (the hook contract step 1), so
 // the disagreement is a fact to report, not a problem to warn about.
 func TestDoctorTreatsAWithheldRederivationAsInformational(t *testing.T) {
 	t.Parallel()
@@ -505,7 +505,7 @@ func TestDoctorIsSilentAboutABaseAPublicationAdvanced(t *testing.T) {
 //
 // `sanho doctor` reports failures it deliberately does not fail on, and
 // it renders every one of them through causeOf, whose whole job is to
-// strip the package tags infra uses to locate its own errors. §5.9
+// strip the package tags infra uses to locate its own errors. the guidance contract
 // forbids those tags at user level: `appgit: ` and `gitx: ` say where in
 // sanho a failure happened, which is information for us and noise for
 // the reader.
@@ -537,7 +537,7 @@ func TestDoctorReportsFailuresWithoutInternalPackageTags(t *testing.T) {
 
 // --- m1: the cheapest rejection comes first -----------------------------
 
-// TestSyncNoteRejectionPrecedesTheClone pins the §5.3 ordering
+// TestSyncNoteRejectionPrecedesTheClone pins the publication contract ordering
 // principle: the sync gate needs one local file, so a push it refuses
 // must not first create and fetch a canonical clone.
 func TestSyncNoteRejectionPrecedesTheClone(t *testing.T) {
@@ -564,11 +564,11 @@ func TestSyncNoteRejectionPrecedesTheClone(t *testing.T) {
 
 // --- m4: the JSON error envelope and the post-migrate flow --------------
 
-// TestJSONErrorEnvelopeCoversTheRepresentativeCodes widens the §5.8
+// TestJSONErrorEnvelopeCoversTheRepresentativeCodes widens the JSON contract
 // envelope coverage past not_in_workspace: an agent branches on `code`,
 // so each code an ordinary session can hit needs a test that produces it.
 //
-// Three of the §5.8 vocabulary are deliberately absent, and their
+// Three of the JSON contract vocabulary are deliberately absent, and their
 // absence is a fact about the surface rather than a gap in the table:
 //
 //	markers_present  raised only by publication, which runs inside
@@ -632,7 +632,7 @@ func TestJSONErrorEnvelopeCoversTheRepresentativeCodes(t *testing.T) {
 			},
 		},
 		{
-			// §8's degradation, machine-readable: a v0.1 workspace refuses
+			// the legacy-workspace contract's degradation, machine-readable: a v0.1 workspace refuses
 			// every command but `migrate`, and an agent must be able to see
 			// that it is the layout rather than the request.
 			name:  "v1_workspace",
@@ -749,7 +749,7 @@ func holdRegistryLock(t *testing.T, w *world) (release func()) {
 }
 
 // TestMigratedWorkspaceSyncsPullsAndPushes is the missing end-to-end
-// link: §8 promises a v0.1 workspace becomes an ordinary v0.2 one, and
+// link: the legacy-workspace contract promises a v0.1 workspace becomes an ordinary v0.2 one, and
 // nothing proved the three flows actually run afterwards.
 func TestMigratedWorkspaceSyncsPullsAndPushes(t *testing.T) {
 	t.Parallel()

@@ -1,5 +1,5 @@
 // Package gitx is the single git execution port for sanho v0.2
-// (sanho-v0.2.md §7 L7). Every git invocation in the codebase goes
+// described by docs/architecture.md's "Git execution policy". Every invocation goes
 // through a Runner: argv-only (no shell), non-interactive environment
 // (GIT_TERMINAL_PROMPT=0 always; SSH BatchMode on network operations),
 // per-command timeouts, and uniform exit classification.
@@ -73,8 +73,8 @@ func WithEnv(kv ...string) Option { return func(r *Runner) { r.extraEnv = append
 // depends on is named at a call site instead of arriving by luck.
 // Git runs the hooks of a PARTIAL commit (`git commit -- docs`) with
 // GIT_INDEX_FILE pointing at a temporary index holding exactly what that
-// commit will contain, and the commit path reads it: the §5.1 provenance
-// stamp hashes the staged docs tree, and the §5.6 marker gate scans the
+// commit will contain, and the commit path reads it: the provenance contract provenance
+// stamp hashes the staged docs tree, and the commit-hook contract marker gate scans the
 // staged diff. Both must see the in-flight index rather than
 // `$GIT_DIR/index`, which for a pathspec commit describes something
 // else.
@@ -191,11 +191,11 @@ func (e *ExitError) Error() string {
 // primary write path — is a PARTIAL commit, so git builds a temporary
 // index for it and points the hooks' GIT_INDEX_FILE at that temporary
 // index, specifically so they see what the commit will actually contain.
-// The §5.1 provenance stamp and the §5.6 staged-marker gate both read it.
+// The the provenance contract provenance stamp and the commit-hook contract staged-marker gate both read it.
 // Scrubbing it blindly was tried and measured: every `sanho sync` commit
 // silently stopped carrying its `docs-base` trailer, because the
 // now-index-file-less write-tree inside the hook read a different index
-// or errored, and commit-msg's stamping is fail-open by design (§5.1:
+// or errored, and commit-msg's stamping is fail-open by design (the provenance contract:
 // "a commit is worth more than a stamp") — no error, no warning, just a
 // commit with no base to re-derive from later.
 //
@@ -263,7 +263,7 @@ func (r *Runner) env() []string {
 // err.
 //
 // stdin, when non-nil, is fed to the child. It carries DATA only — the
-// command line is still built entirely from argv (§7 L7), so nothing a
+// command line is still built entirely from argv (the Git-execution contract L7), so nothing a
 // caller streams in can become part of the command. `git cat-file
 // --batch` is the reason it exists: one child answering many object
 // queries replaces one child per query.
@@ -359,7 +359,7 @@ func (r *Runner) Run(ctx context.Context, args ...string) (Result, error) {
 // it and answers them all from one child process, which is what turns
 // the per-file scanners from two spawns per docs file into two spawns
 // per scan. Nothing on stdin can add a flag, a pathspec, or a revision;
-// the argv-only rule of §7 L7 is unchanged.
+// the argv-only rule of the Git-execution contract L7 is unchanged.
 func (r *Runner) RunWithStdin(ctx context.Context, stdin io.Reader, args ...string) (Result, error) {
 	res, err, exited := r.invoke(ctx, stdin, args...)
 	if exited {

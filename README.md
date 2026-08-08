@@ -185,7 +185,7 @@ sanho pull      # fast-forward consume                        (--commit, --json)
 sanho clean     # remove Sanho from this workspace  (--dry-run, --remove-docs, -y)
 sanho doctor    # check this workspace                        (--fix, --json)
 sanho project   # add | delete a project registration
-sanho migrate   # convert a v0.1 workspace to the v0.2 layout
+sanho migrate   # legacy workspace conversion (compatibility only)
 sanho hook      # hook entry points (invoked by git, not by hand)
 sanho version   # (--json)
 ```
@@ -230,27 +230,6 @@ This repository uses Sanho to synchronize its `docs/` directory with the canonic
 - Read machine output from `--json` on `status`, `state`, `sync`, `pull`, `doctor`, and `version`. Do not parse the human-readable tables, and do not read a sync result from the exit code.
 ```
 
-## Upgrading from v0.1
-
-The canonical repository is untouched — same repository, same linear main, only
-the commit-message convention changes going forward. Old `docs-version:`
-trailers and `[SANHO] Update docs` commits stay as inert history, and v0.2 reads
-the old trailer key, so no history rewrite is needed.
-
-Because hook lines invoke `sanho` by name, installing the v0.2 binary routes
-v0.1-era hooks to it immediately. v0.2 degrades safely rather than
-half-operating: commits keep working and print one migrate hint, while `git
-push` fails closed. The push boundary is the natural migration prompt.
-
-```bash
-cp ~/.sanho/state.json ~/.sanho/state.json.pre-v0.2   # back up first
-go install github.com/irootkernel/sanho/cmd/sanho@v0.2.1
-cd /path/to/app && sanho migrate
-```
-
-The full procedure — including stopping the v0.1 daemon and rolling back — is in
-[deployment rules](docs/deployment.md) and [recovery procedures](docs/recovery.md).
-
 ## Validation
 
 ```bash
@@ -271,8 +250,8 @@ fails the build when a message is added without a catalog entry; and the suite
 in `test/cli/e2e` reaches each advising state, asserts the message appears, then
 runs the command it names in that state and requires success.
 
-Release checks that need real remotes, branch protection rules, two machines, or
-a real v0.1 installation are documented in the
+Release checks that need real remotes, branch protection rules, or multiple
+machines are documented in the
 [hands-on test checklist](docs/hands-on-testing.md).
 
 ## Documentation
@@ -288,8 +267,7 @@ a real v0.1 installation are documented in the
 - [Hands-on test checklist](docs/hands-on-testing.md) — pre-release manual
   verification.
 - [Changelog](CHANGELOG.md)
-- [한국어 안내](docs/readme/kor.md)
 
-Documentation under `docs/` is written in Korean; this file and `AGENTS.md` are
-in English. `sanho-v0.2.md` is the v0.2 design record and is historical —
-`docs/architecture.md` supersedes it as the description of what the code does.
+All repository documentation is written in English. `docs/architecture.md` is
+the current implementation authority; release history lives in the changelog
+and Git history.

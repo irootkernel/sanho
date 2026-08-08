@@ -13,7 +13,7 @@ import (
 )
 
 // The index-side pair (IndexDocsTree / ScanStagedDocsForMarkers) is what
-// the pre-commit and commit-msg hooks read (sanho-v0.2.md §5.1, §5.6).
+// the pre-commit and commit-msg hooks read (docs/architecture.md "Provenance").
 // Everything here runs against a real git index; nothing is faked.
 
 func TestIndexDocsTreeMatchesHeadWhenNothingIsStaged(t *testing.T) {

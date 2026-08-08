@@ -1,6 +1,6 @@
 package cli
 
-// Registry access helpers (sanho-v0.2.md §5.7).
+// Registry access helpers (docs/architecture.md "State and persistence").
 //
 // The registry is observational: it answers "what other checkouts of
 // this project exist and where were they last seen", and nothing about

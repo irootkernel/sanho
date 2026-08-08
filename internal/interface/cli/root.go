@@ -1,5 +1,5 @@
 // Package cli is the sanho v0.2 command-line interface: the nine
-// commands and six hook entry points of sanho-v0.2.md §5.8/§5.10, and
+// commands and six hook entry points of docs/cli-json.md and docs/architecture.md "Git hooks", and
 // the one place in the codebase where the layers are wired together.
 //
 // That wiring role is deliberate and is the reason several adapters live
@@ -24,7 +24,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Exit codes (sanho-v0.2.md §5.8), unchanged from v0.1:
+// Exit codes (docs/cli-json.md), unchanged from v0.1:
 //
 //	0  success
 //	1  user-actionable — a state the user can fix, named in the message
@@ -40,7 +40,7 @@ const (
 var errInternal = errors.New("internal error")
 
 // errAlreadyReported is returned by a command that has already written
-// its own guidance — the multi-line §5.9 templates, which must appear
+// its own guidance — the multi-line the guidance contract templates, which must appear
 // exactly as composed rather than behind a "sanho: " prefix. The root
 // renderer prints nothing more for it and exits 1.
 var errAlreadyReported = errors.New("guidance already reported")
@@ -52,7 +52,7 @@ type BuildInfo struct {
 	BuildDate string
 }
 
-// Execute runs the CLI and terminates the process with the §5.8 exit
+// Execute runs the CLI and terminates the process with the JSON contract exit
 // code.
 func Execute(info BuildInfo) { os.Exit(Run(info, os.Args[1:], os.Stdout, os.Stderr)) }
 
@@ -86,12 +86,12 @@ func Run(info BuildInfo, args []string, stdout, stderr *os.File) (code int) {
 // errorPrefix heads every user-facing error line.
 const errorPrefix = "sanho: "
 
-// renderError applies the §5.9 rule that a user never sees a raw Go
+// renderError applies the guidance contract rule that a user never sees a raw Go
 // error chain: a command that composed its own guidance already printed
 // it, anything else is prefixed once.
 //
 // "Once" is the operative word. Several messages are normative *whole
-// lines* — §8 fixes `sanho: this workspace uses the v0.1 layout; run
+// lines* — the legacy-workspace contract fixes `sanho: this workspace uses the v0.1 layout; run
 // 'sanho migrate'` exactly, and hooks print it verbatim — so they carry
 // the prefix themselves. Prefixing those again would produce
 // `sanho: sanho: …` and break the very string the spec pins.
@@ -104,7 +104,7 @@ func renderError(stderr *os.File, err error) int {
 		return exitInternal
 	}
 
-	// §5.9: no raw Go error chain at user level. The infra packages tag
+	// the guidance contract: no raw Go error chain at user level. The infra packages tag
 	// their failures with a package name to locate them; that is a
 	// diagnostic for us, not information for the user (F-M3).
 	message := stripInternalPrefixes(err.Error())

@@ -1,6 +1,6 @@
 package cli
 
-// The guarded base writer (sanho-v0.2.md §5.7 invariant).
+// The guarded base writer (docs/architecture.md "State and persistence" invariant).
 //
 // This file is the ONLY place in the codebase that may call
 // wsstate.SaveBase, and `internal/architecture` fails the build for any

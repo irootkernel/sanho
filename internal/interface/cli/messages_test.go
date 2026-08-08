@@ -8,7 +8,7 @@ import (
 	"github.com/irootkernel/sanho/internal/usecase/publish"
 )
 
-// The §5.9 templates are normative: the design document fixes their
+// The the guidance contract templates are normative: the design document fixes their
 // wording, and agents and humans both read them. These tests pin the
 // three of them character for character, so a well-meaning rewording
 // fails here rather than silently changing a contract.
@@ -30,7 +30,7 @@ func TestCommitWarningConflictVariantSaysWhatHappensIfIgnored(t *testing.T) {
 	}
 }
 
-// Template 2 gains one line, and the deviation is deliberate: §5.5's
+// Template 2 gains one line, and the deviation is deliberate: the synchronization contract's
 // D3 ("no new vocabulary — resolve, add, commit") could not be kept
 // without keeping the inference that made a stash indistinguishable from
 // a resolution. `sanho sync --continue` is the new step, it is named
@@ -66,7 +66,7 @@ func TestPushRejectionMatchesTemplate3(t *testing.T) {
 
 	got := pushConflictMessage(base, head, []string{"docs/api.md", "docs/schema.md"})
 	want := strings.Join([]string{
-		// §5.9's hygiene rule fixes the OID width at 12; the template's
+		// the guidance contract's hygiene rule fixes the OID width at 12; the template's
 		// 7-character example is illustrative.
 		"sanho: your docs changes conflict with upstream (base 67c4bbfeada3 → 9a41f2cbbbbb)",
 		// The conflicted files, indented as in templates 2 and the
@@ -83,7 +83,7 @@ func TestPushRejectionMatchesTemplate3(t *testing.T) {
 }
 
 // A rejection with no file-level detail — an exhausted CAS budget
-// reaches the same renderer — prints §5.9 template 3 unchanged.
+// reaches the same renderer — prints the guidance contract template 3 unchanged.
 func TestPushRejectionWithoutFileDetailIsTheBareTemplate(t *testing.T) {
 	got := pushConflictMessage("a", "b", nil)
 	want := strings.Join([]string{
@@ -154,7 +154,7 @@ func TestSyncNeedsContinueDistinguishesTheTwoStates(t *testing.T) {
 	}
 }
 
-// §5.9 template 2 names the resolution sequence in order, and the order
+// the guidance contract template 2 names the resolution sequence in order, and the order
 // is the message: commit, then complete, or undo.
 func TestConflictTemplateNamesTheWholeSequence(t *testing.T) {
 	got := syncConflictMessage("docs", []string{"docs/api.md"})
@@ -180,7 +180,7 @@ func TestConflictTemplateNamesTheWholeSequence(t *testing.T) {
 	}
 }
 
-// §5.3 case ④: an anchor that exists is named so the advised command
+// the publication contract: an anchor that exists is named so the advised command
 // runs as printed; when none exists, no command is advised at all.
 func TestRewrittenGuidanceOnlyNamesARunnableCommand(t *testing.T) {
 	base := "67c4bbfeada37f5dda8fb79aa43216ef062cd8df"
@@ -204,7 +204,7 @@ func TestRewrittenGuidanceOnlyNamesARunnableCommand(t *testing.T) {
 	}
 
 	// And the ref it names must be one the private clone actually has.
-	// The clone is `git init --bare` plus a fetch (§5.2), so it carries
+	// The clone is `git init --bare` plus a fetch (the private-clone contract), so it carries
 	// refs/remotes/origin/<branch> and no origin/HEAD: naming HEAD made
 	// the advised command exit 128 in the state that printed it.
 	if !strings.Contains(withoutAnchor, "refs/remotes/origin/main") {
@@ -252,7 +252,7 @@ func TestHumanizeAge(t *testing.T) {
 	}
 }
 
-// §5.6: data older than 24 hours appends the age to the warning.
+// the commit-hook contract: data older than 24 hours appends the age to the warning.
 func TestStaleDataSuffix(t *testing.T) {
 	got := commitBehindClean(1) + staleDataSuffix(50*time.Hour)
 	want := "sanho: docs base is 1 commits behind — 'sanho sync' will merge cleanly (canonical last checked 2 days ago)"
@@ -261,7 +261,7 @@ func TestStaleDataSuffix(t *testing.T) {
 	}
 }
 
-// §5.9 message hygiene: English only. The only non-ASCII characters the
+// the guidance contract message hygiene: English only. The only non-ASCII characters the
 // catalog may carry are the em dash and right arrow the normative
 // templates themselves use (audit L4).
 func TestMessagesAreEnglishOnly(t *testing.T) {
@@ -318,7 +318,7 @@ func TestMessagesAreEnglishOnly(t *testing.T) {
 	messages = append(messages, daemonStopInstructions...)
 
 	// U+2014 EM DASH and U+2192 RIGHTWARDS ARROW appear verbatim in the
-	// §5.9 templates, so they are the permitted exceptions.
+	// the guidance contract templates, so they are the permitted exceptions.
 	const allowed = "—→"
 	for _, message := range messages {
 		for _, r := range message {

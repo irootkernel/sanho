@@ -1,6 +1,6 @@
 package cli
 
-// `sanho doctor` (sanho-v0.2.md §5.8): report on everything a workspace
+// `sanho doctor` (docs/cli-json.md): report on everything a workspace
 // depends on, and repair the one thing that is repairable offline.
 //
 // The exit-code rule is what makes doctor usable: exit 0 with warnings
@@ -37,7 +37,7 @@ import (
 // severityInfo is neither a pass nor a problem: it reports a state that
 // looks irregular and is not. The base-derivation check is the reason it
 // exists — a base that disagrees with commit history is a warning when
-// re-derivation *would* have run and a plain fact when §5.10
+// re-derivation *would* have run and a plain fact when the hook contract
 // deliberately withheld it, and calling both "warning" would train the
 // reader to ignore the one that matters.
 const (
@@ -200,7 +200,7 @@ func degradedWorkspace(ctx context.Context, configErr error) *workspace {
 	return ws
 }
 
-// checkGitVersion reports the installed git. §5.4 decided against
+// checkGitVersion reports the installed git. the merge contract decided against
 // enforcing a minimum: sanho uses whatever git is installed, and an
 // older one fails with git's own clear error where it matters.
 func checkGitVersion(ctx context.Context, ws *workspace, out *report) {
@@ -347,7 +347,7 @@ const originProbeTimeout = 10 * time.Second
 // checkOriginReachable probes the configured docs repository (F-M1).
 //
 // It is warn-only and deliberately so: every read path in v0.2 works
-// from the last fetch (§5.2), so an unreachable origin is a fact worth
+// from the last fetch (the private-clone contract), so an unreachable origin is a fact worth
 // reporting and never a reason for `sanho doctor` to fail. `ls-remote
 // --exit-code` is the cheapest question that actually opens the
 // transport, and the network runner is what keeps a missing credential
@@ -383,7 +383,7 @@ func firstLineOf(text string) string {
 }
 
 // checkBase validates the base file and, under --fix, repairs it by
-// re-running the §5.10 derivation. The repair is entirely local, which
+// re-running the hook contract derivation. The repair is entirely local, which
 // is the whole reason a lost trailer is not a crisis (D2, audit H4).
 func checkBase(ctx context.Context, ws *workspace, fix bool, out *report) {
 	base, hasBase, err := ws.statePort().LoadBase()
@@ -405,11 +405,11 @@ func checkBase(ctx context.Context, ws *workspace, fix bool, out *report) {
 	}
 }
 
-// repairBase re-runs the §5.10 derivation and writes the result,
+// repairBase re-runs the hook contract derivation and writes the result,
 // reporting under the `base-fix` name.
 //
 // It stands down while a sync is unfinished, for the same reason
-// post-checkout re-derivation does (§5.10) and checkBaseDerivation
+// post-checkout re-derivation does (the hook contract) and checkBaseDerivation
 // already did: the note holds the base still until the user completes
 // or undoes the sync, and a repair that wrote the newest stamped
 // commit's value would be a third party moving the one file the window
@@ -436,7 +436,7 @@ func repairBase(ctx context.Context, ws *workspace, out *report) {
 	switch saveErr := ws.statePort().SaveBase(ctx, derived); {
 	case saveErr == nil:
 	case errors.Is(saveErr, docsync.ErrBaseNotCorroborated):
-		// The §5.7 guard refused: history names a base the documents in
+		// The the state contract guard refused: history names a base the documents in
 		// this worktree cannot account for. Reported as info and named
 		// with no command, because there is nothing for the user to run
 		// — the repair IS the derivation, and it is the derivation that
@@ -451,7 +451,7 @@ func repairBase(ctx context.Context, ws *workspace, out *report) {
 	out.ok("base-fix", "re-derived the base as %s from commit history", shortOID(derived.Commit))
 }
 
-// checkBaseDerivation is the §5.10 promise this report never kept: base
+// checkBaseDerivation is the hook contract promise this report never kept: base
 // re-derivation is deliberately withheld whenever the docs worktree
 // differs from HEAD's, and the comment on rederiveBaseAfterHeadMoved
 // says `sanho doctor` flags the resulting inconsistency. Nothing did.
@@ -463,9 +463,9 @@ func repairBase(ctx context.Context, ws *workspace, out *report) {
 //     canonical history. Nothing is wrong: publication's base-advance
 //     rule moves the base past the commit the trailers name, as do
 //     `pull` and `sync`, so this is the state of every workspace that
-//     has just published. Silence, which is what §5.6 makes the success
+//     has just published. Silence, which is what the commit-hook contract makes the success
 //     signal.
-//   - The docs worktree differs from HEAD's, so §5.10 step 1 held the
+//   - The docs worktree differs from HEAD's, so the hook contract step 1 held the
 //     re-derivation back on purpose. That is a fact worth stating and
 //     not a problem: `[info]`.
 //   - Otherwise re-derivation *would* have run and would have produced a
@@ -532,7 +532,7 @@ func baseIsAheadOf(ctx context.Context, ws *workspace, derived, recorded string)
 	return ancestor, true
 }
 
-// docsMatchHead is §5.10 step 1's own test: the worktree docs hash to
+// docsMatchHead is the hook contract step 1's own test: the worktree docs hash to
 // exactly what HEAD carries.
 func docsMatchHead(ctx context.Context, ws *workspace) (bool, error) {
 	worktree, err := ws.repo.WorktreeDocsTree(ctx)
@@ -548,7 +548,7 @@ func docsMatchHead(ctx context.Context, ws *workspace) (bool, error) {
 
 // checkRegistry proves the registry is both readable and lockable. The
 // lock probe matters because a stale holder is invisible in the file
-// itself and shows up only as an unexplained hang elsewhere (§5.7).
+// itself and shows up only as an unexplained hang elsewhere (the state contract).
 func checkRegistry(ctx context.Context, out *report) {
 	file, err := openRegistry()
 	if err != nil {

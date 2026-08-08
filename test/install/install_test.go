@@ -11,9 +11,9 @@ import (
 	"testing"
 )
 
-// v0.2 is daemonless (sanho-v0.2.md §1, D4): only the sanho CLI is
+// v0.2 is daemonless (docs/architecture.md "Product boundary"): only the sanho CLI is
 // installed. The v0.1 sanhod expectation this test carried is retired
-// with the daemon itself (§6).
+// with the daemon itself (the package-boundary contract).
 func TestGoInstallProducesTheCLIBinary(t *testing.T) {
 	repoRoot := repositoryRoot(t)
 	binDir := t.TempDir()

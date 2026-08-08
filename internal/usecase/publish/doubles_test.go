@@ -12,7 +12,7 @@ import (
 //
 // Everything below the git boundary — merges, trees, CAS pushes, marker
 // detection — is covered against real git in infra/canonical and
-// infra/appgit (sanho-v0.2.md §9 rule 1). What these doubles stand in
+// infra/appgit (AGENTS.md Git-boundary testing rule). What these doubles stand in
 // for is only the *shape* of those answers, so that this package's own
 // subject — gate ordering, case dispatch, the retry budget, the
 // base-advance rule and the error vocabulary — can be driven through
@@ -43,7 +43,7 @@ type fakeCanonical struct {
 	// branch is the published history, oldest first.
 	branch []commitPair
 	// detached commits resolve but are not reachable from the branch —
-	// the "known base, wrong line of history" shape of case ④.
+	// the "known base, wrong line of history" shape of case .
 	detached []commitPair
 
 	// fetchErr, when set, fails every Fetch (unreachable canonical).

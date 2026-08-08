@@ -1,5 +1,5 @@
 // Package markers implements v0.2 conflict-marker detection over raw
-// content (sanho-v0.2.md §5.4 "Marker detector").
+// content (docs/architecture.md "Merge and marker contracts").
 //
 // Pure over bytes: callers (infra/cli) read blobs or files — applying
 // MaxScanSize — and pass content here. This replaces the v0.1 detector,
@@ -49,10 +49,10 @@ func Scan(content []byte) Result {
 }
 
 // BinarySniffSize is how much of the leading content is inspected for a
-// NUL byte when classifying binary content (sanho-v0.2.md §5.4): "a NUL
-// byte in the first 8 KiB classifies the file as binary".
+// NUL byte when classifying binary content. The "Merge and marker
+// contracts" section of docs/architecture.md fixes the window at 8 KiB.
 //
-// It is exported because callers need it: §5.4's ordering is sniff
+// It is exported because callers need it: the merge contract's ordering is sniff
 // first, size second (F-M8), so a file over MaxScanSize still has to be
 // classified — and reading exactly this many bytes is what lets that
 // happen without materializing a gigabyte.

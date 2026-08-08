@@ -1,6 +1,6 @@
 package e2e
 
-// The guidance-closure suite (sanho-v0.2.md §5.9, §9 rule 2).
+// The guidance-closure suite (docs/architecture.md "User guidance and exit codes").
 //
 // D3 is normative: *every advised command must succeed in the state
 // where it is advised*. Audit H5 was that rule being violated — messages
@@ -72,7 +72,7 @@ type closureState struct {
 // closureFixture builds one scenario.
 type closureFixture func(t *testing.T, w *world) closureState
 
-// TestGuidanceClosure is the §9 rule 2 table. The manifest cross-check
+// TestGuidanceClosure is the testing contract table. The manifest cross-check
 // runs first: a catalog entry with no fixture, or a fixture for a
 // scenario the catalog dropped, fails the build rather than silently
 // reducing coverage.
@@ -278,7 +278,7 @@ var closureFixtures = map[string]closureFixture{
 
 // --- fixtures ---------------------------------------------------------
 
-// reachV1Layout is §8's pre-migration degradation: the v0.2 binary is
+// reachV1Layout is the legacy-workspace contract's pre-migration degradation: the v0.2 binary is
 // installed, `migrate` has not run, and the push boundary is where the
 // migration is demanded.
 func reachV1Layout(t *testing.T, w *world) closureState {
@@ -319,7 +319,7 @@ func reachNotAWorkspace(t *testing.T, w *world) closureState {
 	}
 }
 
-// reachPushSyncInProgress is §5.3 step 2: a push while a conflicted sync
+// reachPushSyncInProgress is the publication contract step 2: a push while a conflicted sync
 // still owns the docs worktree.
 func reachPushSyncInProgress(t *testing.T, w *world) closureState {
 	ws := conflictedSync(t, w)
@@ -350,7 +350,7 @@ func reachCleanSyncInProgress(t *testing.T, w *world) closureState {
 	}
 }
 
-// reachMigrateBlocked is §8 step 1: a live v0.1 transaction directory.
+// reachMigrateBlocked is the legacy-workspace contract step 1: a live v0.1 transaction directory.
 func reachMigrateBlocked(t *testing.T, w *world) closureState {
 	ws := w.newWorkspace("blocked")
 	base := w.canonicalHead()
@@ -385,7 +385,7 @@ func reachMigrateBlocked(t *testing.T, w *world) closureState {
 	}
 }
 
-// reachBehindClean is the §5.9 template-1 warning: the base is behind and
+// reachBehindClean is the guidance contract warning: the base is behind and
 // the merge would be clean.
 func reachBehindClean(t *testing.T, w *world) closureState {
 	ws := w.setup("behind")
@@ -399,7 +399,7 @@ func reachBehindClean(t *testing.T, w *world) closureState {
 }
 
 // reachBehindConflicts is the same warning's conflict-prediction variant,
-// which §5.9 requires to say what happens if it is ignored.
+// which the guidance contract requires to say what happens if it is ignored.
 func reachBehindConflicts(t *testing.T, w *world) closureState {
 	ws := w.setup("behind-conflict")
 	ws.commitDocs("docs: my edit", map[string]string{"api.md": "line one\nMINE\n"})
@@ -410,7 +410,7 @@ func reachBehindConflicts(t *testing.T, w *world) closureState {
 		ws:     ws,
 		output: commitSomeCode(t, ws),
 		verify: map[string]func(*testing.T, *workspace){
-			// A conflicted sync is a success (§5.5 step 6): it did what
+			// A conflicted sync is a success (the synchronization contract): it did what
 			// it was asked to, and the markers are now the user's work.
 			"sanho sync": func(t *testing.T, ws *workspace) {
 				requireContains(t, "docs after sync", ws.readDocs("api.md"), "<<<<<<< sanho-ours")
@@ -452,7 +452,7 @@ func reachBehindUnknown(t *testing.T, w *world) closureState {
 	}
 }
 
-// reachSyncConflict is §5.9 template 2, produced by `sanho sync` itself.
+// reachSyncConflict is the guidance contract template 2, produced by `sanho sync` itself.
 func reachSyncConflict(t *testing.T, w *world) closureState {
 	ws := w.setup("sync-conflict")
 	ws.commitDocs("docs: my edit", map[string]string{"api.md": "line one\nMINE\n"})
@@ -468,7 +468,7 @@ func reachSyncConflict(t *testing.T, w *world) closureState {
 }
 
 // reachUnresolvedSync is the same two next steps printed by the commit
-// that tries to land an unresolved sync (§5.6).
+// that tries to land an unresolved sync (the commit-hook contract).
 func reachUnresolvedSync(t *testing.T, w *world) closureState {
 	ws := conflictedSync(t, w)
 	ws.git("add", "docs/api.md")
@@ -484,7 +484,7 @@ func reachUnresolvedSync(t *testing.T, w *world) closureState {
 	}
 }
 
-// reachStagedMarkers is the staged-marker gate outside any sync (§5.6
+// reachStagedMarkers is the staged-marker gate outside any sync (the commit-hook contract
 // step 1): markers sanho did not put there are blocked just the same.
 func reachStagedMarkers(t *testing.T, w *world) closureState {
 	ws := w.setup("staged-markers")
@@ -508,7 +508,7 @@ func reachStagedMarkers(t *testing.T, w *world) closureState {
 	}
 }
 
-// reachPushConflict is §5.9 template 3, the case ③-conflict rejection.
+// reachPushConflict is the guidance contract template 3, the case -conflict rejection.
 func reachPushConflict(t *testing.T, w *world) closureState {
 	ws := w.setup("push-conflict")
 	ws.commitDocs("docs: my edit", map[string]string{"api.md": "line one\nMINE\n"})
@@ -749,8 +749,8 @@ func reachSyncNoteCorrupt(t *testing.T, w *world) closureState {
 	}
 }
 
-// reachPushMarkers is §5.3 step 3: committed markers must never reach
-// canonical. The commit itself needs --no-verify, because §5.6's gate
+// reachPushMarkers is the publication contract step 3: committed markers must never reach
+// canonical. The commit itself needs --no-verify, because the commit-hook contract's gate
 // already refuses to create it — which is the point.
 func reachPushMarkers(t *testing.T, w *world) closureState {
 	ws := w.setup("push-markers")
@@ -784,7 +784,7 @@ func reachPushMarkers(t *testing.T, w *world) closureState {
 	}
 }
 
-// reachCanonicalUnreachable is the §5.2 fail-closed write path.
+// reachCanonicalUnreachable is the private-clone contract fail-closed write path.
 func reachCanonicalUnreachable(t *testing.T, w *world) closureState {
 	ws := w.setup("offline")
 	ws.commitDocs("docs: local edit", map[string]string{"api.md": "line one\nmine\n"})
@@ -811,7 +811,7 @@ func reachCanonicalUnreachable(t *testing.T, w *world) closureState {
 	}
 }
 
-// reachHistoryRewritten is §5.3 case ④ with no re-anchor available:
+// reachHistoryRewritten is the publication contract with no re-anchor available:
 // canonical history was replaced wholesale, so neither the recorded base
 // commit nor its docs tree survives.
 //
@@ -847,7 +847,7 @@ func reachHistoryRewritten(t *testing.T, w *world) closureState {
 	}
 }
 
-// reachStampWarning is §5.1's never-blocking commit-msg warning: the
+// reachStampWarning is the provenance contract's never-blocking commit-msg warning: the
 // commit lands, unstamped, and names the local repair.
 func reachStampWarning(t *testing.T, w *world) closureState {
 	ws := w.setup("stamp")
@@ -869,8 +869,8 @@ func reachDoctorFixHint(t *testing.T, w *world) closureState {
 	return closureState{ws: ws, output: ws.sanho("doctor").combined(), verify: baseRestored()}
 }
 
-// reachStaleData is §5.2's degraded read: cached canonical facts older
-// than the §5.6 threshold always say how old they are.
+// reachStaleData is the private-clone contract's degraded read: cached canonical facts older
+// than the commit-hook contract threshold always say how old they are.
 func reachStaleData(t *testing.T, w *world) closureState {
 	ws := w.setup("stale")
 	ws.staleFetchMarker(time.Now().Add(-72 * time.Hour).UTC().Format(time.RFC3339Nano))
@@ -1126,7 +1126,7 @@ func reachSyncUnknownBase(t *testing.T, w *world) closureState {
 	}
 }
 
-// reachSyncUnreachable is §5.2's fail-closed write path, met from the
+// reachSyncUnreachable is the private-clone contract's fail-closed write path, met from the
 // command rather than from the hook (F-M3).
 func reachSyncUnreachable(t *testing.T, w *world) closureState {
 	ws := w.setup("sync-offline")
@@ -1208,7 +1208,7 @@ func reachProjectHasWorkspaces(t *testing.T, w *world) closureState {
 // --- shared fixture pieces --------------------------------------------
 
 // conflictedSync leaves a workspace mid-sync with markers in docs/ and a
-// sync note on disk — the one pending state v0.2 has (§6).
+// sync note on disk — the one pending state v0.2 has (the package-boundary contract).
 func conflictedSync(t *testing.T, w *world) *workspace {
 	t.Helper()
 
@@ -1299,7 +1299,7 @@ func reachSyncContinueForeignHistory(t *testing.T, w *world) closureState {
 }
 
 // commitSomeCode makes an ordinary non-docs commit, which is what fires
-// the §5.6 freshness warning without changing docs.
+// the commit-hook contract freshness warning without changing docs.
 func commitSomeCode(t *testing.T, ws *workspace) string {
 	t.Helper()
 
@@ -1332,7 +1332,7 @@ func resolutionOutcomes() map[string]func(*testing.T, *workspace) {
 		"git add docs/ && git commit": func(t *testing.T, ws *workspace) {
 			requireEqual(t, "docs/api.md", ws.readDocs("api.md"), "line one\nRESOLVED\n")
 
-			// §5.5 step 6: the resolution is an ordinary commit and
+			// the synchronization contract: the resolution is an ordinary commit and
 			// nothing else happens at commit time — v0.2 removed
 			// post-commit outright, and no hook writes sanho state. The
 			// sync therefore stands until `--continue` records it, and

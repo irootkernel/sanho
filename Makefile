@@ -55,7 +55,6 @@ docs-check:
 	@test -f docs/hands-on-testing.md
 	@test -f docs/operations.md
 	@test -f docs/recovery.md
-	@test -f docs/readme/kor.md
 	@if grep -REn 'docs/requirement\.md|build-server-with-web|run-web-local|run-local-dev-with-web|WEB_DIST_DIR|PTY_' README.md docs; then \
 		echo "Error: stale documentation reference found."; \
 		exit 1; \
@@ -106,8 +105,7 @@ test-int: cli-build
 	$(GO) test ./test/docsync -count=1 -race
 
 # test/cli/e2e is the v0.2 scenario suite restored by P5: the guidance
-# closure table (§9 rule 2), the S-matrix (§9 rule 5), and process-level
-# concurrency (§9 rule 3).
+# guidance-closure table, the scenario matrix, and process-level concurrency.
 #
 # It runs WITHOUT -race, deliberately. Every assertion here is about
 # separate `sanho` and `git` *processes*, so the detector would only

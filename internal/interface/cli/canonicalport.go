@@ -11,7 +11,7 @@ import (
 // It exists for one reason: the canonical repository is docs-only, so
 // the merge it runs reports conflicted paths relative to *its* root,
 // which is the docs root. The app-side merge already prefixes those with
-// the workspace's docs directory (see appPort.MergeDocs), and §5.9's
+// the workspace's docs directory (see appPort.MergeDocs), and the guidance contract's
 // templates print `docs/api.md`. Prefixing here too means a conflict
 // reads identically whether it was discovered at push time or at sync
 // time, which is what lets one message template serve both.

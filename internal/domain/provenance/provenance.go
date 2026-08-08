@@ -1,5 +1,5 @@
 // Package provenance defines the v0.2 ancestry-provenance model
-// (sanho-v0.2.md D2, §5.1): which canonical state a workspace's docs
+// (docs/architecture.md "Provenance"): which canonical state a workspace's docs
 // derive from, how that fact is stamped into commit trailers, and how
 // it is re-derived from history after HEAD moves.
 //
@@ -8,7 +8,7 @@ package provenance
 
 import "regexp"
 
-// Trailer keys (sanho-v0.2.md §5.1).
+// Trailer keys (docs/architecture.md "Provenance").
 const (
 	// TrailerBase records the canonical commit the docs derive from.
 	TrailerBase = "docs-base"
@@ -54,7 +54,7 @@ func (b Base) Trailers() []string {
 }
 
 // StampInputs are the facts the commit-msg hook gathers locally to decide
-// whether to stamp (sanho-v0.2.md §5.1 stamping rule).
+// whether to stamp (docs/architecture.md "Provenance" stamping rule).
 type StampInputs struct {
 	// MessageHasBase is true when the commit message already contains a
 	// docs-base trailer.
@@ -68,7 +68,7 @@ type StampInputs struct {
 	HeadParentDocsTree string
 }
 
-// ShouldStamp implements the §5.1 rule: stamp when the commit changes
+// ShouldStamp implements the provenance contract rule: stamp when the commit changes
 // docs relative to HEAD, or when HEAD itself changed docs relative to
 // its parent (covers --amend of a docs-touching commit, including
 // message-only rewords). Over-stamping is harmless by design.
@@ -87,7 +87,7 @@ func ShouldStamp(in StampInputs) bool {
 }
 
 // CommitTrailers is one commit's parsed trailer values, used for base
-// re-derivation after HEAD moves (§5.10).
+// re-derivation after HEAD moves (the hook contract).
 type CommitTrailers struct {
 	Commit string
 	// Values maps trailer key → values in message order.

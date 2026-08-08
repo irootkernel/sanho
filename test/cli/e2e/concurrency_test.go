@@ -1,6 +1,6 @@
 package e2e
 
-// Process-level concurrency (sanho-v0.2.md §9 rule 3).
+// Process-level concurrency (AGENTS.md testing rules).
 //
 // The unit suites run with `-race` and prove that the *code* is safe
 // under goroutines. That is not the property v0.2 needs. Sanho is
@@ -10,8 +10,8 @@ package e2e
 // process's memory model says anything about that, so these tests spawn
 // real processes and let the operating system schedule them.
 //
-//	C1  N processes hammering the registry flock (§5.7)
-//	C2  two workspaces publishing into one canonical (§5.3 CAS retry)
+//	C1  N processes hammering the registry flock (the state contract)
+//	C2  two workspaces publishing into one canonical (the publication contract CAS retry)
 //	C3  the guard for the one combination that is not concurrent by
 //	    design: a push while a sync is unresolved
 
@@ -35,7 +35,7 @@ const registryWriters = 8
 // sometimes tests anything, so it is run more than once.
 const publicationRaceIterations = 5
 
-// TestC1RegistryFlockSerializesConcurrentProcesses is §5.7's access
+// TestC1RegistryFlockSerializesConcurrentProcesses is the state contract's access
 // protocol under contention: every writer either gets the lock inside
 // its budget or says so with the lock path, and the file that results is
 // the union of all of them — with its .bak sibling equally intact.
@@ -115,7 +115,7 @@ func TestC1RegistryFlockSerializesConcurrentProcesses(t *testing.T) {
 	}
 }
 
-// TestC2TwoWorkspacesRacingToPublish is the §5.3 CAS path driven by the
+// TestC2TwoWorkspacesRacingToPublish is the publication contract CAS path driven by the
 // operating system rather than by a stub: two real pushes, started
 // together, into one canonical repository.
 //
@@ -176,7 +176,7 @@ func runPublicationRace(t *testing.T) {
 		t.Logf("%s was rejected and routed at sanho sync", ws.name)
 		// A rejected racer must be routed at `sanho sync`, and that must
 		// work — the CAS-exhausted and conflict rejections both say so
-		// (§5.3, §5.9), and D3 makes saying it a promise.
+		// (the publication contract, the guidance contract), and D3 makes saying it a promise.
 		requireContains(t, ws.name+" rejection", results[i].combined(), "sanho sync")
 		requireExit(t, ws.name+" advised sync", ws.run("sync"), 0)
 		requireExit(t, ws.name+" push after syncing", ws.push(), 0)
@@ -194,7 +194,7 @@ func runPublicationRace(t *testing.T) {
 	requireEqual(t, "canonical api.md", w.canonicalFile(head, "api.md"), "canonical api\n")
 
 	// Canonical history stays linear: one commit per publish, no merges
-	// (§5.3 canonical commit convention).
+	// (the publication contract canonical commit convention).
 	for _, line := range strings.Split(strings.TrimSpace(
 		w.git(w.origin, "log", "--format=%h %p", head).stdout), "\n") {
 		if len(strings.Fields(line)) > 2 {
@@ -296,7 +296,7 @@ func assertNoMachineLocalSiblings(t *testing.T, ws *workspace) {
 // v0.2 does not support concurrently, and does not try to.
 //
 // A sync and a push in the *same* workspace are not two operations to
-// interleave: an unresolved sync owns the docs worktree, so §5.3 step 2
+// interleave: an unresolved sync owns the docs worktree, so the publication contract step 2
 // refuses the push outright rather than publishing half a resolution.
 // The refusal's own closure — that `sanho sync --abort` works from
 // there — is the push_sync_in_progress row of the closure suite; this

@@ -169,7 +169,7 @@ func TestLinkedWorktreeIsManaged(t *testing.T) {
 		t.Fatal("the linked worktree carries its own config; this test would prove nothing")
 	}
 
-	// 1. The §5.6 marker gate fires there.
+	// 1. The the commit-hook contract marker gate fires there.
 	linked.writeDocs(map[string]string{
 		"api.md": "<<<<<<< sanho-ours\nmine\n=======\ntheirs\n>>>>>>> sanho-upstream\n",
 	})
@@ -204,7 +204,7 @@ func TestLinkedWorktreeIsManaged(t *testing.T) {
 // not leak into other repositories ---------------------------------------
 
 // TestLinkedWorktreePushLeavesTheAppRepositoryUntouched is C3's repro
-// (sanho-v0.2.md §7 C3, gitx.Runner.env()).
+// (docs/architecture.md "Git execution policy", gitx.Runner.env()).
 //
 // git exports an absolute GIT_DIR into the environment of every hook it
 // runs inside a LINKED worktree. Before the fix, gitx.Runner inherited
@@ -291,7 +291,7 @@ func TestLinkedWorktreePushLeavesTheAppRepositoryUntouched(t *testing.T) {
 	// pushed for the first time — pointing at the commit this test just
 	// made, in the app's own code remote. A pre-fix binary replaced the
 	// whole set with canonical's own branches instead of adding this one
-	// (sanho-v0.2.md §7 C3's reproduction showed
+	// (the Git execution policy). The broken result looked like
 	// "refs/remotes/origin/main refs/remotes/origin/wtbranch" — canonical
 	// content under the app's own ref names).
 	wantRefsAfter := refsBefore + "refs/remotes/origin/wt-integrity-feature " + linkedHead + "\n"

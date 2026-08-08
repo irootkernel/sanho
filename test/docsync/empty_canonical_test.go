@@ -8,7 +8,7 @@ import (
 )
 
 // A canonical repository nothing has ever published into is the ordinary
-// starting state of a new project (sanho-v0.2.md §5.3 bootstrap), not a
+// starting state of a new project (docs/architecture.md "Publication" bootstrap), not a
 // failure. Consuming and reconciling have the same correct answer there:
 // there is nothing upstream, so do nothing and say so. The first `git
 // push` creates canonical's root commit; only then is there anything to

@@ -2,9 +2,9 @@ package appgit
 
 // Write side of the application-repository adapter: everything
 // `sanho sync` and `sanho pull` need in order to move the docs worktree
-// and index (sanho-v0.2.md §5.5). The read side in appgit.go keeps its
+// and index (docs/architecture.md "Synchronization"). The read side in appgit.go keeps its
 // stricter contract — pre-push publication still touches nothing —
-// because worktree inviolability (§5.3) belongs to the push path, not
+// because worktree inviolability (the publication contract) belongs to the push path, not
 // to sync.
 //
 // One rule governs every operation here: **only the docs pathspec is
@@ -62,7 +62,7 @@ const pathBatchSize = 200
 func literalPathspec(path string) string { return ":(literal)" + path }
 
 // DocsClean reports whether the docs paths are clean in the worktree
-// and the index relative to HEAD (§5.5 step 1). Paths outside the docs
+// and the index relative to HEAD (the synchronization contract). Paths outside the docs
 // directory are not consulted: the user's non-docs work in progress is
 // none of sync's business.
 //
@@ -82,7 +82,7 @@ func (r *Repo) DocsClean(ctx context.Context) (bool, error) {
 }
 
 // HeadDocsTree returns HEAD's docs tree OID, the "ours" side of the
-// §5.5 merge. An unborn HEAD and a HEAD without a docs directory both
+// the synchronization contract merge. An unborn HEAD and a HEAD without a docs directory both
 // yield the empty tree, which is the same stand-in DocsTreeOf uses:
 // "this commit contributes no docs content" is one state, however it
 // came about.
@@ -271,7 +271,7 @@ func checkoutRecoveryError(docsDir string, err error) error {
 }
 
 // RestoreDocsFromHead resets the docs worktree and index to HEAD
-// (`sanho sync --abort`, §5.5 step 7). It is CheckoutDocsTree of HEAD's
+// (`sanho sync --abort`, the synchronization contract). It is CheckoutDocsTree of HEAD's
 // docs tree, which is what makes it correct for the state an aborted
 // sync leaves behind: files the conflicted merge introduced are absent
 // from HEAD's tree, so the deletion pass removes them from the worktree
@@ -307,7 +307,7 @@ func (r *Repo) CommitDocs(ctx context.Context, message string) (string, error) {
 	return oid, nil
 }
 
-// ScanWorktreeDocsForMarkers applies the §5.4 detector to the docs
+// ScanWorktreeDocsForMarkers applies the merge contract detector to the docs
 // *worktree* — the sync-in-progress half of the detector's contract,
 // where ScanDocsBlobsForMarkers covers committed content. It returns
 // the repository-relative paths that still carry conflict markers.
@@ -352,7 +352,7 @@ func (r *Repo) ScanWorktreeDocsForMarkers(ctx context.Context) ([]string, error)
 			return fmt.Errorf("appgit: stat %s: %w", name, err)
 		}
 		if info.Size() > markers.MaxScanSize {
-			// §5.4's order, as corrected by F-M8: classify first, then
+			// the merge contract's order, as corrected by F-M8: classify first, then
 			// apply the size rule. A large *binary* file — an image, a
 			// PDF, a recording under docs/ — cannot carry a conflict
 			// marker, so refusing it would block the commit path over
@@ -383,7 +383,7 @@ func (r *Repo) ScanWorktreeDocsForMarkers(ctx context.Context) ([]string, error)
 	return conflicted, nil
 }
 
-// sniffBinaryFile reads only the leading bytes §5.4's binary rule looks
+// sniffBinaryFile reads only the leading bytes the merge contract's binary rule looks
 // at, which is what makes classifying an oversized file cheap enough to
 // do before refusing it.
 func sniffBinaryFile(path string) (bool, error) {
