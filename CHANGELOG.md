@@ -1,6 +1,19 @@
 # Changelog
 
-## v0.2.0 - 2026-08-07
+## v0.2.0 - 2026-08-08
+
+### Documentation before release
+
+- The hands-on migration scenario now documents a production-safe v0.1.6
+  fixture with an isolated daemon home, socket, binary path, and temporary
+  service label. The verified rollback restores the seven hook backups made by
+  `migrate`; rerunning v0.1 `sanho init` after restoring `.sanho.json` is
+  intentionally avoided because it rejects an existing workspace and
+  `--force` may replace docs.
+- Canonical rewrite recovery can now be exercised without force-pushing a
+  shared remote. Independent local bare mirrors cover identical-tree automatic
+  re-derivation, changed-tree recovery, missing-file absorption refusal, and
+  both `origin/main` and `origin/master` guidance.
 
 ### Added before release (fourth external review wave)
 
