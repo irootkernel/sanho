@@ -345,6 +345,73 @@ label만 정리한다.
    canonical 파일 하나를 누락한 변형은 absorption 증명을 통과하면 안 된다.
 9. 존재하지 않는 commit을 `--rebase-onto`에 주면 거절되는지 확인한다.
 
+### H07을 force 없이 로컬에서 실행하는 방법
+
+공유 canonical을 force-push하지 않아도 같은 Git 상태를 만들 수 있다. case마다
+서로 독립된 application remote, canonical bare 저장소, `SANHO_HOME`을 만들고
+canonical URL에는 한 실행에서만 쓰는 로컬 경로를 사용한다. 먼저 원래
+canonical을 통해 workspace를 초기화하고 docs를 두 번 이상 게시한 뒤, 아직
+push하지 않은 로컬 docs commit을 하나 만든다.
+
+case A replacement는 원래 canonical의 최종 checkout을 orphan branch의 root
+commit으로 다시 commit한다. 교체 전에 두 tree가 같은지 반드시 확인한다.
+
+```bash
+git clone "$case_root/canonical.git" "$case_root/rewrite-work"
+git -C "$case_root/rewrite-work" checkout --orphan rewritten-main
+git -C "$case_root/rewrite-work" commit -m 'docs: squash canonical history'
+git -C "$case_root/rewrite-work" branch -M main
+
+old_tree=$(git --git-dir="$case_root/canonical.git" rev-parse 'main^{tree}')
+new_tree=$(git -C "$case_root/rewrite-work" rev-parse 'main^{tree}')
+test "$old_tree" = "$new_tree"
+git clone --bare "$case_root/rewrite-work" "$case_root/replacement.git"
+```
+
+case B replacement는 새 저장소에서 unrelated root commit을 만든다. 원래
+canonical에는 없던 파일도 하나 넣어 이후 absorption 검증에 사용하고, tree가
+실제로 다른지 확인한다. `master` 안내 검증은 처음부터 initial branch가
+`master`뿐인 별도 case로 반복한다.
+
+replacement가 준비된 뒤 Sanho process가 실행 중이지 않을 때 같은 filesystem
+안에서 두 경로를 rename한다. application config의 URL은 바꾸지 않는다.
+
+```bash
+mv "$case_root/canonical.git" "$case_root/canonical.original.git"
+mv "$case_root/replacement.git" "$case_root/canonical.git"
+```
+
+이것은 push가 아니므로 force option이나 외부 ref 변경이 없다. 원본 bare
+저장소도 그대로 보존된다. 교체 사이에는 canonical 경로가 잠시 없으므로 공유
+저장소나 동시에 사용되는 fixture에는 적용하지 않는다.
+
+case B의 거절 전후에는 application remote와 replacement canonical의 head를
+기록해 둘 다 그대로인지 확인한다. 출력된 후보 명령은 직접 고쳐 쓰지 말고
+그대로 실행한다.
+
+```bash
+git -C <출력된-private-clone> log --oneline refs/remotes/origin/main
+# master-only case에서는 refs/remotes/origin/master
+```
+
+새 canonical 파일 누락 변형은 다음처럼 publication 경계까지 실행한다.
+`sync --continue`는 누락을 사용자가 선택한 해소로 받아들일 수 있지만, 이어지는
+push의 absorption warrant는 이를 거절하고 양쪽 remote를 그대로 보존해야 한다.
+누락 파일을 되살려 같은 resolution commit을 amend하면 post-rewrite hook이 옛
+trailer에서 base를 다시 유도할 수 있으므로, 새 head를 다시 명시한 뒤 push한다.
+
+```bash
+git add docs/ && git commit --amend --no-edit
+sanho sync --rebase-onto <새-canonical-head>
+git push
+```
+
+이 복구는 dummy commit을 추가하지 않는다. 마지막에는 canonical이 replacement의
+모든 파일과 로컬 파일을 포함하는지, `.sanho_base.json`이 새 head/tree를
+가리키는지, `git rev-list --min-parents=2 --count <branch>`가 0인지 확인한다.
+case A, case B, master-only case 사이에서 `.sanho_base.json`이나 private clone을
+되감아 재사용하지 말고 fixture 전체를 새로 만든다.
+
 ## H08. symlink·file mode·binary 왕복 (신설)
 
 v0.1은 tar snapshot 전송에서 symlink를 조용히 잃었다(audit H1). v0.2는 내용을
