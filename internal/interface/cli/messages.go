@@ -706,6 +706,10 @@ func doctorHooksMessage(problems string) string {
 	return fmt.Sprintf("%s — run 'sanho doctor --fix' to reinstall them", problems)
 }
 
+func doctorPublicationPendingMessage() string {
+	return "committed docs differ from the publication base after hook repair; make another docs-changing commit, then run 'git push' to publish them"
+}
+
 // customHooksPathMessage explains why lifecycle and repair commands do
 // not write hooks into a path whose ownership may be shared or tracked.
 // It deliberately gives a condition rather than a command: the right
@@ -1152,6 +1156,14 @@ var Catalog = []CatalogEntry{
 		Sample:       doctorHooksMessage("pre-commit: missing"),
 		Match:        "to reinstall them",
 		NextCommands: []string{"sanho doctor --fix"},
+	},
+	{
+		ID:           "doctor_publication_pending",
+		Source:       "doctorPublicationPendingMessage",
+		Scenario:     "doctor_publication_pending",
+		Sample:       doctorPublicationPendingMessage(),
+		Match:        "committed docs differ from the publication base after hook repair",
+		NextCommands: []string{"git push"},
 	},
 	{
 		ID:            "sync_note_pending",

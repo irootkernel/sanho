@@ -117,6 +117,64 @@ func TestDoctorDoesNotRepairCustomHooksPath(t *testing.T) {
 	}
 }
 
+func TestStatusAndDoctorExposePublicationMissedDuringHookOutage(t *testing.T) {
+	w := newWorld(t, map[string]string{"api.md": "canonical api\n"})
+	w.initAndAdoptDocs()
+	canonicalBefore := w.canonicalHead()
+	for _, name := range []string{"pre-commit", "commit-msg", "pre-push", "post-checkout", "post-merge", "post-rewrite"} {
+		if err := os.Chmod(w.hookPath(name), 0644); err != nil {
+			t.Fatalf("disable hook %s: %v", name, err)
+		}
+	}
+
+	w.commitDocs("docs: committed during hook outage", map[string]string{"api.md": "outage edit\n"})
+	if pushed := w.push(); pushed.exitCode != 0 {
+		t.Fatalf("app push during hook outage failed\n%s", pushed.combined())
+	}
+	if got := w.canonicalHead(); got != canonicalBefore {
+		t.Fatalf("canonical moved during hook outage from %s to %s", canonicalBefore, got)
+	}
+	requireContains(t, "status", w.sanho(w.app, "status").stdout, "publish   : committed docs changes are pending publication")
+
+	var status struct {
+		Publication struct {
+			Known   bool `json:"known"`
+			Pending bool `json:"pending"`
+		} `json:"publication"`
+	}
+	statusJSON := w.sanho(w.app, "status", "--json").stdout
+	if err := json.Unmarshal([]byte(statusJSON), &status); err != nil {
+		t.Fatalf("parse status JSON: %v\n%s", err, statusJSON)
+	}
+	if !status.Publication.Known || !status.Publication.Pending {
+		t.Fatalf("publication = %+v, want known and pending", status.Publication)
+	}
+
+	fixed := w.sanho(w.app, "doctor", "--fix")
+	requireContains(t, "doctor --fix", fixed.stdout, "make another docs-changing commit, then run 'git push'")
+	if noUpdate := w.push(); noUpdate.exitCode != 0 {
+		t.Fatalf("no-op push after repair failed\n%s", noUpdate.combined())
+	}
+	if got := w.canonicalHead(); got != canonicalBefore {
+		t.Fatalf("a no-op app push unexpectedly republished docs: %s", got)
+	}
+
+	w.commitDocs("docs: republish after hook repair", map[string]string{"api.md": "republished edit\n"})
+	if pushed := w.push(); pushed.exitCode != 0 {
+		t.Fatalf("push after the advised commit failed\n%s", pushed.combined())
+	}
+	if got := w.canonicalFile(w.canonicalHead(), "api.md"); got != "republished edit\n" {
+		t.Fatalf("canonical api.md = %q, want republished content", got)
+	}
+	statusJSON = w.sanho(w.app, "status", "--json").stdout
+	if err := json.Unmarshal([]byte(statusJSON), &status); err != nil {
+		t.Fatalf("parse converged status JSON: %v\n%s", err, statusJSON)
+	}
+	if !status.Publication.Known || status.Publication.Pending {
+		t.Fatalf("converged publication = %+v, want known and not pending", status.Publication)
+	}
+}
+
 // Scenario 2 — init on an empty canonical, then the first push
 // bootstraps it (§5.3 bootstrap).
 func TestInitOnEmptyCanonicalThenFirstPushPublishes(t *testing.T) {

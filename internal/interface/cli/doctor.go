@@ -26,6 +26,7 @@ import (
 	"github.com/irootkernel/sanho/internal/infra/gitx"
 	"github.com/irootkernel/sanho/internal/infra/registry"
 	"github.com/irootkernel/sanho/internal/infra/wsstate"
+	"github.com/irootkernel/sanho/internal/usecase/admin"
 	"github.com/irootkernel/sanho/internal/usecase/docsync"
 
 	"github.com/spf13/cobra"
@@ -145,9 +146,12 @@ func runDoctor(cmd *cobra.Command, fix, asJSON bool) error {
 		out.ok("workspace-config", "schema version %d, docs dir %s, project %s",
 			ws.config.SchemaVersion, ws.config.DocsDir, ws.config.Project)
 	}
-	checkHooks(ctx, ws, fix, &out)
+	hooksRepaired := checkHooks(ctx, ws, fix, &out)
 	checkClone(ctx, ws, &out)
 	checkBase(ctx, ws, fix, &out)
+	if hooksRepaired {
+		checkPublicationAfterHookRepair(ctx, ws, &out)
+	}
 	checkRegistry(ctx, &out)
 	checkSyncNote(ws, &out)
 	checkDocsInventory(ws, &out)
@@ -215,28 +219,28 @@ func checkGitVersion(ctx context.Context, ws *workspace, out *report) {
 // also owns (F-H6b). The previous advice was `sanho init --force`, which
 // replaces the docs directory — a destructive answer to "a hook line is
 // missing", and one that refuses outright in an initialized workspace.
-func checkHooks(ctx context.Context, ws *workspace, fix bool, out *report) {
+func checkHooks(ctx context.Context, ws *workspace, fix bool, out *report) bool {
 	if _, err := ws.repo.DefaultHooksDir(ctx); err != nil {
 		var custom *appgit.CustomHooksPathError
 		if errors.As(err, &custom) {
 			out.warn("hooks", "%s", customHooksPathMessage(custom.Path))
-			return
+			return false
 		}
 		out.warn("hooks", "could not inspect the hooks directory: %s", causeOf(err))
-		return
+		return false
 	}
 	problems, err := hookProblems(ctx, ws)
 	if err != nil {
 		out.warn("hooks", "could not inspect the hooks directory: %s", causeOf(err))
-		return
+		return false
 	}
 	if len(problems) == 0 {
 		out.ok("hooks", "all %d hooks installed exactly once", len(appgit.Hooks()))
-		return
+		return false
 	}
 	if !fix {
 		out.warn("hooks", "%s", doctorHooksMessage(strings.Join(problems, "; ")))
-		return
+		return false
 	}
 
 	// Remove first, then install: a duplicated or legacy line is only
@@ -244,18 +248,34 @@ func checkHooks(ctx context.Context, ws *workspace, fix bool, out *report) {
 	// both (audit L3).
 	if err := ws.repo.RemoveHooks(ctx); err != nil {
 		out.warn("hooks-fix", "could not remove the old hook lines: %s", causeOf(err))
-		return
+		return false
 	}
 	if err := ws.repo.InstallHooks(ctx); err != nil {
 		out.warn("hooks-fix", "could not reinstall the hooks: %s", causeOf(err))
-		return
+		return false
 	}
 	remaining, err := hookProblems(ctx, ws)
 	if err != nil || len(remaining) > 0 {
 		out.warn("hooks-fix", "%s", doctorHooksMessage(strings.Join(remaining, "; ")))
-		return
+		return false
 	}
 	out.ok("hooks", "reinstalled %d hooks (%s)", len(appgit.Hooks()), strings.Join(problems, "; "))
+	return true
+}
+
+func checkPublicationAfterHookRepair(ctx context.Context, ws *workspace, out *report) {
+	base, hasBase, err := ws.statePort().LoadBase()
+	if err != nil {
+		return
+	}
+	syncing, err := ws.statePort().SyncInProgress()
+	if err != nil {
+		return
+	}
+	known, pending := admin.DetectPublication(ctx, ws.repo, base, hasBase, syncing)
+	if known && pending {
+		out.warn("publication", "%s", doctorPublicationPendingMessage())
+	}
 }
 
 // hookProblems lists everything wrong with the installed hooks.

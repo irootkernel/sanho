@@ -40,6 +40,10 @@ func TestStatusJSONSchema(t *testing.T) {
 			Behind int  `json:"behind"`
 			Ahead  int  `json:"ahead"`
 		} `json:"relation"`
+		Publication struct {
+			Known   bool `json:"known"`
+			Pending bool `json:"pending"`
+		} `json:"publication"`
 		SyncPreview struct {
 			Known     bool     `json:"known"`
 			Clean     bool     `json:"clean"`
@@ -68,6 +72,9 @@ func TestStatusJSONSchema(t *testing.T) {
 	}
 	if document.Canonical.PublicationBranch != "main" {
 		t.Errorf("publication branch = %q, want main", document.Canonical.PublicationBranch)
+	}
+	if !document.Publication.Known || document.Publication.Pending {
+		t.Errorf("publication = %+v, want known and not pending", document.Publication)
 	}
 	if !document.Relation.Known || document.Relation.Behind != 1 {
 		t.Errorf("relation = %+v, want known and behind 1", document.Relation)

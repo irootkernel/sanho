@@ -819,6 +819,29 @@ note를 지우고 base를 옮겼으며, 그 판정을 hook이 수행했다 — �
 sync      : IN PROGRESS — complete it with 'sanho sync --continue', or undo it with 'sanho sync --abort'
 ```
 
+#### 로컬 게시 대기 축
+
+canonical 관계와 별도로 `status`는 committed local docs가 마지막 publication
+checkpoint를 벗어났는지 계산한다. base가 기록돼 있고 sync note가 없으며 HEAD의
+docs tree를 읽을 수 있을 때만 `known=true`다. 그 tree가 `base.tree`와 다르면
+`pending=true`이며 사람 출력에 다음 줄을 더한다.
+
+```text
+publish   : committed docs changes are pending publication
+```
+
+이 축은 canonical의 `behind/ahead`를 재해석하지 않는다. 특히 hook 실행 비트가
+사라진 동안 commit과 app-repository push가 성공하면 canonical clone 기준
+relation과 sync는 여전히 up-to-date일 수 있지만 publication은 pending이다.
+진행 중인 sync에서는 base가 의도적으로 이전 값을 유지하므로 판정을 unknown으로
+둔다.
+
+`doctor --fix`가 hook을 실제로 재설치한 직후 pending을 발견하면 새
+docs-changing commit을 만든 뒤 push하라고 안내한다. 이미 app remote까지 올라간
+tip에 `git push`만 다시 실행하면 Git이 pre-push stdin에 ref update를 주지 않아
+게시 흐름이 시작되지 않기 때문이다. 별도 manual publish command는 이 버전에
+추가하지 않는다.
+
 ### `sanho sync --abort`
 
 note가 있으면 언제나 유효하다. **읽을 수 없는 note도 포함이다.** abort는 망가진

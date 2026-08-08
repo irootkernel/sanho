@@ -228,6 +228,10 @@ commit과 build date는 사람용 `sanho version` 출력에만 있다. 기계가
     "behind": 2,
     "ahead": 0
   },
+  "publication": {
+    "known": true,
+    "pending": false
+  },
   "sync_preview": {
     "known": true,
     "clean": false,
@@ -262,6 +266,8 @@ commit과 build date는 사람용 `sanho version` 출력에만 있다. 기계가
 | `relation.known` | base가 이 clone에서 해석되고 거리 계산이 성공했을 때만 `true`. `false`면 `behind`/`ahead`는 0이며 **모른다는 뜻이지 같다는 뜻이 아니다.** |
 | `relation.behind` | canonical이 base보다 앞서 있는 commit 수. |
 | `relation.ahead` | base가 canonical head보다 앞서 있는 commit 수. |
+| `publication.known` | base가 있고 sync가 진행 중이지 않으며 local HEAD docs tree를 읽었을 때만 `true`. |
+| `publication.pending` | `known=true`일 때 local HEAD docs tree가 `base.tree`와 다르다. hook 장애 중 app push만 완료된 상태도 탐지한다. |
 | `sync_preview.known` | 예측을 계산했는지. `false`면 `clean`과 `conflicts`를 신뢰하지 않는다. |
 | `sync_preview.clean` | `sanho sync`가 충돌 없이 병합될 것으로 예측된다. |
 | `sync_preview.conflicts` | 충돌이 예상되는 경로. 저장소 기준 상대 경로다(`docs/api.md`). |
@@ -270,7 +276,9 @@ commit과 build date는 사람용 `sanho version` 출력에만 있다. 기계가
 | `siblings[].last_updated_at` | 그 작업공간이 마지막으로 자기 상태를 보고한 시각(RFC3339, UTC). 보고한 적이 없으면 `0001-01-01T00:00:00Z`. |
 
 `relation`과 `sync_preview`는 canonical이 비어 있거나 base가 clone에서 해석되지
-않으면 계산하지 않는다. 값을 지어내지 않는 것이 규칙이다.
+않으면 계산하지 않는다. `publication`은 canonical 관계와 독립적인 local 축이며,
+base가 없거나 sync 진행 중이거나 HEAD tree를 읽지 못하면 `known=false`다. 값을
+지어내지 않는 것이 규칙이다.
 
 sibling 항목은 다른 checkout이 **보고한 값**이다. 이 clone이 가지고 있지 않은
 commit을 가리킬 수 있으며, 그때 관계는 `unknown`이다.
@@ -419,7 +427,7 @@ commit을 가리킬 수 있으며, 그때 관계는 `unknown`이다.
 ```
 
 `checks`의 순서는 고정이며(`git` → `workspace-config` → `hooks` → `clone`
-[→ `canonical-head`] → `base` [→ `base-derivation`] [→ `base-fix`] →
+[→ `canonical-head`] → `base` [→ `base-derivation`] [→ `base-fix`] [→ `publication`] →
 `registry` → `sync` → `docs`),
 `warnings`는 `severity == "warning"`인 항목 수다. `detail`은 사람이 읽는
 문장이므로 **파싱 대상이 아니다.** 분기는 `name`과 `severity`로 한다.

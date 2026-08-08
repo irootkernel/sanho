@@ -97,6 +97,13 @@ type fakePreview struct {
 	calls        int
 }
 
+type fakeLocal struct {
+	tree string
+	err  error
+}
+
+func (l fakeLocal) HeadDocsTree(ctx context.Context) (string, error) { return l.tree, l.err }
+
 func (p *fakePreview) Preview(ctx context.Context, base provenance.Base, head, headTree string) (bool, bool, []string) {
 	p.calls++
 	return p.known, p.clean, p.conflicts
@@ -123,9 +130,54 @@ func newQuery() (*StatusQuery, *fakeCanonical, *fakePreview) {
 		State:       fakeState{base: provenance.Base{Commit: baseCommit, Tree: baseTree}, hasBase: true},
 		Registry:    fakeRegistry{},
 		Preview:     preview,
+		Local:       fakeLocal{tree: baseTree},
 		Project:     "product",
 		WorkspaceID: "product:/home/u/product",
 	}, canonical, preview
+}
+
+func TestRunReportsPendingLocalPublication(t *testing.T) {
+	query, _, _ := newQuery()
+	query.Local = fakeLocal{tree: oid(20)}
+
+	report, err := query.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if !report.PublicationKnown || !report.PublicationPending {
+		t.Fatalf("publication = (known=%t, pending=%t), want both true",
+			report.PublicationKnown, report.PublicationPending)
+	}
+}
+
+func TestRunLeavesPublicationUnknownWithoutAStableBaseComparison(t *testing.T) {
+	tests := []struct {
+		name    string
+		state   fakeState
+		local   fakeLocal
+		known   bool
+		pending bool
+	}{
+		{name: "no base", state: fakeState{}, local: fakeLocal{tree: oid(20)}},
+		{name: "sync in progress", state: fakeState{base: provenance.Base{Commit: baseCommit, Tree: baseTree}, hasBase: true, inProgress: true}, local: fakeLocal{tree: oid(20)}},
+		{name: "head unreadable", state: fakeState{base: provenance.Base{Commit: baseCommit, Tree: baseTree}, hasBase: true}, local: fakeLocal{err: errors.New("head unreadable")}},
+		{name: "equal to base", state: fakeState{base: provenance.Base{Commit: baseCommit, Tree: baseTree}, hasBase: true}, local: fakeLocal{tree: baseTree}, known: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			query, _, _ := newQuery()
+			query.State = tt.state
+			query.Local = tt.local
+			report, err := query.Run(context.Background())
+			if err != nil {
+				t.Fatalf("Run() error = %v", err)
+			}
+			if report.PublicationKnown != tt.known || report.PublicationPending != tt.pending {
+				t.Fatalf("publication = (known=%t, pending=%t), want (%t, %t)",
+					report.PublicationKnown, report.PublicationPending, tt.known, tt.pending)
+			}
+		})
+	}
 }
 
 func TestRunReportsTheOrdinaryCase(t *testing.T) {

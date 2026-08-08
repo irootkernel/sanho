@@ -406,6 +406,12 @@ git object로 옮기므로 구조적으로 해결됐지만, 실제 파일 시스
    확인한다.
 8. 실행 권한이 없는 hook 파일을 만들어 두고 `sanho init`이 owner execute만
    추가해 고치는지 확인한다.
+9. 모든 hook의 실행 비트를 제거한 뒤 docs commit과 app push를 완료한다.
+   canonical이 움직이지 않은 상태에서 `sanho status` text와 JSON이 각각
+   publication pending을 보고하는지 확인한다.
+10. `sanho doctor --fix`가 hook을 복구하고 publication 경고를 출력하는지
+    확인한다. 같은 tip의 no-op `git push`만으로는 canonical이 움직이지 않아야
+    하며, 새 docs-changing commit 뒤 push하면 수렴해야 한다.
 
 ## 릴리스 판정
 

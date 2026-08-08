@@ -55,6 +55,18 @@ relation  : behind 2, ahead 0
 sync      : 2 behind — 'sanho sync' will merge cleanly
 ```
 
+committed docs가 마지막 publication base와 다르면 canonical 관계와 별도로 다음
+줄이 나온다.
+
+```text
+publish   : committed docs changes are pending publication
+```
+
+hook이 실행되지 않은 채 app 저장소 push만 끝난 경우에도 이 줄이 남는다. 이때
+같은 tip으로 `git push`만 반복하면 ref update가 없어 pre-push 게시가 실행되지
+않는다. `sanho doctor --fix`로 hook을 복구한 뒤 안내대로 새 docs-changing
+commit을 만들고 push한다.
+
 `data` 줄은 언제나 캐시 나이를 말한다. 24시간을 넘기면 갱신 방법도 함께
 말한다.
 
@@ -542,6 +554,13 @@ hook 문제는 재설치를 안내한다.
 ```text
 [warn] hooks            pre-push: missing; post-merge: installed 2 times — run 'sanho doctor --fix' to reinstall them
 [warn] hooks            pre-push: carries v0.1 lines — run 'sanho doctor --fix' to reinstall them
+```
+
+hook을 실제로 복구한 뒤 local HEAD docs가 publication base와 다르면 다음 경고가
+추가된다.
+
+```text
+[warn] publication      committed docs differ from the publication base after hook repair; make another docs-changing commit, then run 'git push' to publish them
 ```
 
 clone 문제는 다음과 같다.

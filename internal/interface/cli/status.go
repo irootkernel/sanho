@@ -32,6 +32,7 @@ import (
 //	    "data_age_seconds": 42
 //	  },
 //	  "relation": {"known": true, "behind": 2, "ahead": 0},
+//	  "publication": {"known": true, "pending": false},
 //	  "sync_preview": {"known": true, "clean": false,
 //	                   "conflicts": ["docs/api.md"]},
 //	  "sync_in_progress": false,
@@ -61,6 +62,10 @@ type statusJSON struct {
 		Behind int  `json:"behind"`
 		Ahead  int  `json:"ahead"`
 	} `json:"relation"`
+	Publication struct {
+		Known   bool `json:"known"`
+		Pending bool `json:"pending"`
+	} `json:"publication"`
 	SyncPreview struct {
 		Known     bool     `json:"known"`
 		Clean     bool     `json:"clean"`
@@ -120,6 +125,7 @@ func runStatus(cmd *cobra.Command, refresh, asJSON bool) error {
 		State:       ws.statePort(),
 		Registry:    registryPort{ws: ws},
 		Preview:     previewPort{ws: ws, store: store},
+		Local:       ws.repo,
 		Project:     ws.config.Project,
 		WorkspaceID: ws.config.WorkspaceID,
 		Refresh:     refresh,
@@ -238,6 +244,9 @@ func renderStatus(out io.Writer, ws *workspace, store *canonical.Store, report a
 	} else {
 		renderSyncPreview(out, report)
 	}
+	if report.PublicationKnown && report.PublicationPending {
+		writeln(out, "publish   : committed docs changes are pending publication")
+	}
 	renderSiblings(out, report.Siblings)
 }
 
@@ -305,6 +314,8 @@ func buildStatusJSON(report admin.StatusReport, store *canonical.Store) statusJS
 	out.Relation.Known = report.RelationKnown
 	out.Relation.Behind = report.Behind
 	out.Relation.Ahead = report.Ahead
+	out.Publication.Known = report.PublicationKnown
+	out.Publication.Pending = report.PublicationPending
 
 	out.SyncPreview.Known = report.SyncPreviewKnown
 	out.SyncPreview.Clean = report.SyncClean

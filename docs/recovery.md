@@ -261,6 +261,17 @@ hook 설치는 Sanho 호출 구조만 인식하고 남의 줄은 원문 그대�
 언제든 다시 만들 수 있다. `sanho sync`와 `sanho pull` 같은 쓰기 경로는 clone이
 없으면 스스로 만든다.
 
+hook이 꺼진 동안 docs commit과 app push가 이미 끝났다면 복구 직후 다음 경고가
+나올 수 있다.
+
+```text
+[warn] publication      committed docs differ from the publication base after hook repair; make another docs-changing commit, then run 'git push' to publish them
+```
+
+app remote가 이미 같은 tip이면 `git push` 반복만으로는 pre-push에 ref update가
+전달되지 않는다. 안내대로 docs를 한 번 더 변경해 commit한 뒤 push한다. 별도
+manual publish command는 아직 없다.
+
 ## 4. 수동 개입이 필요한 유일한 경우들
 
 아래 네 가지 외에는 Sanho가 안내하는 명령으로 해결된다.

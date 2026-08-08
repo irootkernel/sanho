@@ -254,12 +254,13 @@ var closureFixtures = map[string]closureFixture{
 	// doctor/status/init/migrate and in the use-case sentinels, where no
 	// fixture could reach it. Each row below is one message that now has
 	// to survive being run.
-	"push_empty_docs":   reachPushEmptyDocs,
-	"clone_missing":     reachCloneMissing,
-	"doctor_hooks":      reachDoctorHooks,
-	"sync_note_pending": reachSyncNotePending,
-	"base_needs_sync":   reachBaseNeedsSync,
-	"base_cleared":      reachBaseCleared,
+	"push_empty_docs":            reachPushEmptyDocs,
+	"clone_missing":              reachCloneMissing,
+	"doctor_hooks":               reachDoctorHooks,
+	"doctor_publication_pending": reachDoctorPublicationPending,
+	"sync_note_pending":          reachSyncNotePending,
+	"base_needs_sync":            reachBaseNeedsSync,
+	"base_cleared":               reachBaseCleared,
 
 	// The fourth review wave: the two remaining ways a base ends up
 	// ahead of the docs the worktree carries.
@@ -953,6 +954,38 @@ func reachDoctorHooks(t *testing.T, w *world) closureState {
 				}
 				requireContains(t, "reinstalled hook",
 					readFile(t, ws.hookPath("pre-commit")), "hook pre-commit")
+			},
+		},
+	}
+}
+
+func reachDoctorPublicationPending(t *testing.T, w *world) closureState {
+	ws := w.setup("publication-outage")
+	before := w.canonicalHead()
+	for _, name := range []string{"pre-commit", "commit-msg", "pre-push", "post-checkout", "post-merge", "post-rewrite"} {
+		if err := os.Chmod(ws.hookPath(name), 0o644); err != nil {
+			t.Fatalf("disable %s: %v", name, err)
+		}
+	}
+	ws.commitDocs("docs: committed during hook outage", map[string]string{"api.md": "outage edit\n"})
+	requireExit(t, "push during hook outage", ws.push(), 0)
+	requireEqual(t, "canonical head during hook outage", w.canonicalHead(), before)
+
+	status := ws.sanho("status")
+	requireContains(t, "status during hook outage", status.stdout, "pending publication")
+	fixed := ws.sanho("doctor", "--fix")
+
+	return closureState{
+		ws:     ws,
+		output: fixed.stdout,
+		prepare: map[string]func(*testing.T, *workspace){
+			"git push": func(t *testing.T, ws *workspace) {
+				ws.commitDocs("docs: republish after hook repair", map[string]string{"api.md": "republished edit\n"})
+			},
+		},
+		verify: map[string]func(*testing.T, *workspace){
+			"git push": func(t *testing.T, ws *workspace) {
+				requireEqual(t, "canonical api.md", ws.w.canonicalFile(ws.w.canonicalHead(), "api.md"), "republished edit\n")
 			},
 		},
 	}

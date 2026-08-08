@@ -90,6 +90,28 @@ type PreviewPort interface {
 	Preview(ctx context.Context, base provenance.Base, head, headTree string) (known, clean bool, conflicts []string)
 }
 
+// LocalPort supplies the committed docs tree at the workspace's HEAD.
+// It is deliberately local-only: publication pending is meaningful even
+// when canonical cannot be refreshed or resolved.
+type LocalPort interface {
+	HeadDocsTree(ctx context.Context) (string, error)
+}
+
+// DetectPublication compares committed local docs with the last safe
+// base only when that comparison has a stable meaning. During a sync the
+// base intentionally remains behind, and without a base there is no
+// publication checkpoint to compare.
+func DetectPublication(ctx context.Context, local LocalPort, base provenance.Base, hasBase, syncInProgress bool) (known, pending bool) {
+	if local == nil || !hasBase || syncInProgress {
+		return false, false
+	}
+	localTree, err := local.HeadDocsTree(ctx)
+	if err != nil {
+		return false, false
+	}
+	return true, localTree != base.Tree
+}
+
 // Relation values for the sibling table.
 const (
 	RelationSame     = "same"
@@ -126,6 +148,11 @@ type StatusReport struct {
 	SyncConflicts    []string
 	SyncPreviewKnown bool
 	SyncInProgress   bool
+	// PublicationKnown is true when a recorded base exists, no sync owns
+	// the worktree, and HEAD's docs tree could be read. Pending then means
+	// local committed docs differ from the last safely published base.
+	PublicationKnown   bool
+	PublicationPending bool
 	// Siblings are other registered workspaces of the project.
 	Siblings []SiblingRow
 }
@@ -146,6 +173,7 @@ type StatusQuery struct {
 	State     StatePort
 	Registry  RegistryPort
 	Preview   PreviewPort
+	Local     LocalPort
 
 	Project     string
 	WorkspaceID string
@@ -185,6 +213,8 @@ func (q *StatusQuery) Run(ctx context.Context) (StatusReport, error) {
 	if report.SyncInProgress, err = q.State.SyncInProgress(); err != nil {
 		return StatusReport{}, err
 	}
+	report.PublicationKnown, report.PublicationPending =
+		DetectPublication(ctx, q.Local, base, hasBase, report.SyncInProgress)
 
 	head, headTree, err := q.Canonical.Head(ctx)
 	switch {
