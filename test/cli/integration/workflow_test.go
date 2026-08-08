@@ -50,7 +50,7 @@ func TestInitFreshOnSeededCanonical(t *testing.T) {
 
 	// .gitignore carries the v2 and legacy names.
 	gitignore := readFile(t, w.appPath(".gitignore"))
-	for _, entry := range []string{".sanho.json", ".sanho.json.bak", ".sanho_base.json", ".sanho_docs_hash"} {
+	for _, entry := range []string{".sanho.json", ".sanho.json.bak", ".sanho_base.json", ".sanho_docs_hash", ".sanho_docs_hash.bak"} {
 		requireContains(t, ".gitignore", gitignore, entry)
 	}
 

@@ -48,6 +48,7 @@ var gitignoreEntries = []string{
 	wsstate.ConfigFileName + ".bak",
 	wsstate.BaseFileName,
 	wsstate.LegacyHashFileName,
+	wsstate.LegacyHashFileName + backupSuffix,
 	".sanho_pending_fix",
 	// fsx.WriteFileAtomic's temp files, which live beside their target
 	// for the moment between creation and rename (F-L12). A crash there

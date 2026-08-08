@@ -137,7 +137,8 @@ sanho init \
      유도하고 사용자 파일은 절대 건드리지 않는다. provenance가 없으면 거절한다.
 5. 6개 hook을 설치한다. 남의 hook 내용은 원문 그대로 보존한다.
 6. `.gitignore`에 `.sanho.json`, `.sanho_base.json`, `.sanho_docs_hash`,
-   `.sanho_pending_fix`를 추가한다(이미 있는 줄은 건너뛴다).
+   `.sanho_docs_hash.bak`, `.sanho_pending_fix`를 추가한다(이미 있는 줄은
+   건너뛴다).
 7. 레지스트리에 작업공간 항목을 기록한다.
 
 이미 초기화된 작업공간에서 다시 실행하면 거절한다.
@@ -290,7 +291,8 @@ sanho migrate --manage-custom-hooks
    읽기 전용 호환 입력으로 남긴다. 그 값을 base로 채택하고, canonical에서 그
    commit이 아직 살아 있으면 tree까지 해석해 `.sanho_base.json`을 만든다.
 6. v0.1 7종 hook 라인을 제거하고 v0.2 6종을 설치한다. 남의 줄은 보존한다.
-7. `.gitignore` 항목을 보강한다.
+7. `.gitignore` 항목을 보강한다. 이미 migrate된 workspace에서 새 ignore 항목이
+   빠졌다면 `sanho migrate` 재실행이 clone·hook 완결성을 확인한 뒤 보완한다.
 8. 레지스트리에 프로젝트와 작업공간을 v2 스키마로 기록한다.
 9. daemon 정지 방법을 **출력만 한다.** 실행하지 않는다. service 소유권은
    v0.1에서도 명시적으로 사용자 것이었다.

@@ -386,7 +386,8 @@ cp ~/.sanho/state.json ~/.sanho/state.json.pre-v0.2   # 선택: 추가 안전용
 | `.sanho_docs_hash` | `.sanho_docs_hash.bak` | 원본도 삭제하지 않고 그대로 남긴다 |
 
 `.sanho_docs_hash`는 읽기 전용 호환 입력이므로 Sanho가 소비하지 않는다.
-`.sanho_base.json`이 없을 때만 읽히므로, 롤백 시 그대로 다시 쓰인다.
+`.sanho_base.json`이 없을 때만 읽히므로, 롤백 시 그대로 다시 쓰인다. backup은
+rollback 자산이면서 `.gitignore` 대상이라 평상시 작업 변경과 섞이지 않는다.
 
 migrate가 새로 만들거나 바꾸는 것은 다음과 같다.
 

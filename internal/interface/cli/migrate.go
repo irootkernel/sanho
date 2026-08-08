@@ -119,6 +119,9 @@ func runMigrate(cmd *cobra.Command, docsRepoURLFlag string, manageHooks bool) er
 			return checkErr
 		}
 		if complete {
+			if err := ensureGitignoreEntries(root); err != nil {
+				return err
+			}
 			writeln(cmd.OutOrStdout(), msgAlreadyMigrated)
 			return nil
 		}

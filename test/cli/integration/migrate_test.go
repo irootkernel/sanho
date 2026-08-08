@@ -105,8 +105,12 @@ func TestMigrateConvertsAV1WorkspaceAndIsIdempotent(t *testing.T) {
 	// left intact as a read-only input.
 	requireContains(t, "config backup", readFile(t, w.appPath(".sanho.json.bak")), "socket_path")
 	requireContains(t, ".gitignore", readFile(t, w.appPath(".gitignore")), ".sanho.json.bak")
+	requireContains(t, ".gitignore", readFile(t, w.appPath(".gitignore")), ".sanho_docs_hash.bak")
 	if !fileExists(t, w.appPath(".sanho_docs_hash.bak")) {
 		t.Error("the legacy hash file has no .bak sibling")
+	}
+	if ignored := w.gitExit(w.app, "check-ignore", ".sanho_docs_hash.bak"); ignored.exitCode != 0 {
+		t.Fatalf("legacy hash backup is not ignored\n%s", ignored.combined())
 	}
 	if !fileExists(t, w.appPath(".sanho_docs_hash")) {
 		t.Error("migrate consumed the legacy hash file; rollback needs it")
@@ -160,11 +164,14 @@ func TestMigrateConvertsAV1WorkspaceAndIsIdempotent(t *testing.T) {
 	// Idempotent: a second run detects the v2 config and exits 0, and
 	// the preserved v0.1 state backup is never overwritten (the registry
 	// is v2 by now; overwriting would replace legacy bytes with v2).
+	gitignore := strings.ReplaceAll(readFile(t, w.appPath(".gitignore")), ".sanho_docs_hash.bak\n", "")
+	writeFile(t, w.appPath(".gitignore"), gitignore)
 	second := w.sanho(w.app, "migrate")
 	if strings.TrimSpace(second.stdout) != "sanho: already migrated" {
 		t.Fatalf("second migrate said %q, want 'sanho: already migrated'", second.stdout)
 	}
 	requireContains(t, "v1 state backup after rerun", readFile(t, v1Backup), "project_to_docs_repo")
+	requireContains(t, ".gitignore repaired by rerun", readFile(t, w.appPath(".gitignore")), ".sanho_docs_hash.bak")
 }
 
 func TestMigrateRefusesCustomHooksPathBeforeMutation(t *testing.T) {
