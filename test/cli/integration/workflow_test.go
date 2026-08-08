@@ -488,6 +488,106 @@ func TestCleanDryRunChangesNothingThenCleanRemovesEverything(t *testing.T) {
 	}
 }
 
+func TestCleanRetainsSharedResourcesUntilLastManagedWorktree(t *testing.T) {
+	w := newWorld(t, map[string]string{"api.md": "canonical api\n"})
+	w.initAndAdoptDocs()
+
+	linked := filepath.Join(filepath.Dir(w.app), "linked")
+	w.git(w.app, "worktree", "add", "--quiet", "-b", "linked", linked)
+	linked = resolvePath(t, linked)
+	w.sanho(linked, "init",
+		"--project", "product",
+		"--docs-repo-url", w.origin,
+		"--actor-email", "author@example.test")
+
+	dry := w.sanho(w.app, "clean", "--dry-run")
+	requireContains(t, "dry-run shared hooks", dry.stdout, "hook file(s) retained for 1 other managed worktree")
+	requireContains(t, "dry-run shared clone", dry.stdout, "shared canonical clone retained")
+	requireContains(t, "dry-run survivor", dry.stdout, linked)
+
+	w.sanho(w.app, "clean", "-y")
+	if fileExists(t, w.appPath(".sanho.json")) {
+		t.Fatal("cleaned main worktree kept its local config")
+	}
+	if !fileExists(t, filepath.Join(linked, ".sanho.json")) {
+		t.Fatal("clean removed the linked worktree config")
+	}
+	if !fileExists(t, w.appPath(".git", "sanho", "canonical")) {
+		t.Fatal("clean removed the shared canonical clone")
+	}
+	if !fileExists(t, w.hookPath("pre-push")) {
+		t.Fatal("clean removed shared hooks")
+	}
+
+	writeFile(t, filepath.Join(linked, "docs", "api.md"), "published by linked worktree\n")
+	w.git(linked, "add", "docs/api.md")
+	w.git(linked, "commit", "-m", "docs: publish from surviving worktree")
+	pushed := w.gitExit(linked, "push", "--quiet", "origin", "linked")
+	if pushed.exitCode != 0 {
+		t.Fatalf("surviving linked worktree push failed with exit %d\n%s", pushed.exitCode, pushed.combined())
+	}
+	if got := w.canonicalFile(w.canonicalHead(), "api.md"); got != "published by linked worktree\n" {
+		t.Fatalf("canonical api.md = %q", got)
+	}
+
+	last := w.sanho(linked, "clean", "-y")
+	requireNotContains(t, "last clean", last.stdout, "shared canonical clone retained")
+	if fileExists(t, w.appPath(".git", "sanho", "canonical")) {
+		t.Fatal("last managed worktree clean kept the shared canonical clone")
+	}
+	if fileExists(t, w.hookPath("pre-push")) {
+		t.Fatal("last managed worktree clean kept shared hooks")
+	}
+}
+
+func TestCleanDoesNotRetainSharedResourcesForPrunableWorktree(t *testing.T) {
+	w := newWorld(t, map[string]string{"api.md": "canonical api\n"})
+	w.initAndAdoptDocs()
+
+	stale := filepath.Join(filepath.Dir(w.app), "stale")
+	w.git(w.app, "worktree", "add", "--quiet", "-b", "stale", stale)
+	stale = resolvePath(t, stale)
+	w.sanho(stale, "init",
+		"--project", "product",
+		"--docs-repo-url", w.origin,
+		"--actor-email", "author@example.test")
+	if err := os.RemoveAll(stale); err != nil {
+		t.Fatalf("remove stale worktree directory: %v", err)
+	}
+
+	out := w.sanho(w.app, "clean", "-y")
+	requireNotContains(t, "clean", out.stdout, "shared canonical clone retained")
+	if fileExists(t, w.appPath(".git", "sanho", "canonical")) {
+		t.Fatal("prunable worktree kept the shared canonical clone alive")
+	}
+	if fileExists(t, w.hookPath("pre-push")) {
+		t.Fatal("prunable worktree kept shared hooks alive")
+	}
+}
+
+func TestCleanFromBorrowingLinkedWorktreeKeepsMainRegistration(t *testing.T) {
+	w := newWorld(t, map[string]string{"api.md": "canonical api\n"})
+	w.initAndAdoptDocs()
+
+	linked := filepath.Join(filepath.Dir(w.app), "borrowing")
+	w.git(w.app, "worktree", "add", "--quiet", "-b", "borrowing", linked)
+	linked = resolvePath(t, linked)
+
+	out := w.sanho(linked, "clean", "-y")
+	requireContains(t, "clean", out.stdout, "registry entry: retained (owned by the main worktree)")
+	if !fileExists(t, w.appPath(".sanho.json")) {
+		t.Fatal("clean from borrowing worktree removed the main config")
+	}
+	if !fileExists(t, w.appPath(".git", "sanho", "canonical")) {
+		t.Fatal("clean from borrowing worktree removed the shared clone")
+	}
+	if !fileExists(t, w.hookPath("pre-push")) {
+		t.Fatal("clean from borrowing worktree removed shared hooks")
+	}
+	state := w.sanho(w.app, "state", "--json").stdout
+	requireContains(t, "registry", state, `"workspace_id": "product:`+w.app+`"`)
+}
+
 // The staged-marker gate on its own (§5.6 step 1), outside a sync: a
 // commit that stages conflict markers is blocked whether or not sanho
 // put them there.

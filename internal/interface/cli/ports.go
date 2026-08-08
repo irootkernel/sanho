@@ -238,8 +238,15 @@ func hasConfig(dir string) (bool, error) {
 // main worktree first (git's documented order).
 func worktreeRoots(ctx context.Context, dir string) ([]string, error) {
 	res, err := gitx.New(dir).RunExit(ctx, "worktree", "list", "--porcelain")
-	if err != nil || res.ExitCode != 0 {
-		return nil, err //nolint:nilerr // a non-git directory has no worktrees, which is not an error here
+	if err != nil {
+		return nil, err
+	}
+	if res.ExitCode != 0 {
+		detail := strings.TrimSpace(string(res.Stderr))
+		if detail == "" {
+			detail = fmt.Sprintf("git exited %d", res.ExitCode)
+		}
+		return nil, fmt.Errorf("list git worktrees: %s", detail)
 	}
 	var roots []string
 	for _, line := range strings.Split(string(res.Stdout), "\n") {

@@ -1085,17 +1085,26 @@ workspace 경로는 절대 경로로 만든 뒤 가능한 경우 symlink를 해�
 아무 일도 하지 않았다 — 게이트도, stamp도, 게시도, 메시지조차 없었다. 설치되어
 있으면서 완전히 불활성인 도구는 없는 것보다 나쁘다.
 
-이제 설정이 없는 디렉터리는 git에게 **main worktree**를 물어(`git worktree list
---porcelain`의 첫 레코드) 그곳의 `.sanho.json`을 읽는다. 나머지 배치는 그대로
+이제 설정이 없는 worktree는 git에게 **main worktree**를 물어(`git worktree
+list --porcelain`의 첫 레코드) 그곳의 `.sanho.json`을 읽는다. linked worktree에서
+`sanho init`을 별도로 실행해 로컬 설정을 만들 수도 있다. 나머지 배치는 그대로
 worktree 단위다.
 
 | 대상 | 어디에 매인가 | 이유 |
 |---|---|---|
-| `.sanho.json` | main worktree | gitignore 때문에 linked worktree에는 없다. |
+| `.sanho.json` | 설정을 만든 worktree | 새 linked worktree는 main 설정을 빌리며, 그곳에서 `sanho init`을 실행하면 이후 로컬 설정을 쓴다. |
 | `.sanho_base.json` | **각 worktree** | base는 "이 worktree의 docs가 어느 canonical 상태에서 왔는가"이고, worktree마다 다른 branch가 나와 있으므로 답도 다르다. `git worktree add` 직후 post-checkout hook이 이력에서 새로 유도한다. |
 | sync note | 각 worktree(`.git`의 worktree 전용 디렉터리) | 진행 중인 작업은 그 worktree의 것이다. |
 | canonical clone | common dir | 원래부터 공유였다(§5.2). |
-| registry 항목 | main worktree 경로로 한 줄 | registry가 답하는 질문은 "이 project의 checkout이 어디에 있는가"이고, 한 clone의 worktree 다섯 개는 그 질문의 기준으로 checkout 하나다. |
+| registry 항목 | 설정 소유 worktree | main 설정을 빌리는 linked worktree는 main 행을 공유하고, 별도 초기화한 linked worktree는 자체 행을 가진다. |
+
+hooks와 canonical clone은 common dir 자원이므로 `sanho clean`도 이를 공유 소유권에
+맞춰 다룬다. 다른 worktree root에 읽을 수 있고 필수 필드가 갖춰진 v1/v2
+`.sanho.json`이 하나라도 남아 있으면 현재 worktree의 로컬 config/base/sync와
+registry 행만 제거하고 hooks와 clone은 보존한다. 사라져 prunable한 worktree와
+깨진 설정은 소유자로 세지 않는다. 마지막 관리 worktree를 clean할 때만 공용
+hooks와 clone을 제거한다. `--dry-run`은 같은 판단과 보존 대상 root를 출력하지만
+아무것도 쓰지 않는다.
 
 ## 동시성 계약
 
