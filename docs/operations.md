@@ -193,7 +193,7 @@ push는 거절되며, 그 사실을 그대로 말한다.
 
 ```text
 sanho: the sync from 67c4bbfeada3 to 9a41f2cbbbbb is not completed — the resolution is committed, and only 'sanho sync --continue' records it
-Run 'sanho sync --continue' now, or 'sanho sync --abort' to undo the whole sync.
+Run 'sanho sync --continue' now, or 'sanho sync --abort' to forget the sync — your commits stay; only the recorded base returns to its pre-sync value.
 ```
 
 충돌 sync 자체는 base를 옮기지 않는다. 마커가 worktree에 있는 동안 docs는 여전히

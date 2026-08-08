@@ -46,6 +46,7 @@ func newHookCmd() *cobra.Command {
 		newPostCheckoutCmd(),
 		newPostMergeCmd(),
 		newPostRewriteCmd(),
+		newPostCommitCmd(),
 	)
 	return cmd
 }
@@ -153,14 +154,16 @@ func preCommitGates(ctx context.Context, cmd *cobra.Command, ws *workspace) (blo
 
 	resolution, err := use.ResolutionState(ctx)
 	if err != nil {
-		// A note sanho itself cannot read must never break `git commit`
-		// (P2, Critical C1's failure class): say so, and let the staged
-		// marker gate below answer for the commit's own content.
-		if !errors.Is(err, docsync.ErrSyncNoteCorrupt) {
-			return false, false, fmt.Errorf("check the sync state: %w", err)
+		// A sync state sanho itself cannot read must never break
+		// `git commit` (P2, Critical C1's failure class): say so, and let
+		// the staged marker gate below answer for the commit's own
+		// content.
+		if errors.Is(err, docsync.ErrSyncNoteCorrupt) {
+			writeln(cmd.ErrOrStderr(), syncNoteCorruptMessage(causeLine(err)))
+			syncOwed = true
+		} else {
+			writef(cmd.ErrOrStderr(), "sanho: skipped the sync-state check (%v)\n", err)
 		}
-		writeln(cmd.ErrOrStderr(), syncNoteCorruptMessage(causeLine(err)))
-		syncOwed = true
 	}
 
 	if resolution != docsync.ResolutionNoSync {
@@ -902,6 +905,25 @@ func newPostRewriteCmd() *cobra.Command {
 		Short: "Re-derive the docs base for the rewritten HEAD",
 		Args:  cobra.ArbitraryArgs,
 		RunE:  func(cmd *cobra.Command, _ []string) error { return runRederiveHook(cmd) },
+	}
+}
+
+// newPostCommitCmd is a compatibility entry point, not a hook v0.2
+// installs: commits do not move the base (§5.10), so there is nothing
+// for it to do. It exists because a v0.1 hook file carries a
+// `sanho hook post-commit` line, and until `sanho migrate` rewrites the
+// hooks that line reaches this binary on every commit. The §8
+// degradation contract covers it: a v1 workspace gets the migrate hint,
+// anything else gets silence, and the exit is always 0.
+func newPostCommitCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "post-commit",
+		Short: "Removed in v0.2; exits cleanly so v0.1 hook lines stay inert",
+		Args:  cobra.ArbitraryArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			_, _, _ = hookWorkspace(cmd.Context(), cmd)
+			return nil
+		},
 	}
 }
 

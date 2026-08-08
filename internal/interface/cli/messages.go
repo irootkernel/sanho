@@ -432,10 +432,15 @@ func syncNotCommittedMessage(prev, target string) string {
 // says what the abort would do to work that is not committed. That
 // second clause is the one an earlier version left unsaid, and abort's
 // `git checkout HEAD -- docs` is not obviously reversible to a reader.
+// The first rendering is equally careful in the other direction: once
+// the resolution is committed, abort restores docs from a HEAD that
+// already contains it, so what abort takes back is the sync's base
+// record, not the user's commits — saying "undo the whole sync" there
+// promised a revert abort does not perform.
 func syncNeedsContinueMessage(prev, target string, committed bool) string {
 	if committed {
 		return fmt.Sprintf("sanho: the sync from %s to %s is not completed — the resolution is committed, and only 'sanho sync --continue' records it\n"+
-			"Run 'sanho sync --continue' now, or 'sanho sync --abort' to undo the whole sync.",
+			"Run 'sanho sync --continue' now, or 'sanho sync --abort' to forget the sync — your commits stay; only the recorded base returns to its pre-sync value.",
 			shortOID(prev), shortOID(target))
 	}
 	return fmt.Sprintf("sanho: the sync from %s to %s is not completed — no resolution has been committed yet\n"+

@@ -128,6 +128,9 @@ v0.2가 분기용으로 보장하는 값은 다음과 같다. 문자열 그대�
 | `registry_lock_timeout` | 다른 Sanho 프로세스가 registry 잠금을 쥐고 있다. |
 | `markers_present` | push되는 docs에 충돌 마커가 있다. `sync --continue`가 마커를 이유로 거절할 때도 이 코드다. |
 | `too_large` | 텍스트 문서가 마커 스캔 한계를 넘었다. |
+| `config_corrupt` | `.sanho.json`이 있으나 읽을 수 없다. 복원하거나 re-init한다. |
+| `base_corrupt` | base 파일이 있으나 읽을 수 없다. 복원하거나 `doctor --fix`로 재유도한다. |
+| `base_not_corroborated` | base 기록을 뒷받침할 증거가 없어 쓰기가 거절됐다. `sanho sync`가 base를 세운다. |
 | `internal` | 위 어디에도 속하지 않는다. 재시도하지 말고 보고한다. |
 
 **sibling 관계** — `vs_mine`, `vs_head`.

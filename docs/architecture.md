@@ -1149,8 +1149,11 @@ primary가 깨지면 `.bak`에서 복구하고 primary를 즉시 되살린다. �
 | `post-merge` | `sanho hook post-merge` | base 재유도 | 항상 exit 0 |
 | `post-rewrite` | `sanho hook post-rewrite "$@"` | base 재유도 | 항상 exit 0 |
 
-`post-commit`은 없다. commit은 base를 옮기지 않고, 레지스트리 갱신은
-sync/pull/게시에 얹혀 있기 때문이다.
+`post-commit` hook은 설치하지 않는다. commit은 base를 옮기지 않고, 레지스트리
+갱신은 sync/pull/게시에 얹혀 있기 때문이다. 다만 CLI에는 no-op 진입점
+`sanho hook post-commit`이 남아 있다 — migrate 전까지 v0.1 hook 파일의
+`sanho hook post-commit` 라인이 이 binary에 도달하기 때문이며, 아무것도 출력하지
+않고(v1 workspace면 migrate 힌트 한 줄) 항상 exit 0이다.
 
 hook 설치와 제거는 **정확한 줄 일치**로만 판단한다. 부분 문자열 검사는 어디에도
 없다. 그래서 `sanho hook pre-push`와 `sanho hook pre-push "$@"`가 서로를
