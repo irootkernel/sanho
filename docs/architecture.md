@@ -1244,6 +1244,9 @@ commit/post hook은 `command -v sanho` guard로 binary가 없으면 통과하고
 `pre-push`는 guard 없이 fail-closed다. 선택한 `hook_mode`와 `hook_dir`은
 `.sanho.json`에 기록한다. 이후 `doctor --fix`와 `clean`은 그 대상만 다루며,
 실제 `core.hooksPath`가 기록과 달라지면 어느 쪽도 수정하지 않는다.
+migrate가 custom/Husky script 옆에 남기는 rollback `.bak`은 exact 경로만
+`<git-common-dir>/info/exclude`에 추가한다. backup은 보존하면서 tracked
+`.gitignore`에 범용 `*.bak` 정책을 강요하지 않기 위해서다.
 
 `sanho doctor`의 hooks 검사는 설치 여부, 중복 설치 횟수, 실행 비트,
 남아 있는 v0.1 라인을 각각 보고한다.

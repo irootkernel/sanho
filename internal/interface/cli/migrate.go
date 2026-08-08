@@ -213,6 +213,15 @@ func runMigrate(cmd *cobra.Command, docsRepoURLFlag string, manageHooks bool) er
 	if err != nil {
 		return err
 	}
+	if hooks.Mode != appgit.HookModeDefault {
+		var excludes []string
+		for _, backup := range hookBackups {
+			excludes = append(excludes, "/"+filepath.ToSlash(filepath.Join(hooks.Dir, backup)))
+		}
+		if err := ensureIgnoreEntries(filepath.Join(site.commonDir, "info", "exclude"), excludes); err != nil {
+			return err
+		}
+	}
 	if err := ensureGitignoreEntries(root); err != nil {
 		return err
 	}

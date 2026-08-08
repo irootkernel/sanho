@@ -265,6 +265,9 @@ func TestMigrateManagesHusky9HooksWithExplicitOptIn(t *testing.T) {
 		if !fileExists(t, filepath.Join(husky, name+".bak")) {
 			t.Errorf("Husky hook %s has no rollback backup", name)
 		}
+		if ignored := w.gitExit(w.app, "check-ignore", filepath.ToSlash(filepath.Join(".husky", name+".bak"))); ignored.exitCode != 0 {
+			t.Errorf("Husky hook backup %s is not locally excluded", name)
+		}
 	}
 	postCommit := readFile(t, filepath.Join(husky, "post-commit"))
 	requireNotContains(t, "Husky post-commit", postCommit, "sanho hook post-commit")

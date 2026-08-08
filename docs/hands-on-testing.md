@@ -291,7 +291,8 @@ label만 정리한다.
 4. tracked `.husky/*`에 v0.1 7종 호출과 별도 lint 명령을 둔 Husky 9 clone을
    `sanho migrate --manage-custom-hooks`로 전환한다. 모든 기존 script backup이
    먼저 생기고, `.husky/_` hash는 불변이며, lint 명령은 남고 portable v2 6종만
-   실행되어야 한다. commit과 push로 인자 전달과 게시까지 확인한다.
+   실행되어야 한다. 각 backup이 `git check-ignore`에 잡히되 그대로 존재해야
+   한다. commit과 push로 인자 전달과 게시까지 확인한다.
 5. managed hook에서 한 줄을 지우고 v0.1 pre-push 무인자형을 중복시킨 뒤
    `sanho doctor`와 `sanho doctor --fix`를 실행한다. 누락·legacy·중복을 보고한
    뒤 정확히 한 v2 줄로 복구하고 남의 실패 status를 성공으로 덮지 않아야 한다.

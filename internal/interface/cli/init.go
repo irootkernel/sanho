@@ -461,10 +461,13 @@ func docsDirHasContent(ws *workspace) (bool, error) {
 // `.sanho.json` entry must not be mistaken for `.sanho_base.json`.
 func ensureGitignoreEntries(root string) error {
 	gitignorePath := filepath.Join(root, ".gitignore")
+	return ensureIgnoreEntries(gitignorePath, gitignoreEntries)
+}
 
-	existing, err := os.ReadFile(gitignorePath)
+func ensureIgnoreEntries(path string, entries []string) error {
+	existing, err := os.ReadFile(path)
 	if err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("read %s: %w", gitignorePath, err)
+		return fmt.Errorf("read %s: %w", path, err)
 	}
 
 	present := map[string]bool{}
@@ -473,7 +476,7 @@ func ensureGitignoreEntries(root string) error {
 	}
 
 	var added []string
-	for _, entry := range gitignoreEntries {
+	for _, entry := range entries {
 		if !present[entry] {
 			added = append(added, entry)
 			present[entry] = true
@@ -490,7 +493,7 @@ func ensureGitignoreEntries(root string) error {
 	content += strings.Join(added, "\n") + "\n"
 	// Atomic: an interrupted append must not leave a truncated
 	// .gitignore, which would un-ignore the state files it names (F-L4).
-	return fsx.WriteFileAtomic(gitignorePath, []byte(content), 0644)
+	return fsx.WriteFileAtomic(path, []byte(content), 0644)
 }
 
 func renderInitSummary(cmd *cobra.Command, ws *workspace, store *canonical.Store, base provenance.Base, hasBase, staged bool) {
