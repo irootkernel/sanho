@@ -86,6 +86,12 @@ init 시점에 이를 검사하지 않는다. "docs 전용"은 내용에 대한 
 - **관찰**(`sanho status` / `state`): base 파일 + private clone(관계 계산)
   + `~/.sanho/state.json`(sibling 목록).
 
+게시를 위해 애플리케이션 tip에서 가져온 object는 private clone에 누적될 수 있다.
+실제 게시가 하나라도 성공한 pre-push는 base 전진 시도 뒤 `git gc --auto --quiet`를
+한 번 실행해 Git의 임계값에 따른 유지보수를 맡긴다. 이미 canonical에 반영된
+게시의 성공 여부는 유지보수 결과와 독립적이다. 따라서 gc 실패는 push를 막지
+않고 `--verbose` 진단에만 남으며, 게시할 변경이 없는 push는 gc를 실행하지 않는다.
+
 ## 패키지 배치
 
 계층 규칙은 `internal/architecture`의 테스트가 강제한다. usecase는 infra를

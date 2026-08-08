@@ -59,6 +59,7 @@ type fakeCanonical struct {
 	mergeErr       error
 	absorbed       bool
 	absorbErr      error
+	gcErr          error
 
 	// docsCount answers DocsFileCount (the empty-publish refusal).
 	docsCount    int
@@ -72,6 +73,7 @@ type fakeCanonical struct {
 	created     []createdCommit
 	mergeCalls  []string
 	absorbCalls []string
+	gcCalls     int
 	pushLeases  []string
 	nextOID     int
 }
@@ -149,6 +151,11 @@ func (c *fakeCanonical) FindCommitByDocsTree(ctx context.Context, tree string) (
 func (c *fakeCanonical) AbsorbedByTip(ctx context.Context, tipTree, head string) (bool, error) {
 	c.absorbCalls = append(c.absorbCalls, tipTree+"|"+head)
 	return c.absorbed, c.absorbErr
+}
+
+func (c *fakeCanonical) GcAuto(ctx context.Context) error {
+	c.gcCalls++
+	return c.gcErr
 }
 
 func (c *fakeCanonical) FetchFromApp(ctx context.Context, tipOID string) error {

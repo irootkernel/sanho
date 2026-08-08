@@ -786,6 +786,43 @@ func TestRunReportsButDoesNotFailOnBaseAdvanceFailures(t *testing.T) {
 	}
 }
 
+func TestRunMaintainsTheCloneOnlyAfterPublication(t *testing.T) {
+	t.Run("published", func(t *testing.T) {
+		s := newScenario(t)
+		outcome, err := s.run(t)
+		if err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+		if outcome.Published == "" || s.canonical.gcCalls != 1 {
+			t.Fatalf("published = %q, gc calls = %d; want a publication and one maintenance call", outcome.Published, s.canonical.gcCalls)
+		}
+	})
+
+	t.Run("up to date", func(t *testing.T) {
+		s := newScenario(t)
+		s.app.docsTrees[appTip] = canonTree
+		outcome, err := s.run(t)
+		if err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+		if outcome.Published != "" || s.canonical.gcCalls != 0 {
+			t.Fatalf("published = %q, gc calls = %d; want no publication or maintenance", outcome.Published, s.canonical.gcCalls)
+		}
+	})
+
+	t.Run("maintenance failure", func(t *testing.T) {
+		s := newScenario(t)
+		s.canonical.gcErr = errors.New("gc unavailable")
+		outcome, err := s.run(t)
+		if err != nil {
+			t.Fatalf("maintenance failed the publication: %v", err)
+		}
+		if outcome.Published == "" || !errors.Is(outcome.MaintenanceError, s.canonical.gcErr) {
+			t.Fatalf("outcome = %+v, want a publication carrying the maintenance failure", outcome)
+		}
+	})
+}
+
 // TestRunRefusesAnUncorroboratedFastForward is the fourth review's C2 at
 // the unit level: base == canonical head licenses a fast-forward, which
 // publishes the tip's docs tree straight over canonical — and the tip's

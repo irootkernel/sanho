@@ -21,6 +21,7 @@ type publishCanonicalPort interface {
 	IsAncestor(ctx context.Context, a, b string) (bool, error)
 	FindCommitByDocsTree(ctx context.Context, tree string) (string, bool, error)
 	AbsorbedByTip(ctx context.Context, tipTree, head string) (bool, error)
+	GcAuto(ctx context.Context) error
 	FetchFromApp(ctx context.Context, tipOID string) error
 	MergeDocs(ctx context.Context, baseCommit, oursTree, theirsCommit string) (tree string, conflicts []string, clean bool, err error)
 	CommitDocsTree(ctx context.Context, tree, parent, authorName, authorEmail, message string) (string, error)

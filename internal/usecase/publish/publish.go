@@ -43,6 +43,9 @@ type CanonicalPort interface {
 	// merging canonical head into the tip over the empty tree is clean
 	// and yields the tip tree unchanged.
 	AbsorbedByTip(ctx context.Context, tipTree, head string) (bool, error)
+	// GcAuto asks Git to maintain the private clone after publication.
+	// It is best-effort and must never change the publication verdict.
+	GcAuto(ctx context.Context) error
 	// FetchFromApp imports the pushed tip so its docs tree is
 	// addressable clone-side.
 	FetchFromApp(ctx context.Context, tipOID string) error
@@ -256,6 +259,10 @@ type Outcome struct {
 	// re-derivation hooks correct on their own, so the honest outcome is
 	// the success plus a line saying the pointer did not move.
 	BaseAdvanceError error
+	// MaintenanceError reports a best-effort private-clone gc failure
+	// after publication. Like BaseAdvanceError, it is outcome detail and
+	// never turns an already-landed publication into a rejected push.
+	MaintenanceError error
 	// Conflicts lists conflicted paths when the push is rejected with
 	// sync guidance.
 	Conflicts []string
@@ -457,6 +464,7 @@ func (u *UseCase) Run(ctx context.Context, updates []RefUpdate) (Outcome, error)
 		advanced, err := u.advanceBase(ctx, outcome.Published, final.tree)
 		outcome.BaseAdvanced = advanced
 		outcome.BaseAdvanceError = err
+		outcome.MaintenanceError = u.Canonical.GcAuto(ctx)
 		return outcome, nil
 	}
 

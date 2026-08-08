@@ -725,6 +725,17 @@ func (s *Store) FetchIntoApp(ctx context.Context, appGitDir string) (headCommit 
 	return oid, nil
 }
 
+// GcAuto lets Git decide whether the private clone has accumulated
+// enough loose or unreachable objects to justify maintenance. The
+// caller treats failures as diagnostics because publication has already
+// landed by the time this runs.
+func (s *Store) GcAuto(ctx context.Context) error {
+	if _, err := gitx.New(s.dir).Run(ctx, "gc", "--auto", "--quiet"); err != nil {
+		return fmt.Errorf("canonical: maintain private clone %s: %w", s.dir, err)
+	}
+	return nil
+}
+
 // CommitDocsTree creates a canonical commit with the given docs tree,
 // parent, author identity, and message; returns its OID. No push.
 //

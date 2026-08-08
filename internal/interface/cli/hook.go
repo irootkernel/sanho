@@ -633,9 +633,16 @@ func runPrePush(cmd *cobra.Command, _ []string) error {
 			// the two commands that repair it run on the user's schedule.
 			writeln(cmd.ErrOrStderr(), baseNotAdvancedMessage(causeOfBaseRefusal(outcome.BaseAdvanceError)))
 		}
+		if outcome.MaintenanceError != nil {
+			reportCloneMaintenance(cmd, outcome.MaintenanceError)
+		}
 		recordWorkspaceState(ctx, ws)
 	}
 	return nil
+}
+
+func reportCloneMaintenance(cmd *cobra.Command, err error) {
+	debugf(cmd, "private canonical clone maintenance skipped: %s", causeLine(err))
 }
 
 // prePushSyncGate refuses a push while a sync note exists, and reports

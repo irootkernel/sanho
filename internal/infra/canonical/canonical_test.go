@@ -411,6 +411,24 @@ func TestFetchFromAppMakesTipTreesAddressable(t *testing.T) {
 	}
 }
 
+func TestGcAutoMaintainsThePrivateClone(t *testing.T) {
+	origin := newOrigin(t, "main", map[string]entry{"a.md": text("a\n")})
+	store := ensureStore(t, origin)
+	// Force the auto threshold low and keep maintenance in the process so
+	// this exercises the configured repository rather than merely
+	// scheduling detached work.
+	gitRun(t, store.Dir(), "config", "gc.auto", "1")
+	gitRun(t, store.Dir(), "config", "gc.autoDetach", "false")
+	gitRun(t, store.Dir(), "hash-object", "-w", "--stdin", "--path", "unreachable.txt")
+
+	if err := store.GcAuto(context.Background()); err != nil {
+		t.Fatalf("GcAuto: %v", err)
+	}
+	if got := gitLine(t, store.Dir(), "rev-parse", "--is-bare-repository"); got != "true" {
+		t.Fatalf("private clone stopped being bare after maintenance: %q", got)
+	}
+}
+
 func TestFetchIntoApp(t *testing.T) {
 	origin := newOrigin(t, "main", map[string]entry{"a.md": text("canonical a\n")})
 	store := ensureStore(t, origin)

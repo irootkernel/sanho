@@ -253,6 +253,18 @@ case 이름은 `up_to_date`, `fast_forward`, `auto_merge`, `unknown_base`다.
 계속된다. 이때 worktree는 건드리지 않으므로 `status`가 "behind(내 병합
 결과)"로 보인다. `sanho pull`이 따라잡는다.
 
+실제 게시 뒤에는 private canonical clone에 대해 Git의 자동 gc를 한 번
+요청한다. 임계값에 미달하면 Git이 아무 작업도 하지 않으며, gc 실패도 이미
+완료된 게시나 애플리케이션 push를 되돌리지 않는다. 평소에는 별도 출력이 없고,
+`sanho --verbose hook pre-push`처럼 verbose 진단을 켠 경우에만 다음 형태로
+남는다.
+
+```text
+sanho: debug: private canonical clone maintenance skipped: canonical: maintain private clone …
+```
+
+게시할 docs 변경이 없는 push에서는 자동 gc도 실행하지 않는다.
+
 거절은 다음 다섯 가지다. 어느 경우에도 원격 ref는 하나도 바뀌지 않는다.
 
 **(a) docs 충돌.**

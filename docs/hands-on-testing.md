@@ -208,7 +208,11 @@ v0.1의 Critical C1은 daemon이 없으면 모든 commit이 막히는 것이었�
 6. `git push` 게시 시간과 `sanho sync` 시간을 측정한다.
 7. `du -sh .git/sanho/canonical`로 private clone 크기를 기록한다. 작업공간마다
    하나씩 생기므로 디스크 비용이 사용자에게 보인다.
-8. `sanho status`(캐시)와 `sanho status --refresh`의 시간 차이를 기록한다.
+8. docs를 바꿔 게시하는 push를 충분히 반복한 뒤 같은 크기를 다시 기록한다.
+   실제 게시 뒤에는 `git gc --auto --quiet`가 best-effort로 실행되지만, Git이
+   자체 임계값에 따라 아무 작업도 하지 않을 수 있다. 일반 출력에는 gc 진단이
+   없어야 하고, gc가 실패해도 애플리케이션 push는 성공해야 한다.
+9. `sanho status`(캐시)와 `sanho status --refresh`의 시간 차이를 기록한다.
 
 이 항목은 PASS/FAIL보다 **측정치 기록**이 목적이다. 임계값을 넘는 항목은
 BLOCKED이 아니라 잔여 위험으로 명시한다.

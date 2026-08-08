@@ -65,6 +65,8 @@ func (l *Link) AbsorbedByTip(ctx context.Context, tipTree, head string) (bool, e
 	return clean && merged == tipTree, nil
 }
 
+func (l *Link) GcAuto(ctx context.Context) error { return l.store.GcAuto(ctx) }
+
 // FetchFromApp imports the pushed tip so its docs tree is addressable
 // clone-side (§5.3 step 5).
 func (l *Link) FetchFromApp(ctx context.Context, tipOID string) error {
