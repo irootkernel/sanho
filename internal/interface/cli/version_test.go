@@ -6,7 +6,7 @@ import (
 )
 
 func TestVersionJSONIsCompact(t *testing.T) {
-	cmd := newVersionCmd(BuildInfo{Version: "v0.2.1"})
+	cmd := newVersionCmd(BuildInfo{Version: "v0.2.2"})
 	var stdout bytes.Buffer
 	cmd.SetOut(&stdout)
 	cmd.SetArgs([]string{"--json"})
@@ -15,7 +15,7 @@ func TestVersionJSONIsCompact(t *testing.T) {
 		t.Fatalf("execute version --json: %v", err)
 	}
 
-	const want = "{\"name\":\"sanho\",\"version\":\"v0.2.1\"}\n"
+	const want = "{\"name\":\"sanho\",\"version\":\"v0.2.2\"}\n"
 	if got := stdout.String(); got != want {
 		t.Fatalf("version --json output = %q, want %q", got, want)
 	}

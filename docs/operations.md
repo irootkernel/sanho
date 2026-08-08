@@ -15,7 +15,7 @@ make cli-install     # install to Go's binary directory
 Install a published release with an explicit version:
 
 ```bash
-go install github.com/irootkernel/sanho/cmd/sanho@v0.2.1
+go install github.com/irootkernel/sanho/cmd/sanho@v0.2.2
 sanho version
 ```
 

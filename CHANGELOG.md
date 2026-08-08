@@ -1,12 +1,22 @@
 # Changelog
 
-## Unreleased
+## v0.2.2 - 2026-08-09
 
 ### Changed
 
 - `sanho version --json` now emits its unchanged two-field document as standard
   compact JSON on one line. It still terminates the document with a newline;
   other JSON commands retain their indented output.
+
+### Documentation
+
+- Current v0.2 behavior is consolidated in the architecture, operation,
+  deployment, recovery, and CLI JSON guides. The retired v0.2 design record and
+  Korean quickstart are removed, while v0.1 details remain only as release
+  history and narrow compatibility notes.
+- The release checklist now contains eight contiguous hands-on scenarios,
+  H01-H08. Deterministic boundaries stay in the automatic suites, and the
+  retired v0.1 daemon migration exercise is no longer a current release gate.
 
 ## v0.2.1 - 2026-08-08
 

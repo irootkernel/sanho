@@ -90,7 +90,7 @@ corresponding `known` field to false instead of inventing a count.
 Current source emits the complete document as standard compact JSON on one line:
 
 ```json
-{"name":"sanho","version":"v0.2.1"}
+{"name":"sanho","version":"v0.2.2"}
 ```
 
 The command writes one trailing newline. `name` and `version` are the complete
