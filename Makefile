@@ -34,7 +34,7 @@ CHECK_PACKAGES := $(UNIT_PACKAGES) \
 .PHONY: \
 	cli-build cli-install install docs-check test-package-ownership test-architecture \
 	test test-prepare \
-	test-unit test-int test-e2e \
+	test-unit test-int test-e2e test-scale \
 	build-cli install-cli
 
 # ---- CLI ----
@@ -117,6 +117,15 @@ test-int: cli-build
 test-e2e: cli-build
 	SANHO_CLI_BINARY="$(CURDIR)/$(CLI_BINARY)" $(GO) test ./test/cli/e2e -count=1 -v -timeout 20m
 	$(GO) test ./test/install -count=1
+
+# Opt-in correctness profile for the large-repository boundary. It is kept
+# out of `make test`: timings are evidence, not a release latency threshold.
+test-scale: cli-build
+	@if [[ "$${SANHO_SCALE:-}" != "1" ]]; then \
+		echo "Error: test-scale requires SANHO_SCALE=1."; \
+		exit 2; \
+	fi
+	SANHO_SCALE=1 SANHO_CLI_BINARY="$(CURDIR)/$(CLI_BINARY)" $(GO) test ./test/scale -count=1 -v -timeout 30m
 
 # Compatibility aliases for the previous target names.
 build-cli: cli-build

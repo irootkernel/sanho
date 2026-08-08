@@ -613,6 +613,23 @@ func TestStagedConflictMarkersBlockACommit(t *testing.T) {
 	w.git(w.app, "commit", "-m", "docs: resolved")
 }
 
+func TestCompleteConflictMarkerTrioAfterLongLineBlocksACommit(t *testing.T) {
+	w := newWorld(t, map[string]string{"api.md": "canonical api\n"})
+	w.initAndAdoptDocs()
+
+	content := strings.Repeat("x", 1<<20) + "\n" +
+		"<<<<<<< sanho-ours\nmine\n=======\ntheirs\n>>>>>>> sanho-upstream\n"
+	writeFile(t, w.appPath("docs", "long.md"), content)
+	w.git(w.app, "add", "docs/long.md")
+
+	blocked := w.gitExit(w.app, "commit", "-m", "docs: markers after long line")
+	if blocked.exitCode == 0 {
+		t.Fatal("a complete marker trio after a 1 MiB line was committed")
+	}
+	requireContains(t, "marker gate", blocked.combined(), "staged docs contain conflict markers")
+	requireContains(t, "marker gate", blocked.combined(), "docs/long.md")
+}
+
 // `sanho sync --abort` restores the pre-sync state and cannot fail once
 // a sync note exists (§5.5 step 7).
 func TestSyncAbortRestoresThePreSyncState(t *testing.T) {

@@ -138,8 +138,8 @@ func runPublicationRace(t *testing.T) {
 	t.Helper()
 
 	w := newWorld(t, map[string]string{"api.md": "canonical api\n"})
-	alpha := w.setup("alpha")
-	bravo := w.setup("bravo")
+	alpha := w.setupIsolated("alpha")
+	bravo := w.setupIsolated("bravo")
 
 	alpha.commitDocs("docs: alpha section", map[string]string{"alpha.md": "alpha\n"})
 	bravo.commitDocs("docs: bravo section", map[string]string{"bravo.md": "bravo\n"})
@@ -155,7 +155,7 @@ func runPublicationRace(t *testing.T) {
 		go func(i int, ws *workspace) {
 			defer group.Done()
 			<-start
-			results[i], errs[i] = tryExecute(ws.dir, w.env(), "git", "push", "--quiet", "origin", "main")
+			results[i], errs[i] = tryExecute(ws.dir, ws.env(), "git", "push", "--quiet", "origin", "main")
 		}(i, ws)
 	}
 	close(start)
@@ -207,6 +207,88 @@ func runPublicationRace(t *testing.T) {
 		requireExit(t, ws.name+" final sync", ws.run("sync"), 0)
 		requireEqual(t, ws.name+" docs/alpha.md", ws.readDocs("alpha.md"), "alpha\n")
 		requireEqual(t, ws.name+" docs/bravo.md", ws.readDocs("bravo.md"), "bravo\n")
+		assertNoMachineLocalSiblings(t, ws)
+	}
+}
+
+// TestC2SameLinePublicationRaceRequiresExplicitResolution is the conflict
+// half of the machine-boundary race. One CAS writer wins; the other must not
+// turn a same-line merge into a silent choice, and its documented recovery
+// must publish successfully after an explicit resolution.
+func TestC2SameLinePublicationRaceRequiresExplicitResolution(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t, map[string]string{"api.md": "value: base\n"})
+	alpha := w.setupIsolated("same-line-alpha")
+	bravo := w.setupIsolated("same-line-bravo")
+	alpha.commitDocs("docs: alpha value", map[string]string{"api.md": "value: alpha\n"})
+	bravo.commitDocs("docs: bravo value", map[string]string{"api.md": "value: bravo\n"})
+
+	racers := []*workspace{alpha, bravo}
+	results := make([]result, len(racers))
+	errs := make([]error, len(racers))
+	start := make(chan struct{})
+	var group sync.WaitGroup
+	for i, ws := range racers {
+		group.Add(1)
+		go func(i int, ws *workspace) {
+			defer group.Done()
+			<-start
+			results[i], errs[i] = tryExecute(ws.dir, ws.env(), "git", "push", "--quiet", "origin", "main")
+		}(i, ws)
+	}
+	close(start)
+	group.Wait()
+
+	winner, loser := -1, -1
+	for i := range racers {
+		if errs[i] != nil {
+			t.Fatalf("%s could not start its push: %v", racers[i].name, errs[i])
+		}
+		if results[i].exitCode == 0 {
+			winner = i
+		} else {
+			loser = i
+		}
+	}
+	if winner < 0 || loser < 0 {
+		t.Fatalf("same-line race exits = [%d, %d], want one winner and one rejected loser\nalpha:\n%s\nbravo:\n%s",
+			results[0].exitCode, results[1].exitCode, results[0].combined(), results[1].combined())
+	}
+	requireContains(t, "same-line loser", results[loser].combined(), "conflict with upstream")
+	requireContains(t, "same-line loser", results[loser].combined(), "sanho sync")
+	assertNoMachineLocalSiblings(t, racers[winner])
+	assertNoMachineLocalSiblings(t, racers[loser])
+
+	sync := racers[loser].sanho("sync")
+	requireContains(t, "loser sync", sync.stdout, "have conflicts")
+	racers[loser].writeDocs(map[string]string{"api.md": "value: resolved\n"})
+	racers[loser].git("add", "docs/api.md")
+	racers[loser].git("commit", "-m", "docs: resolve publication race")
+	racers[loser].sanho("sync", "--continue")
+	requireExit(t, "resolved loser push", racers[loser].push(), 0)
+	requireEqual(t, "resolved canonical content", w.canonicalFile(w.canonicalHead(), "api.md"), "value: resolved\n")
+
+	for _, line := range strings.Split(strings.TrimSpace(
+		w.git(w.origin, "log", "--format=%h %p", w.canonicalHead()).stdout), "\n") {
+		if len(strings.Fields(line)) > 2 {
+			t.Errorf("canonical history has a merge commit: %q", line)
+		}
+	}
+}
+
+func assertNoMachineLocalSiblings(t *testing.T, ws *workspace) {
+	t.Helper()
+	var status struct {
+		Siblings []struct {
+			WorkspaceID string `json:"workspace_id"`
+		} `json:"siblings"`
+	}
+	out := ws.sanho("status", "--json")
+	if err := json.Unmarshal([]byte(out.stdout), &status); err != nil {
+		t.Fatalf("parse %s status: %v\n%s", ws.name, err, out.stdout)
+	}
+	if len(status.Siblings) != 0 {
+		t.Fatalf("%s machine-local siblings = %+v, want none", ws.name, status.Siblings)
 	}
 }
 

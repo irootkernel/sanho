@@ -242,6 +242,9 @@ type workspace struct {
 	dir string
 	// codeOrigin is this workspace's own bare app remote.
 	codeOrigin string
+	// home overrides the world's SANHO_HOME when a scenario models a
+	// different machine. Empty means the world's shared registry.
+	home string
 }
 
 // newWorkspace creates an application repository with a README, a code
@@ -305,6 +308,31 @@ func (w *world) setup(name string) *workspace {
 	return w.newWorkspace(name).initAndAdopt()
 }
 
+// setupIsolated gives one workspace its own machine-local registry before
+// initialization. The canonical origin remains shared, which is the boundary
+// the publication concurrency scenarios exercise.
+func (w *world) setupIsolated(name string) *workspace {
+	w.t.Helper()
+	ws := w.newWorkspace(name)
+	ws.home = filepath.Join(w.root, name+"-sanho-home")
+	mkdirAll(w.t, ws.home)
+	return ws.initAndAdopt()
+}
+
+func (ws *workspace) env() []string {
+	env := ws.w.env()
+	if ws.home == "" {
+		return env
+	}
+	for i, value := range env {
+		if strings.HasPrefix(value, "SANHO_HOME=") {
+			env[i] = "SANHO_HOME=" + ws.home
+			return env
+		}
+	}
+	return append(env, "SANHO_HOME="+ws.home)
+}
+
 func (ws *workspace) path(parts ...string) string {
 	return filepath.Join(append([]string{ws.dir}, parts...)...)
 }
@@ -322,7 +350,7 @@ func (ws *workspace) basePath() string { return ws.path(".sanho_base.json") }
 // run invokes the CLI in this workspace and returns whatever it did.
 func (ws *workspace) run(args ...string) result {
 	ws.w.t.Helper()
-	return execute(ws.w.t, ws.dir, ws.w.env(), cliBinary, args...)
+	return execute(ws.w.t, ws.dir, ws.env(), cliBinary, args...)
 }
 
 // sanho invokes the CLI and fails the test on a non-zero exit.
@@ -339,13 +367,13 @@ func (ws *workspace) sanho(args ...string) result {
 // git runs git in this workspace and fails the test on a non-zero exit.
 func (ws *workspace) git(args ...string) result {
 	ws.w.t.Helper()
-	return runGit(ws.w.t, ws.dir, ws.w.env(), args...)
+	return runGit(ws.w.t, ws.dir, ws.env(), args...)
 }
 
 // gitExit runs git and returns whatever it did, including a failure.
 func (ws *workspace) gitExit(args ...string) result {
 	ws.w.t.Helper()
-	return execute(ws.w.t, ws.dir, ws.w.env(), "git", args...)
+	return execute(ws.w.t, ws.dir, ws.env(), "git", args...)
 }
 
 // shell runs a command line verbatim through /bin/sh. It is how the
@@ -353,7 +381,7 @@ func (ws *workspace) gitExit(args ...string) result {
 // the `&&` compounds that §5.9 template 2 names.
 func (ws *workspace) shell(command string) result {
 	ws.w.t.Helper()
-	return execute(ws.w.t, ws.dir, ws.w.env(), "/bin/sh", "-c", command)
+	return execute(ws.w.t, ws.dir, ws.env(), "/bin/sh", "-c", command)
 }
 
 // push sends the current branch to the app's own remote, which is what

@@ -12,8 +12,8 @@ commit, sync 충돌 → 해소 → push 성공 경로, `clean --dry-run` 무변�
 `doctor --fix`, migrate와 v0.1 강등까지 실행한다. `test/docsync`는 3-way 병합,
 빈 canonical, legacy base, rewrite 재유도, dirty 거절을 실제 git으로 검사한다.
 따라서 hands-on의 초점은 **자동화가 만들 수 없는 것**이다. 실제 hosting과
-SSH 인증, 서버 측 branch 보호 규칙, 물리적으로 다른 두 머신, 실사용 규모의
-저장소, 그리고 진짜 v0.1 설치본에서 출발하는 migration.
+SSH 인증·network 차단, 진짜 v0.1 설치본에서 출발하는 migration, 운영체제의
+filesystem semantics, 설치 binary와 GUI Git 환경이다.
 
 - 실제 저장소를 사용할 때는 대상과 허용된 write 범위를 먼저 기록한다.
 - force push, hook 우회(`--no-verify`), `.git/sanho` 수동 삭제는 사용하지
@@ -75,27 +75,15 @@ CLONE="$(git rev-parse --path-format=absolute --git-common-dir)/sanho/canonical"
 git -C "$CLONE" log --oneline -5 refs/remotes/origin/main
 ```
 
-## v0.1 체크리스트 처분
+## 자동 테스트로 이전한 경계
 
-| v0.1 항목 | 처분 | v0.2 대응 |
-|---|---|---|
-| H01 실제 세 저장소 양방향 동기화와 main 게시 | **변형** | H01. 애플리케이션 `main` 선행 게시 부분은 은퇴한다. |
-| H02 direct URL·alias remote 우회 차단 | **은퇴** | 애플리케이션 main 게시 계약이 없다. pre-push는 어떤 remote로 push하든 canonical 게시만 판단한다. |
-| H03 실제 branch rule에 의한 main 거부 | **변형** | H03. 대상이 애플리케이션 `origin/main`이 아니라 **canonical docs 저장소**의 게시 branch다. |
-| H04 main 성공 후 target push 실패와 재시도 | **은퇴** | 두 단계 push가 없다. 게시는 canonical로 한 번 나가고, 애플리케이션 push는 git이 그대로 수행한다. |
-| H05 remote main 경합과 divergence | **변형** | H02. canonical CAS 경합으로 대체하며 두 머신에서 수행한다. |
-| H06 v0.1.2 legacy v2 중단 복구 | **은퇴** | transaction engine과 5단계 상태가 없다. 남을 수 있는 상태는 충돌 sync 하나이며 자동 스위트가 덮는다. |
-| H07 linked worktree queue와 동시 실행 | **변형** | H07. 검사 대상이 게시 대기 queue가 아니라 **공유 private clone**이다. |
-| H08 custom hooksPath와 legacy hook 갱신 | **변형** | H08. hook 자동 upgrade·재시도 요구 계약은 은퇴하고, 정확한 줄 일치 공존만 확인한다. |
-| H09 SSH·network 실패와 재시도 | **유지** | H09. 읽기/쓰기 비대칭 확인이 추가된다. |
-| H10 launchd/systemd 재시작과 업그레이드 | **은퇴** | daemon이 없다. |
-| H11 clean stale Git operation 차단과 worktree 격리 | **은퇴** | Sanho는 Git operation metadata를 검사하지 않는다. rebase 중에도 hook은 exit 0이다. |
-| H12 rebase lifecycle 무변경과 종료 후 수렴 | **은퇴** | 위와 같은 이유. base 재유도는 자동 스위트가 덮는다. |
-| H13 pre-push docs provenance 무결성 | **은퇴** | trailer는 gate 입력이 아니다. 게시 판정은 base 파일과 tree 비교로 한다. 마커 게이트는 자동 스위트가 덮는다. |
-| H14 설치 hook trust boundary와 status 호환성 | **변형** | H12. status JSON 호환성 부분은 은퇴한다(스키마가 새로 정의됐다). |
+다음 항목은 반복 가능하고 판정이 명확하므로 hands-on ID를 부여하지 않는다.
 
-신설 항목은 H04(오프라인 경계), H05(대형 저장소 체감), H06(실사용 migrate),
-H10(canonical rewrite 복구), H11(symlink·mode·binary 왕복)이다.
+| 경계 | 자동 검증 |
+|---|---|
+| 서로 다른 머신을 모사한 canonical CAS 경합 | `test/cli/e2e`가 서로 다른 `SANHO_HOME`을 쓰는 두 실제 프로세스의 다른 파일·같은 줄 동시 push를 실행한다. 선형 이력, 명시적 충돌 해소, 머신 간 sibling 비가시성을 확인한다. |
+| canonical 서버 측 거부와 게시 branch 선택 | `test/cli/integration`이 bare remote의 `pre-receive` 거부 전후 ref 불변성과 같은 push의 재시도를 검증한다. `internal/infra/canonical`은 `main`이 없고 `master`만 있는 origin 선택을 검증한다. |
+| 대형 docs correctness와 측정 | `SANHO_SCALE=1 make test-scale`이 1,000 files, 500 commits, 약 50 MiB fixture에서 init·status·push·sync 시간을 기록한다. 선택적 profile이며 `make test`와 Gaori `all`에는 포함되지 않는다. |
 
 ## H01. 실제 원격 세 저장소 양방향 전파 (변형)
 
@@ -124,48 +112,7 @@ H10(canonical rewrite 복구), H11(symlink·mode·binary 왕복)이다.
 애플리케이션 `main`을 Sanho가 자동으로 fast-forward하거나 push하면 FAIL이다.
 v0.2는 애플리케이션 ref를 절대 움직이지 않는다.
 
-## H02. 두 머신 동시 게시와 CAS 경합 (신설)
-
-단일 머신 자동 테스트로는 "다른 머신의 게시자"를 만들 수 없다.
-
-1. 물리적으로 다른 두 머신(또는 완전히 분리된 두 사용자 계정)에 v0.2를
-   설치하고 같은 프로젝트의 애플리케이션 저장소를 각각 clone·init한다.
-2. 두 머신에서 **서로 다른 docs 파일**을 각각 편집해 commit한다.
-3. 두 머신에서 가능한 한 동시에 `git push`한다.
-4. canonical에 정확히 두 개의 게시 commit이 선형으로 쌓였는지 확인한다. merge
-   commit이 생기면 FAIL이다.
-5. 진 쪽이 `auto_merge`로 자동 병합해 게시했는지, 아니면 재시도 후 성공했는지
-   출력으로 확인한다. `sanho: docs must be reconciled before publishing
-   (cas_retry_exhausted; …)`가 나왔다면 그것도 정상 결과이며, 안내대로
-   `sanho sync` 후 재push가 성공하는지 확인한다.
-6. 두 머신에서 **같은 docs 파일의 같은 줄**을 편집해 3~5단계를 반복한다. 진
-   쪽이 `sanho: your docs changes conflict with upstream (base … → …)`로 거절되고
-   원격 ref가 하나도 바뀌지 않는지 확인한다.
-7. 진 쪽에서 `sanho sync` → 해소 → commit → push가 성공하는지 확인한다.
-8. 각 머신의 `sanho status`가 상대를 sibling으로 보지 **못하는 것**이 정상임을
-   기록한다. 레지스트리는 머신마다 독립이며 v0.2는 머신 간 sibling 가시성을
-   제공하지 않는다(v0.1도 마찬가지였다).
-
-어느 단계에서든 force push가 사용되거나 canonical 이력이 비선형이 되면 FAIL이다.
-
-## H03. canonical 저장소의 branch 보호 규칙 (변형)
-
-hosting service의 보호 규칙과 사용자 권한은 로컬 bare remote가 대신할 수 없다.
-
-1. canonical docs 저장소의 게시 branch(`main`)에 직접 push를 금지하는 보호
-   규칙을 승인된 test repository에 설정한다.
-2. 애플리케이션 저장소에서 docs를 바꿔 commit하고 `git push`한다.
-3. 게시가 거부되고, 애플리케이션 push도 함께 중단되며, 애플리케이션 원격 ref가
-   바뀌지 않는지 확인한다.
-4. 출력이 `sanho: canonical repository unreachable (<url>): <원인>` 형태로
-   원인 줄과 조치 줄을 감싸는지, raw Go 오류 체인이 노출되지 않는지 확인한다.
-5. force push나 우회가 시도되지 않았는지, canonical head가 그대로인지 확인한다.
-6. 규칙을 정상 절차로 충족(또는 해제)한 뒤 **같은 `git push`**를 재시도해
-   성공하는지 확인한다.
-7. 별도로, 게시 branch가 `master`뿐인 저장소를 하나 준비해 `sanho init`이
-   `branch master`로 해석하는지 확인한다.
-
-## H04. 오프라인 경계 — commit은 되고 push는 안 된다 (신설)
+## H02. 오프라인 경계 — commit은 되고 push는 안 된다 (신설)
 
 v0.1의 Critical C1은 daemon이 없으면 모든 commit이 막히는 것이었다. 실제 network
 차단으로 확인한다.
@@ -190,34 +137,7 @@ v0.1의 Critical C1은 daemon이 없으면 모든 commit이 막히는 것이었�
 
 오프라인 상태에서 `git commit`이 한 번이라도 실패하면 FAIL이다.
 
-## H05. 대형 docs 저장소 체감 (신설)
-
-자동 테스트의 fixture는 파일 몇 개다. 실사용 규모에서 병합 예측 비용과 hook
-지연을 사람이 직접 느껴 봐야 한다.
-
-1. 실사용 규모(권장: 파일 1,000개 이상, 이력 500 commit 이상, 총 50 MB 이상)의
-   docs 저장소를 준비하거나 승인된 실제 저장소를 사용한다.
-2. `sanho init` 소요 시간을 측정하고 기록한다(clone + 첫 fetch 포함).
-3. docs를 건드리지 않는 commit을 10회 하고 `pre-commit` 지연을 측정한다.
-   체감 지연이 있으면 기록한다.
-4. canonical을 앞서게 만든 뒤 docs를 건드리지 않는 commit을 다시 10회 한다.
-   이때는 병합 예측이 실제로 실행된다. 지연을 측정해 3단계와 비교한다.
-5. 병합 예측 비용이 눈에 띄면(체감 1초 이상) 기록한다. 설계상 이 경우
-   경고를 behind 개수만 말하도록 낮추는 선택지가 열려 있으므로, 측정치가
-   그 판단의 근거가 된다.
-6. `git push` 게시 시간과 `sanho sync` 시간을 측정한다.
-7. `du -sh .git/sanho/canonical`로 private clone 크기를 기록한다. 작업공간마다
-   하나씩 생기므로 디스크 비용이 사용자에게 보인다.
-8. docs를 바꿔 게시하는 push를 충분히 반복한 뒤 같은 크기를 다시 기록한다.
-   실제 게시 뒤에는 `git gc --auto --quiet`가 best-effort로 실행되지만, Git이
-   자체 임계값에 따라 아무 작업도 하지 않을 수 있다. 일반 출력에는 gc 진단이
-   없어야 하고, gc가 실패해도 애플리케이션 push는 성공해야 한다.
-9. `sanho status`(캐시)와 `sanho status --refresh`의 시간 차이를 기록한다.
-
-이 항목은 PASS/FAIL보다 **측정치 기록**이 목적이다. 임계값을 넘는 항목은
-BLOCKED이 아니라 잔여 위험으로 명시한다.
-
-## H06. 실사용 v0.1 → v0.2 migration (신설)
+## H03. 실사용 v0.1 → v0.2 migration (신설)
 
 자동 스위트는 합성된 v0.1 작업공간을 쓴다. 진짜 v0.1 설치본에서 출발해야
 확인되는 것들이 있다.
@@ -259,7 +179,7 @@ BLOCKED이 아니라 잔여 위험으로 명시한다.
 
 migrate가 canonical 저장소를 조금이라도 바꾸면 FAIL이다.
 
-## H07. linked worktree와 공유 clone (변형)
+## H04. linked worktree와 공유 clone (변형)
 
 1. 하나의 애플리케이션 저장소에 `git worktree add`로 두 linked worktree를
    만든다.
@@ -279,10 +199,12 @@ migrate가 canonical 저장소를 조금이라도 바꾸면 FAIL이다.
    정상 동작하는지 확인한다.
 7. 두 worktree에서 거의 동시에 push를 실행한다. canonical이 선형으로 남고 두
    결과가 설명 가능한 순서로 끝나는지 확인한다.
-8. 한 worktree에서 `sanho clean -y`를 실행한 뒤 다른 worktree의 상태를
-   확인하고 기록한다(공유 clone이 사라지므로 재생성이 필요하다).
+8. 한 worktree에서 `sanho clean --dry-run`과 `sanho clean -y`를 차례로 실행한다.
+   다른 managed worktree가 출력에 표시되고 공유 hooks와 clone이 보존되는지,
+   남은 worktree가 clone 재생성 없이 게시할 수 있는지 확인한다. 마지막 managed
+   worktree를 clean할 때만 공유 hooks와 clone이 제거돼야 한다.
 
-## H08. hook 소유권과 기존 hook 공존 (변형)
+## H05. hook 소유권과 기존 hook 공존 (변형)
 
 1. repository-local `core.hooksPath`와 사용자 전역 hooksPath를 각각 사용하는
    폐기 가능한 clone을 준비한다.
@@ -306,7 +228,7 @@ migrate가 canonical 저장소를 조금이라도 바꾸면 FAIL이다.
 8. shebang 한 줄과 Sanho 라인만 있던 hook 파일이 `clean` 후 **삭제**되는지
    확인한다. 빈 껍데기가 남으면 FAIL이다.
 
-## H09. SSH·network 실패와 재시도 (유지)
+## H06. SSH·network 실패와 재시도 (유지)
 
 1. 격리 환경에서 잘못된 SSH key, 끊긴 network, DNS 실패, 만료된 자격 증명 중
    승인된 방법으로 각각 실패를 만든다.
@@ -324,7 +246,7 @@ migrate가 canonical 저장소를 조금이라도 바꾸면 FAIL이다.
    재시도해 성공하는지 확인한다.
 8. credential, SSH agent, proxy 설정을 원래대로 복구한다.
 
-## H10. canonical 이력 rewrite 후 복구 (신설)
+## H07. canonical 이력 rewrite 후 복구 (신설)
 
 1. 폐기 가능한 canonical 저장소와 작업공간을 준비하고, docs를 몇 번 게시해
    이력을 만든다.
@@ -353,7 +275,7 @@ migrate가 canonical 저장소를 조금이라도 바꾸면 FAIL이다.
    canonical 파일 하나를 누락한 변형은 absorption 증명을 통과하면 안 된다.
 9. 존재하지 않는 commit을 `--rebase-onto`에 주면 거절되는지 확인한다.
 
-## H11. symlink·file mode·binary 왕복 (신설)
+## H08. symlink·file mode·binary 왕복 (신설)
 
 v0.1은 tar snapshot 전송에서 symlink를 조용히 잃었다(audit H1). v0.2는 내용을
 git object로 옮기므로 구조적으로 해결됐지만, 실제 파일 시스템에서 왕복을
@@ -372,8 +294,16 @@ git object로 옮기므로 구조적으로 해결됐지만, 실제 파일 시스
    symlink가 symlink로, 실행 비트가 실행 비트로 복원되는지 확인한다.
 4. binary 파일이 충돌 마커 오탐을 일으키지 않는지 확인한다(앞 8 KiB의 NUL로
    binary 판정).
-5. 아주 긴 한 줄 파일 뒤에 진짜 충돌 마커를 넣고 commit·push를 시도해
-   **탐지되는지** 확인한다. v0.1은 64 KiB 이후를 보지 못했다.
+5. 아주 긴 한 줄 파일 뒤에 아래 **완전한 순서의 marker trio**를 넣고 commit을
+   시도해 탐지되는지 확인한다. 시작 marker 하나만으로는 충돌이 아니며, v0.1은
+   64 KiB 이후의 완전한 trio도 보지 못했다.
+   ```text
+   <<<<<<< sanho-ours
+   ours
+   =======
+   theirs
+   >>>>>>> sanho-upstream
+   ```
 6. 10 MiB를 넘는 텍스트 파일을 docs에 두고 push한다. 조용히 통과하지 않고
    "너무 커서 스캔할 수 없다"는 오류로 게이트가 fail-closed인지 확인한다.
 7. 양쪽에서 symlink를 서로 다른 대상으로 바꿔 `sanho sync` 충돌을 만들고, 해소
@@ -381,7 +311,7 @@ git object로 옮기므로 구조적으로 해결됐지만, 실제 파일 시스
 
 어느 단계에서든 파일이 조용히 사라지거나 일반 파일로 바뀌면 FAIL이다.
 
-## H12. 설치 binary와 PATH 경계 (변형)
+## H09. 설치 binary와 PATH 경계 (변형)
 
 내부 함수를 직접 호출하지 않고 공개 설치 binary와 실제 git 명령만 사용한다.
 
@@ -429,7 +359,6 @@ git object로 옮기므로 구조적으로 해결됐지만, 실제 파일 시스
   `sanho doctor --json`을 기록했으며 남은 `sync_in_progress` 상태가 없다.
 - canonical 이력이 선형이고 merge commit이 없으며, force push가 사용되지
   않았다.
-- H05의 측정치가 기록돼 있고, 임계를 넘는 항목은 잔여 위험으로 명시돼 있다.
 - 임시 branch, clone, `GOBIN`, `SANHO_HOME`, 자격 증명 설정을 정리했다.
 - 유지한 validation 파일과 commit은 소유 저장소와 유지 이유가 기록돼 있다.
 - 전체 release diff와 자동·hands-on 증적을 사용자에게 먼저 제출하고, 사용자가

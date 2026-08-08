@@ -601,6 +601,7 @@ make test
 | `test-unit` | 모든 단위 패키지를 `-race`로 실행 |
 | `test-int` | `bin/sanho`를 빌드해 `SANHO_CLI_BINARY`로 넘기고 `test/cli/integration`과 `test/docsync`를 실행 |
 | `test-e2e` | `test/cli/e2e` — 시나리오 매트릭스(S1~S11), 프로세스 수준 동시성, guidance closure 스위트 — 와 `test/install`(`go install ./cmd/sanho` 확인) |
+| `test-scale` | `SANHO_SCALE=1 make test-scale`로만 실행하는 선택적 대형 저장소 correctness profile. 1,000 files, 500 commits, 약 50 MiB에서 init·status·push·sync 시간을 기록하며 고정 지연 임계값은 두지 않는다. `make test`에는 포함되지 않는다. |
 | `docs-check` | 필수 문서 존재 여부와 폐기된 참조 문자열 검사 |
 | `test-package-ownership` | `go list` 결과와 `UNIT_PACKAGES` 목록이 일치하는지 검사 |
 | `test-architecture` | usecase↔infra 계층 규칙 |
