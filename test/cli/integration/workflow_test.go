@@ -48,7 +48,7 @@ func TestInitFreshOnSeededCanonical(t *testing.T) {
 
 	// .gitignore carries the v2 and legacy names.
 	gitignore := readFile(t, w.appPath(".gitignore"))
-	for _, entry := range []string{".sanho.json", ".sanho_base.json", ".sanho_docs_hash"} {
+	for _, entry := range []string{".sanho.json", ".sanho.json.bak", ".sanho_base.json", ".sanho_docs_hash"} {
 		requireContains(t, ".gitignore", gitignore, entry)
 	}
 
@@ -113,6 +113,11 @@ func TestCommitSucceedsWhileCanonicalIsUnreachable(t *testing.T) {
 	clone := w.appPath(".git", "sanho", "canonical")
 	w.git(clone, "remote", "set-url", "origin", filepath.Join(t.TempDir(), "vanished.git"))
 
+	// A sync-state read failure that is not corruption is equally unable
+	// to veto a commit. A directory at the note path makes os.ReadFile
+	// fail before JSON parsing, driving the distinct fail-open branch.
+	mkdirAll(t, w.appPath(".git", "sanho", "sync.json"))
+
 	writeFile(t, w.appPath("src", "main.go"), "package main\n")
 	w.git(w.app, "add", "-A")
 	commit := w.gitExit(w.app, "commit", "-m", "feat: add main")
@@ -120,6 +125,7 @@ func TestCommitSucceedsWhileCanonicalIsUnreachable(t *testing.T) {
 		t.Fatalf("a code-only commit failed with canonical unreachable (exit %d)\n%s",
 			commit.exitCode, commit.combined())
 	}
+	requireContains(t, "commit diagnostic", commit.combined(), "skipped the sync-state check")
 
 	// And a docs commit too: the commit path never opens a connection.
 	docs := w.commitDocs("docs: local edit", map[string]string{"api.md": "local edit\n"})

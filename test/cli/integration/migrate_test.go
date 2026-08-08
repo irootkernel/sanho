@@ -104,6 +104,7 @@ func TestMigrateConvertsAV1WorkspaceAndIsIdempotent(t *testing.T) {
 	// .bak siblings for rollback (§8 step 6), and the legacy hash file
 	// left intact as a read-only input.
 	requireContains(t, "config backup", readFile(t, w.appPath(".sanho.json.bak")), "socket_path")
+	requireContains(t, ".gitignore", readFile(t, w.appPath(".gitignore")), ".sanho.json.bak")
 	if !fileExists(t, w.appPath(".sanho_docs_hash.bak")) {
 		t.Error("the legacy hash file has no .bak sibling")
 	}
@@ -223,6 +224,20 @@ func TestV1WorkspaceDegradesSafelyBeforeMigration(t *testing.T) {
 	w := newWorld(t, map[string]string{"api.md": "canonical api\n"})
 	seedV1Workspace(t, w, w.canonicalHead(), true)
 
+	outside := t.TempDir()
+	outsideHook := w.run(outside, "hook", "post-commit")
+	if outsideHook.exitCode != 0 || outsideHook.combined() != "" {
+		t.Fatalf("post-commit outside a workspace = (exit %d, %q), want (0, silence)",
+			outsideHook.exitCode, outsideHook.combined())
+	}
+
+	v1Hook := w.run(w.app, "hook", "post-commit")
+	if v1Hook.exitCode != 0 {
+		t.Fatalf("post-commit in a v1 workspace exited %d\n%s", v1Hook.exitCode, v1Hook.combined())
+	}
+	requireContains(t, "post-commit v1 hint", v1Hook.combined(),
+		"sanho: this workspace uses the v0.1 layout; run 'sanho migrate'")
+
 	// Install the v0.2 hook lines, which is what upgrading the binary
 	// effectively does: the lines already invoke `sanho` by name.
 	for name, line := range map[string]string{
@@ -267,6 +282,11 @@ func TestV1WorkspaceDegradesSafelyBeforeMigration(t *testing.T) {
 
 	// ...and the advised command is the one that succeeds (D3).
 	w.sanho(w.app, "migrate")
+	v2Hook := w.run(w.app, "hook", "post-commit")
+	if v2Hook.exitCode != 0 || v2Hook.combined() != "" {
+		t.Fatalf("post-commit in a v2 workspace = (exit %d, %q), want (0, silence)",
+			v2Hook.exitCode, v2Hook.combined())
+	}
 	w.sanho(w.app, "status")
 }
 

@@ -45,6 +45,7 @@ import (
 // v0.1) never accidentally commits them (§8).
 var gitignoreEntries = []string{
 	wsstate.ConfigFileName,
+	wsstate.ConfigFileName + ".bak",
 	wsstate.BaseFileName,
 	wsstate.LegacyHashFileName,
 	".sanho_pending_fix",
