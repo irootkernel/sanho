@@ -15,7 +15,7 @@ make cli-install     # install to Go's binary directory
 Install a published release with an explicit version:
 
 ```bash
-go install github.com/irootkernel/sanho/cmd/sanho@v0.2.2
+go install github.com/irootkernel/sanho/cmd/sanho@v0.2.3
 sanho version
 ```
 
@@ -62,8 +62,8 @@ that blocks the commit.
 sanho sync
 ```
 
-An up-to-date sync changes nothing. A clean merge creates one explicit,
-user-authored commit named `docs: sync to <oid12>`.
+An up-to-date sync changes nothing. A clean merge creates one explicit commit
+with the user's Git identity named `[SANHO] Sync docs to <oid12>`.
 
 When sync reports conflicts it still exits 0: markers and an active sync note
 were created successfully. Resolve with normal Git commands, then complete the

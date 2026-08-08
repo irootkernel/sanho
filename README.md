@@ -47,7 +47,7 @@ Node.js and npm are not required. The only runtime dependency is cobra.
 ### Install
 
 ```bash
-go install github.com/irootkernel/sanho/cmd/sanho@v0.2.2
+go install github.com/irootkernel/sanho/cmd/sanho@v0.2.3
 sanho version
 ```
 
@@ -104,7 +104,8 @@ sanho: docs base is 2 commits behind — 'sanho sync' will merge cleanly
 ```
 
 Silence means you are up to date. When you see the warning, run `sanho sync`. On
-a clean merge it writes one ordinary commit authored by you:
+a clean merge it writes one `[SANHO] Sync docs to <oid12>` commit with your Git
+identity:
 
 ```text
 sanho: synced docs to 9a41f2cbbbbb (commit 3f0d1a5c7e21)
@@ -221,7 +222,7 @@ This repository uses Sanho to synchronize its `docs/` directory with the canonic
 
 - At the start of a task and before any authorized commit or push, run `sanho status --json`. If it fails, report the error and do not bypass Sanho.
 - If the repository is not initialized, stop and ask the user for the project name and docs repository URL. Do not guess these values or initialize the workspace on your own.
-- Edit `docs/` as normal workspace files. Use normal Git commands and let the installed Sanho hooks run. Sanho never authors commits and never grants permission to commit or push.
+- Edit `docs/` as normal workspace files. Use normal Git commands and let the installed Sanho hooks run. Explicit `sanho sync` and `sanho pull --commit` operations create `[SANHO]` commits with the user's Git identity; Sanho never grants permission to commit or push.
 - On a `sanho: docs base is N commits behind` warning, run `sanho sync`, then continue. That is the whole protocol.
 - If `sanho sync` reports conflicts, it succeeded: markers are in the worktree and the exit code is 0. Resolve them, `git add`, and `git commit` as for any merge. If the correct resolution is not evident from the two sides, stop and ask the user rather than guessing.
 - Never bypass Sanho with `--no-verify`, a force push used to evade a Sanho block, a `sanho push` command (it does not exist), or manual edits to `.sanho.json`, `.sanho_base.json`, `.git/sanho/`, or Sanho-owned hook lines.

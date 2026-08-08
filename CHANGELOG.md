@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.2.3 - 2026-08-09
+
+### Fixed
+
+- Sanho-generated application sync commits again follow the repository-wide
+  header convention: `sanho sync` and `sanho pull --commit` now create
+  `[SANHO] Sync docs to <oid>` commits.
+- Canonical publication commits now use
+  `[SANHO] Publish docs from <repository>/<branch> (<N> app commits)`, while
+  retaining the existing `source` and `commits` body.
+
+### Compatibility
+
+- Existing v0.1 `[SANHO] Update docs` commits and unprefixed v0.2.0-v0.2.2
+  commits remain valid history. No migration or history rewrite is required;
+  the new subjects apply only to commits created by v0.2.3 and later.
+
 ## v0.2.2 - 2026-08-09
 
 ### Changed
