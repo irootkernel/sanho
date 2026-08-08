@@ -1066,6 +1066,12 @@ note가 있으면 거절한다. 유일한 예외가 abort이고, 그것은 창�
 레지스트리는 **관찰용**이다. 게시 정확성은 여기에 전혀 의존하지 않는다.
 그래서 갱신 실패는 성공한 작업을 되돌리지 않고 조용히 무시된다.
 
+workspace 경로는 절대 경로로 만든 뒤 가능한 경우 symlink를 해소한 실경로를
+레지스트리 identity로 사용한다. 같은 checkout을 `/tmp`와 `/private/tmp`처럼
+다르게 가리키는 기존 행은 sibling으로 노출하지 않으며, 다음 갱신이나 clean에서
+중복 행을 제거한다. 이 정리는 기존 `.sanho.json`의 `workspace_id`를 다시 쓰지
+않는다. 그 값은 이미 게시된 provenance와의 연결을 보존하기 때문이다.
+
 모든 상태 쓰기는 `fsx.WriteFileAtomic`을 거친다. 같은 디렉터리의 고유
 임시 파일 → chmod → write → 파일 fsync → rename → 디렉터리 fsync 순서이며,
 부분적으로 쓰인 대상 파일을 남기지 않는다. 대상 디렉터리는 호출자가 미리

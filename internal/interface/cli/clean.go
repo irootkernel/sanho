@@ -176,7 +176,7 @@ func applyCleanPlan(ctx context.Context, ws *workspace, plan cleanPlan) error {
 	if err != nil {
 		return err
 	}
-	return removeWorkspace(ctx, file, plan.registryKey)
+	return removeWorkspace(ctx, file, ws)
 }
 
 func renderCleanPlan(out io.Writer, plan cleanPlan, dryRun bool) {

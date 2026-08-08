@@ -187,6 +187,7 @@ func runMigrate(cmd *cobra.Command, docsRepoURLFlag string) error {
 		if err := upsertProject(state, legacy.Project, docsRepoURL); err != nil {
 			return err
 		}
+		pruneWorkspaceAliases(state, legacy.Project, root, registryKey(legacy.Project, root))
 		state.Workspaces[registryKey(legacy.Project, root)] = registry.Workspace{
 			Project:       legacy.Project,
 			LocalPath:     root,

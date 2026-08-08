@@ -12,6 +12,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"time"
 
 	"github.com/irootkernel/sanho/internal/domain/provenance"
@@ -58,6 +59,7 @@ func upsertWorkspace(ctx context.Context, file *registry.File, ws *workspace, ba
 		if err := upsertProject(state, ws.config.Project, ws.config.DocsRepoURL); err != nil {
 			return err
 		}
+		pruneWorkspaceAliases(state, ws.config.Project, ws.configRoot, ws.registryKey())
 		state.Workspaces[ws.registryKey()] = registry.Workspace{
 			Project: ws.config.Project,
 			// configRoot, not root: the row is keyed by it, and a path
@@ -77,11 +79,31 @@ func upsertWorkspace(ctx context.Context, file *registry.File, ws *workspace, ba
 // removeWorkspace drops this workspace's entry. The project registration
 // is left alone: other workspaces may still reference it, and
 // `sanho project delete` is the command that removes one deliberately.
-func removeWorkspace(ctx context.Context, file *registry.File, key string) error {
+func removeWorkspace(ctx context.Context, file *registry.File, ws *workspace) error {
 	return updateRegistry(ctx, file, func(state *registry.State) error {
-		delete(state.Workspaces, key)
+		pruneWorkspaceAliases(state, ws.config.Project, ws.configRoot, "")
 		return nil
 	})
+}
+
+// pruneWorkspaceAliases removes observational rows that identify the same
+// checkout through a different filesystem spelling. keep is retained so an
+// upsert can replace aliases atomically; an empty keep removes every alias.
+func pruneWorkspaceAliases(state *registry.State, project, root, keep string) {
+	for key, workspace := range state.Workspaces {
+		if key != keep && workspace.Project == project && sameFilesystemPath(workspace.LocalPath, root) {
+			delete(state.Workspaces, key)
+		}
+	}
+}
+
+func workspacePathIdentity(name string) string {
+	if filepath.IsAbs(name) {
+		if canonical, err := canonicalFilesystemPath(name); err == nil {
+			return canonical
+		}
+	}
+	return "unresolved:" + name
 }
 
 // projectWorkspaces lists a project's registered workspaces. An empty

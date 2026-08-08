@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sort"
 	"text/tabwriter"
 	"time"
 
@@ -159,11 +160,24 @@ func (r registryPort) Siblings(ctx context.Context) ([]admin.SiblingEntry, error
 	}
 
 	mine := r.ws.registryKey()
+	keys := make([]string, 0, len(state.Workspaces))
+	for key := range state.Workspaces {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	seenPaths := make(map[string]struct{})
 	var entries []admin.SiblingEntry
-	for key, workspace := range state.Workspaces {
-		if key == mine || workspace.Project != r.ws.config.Project {
+	for _, key := range keys {
+		workspace := state.Workspaces[key]
+		if key == mine || workspace.Project != r.ws.config.Project ||
+			sameFilesystemPath(workspace.LocalPath, r.ws.configRoot) {
 			continue
 		}
+		identity := workspacePathIdentity(workspace.LocalPath)
+		if _, duplicate := seenPaths[identity]; duplicate {
+			continue
+		}
+		seenPaths[identity] = struct{}{}
 		entries = append(entries, admin.SiblingEntry{
 			WorkspaceID:   key,
 			Base:          provenance.Base{Commit: workspace.BaseCommit, Tree: workspace.BaseTree},

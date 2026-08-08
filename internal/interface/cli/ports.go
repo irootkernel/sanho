@@ -86,7 +86,7 @@ func openWorkspace(ctx context.Context) (*workspace, error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolve the current directory: %w", err)
 	}
-	root, err := filepath.Abs(cwd)
+	root, err := canonicalFilesystemPath(cwd)
 	if err != nil {
 		return nil, fmt.Errorf("resolve the current directory: %w", err)
 	}
@@ -188,19 +188,39 @@ func resolveConfigRoot(ctx context.Context, root string) (string, error) {
 // resolved forms so that a symlinked temp directory (every macOS
 // `/var/...`) matches the `/private/var/...` git reports.
 func containsPath(paths []string, candidate string) bool {
-	resolved := candidate
-	if real, err := filepath.EvalSymlinks(candidate); err == nil {
-		resolved = real
-	}
 	for _, path := range paths {
-		if path == candidate || path == resolved {
-			return true
-		}
-		if real, err := filepath.EvalSymlinks(path); err == nil && (real == candidate || real == resolved) {
+		if sameFilesystemPath(path, candidate) {
 			return true
 		}
 	}
 	return false
+}
+
+// canonicalFilesystemPath returns the stable identity used for workspace
+// roots. Abs is required; EvalSymlinks is best effort so callers can still
+// name a path whose final component disappeared between discovery and use.
+func canonicalFilesystemPath(name string) (string, error) {
+	abs, err := filepath.Abs(name)
+	if err != nil {
+		return "", err
+	}
+	abs = filepath.Clean(abs)
+	if real, err := filepath.EvalSymlinks(abs); err == nil {
+		return filepath.Clean(real), nil
+	}
+	return abs, nil
+}
+
+// sameFilesystemPath compares existing absolute paths by their real path.
+// Registry paths are absolute by contract; refusing relative values avoids
+// interpreting corrupt observational state relative to the caller's cwd.
+func sameFilesystemPath(left, right string) bool {
+	if !filepath.IsAbs(left) || !filepath.IsAbs(right) {
+		return false
+	}
+	leftCanonical, leftErr := canonicalFilesystemPath(left)
+	rightCanonical, rightErr := canonicalFilesystemPath(right)
+	return leftErr == nil && rightErr == nil && leftCanonical == rightCanonical
 }
 
 func hasConfig(dir string) (bool, error) {
@@ -224,6 +244,9 @@ func worktreeRoots(ctx context.Context, dir string) ([]string, error) {
 	var roots []string
 	for _, line := range strings.Split(string(res.Stdout), "\n") {
 		if path, ok := strings.CutPrefix(strings.TrimSpace(line), "worktree "); ok {
+			if canonical, canonicalErr := canonicalFilesystemPath(path); canonicalErr == nil {
+				path = canonical
+			}
 			roots = append(roots, filepath.Clean(path))
 		}
 	}
@@ -240,6 +263,9 @@ func (w *workspace) resolveGitDirs(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("%s is not inside a git repository: %w", w.root, err)
 	}
+	if canonical, canonicalErr := canonicalFilesystemPath(gitDir); canonicalErr == nil {
+		gitDir = canonical
+	}
 	w.gitDir = gitDir
 
 	common, err := run.Line(ctx, "rev-parse", "--git-common-dir")
@@ -248,6 +274,9 @@ func (w *workspace) resolveGitDirs(ctx context.Context) error {
 	}
 	if !filepath.IsAbs(common) {
 		common = filepath.Join(w.root, common)
+	}
+	if canonical, canonicalErr := canonicalFilesystemPath(common); canonicalErr == nil {
+		common = canonical
 	}
 	w.commonDir = filepath.Clean(common)
 	return nil

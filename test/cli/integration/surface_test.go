@@ -2,6 +2,8 @@ package integration
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -88,6 +90,84 @@ func TestStatusJSONSchema(t *testing.T) {
 	}
 	if document.SyncInProgress {
 		t.Error("sync_in_progress = true, want false")
+	}
+}
+
+func TestRegistryHidesAndPrunesSymlinkAliasesWithoutRewritingWorkspaceID(t *testing.T) {
+	w := newWorld(t, map[string]string{"api.md": "canonical api\n"})
+	w.initAndAdoptDocs()
+
+	aliasRoot := filepath.Join(filepath.Dir(w.app), "app-alias")
+	if err := os.Symlink(w.app, aliasRoot); err != nil {
+		t.Fatalf("create workspace alias: %v", err)
+	}
+	canonicalKey := "product:" + w.app
+	aliasKey := "product:" + aliasRoot
+
+	configPath := w.appPath(".sanho.json")
+	config := strings.Replace(readFile(t, configPath), canonicalKey, aliasKey, 1)
+	writeFile(t, configPath, config)
+
+	type workspaceRow struct {
+		Project       string `json:"project"`
+		LocalPath     string `json:"local_path"`
+		BaseCommit    string `json:"base_commit"`
+		BaseTree      string `json:"base_tree"`
+		ActorEmail    string `json:"actor_email"`
+		LastUpdatedAt string `json:"last_updated_at"`
+	}
+	var state struct {
+		Version    int                        `json:"version"`
+		Projects   map[string]json.RawMessage `json:"projects"`
+		Workspaces map[string]workspaceRow    `json:"workspaces"`
+	}
+	statePath := filepath.Join(w.home, "state.json")
+	if err := json.Unmarshal([]byte(readFile(t, statePath)), &state); err != nil {
+		t.Fatalf("parse registry: %v", err)
+	}
+	aliasRow := state.Workspaces[canonicalKey]
+	aliasRow.LocalPath = aliasRoot
+	state.Workspaces[aliasKey] = aliasRow
+	encoded, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		t.Fatalf("encode registry: %v", err)
+	}
+	writeFile(t, statePath, string(encoded)+"\n")
+
+	var status struct {
+		WorkspaceID string `json:"workspace_id"`
+		Siblings    []struct {
+			WorkspaceID string `json:"workspace_id"`
+		} `json:"siblings"`
+	}
+	out := w.sanho(w.app, "status", "--json")
+	if err := json.Unmarshal([]byte(out.stdout), &status); err != nil {
+		t.Fatalf("parse status: %v\n%s", err, out.stdout)
+	}
+	if status.WorkspaceID != aliasKey {
+		t.Fatalf("workspace_id = %q, want preserved %q", status.WorkspaceID, aliasKey)
+	}
+	if len(status.Siblings) != 0 {
+		t.Fatalf("siblings = %+v, want filesystem aliases hidden", status.Siblings)
+	}
+
+	w.commitDocs("docs: publish through aliased identity", map[string]string{"api.md": "updated\n"})
+	pushed := w.push()
+	if pushed.exitCode != 0 {
+		t.Fatalf("push failed with exit %d\n%s", pushed.exitCode, pushed.combined())
+	}
+	if got := readFile(t, configPath); got != config {
+		t.Fatal("registry refresh rewrote the existing workspace_id")
+	}
+	state.Workspaces = nil
+	if err := json.Unmarshal([]byte(readFile(t, statePath)), &state); err != nil {
+		t.Fatalf("parse refreshed registry: %v", err)
+	}
+	if _, ok := state.Workspaces[aliasKey]; ok {
+		t.Fatalf("symlink alias survived registry refresh\npush:\n%s\nregistry:\n%s", pushed.combined(), readFile(t, statePath))
+	}
+	if _, ok := state.Workspaces[canonicalKey]; !ok {
+		t.Fatal("canonical registry row is missing after refresh")
 	}
 }
 

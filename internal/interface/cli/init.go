@@ -321,7 +321,7 @@ func requireGitWorktreeRoot(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolve the current directory: %w", err)
 	}
-	root, err := filepath.Abs(cwd)
+	root, err := canonicalFilesystemPath(cwd)
 	if err != nil {
 		return "", fmt.Errorf("resolve the current directory: %w", err)
 	}
@@ -330,11 +330,8 @@ func requireGitWorktreeRoot(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("%s is not inside a git repository; run 'git init' first", root)
 	}
-	if resolved, err := filepath.EvalSymlinks(top); err == nil {
-		top = resolved
-	}
-	if here, err := filepath.EvalSymlinks(root); err == nil {
-		root = here
+	if canonical, canonicalErr := canonicalFilesystemPath(top); canonicalErr == nil {
+		top = canonical
 	}
 	if top != root {
 		return "", fmt.Errorf("a sanho workspace must be initialized at the repository root (%s), not at %s", top, root)
