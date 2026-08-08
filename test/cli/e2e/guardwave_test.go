@@ -268,7 +268,7 @@ func TestPublicationRefusesAnUncorroboratedFastForward(t *testing.T) {
 
 	push := ws.gitExit("push", "--quiet", "origin", "legacy")
 	requireExit(t, "push with a base the branch cannot vouch for", push, 1)
-	requireContains(t, "rejection", push.combined(), "docs must be reconciled before publishing")
+	requireContains(t, "rejection", push.combined(), "docs provenance does not corroborate canonical head")
 
 	requireEqual(t, "canonical head", w.canonicalHead(), before)
 	want := []string{"api.md", "old.md"}

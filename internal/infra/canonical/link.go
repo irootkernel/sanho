@@ -50,6 +50,21 @@ func (l *Link) FindCommitByDocsTree(ctx context.Context, tree string) (string, b
 	return l.store.FindCommitByDocsTree(ctx, tree)
 }
 
+// AbsorbedByTip proves that publishing tipTree directly over head cannot
+// delete canonical content. Both trees are already in the private clone:
+// head belongs to the store and publication imports the tip first.
+func (l *Link) AbsorbedByTip(ctx context.Context, tipTree, head string) (bool, error) {
+	headTree, err := l.store.docsTreeOf(ctx, head)
+	if err != nil {
+		return false, err
+	}
+	merged, _, clean, err := l.MergeDocsTrees(ctx, "", tipTree, headTree)
+	if err != nil {
+		return false, err
+	}
+	return clean && merged == tipTree, nil
+}
+
 // FetchFromApp imports the pushed tip so its docs tree is addressable
 // clone-side (§5.3 step 5).
 func (l *Link) FetchFromApp(ctx context.Context, tipOID string) error {

@@ -34,6 +34,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/irootkernel/sanho/internal/usecase/publish"
 )
 
 // shortOIDWidth is §5.9's "OIDs shortened to 12 chars".
@@ -238,11 +240,16 @@ func pushConflictMessage(base, head string, files []string) string {
 	return b.String()
 }
 
-// pushSyncRequiredMessage covers the other rejections that route to
-// `sanho sync`: no recorded base, and an exhausted CAS retry budget.
-// Both are states in which `sanho sync` succeeds, which is what keeps
-// the advice closed (D3).
+// pushSyncRequiredMessage covers the remaining sync-required reasons.
+// Most route to `sanho sync`; the uncorroborated base==head state routes
+// to a provenance restamp because sync is already a no-op there. Each
+// branch names an action that succeeds in its printed state (D3).
 func pushSyncRequiredMessage(reason, base, head string) string {
+	if reason == publish.ReasonUncorroboratedBase && base != "" && base == head {
+		return fmt.Sprintf("sanho: docs provenance does not corroborate canonical head %s\n"+
+			"Make a docs change, then run 'git add docs/ && git commit' to restamp provenance, followed by 'git push'.\n"+
+			"%s", shortOID(head), msgPushRejectedTrailer)
+	}
 	// A workspace with no base has nothing to render on the left of the
 	// arrow, and "base (none) → 9a41f2c0e1d2" reads as a transition from
 	// a state rather than as the absence of one. Name the head instead.
@@ -1045,6 +1052,17 @@ var Catalog = []CatalogEntry{
 		Sample:       pushSyncRequiredMessage("no_base", "", sampleHeadOID),
 		Match:        "docs must be reconciled before publishing",
 		NextCommands: []string{"sanho sync"},
+	},
+	{
+		ID:           "push_provenance_uncorroborated",
+		Source:       "pushSyncRequiredMessage",
+		Scenario:     "push_provenance_uncorroborated",
+		Sample:       pushSyncRequiredMessage(publish.ReasonUncorroboratedBase, sampleHeadOID, sampleHeadOID),
+		Match:        "docs provenance does not corroborate canonical head",
+		NextCommands: []string{"git add docs/ && git commit", "git push"},
+		Prerequisites: map[string][]string{
+			"git push": {"git add docs/ && git commit"},
+		},
 	},
 	{
 		ID:           "push_markers",

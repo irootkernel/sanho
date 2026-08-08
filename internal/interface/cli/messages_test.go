@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/irootkernel/sanho/internal/usecase/publish"
 )
 
 // The §5.9 templates are normative: the design document fixes their
@@ -286,6 +288,7 @@ func TestMessagesAreEnglishOnly(t *testing.T) {
 		syncConflictMessage("docs", []string{"docs/a.md"}),
 		pushConflictMessage("a", "b", []string{"docs/a.md"}),
 		pushSyncRequiredMessage("no_base", "a", "b"),
+		pushSyncRequiredMessage(publish.ReasonUncorroboratedBase, sampleHeadOID, sampleHeadOID),
 		pushMarkersMessage([]string{"docs/a.md"}),
 		pushUnreachableMessage("git@host:docs.git", "connection refused"),
 		pushRewrittenMessage("a", "b", "/clone", "main"),

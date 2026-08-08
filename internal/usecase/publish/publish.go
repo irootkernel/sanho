@@ -38,6 +38,11 @@ type CanonicalPort interface {
 	ResolveCommit(ctx context.Context, oid string) (bool, error)
 	IsAncestor(ctx context.Context, a, b string) (bool, error)
 	FindCommitByDocsTree(ctx context.Context, tree string) (string, bool, error)
+	// AbsorbedByTip proves the narrow content warrant used when a tip's
+	// provenance trailer no longer resolves after a canonical rewrite:
+	// merging canonical head into the tip over the empty tree is clean
+	// and yields the tip tree unchanged.
+	AbsorbedByTip(ctx context.Context, tipTree, head string) (bool, error)
 	// FetchFromApp imports the pushed tip so its docs tree is
 	// addressable clone-side.
 	FetchFromApp(ctx context.Context, tipOID string) error
@@ -503,7 +508,15 @@ func (u *UseCase) evaluate(ctx context.Context, tips []tip, base *provenance.Bas
 		} else if decided, err = u.decideWithReanchor(ctx, t, base, snap.head, snap.headTree); err != nil {
 			return pushPlan{}, err
 		}
+		imported := false
 		if decided == pubdom.CaseFastForward && !snap.bootstrap {
+			// The absorption warrant operates clone-side, so import the tip
+			// before corroboration. This changes only the private object
+			// database; a rejected push still changes no ref or remote.
+			if err := u.Canonical.FetchFromApp(ctx, t.oid); err != nil {
+				return pushPlan{}, fmt.Errorf("import %s into the canonical clone: %w", shortOID(t.oid), err)
+			}
+			imported = true
 			if err := u.requireCorroboratedBase(ctx, t, *base, snap.head); err != nil {
 				return pushPlan{}, err
 			}
@@ -512,8 +525,10 @@ func (u *UseCase) evaluate(ctx context.Context, tips []tip, base *provenance.Bas
 		// Importing the tip writes objects into the workspace-private
 		// clone. It changes no ref there and nothing at all on origin, so
 		// it is not a canonical mutation in the sense F-H1 is about.
-		if err := u.Canonical.FetchFromApp(ctx, t.oid); err != nil {
-			return pushPlan{}, fmt.Errorf("import %s into the canonical clone: %w", shortOID(t.oid), err)
+		if !imported {
+			if err := u.Canonical.FetchFromApp(ctx, t.oid); err != nil {
+				return pushPlan{}, fmt.Errorf("import %s into the canonical clone: %w", shortOID(t.oid), err)
+			}
 		}
 
 		tree := t.docsTree
@@ -894,11 +909,12 @@ func (u *UseCase) commitPublication(ctx context.Context, t *tip, tree, parent st
 // the commit the trailers name, so every workspace that has just pushed
 // is in it.
 //
-// Refusal routes to `sanho sync`, which reconciles the branch against
-// canonical and succeeds in this state (D3). Nothing else about the push
-// changes: an auto-merge combines both sides and never needed this, and
-// a docs-identical tip short-circuits as up-to-date before the base is
-// consulted at all.
+// A trailer invalidated by rewritten history gets one narrower content
+// warrant: the tip must absorb canonical head exactly. If neither proof
+// holds, the CLI routes the base==head state to an explicit provenance
+// restamp; `sanho sync` would be a no-op there. Nothing else about the
+// push changes: an auto-merge combines both sides and never needed this,
+// and a docs-identical tip short-circuits before the base is consulted.
 func (u *UseCase) requireCorroboratedBase(ctx context.Context, t *tip, base provenance.Base, head string) error {
 	stamped, found, err := u.App.NewestDocsBase(ctx, t.oid)
 	if err != nil {
@@ -917,6 +933,15 @@ func (u *UseCase) requireCorroboratedBase(ctx context.Context, t *tip, base prov
 		if ancestor {
 			return nil
 		}
+	}
+	// A canonical rewrite can legitimately erase the commit stamped by
+	// the resolution tip. When the tip already absorbs every entry at
+	// the new head, publishing it deletes nothing from canonical, which
+	// is the exact safety property the historical warrant stood for.
+	// Merge failure or conflict is merely failure to prove that property;
+	// keep the existing fail-closed rejection.
+	if absorbed, absorbErr := u.Canonical.AbsorbedByTip(ctx, t.docsTree, head); absorbErr == nil && absorbed {
+		return nil
 	}
 	return &SyncRequiredError{Base: base.Commit, Head: head, Reason: ReasonUncorroboratedBase}
 }

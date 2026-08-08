@@ -343,8 +343,10 @@ migrate가 canonical 저장소를 조금이라도 바꾸면 FAIL이다.
    **출력된 그대로 복사해 실행**해 동작하는지 확인한다. 게시 branch가
    `master`인 저장소에서도 반복한다. 명령이 `origin/HEAD`를 지목하면
    private clone에는 그 ref가 없으므로 FAIL이다.
-8. `sanho sync --rebase-onto <commit>` 후 해소 → commit → push가 성공하고,
-   `.sanho_base.json`이 새 canonical 상태를 가리키는지 확인한다.
+8. `sanho sync --rebase-onto <commit>` 후 해소 → commit → `sanho sync
+   --continue` → push가 **추가 dummy commit 없이** 성공하고,
+   `.sanho_base.json`이 새 canonical 상태를 가리키는지 확인한다. 해소 tip에서 새
+   canonical 파일 하나를 누락한 변형은 absorption 증명을 통과하면 안 된다.
 9. 존재하지 않는 commit을 `--rebase-onto`에 주면 거절되는지 확인한다.
 
 ## H11. symlink·file mode·binary 왕복 (신설)

@@ -411,6 +411,12 @@ error: push rejected — no remote ref was changed
 `refs/remotes/origin/<branch>`만 있고 `refs/remotes/origin/HEAD`는 없다.
 HEAD를 지목하는 명령은 그 명령이 출력되는 바로 그 상태에서 실패한다.
 
+`--rebase-onto`로 충돌을 해소하고 commit한 뒤 `sanho sync --continue`를
+완료하면 추가적인 dummy commit 없이 바로 push한다. 해소 tip이 새 canonical
+head의 모든 문서를 이미 포함하면 Sanho가 content absorption을 증명해, 해소
+commit trailer가 rewrite 전 base를 가리키더라도 안전한 fast-forward로
+게시한다.
+
 `sanho sync`가 같은 상태를 만나면 다음처럼 거절한다.
 
 ```text

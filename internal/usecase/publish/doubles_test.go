@@ -57,20 +57,23 @@ type fakeCanonical struct {
 	mergeResults   []string
 	mergeConflicts []string
 	mergeErr       error
+	absorbed       bool
+	absorbErr      error
 
 	// docsCount answers DocsFileCount (the empty-publish refusal).
 	docsCount    int
 	docsCountErr error
 
 	// recorded traffic
-	fetches    int
-	pushes     int
-	published  []string
-	imported   []string
-	created    []createdCommit
-	mergeCalls []string
-	pushLeases []string
-	nextOID    int
+	fetches     int
+	pushes      int
+	published   []string
+	imported    []string
+	created     []createdCommit
+	mergeCalls  []string
+	absorbCalls []string
+	pushLeases  []string
+	nextOID     int
 }
 
 func (c *fakeCanonical) head() commitPair {
@@ -141,6 +144,11 @@ func (c *fakeCanonical) FindCommitByDocsTree(ctx context.Context, tree string) (
 		}
 	}
 	return "", false, nil
+}
+
+func (c *fakeCanonical) AbsorbedByTip(ctx context.Context, tipTree, head string) (bool, error) {
+	c.absorbCalls = append(c.absorbCalls, tipTree+"|"+head)
+	return c.absorbed, c.absorbErr
 }
 
 func (c *fakeCanonical) FetchFromApp(ctx context.Context, tipOID string) error {

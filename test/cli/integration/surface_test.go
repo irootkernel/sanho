@@ -398,3 +398,58 @@ func TestPullCommitAndSyncRebaseOntoFlags(t *testing.T) {
 		t.Fatalf("sync --rebase-onto base = %+v, want %s", document.Base, rewritten)
 	}
 }
+
+func TestRewrittenHistoryRecoveryPublishesWithoutARestampCommit(t *testing.T) {
+	w := newWorld(t, map[string]string{"api.md": "canonical v1\n"})
+	w.initAndAdoptDocs()
+	w.commitDocs("docs: publish v2", map[string]string{"api.md": "canonical v2\n"})
+	if pushed := w.push(); pushed.exitCode != 0 {
+		t.Fatalf("first publication failed\n%s", pushed.combined())
+	}
+	w.commitDocs("docs: publish shared guide", map[string]string{"shared.md": "shared\n"})
+	if pushed := w.push(); pushed.exitCode != 0 {
+		t.Fatalf("second publication failed\n%s", pushed.combined())
+	}
+
+	// This commit is based on the old canonical line. The rewrite then
+	// removes every commit its provenance can name.
+	w.commitDocs("docs: local work before rewrite", map[string]string{"local.md": "local\n"})
+	rewritten := w.rewriteCanonical(map[string]string{
+		"api.md":      "rewritten canonical\n",
+		"upstream.md": "new upstream\n",
+	}, "canonical: rewritten root")
+
+	rejected := w.push()
+	if rejected.exitCode == 0 {
+		t.Fatal("push across rewritten history succeeded before reconciliation")
+	}
+	requireContains(t, "rewrite rejection", rejected.combined(), "canonical history was rewritten")
+
+	merged := w.sanho(w.app, "sync", "--rebase-onto", rewritten)
+	requireContains(t, "rewrite sync", merged.stdout, "have conflicts")
+	writeFile(t, w.appPath("docs", "api.md"), "rewritten canonical\n")
+	w.git(w.app, "add", "docs")
+	w.git(w.app, "commit", "-m", "docs: resolve rewritten canonical")
+	w.sanho(w.app, "sync", "--continue")
+	requireContains(t, "status after recovery", w.sanho(w.app, "status").stdout, "sync      : up to date")
+	requireContains(t, "sync after recovery", w.sanho(w.app, "sync").stdout, "up to date")
+
+	// No dummy docs-changing commit is made after --continue. The
+	// resolution tip's trailer still names the vanished pre-sync base;
+	// its content absorption of the new head is the publication warrant.
+	final := w.push()
+	if final.exitCode != 0 {
+		t.Fatalf("reconciled push failed without a dummy restamp commit\n%s", final.combined())
+	}
+	requireNotContains(t, "reconciled push", final.combined(), "uncorroborated_base")
+	for path, want := range map[string]string{
+		"api.md":      "rewritten canonical\n",
+		"upstream.md": "new upstream\n",
+		"local.md":    "local\n",
+		"shared.md":   "shared\n",
+	} {
+		if got := w.canonicalFile(w.canonicalHead(), path); got != want {
+			t.Errorf("canonical %s = %q, want %q", path, got, want)
+		}
+	}
+}

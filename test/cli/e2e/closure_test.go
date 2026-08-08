@@ -37,6 +37,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -222,31 +223,32 @@ func defaultCanonicalDocs() map[string]string {
 // --- the table --------------------------------------------------------
 
 var closureFixtures = map[string]closureFixture{
-	"v1_layout":              reachV1Layout,
-	"not_a_workspace":        reachNotAWorkspace,
-	"push_sync_in_progress":  reachPushSyncInProgress,
-	"clean_unconfirmed":      reachCleanUnconfirmed,
-	"clean_sync_in_progress": reachCleanSyncInProgress,
-	"migrate_blocked":        reachMigrateBlocked,
-	"behind_clean":           reachBehindClean,
-	"behind_conflicts":       reachBehindConflicts,
-	"behind_unknown":         reachBehindUnknown,
-	"sync_conflict":          reachSyncConflict,
-	"unresolved_sync":        reachUnresolvedSync,
-	"staged_markers":         reachStagedMarkers,
-	"push_conflict":          reachPushConflict,
-	"push_sync_required":     reachPushSyncRequired,
-	"sync_not_committed":     reachSyncNotCommitted,
-	"sync_needs_continue":    reachSyncNeedsContinue,
-	"sync_continue_blocked":  reachSyncContinueBlocked,
-	"sync_note_corrupt":      reachSyncNoteCorrupt,
-	"push_markers":           reachPushMarkers,
-	"canonical_unreachable":  reachCanonicalUnreachable,
-	"history_rewritten":      reachHistoryRewritten,
-	"stamp_warning":          reachStampWarning,
-	"doctor_fix_hint":        reachDoctorFixHint,
-	"stale_data":             reachStaleData,
-	"never_fetched":          reachNeverFetched,
+	"v1_layout":                      reachV1Layout,
+	"not_a_workspace":                reachNotAWorkspace,
+	"push_sync_in_progress":          reachPushSyncInProgress,
+	"clean_unconfirmed":              reachCleanUnconfirmed,
+	"clean_sync_in_progress":         reachCleanSyncInProgress,
+	"migrate_blocked":                reachMigrateBlocked,
+	"behind_clean":                   reachBehindClean,
+	"behind_conflicts":               reachBehindConflicts,
+	"behind_unknown":                 reachBehindUnknown,
+	"sync_conflict":                  reachSyncConflict,
+	"unresolved_sync":                reachUnresolvedSync,
+	"staged_markers":                 reachStagedMarkers,
+	"push_conflict":                  reachPushConflict,
+	"push_sync_required":             reachPushSyncRequired,
+	"push_provenance_uncorroborated": reachPushProvenanceUncorroborated,
+	"sync_not_committed":             reachSyncNotCommitted,
+	"sync_needs_continue":            reachSyncNeedsContinue,
+	"sync_continue_blocked":          reachSyncContinueBlocked,
+	"sync_note_corrupt":              reachSyncNoteCorrupt,
+	"push_markers":                   reachPushMarkers,
+	"canonical_unreachable":          reachCanonicalUnreachable,
+	"history_rewritten":              reachHistoryRewritten,
+	"stamp_warning":                  reachStampWarning,
+	"doctor_fix_hint":                reachDoctorFixHint,
+	"stale_data":                     reachStaleData,
+	"never_fetched":                  reachNeverFetched,
 
 	// The F-H6 wave: guidance that used to live outside messages.go, in
 	// doctor/status/init/migrate and in the use-case sentinels, where no
@@ -558,6 +560,48 @@ func reachPushSyncRequired(t *testing.T, w *world) closureState {
 			"sanho sync": func(t *testing.T, ws *workspace) {
 				if !fileExists(t, ws.basePath()) {
 					t.Error("the advised sync established no base")
+				}
+			},
+		},
+	}
+}
+
+func reachPushProvenanceUncorroborated(t *testing.T, w *world) closureState {
+	ws := w.newWorkspace("uncorroborated-guidance")
+	ws.writeDocs(map[string]string{"legacy-only.md": "pre-adoption doc\n"})
+	ws.git("add", "-A")
+	ws.git("commit", "-m", "docs: pre-adoption work")
+	ws.git("branch", "adopt")
+	ws.git("checkout", "--quiet", "adopt")
+	ws.initAndAdopt("--force", "-y")
+	baseFile := readFile(t, ws.basePath())
+
+	ws.git("checkout", "--quiet", "main")
+	writeFile(t, ws.basePath(), baseFile)
+	push := ws.push()
+	requireExit(t, "push with uncorroborated provenance", push, 1)
+
+	prepare := func(t *testing.T, ws *workspace) {
+		ws.writeDocs(map[string]string{
+			"api.md":         "line one\nline two\n",
+			"legacy-only.md": "pre-adoption doc\n",
+		})
+	}
+	return closureState{
+		ws:     ws,
+		output: push.combined(),
+		prepare: map[string]func(*testing.T, *workspace){
+			"git add docs/ && git commit": prepare,
+			"git push":                    prepare,
+		},
+		runAs: map[string]string{
+			"git add docs/ && git commit": "git add docs/ && git commit -m 'docs: restamp provenance'",
+		},
+		verify: map[string]func(*testing.T, *workspace){
+			"git push": func(t *testing.T, ws *workspace) {
+				want := []string{"api.md", "legacy-only.md"}
+				if got := ws.w.canonicalPaths(ws.w.canonicalHead()); !reflect.DeepEqual(got, want) {
+					t.Fatalf("canonical paths = %v, want %v", got, want)
 				}
 			},
 		},

@@ -142,6 +142,11 @@ sanho sync --rebase-onto 1111111111111111111111111111111111111111
 git push
 ```
 
+해소 후 provenance를 다시 새기기 위한 dummy commit은 필요 없다. resolution
+tip이 새 canonical head의 모든 문서를 포함하면 Sanho가 empty-tree 3-way merge로
+그 흡수를 증명하고 바로 게시한다. canonical 문서를 누락하거나 대체한 tip은 이
+증명을 통과하지 않는다.
+
 ### 2-2. 지목할 commit이 없는 경우 — 수동 개입
 
 어떤 canonical commit도 이 작업공간의 docs base tree를 갖고 있지 않으면

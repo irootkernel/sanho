@@ -807,6 +807,46 @@ func TestRunRefusesAnUncorroboratedFastForward(t *testing.T) {
 	if s.canonical.pushes != 0 {
 		t.Fatalf("canonical was written %d times", s.canonical.pushes)
 	}
+	if got := s.canonical.absorbCalls; !reflect.DeepEqual(got, []string{tipTree + "|" + canonHead}) {
+		t.Fatalf("absorption calls = %v", got)
+	}
+}
+
+func TestRunAcceptsARewrittenBaseWhenTipAbsorbsCanonicalHead(t *testing.T) {
+	s := newScenario(t)
+	vanished := provenance.Base{Commit: commitOID(99), Tree: treeOID(99)}
+	s.app.defaultStampedBase = &vanished
+	s.canonical.absorbed = true
+
+	outcome, err := s.run(t)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if outcome.Case != pubdom.CaseFastForward || outcome.Published == "" {
+		t.Fatalf("outcome = %+v, want a published fast-forward", outcome)
+	}
+	if got := s.canonical.absorbCalls; !reflect.DeepEqual(got, []string{tipTree + "|" + canonHead}) {
+		t.Fatalf("absorption calls = %v", got)
+	}
+	if got := s.canonical.imported; !reflect.DeepEqual(got, []string{appTip}) {
+		t.Fatalf("imports = %v, want the tip imported exactly once", got)
+	}
+}
+
+func TestRunRejectsWhenAbsorptionCannotBeProved(t *testing.T) {
+	s := newScenario(t)
+	vanished := provenance.Base{Commit: commitOID(99), Tree: treeOID(99)}
+	s.app.defaultStampedBase = &vanished
+	s.canonical.absorbErr = errors.New("merge unavailable")
+
+	_, err := s.run(t)
+	var syncErr *SyncRequiredError
+	if !errors.As(err, &syncErr) || syncErr.Reason != ReasonUncorroboratedBase {
+		t.Fatalf("error = %v, want uncorroborated-base rejection", err)
+	}
+	if s.canonical.pushes != 0 {
+		t.Fatalf("canonical was written %d times", s.canonical.pushes)
+	}
 }
 
 // TestRunAcceptsAFastForwardStampedWithAnOlderBase is the no-regression

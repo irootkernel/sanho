@@ -374,13 +374,23 @@ base를 쓰는 경로는 여덟이다: `sync`(clean)·`--continue`·`--abort`의
    없다. 그것이 4차 리뷰 C2의 재현이다: 낡은 문서 하나짜리 branch가 canonical의
    여섯 문서를 전부 대체했고, `(fast_forward)`로 보고됐다.
 
-   그래서 tip이 **자기 이력으로** base를 보증해야 한다. tip에서 도달 가능한
+   그래서 tip이 우선 **자기 이력으로** base를 보증해야 한다. tip에서 도달 가능한
    최신 `docs-base` trailer가 기록된 base를 이름짓거나, 그 canonical **조상**을
    이름지어야 한다. 조상 쪽은 빠져나갈 구멍이 아니라 정상 상태다 — 게시 후 전진
    규칙이 base 파일을 trailer가 가리키는 commit보다 앞으로 옮기므로, 방금
-   push한 workspace는 모두 그 상태다. 보증되지 않으면 `sync_required`(사유
-   `uncorroborated_base`)로 거절하고 `sanho sync`를 안내한다. case ③은 양쪽을
-   합치므로 이 요구가 필요 없고, case ①은 base를 보기도 전에 통과한다.
+   push한 workspace는 모두 그 상태다.
+
+   canonical rewrite 뒤에는 올바르게 해소한 tip도 사라진 과거 base를 trailer에
+   담을 수 있다. 이력 보증이 실패하면 content 보증을 한 번 더 시도한다. empty
+   tree를 공통 조상으로 canonical head tree를 tip tree에 3-way merge했을 때
+   충돌이 없고 결과가 tip tree와 정확히 같으면, tip이 head의 모든 항목을 이미
+   흡수했으므로 fast-forward가 상류 문서를 삭제하지 않는다. 이 경우만
+   **absorption warrant**로 허용한다. head 파일을 누락·대체했거나 merge를 실행할
+   수 없으면 증명 실패로 간주해 기존처럼 `sync_required`(사유
+   `uncorroborated_base`)로 거절한다. 기록된 base와 head가 이미 같아 `sanho
+   sync`가 no-op인 이 거절은 docs-changing commit으로 provenance를 다시 새긴 뒤
+   push하도록 안내한다. case ③은 양쪽을 합치므로 이 요구가 필요 없고, case
+   ①은 base를 보기도 전에 통과한다.
 
    **다중 ref push는 사슬로 이어진다.** 두 번째 이후의 tip은 canonical의
    고정된 head tree가 아니라 **앞선 tip이 게시하게 될 tree** 위로 병합한다
