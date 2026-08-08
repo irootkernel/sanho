@@ -417,8 +417,8 @@ func TestV1WorkspaceDegradesSafelyBeforeMigration(t *testing.T) {
 	w.sanho(w.app, "status")
 }
 
-// `sanho version --json` keeps its v0.1 schema, so existing scripts
-// carry over unchanged.
+// `sanho version --json` keeps its stable schema and emits exactly one compact
+// document, so scripts do not need to normalize presentation whitespace.
 func TestVersionJSONSchema(t *testing.T) {
 	w := newWorld(t, map[string]string{"api.md": "canonical api\n"})
 
@@ -432,6 +432,13 @@ func TestVersionJSONSchema(t *testing.T) {
 	}
 	if document.Name != "sanho" || document.Version == "" {
 		t.Fatalf("version JSON = %+v, want name sanho and a version", document)
+	}
+	want, err := json.Marshal(document)
+	if err != nil {
+		t.Fatalf("render expected version JSON: %v", err)
+	}
+	if out.stdout != string(want)+"\n" {
+		t.Fatalf("version JSON output = %q, want compact %q", out.stdout, string(want)+"\n")
 	}
 }
 

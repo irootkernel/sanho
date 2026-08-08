@@ -87,17 +87,16 @@ corresponding `known` field to false instead of inventing a count.
 
 ## `version`
 
-The released v0.2.1 command uses the common indented form:
+Current source emits the complete document as standard compact JSON on one line:
 
 ```json
-{
-  "name": "sanho",
-  "version": "v0.2.1"
-}
+{"name":"sanho","version":"v0.2.1"}
 ```
 
-`name` and `version` are the complete schema. Commit and build date remain in
-the human-readable command because they are diagnostics, not identifiers.
+The command writes one trailing newline. `name` and `version` are the complete
+schema; the whitespace change does not alter either field. Commit and build
+date remain in the human-readable command because they are diagnostics, not
+identifiers. Other successful JSON commands retain the common indented form.
 
 ## `status`
 

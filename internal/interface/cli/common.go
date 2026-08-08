@@ -23,6 +23,16 @@ func writeJSON(out io.Writer, v any) error {
 	return nil
 }
 
+// writeCompactJSON renders v without presentation whitespace and with a
+// trailing newline. It is reserved for interfaces whose contract requires a
+// compact document rather than the default indented form.
+func writeCompactJSON(out io.Writer, v any) error {
+	if err := json.NewEncoder(out).Encode(v); err != nil {
+		return errors.Join(errInternal, fmt.Errorf("render JSON output: %w", err))
+	}
+	return nil
+}
+
 // orEmpty turns a nil slice into an empty one so JSON renders `[]`
 // rather than `null`. A machine reader should not have to distinguish
 // "no conflicts" from "absent".

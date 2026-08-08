@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- `sanho version --json` now emits its unchanged two-field document as standard
+  compact JSON on one line. It still terminates the document with a newline;
+  other JSON commands retain their indented output.
+
 ## v0.2.1 - 2026-08-08
 
 ### Added

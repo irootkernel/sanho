@@ -27,7 +27,7 @@ func newVersionCmd(info BuildInfo) *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			resolved := withDefaults(info)
 			if asJSON {
-				return writeJSON(cmd.OutOrStdout(), versionJSON{Name: "sanho", Version: resolved.Version})
+				return writeCompactJSON(cmd.OutOrStdout(), versionJSON{Name: "sanho", Version: resolved.Version})
 			}
 			writef(cmd.OutOrStdout(), "sanho version %s (commit: %s, built: %s)\n",
 				resolved.Version, resolved.Commit, resolved.BuildDate)
