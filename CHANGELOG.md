@@ -1,5 +1,35 @@
 # Changelog
 
+## v0.2.1 - 2026-08-08
+
+### Added
+
+- Repository-local custom `core.hooksPath` directories and recognized Husky 9
+  layouts can now be managed explicitly with `sanho init
+  --manage-custom-hooks` or `sanho migrate --manage-custom-hooks`. Global,
+  repository-external, symlinked, and unrecognized layouts remain fail-closed.
+- Managed custom hooks preserve foreign content and mode, use portable `sanho`
+  invocations, and persist their mode and directory so `doctor --fix`, clean,
+  and migration re-entry inspect the same approved target. Husky's generated
+  `.husky/_` shims are validated but never modified.
+
+### Fixed
+
+- `sanho state [--all] [--json]` can inventory a v0.1 daemon registry before
+  migration through a read-only in-memory projection. The legacy file remains
+  byte-identical, and registry writers continue to refuse it.
+- Migration now ignores the retained `.sanho_docs_hash.bak` rollback copy.
+  Re-running `sanho migrate` on an already converted workspace repairs this
+  missing ignore entry without replacing the backup.
+
+### Compatibility
+
+- Existing v0.2.0 workspaces keep the default private-hook behavior without a
+  config rewrite. The optional `hook_mode` and `hook_dir` fields are written
+  only for explicitly managed custom layouts.
+- The published v0.2.0 tag and release remain unchanged; these additions ship
+  as v0.2.1.
+
 ## v0.2.0 - 2026-08-08
 
 ### Documentation before release

@@ -193,7 +193,7 @@ docs` 거절을 그 한 번만 무력화한다. docs가 없는 branch를 게시�
 ```json
 {
   "name": "sanho",
-  "version": "v0.2.0"
+  "version": "v0.2.1"
 }
 ```
 

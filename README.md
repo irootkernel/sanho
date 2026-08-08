@@ -47,7 +47,7 @@ Node.js and npm are not required. The only runtime dependency is cobra.
 ### Install
 
 ```bash
-go install github.com/irootkernel/sanho/cmd/sanho@v0.2.0
+go install github.com/irootkernel/sanho/cmd/sanho@v0.2.1
 sanho version
 ```
 
@@ -244,7 +244,7 @@ push` fails closed. The push boundary is the natural migration prompt.
 
 ```bash
 cp ~/.sanho/state.json ~/.sanho/state.json.pre-v0.2   # back up first
-go install github.com/irootkernel/sanho/cmd/sanho@v0.2.0
+go install github.com/irootkernel/sanho/cmd/sanho@v0.2.1
 cd /path/to/app && sanho migrate
 ```
 

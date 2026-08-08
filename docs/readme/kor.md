@@ -49,7 +49,7 @@ Git, 그리고 docs 저장소를 읽고 쓸 수 있는 인증이다. Node.js와 
 않다.
 
 ```bash
-go install github.com/irootkernel/sanho/cmd/sanho@v0.2.0
+go install github.com/irootkernel/sanho/cmd/sanho@v0.2.1
 sanho version
 ```
 

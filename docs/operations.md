@@ -15,7 +15,7 @@ sanho version
 공개 release는 저장소에서 직접 설치한다.
 
 ```bash
-go install github.com/irootkernel/sanho/cmd/sanho@v0.2.0
+go install github.com/irootkernel/sanho/cmd/sanho@v0.2.1
 ```
 
 실행 파일은 `sanho` 하나다. daemon, socket, service 등록, frontend build,

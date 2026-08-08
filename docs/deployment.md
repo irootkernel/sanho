@@ -61,7 +61,7 @@ GIT_SSH_COMMAND="ssh -o BatchMode=yes -o ConnectTimeout=10"
 release 설치는 재현 가능하도록 버전을 명시한다.
 
 ```bash
-go install github.com/irootkernel/sanho/cmd/sanho@v0.2.0
+go install github.com/irootkernel/sanho/cmd/sanho@v0.2.1
 sanho version
 ```
 
@@ -217,6 +217,13 @@ canonical 저장소는 전혀 바뀌지 않는다. 같은 저장소, 같은 선�
 cp ~/.sanho/state.json ~/.sanho/state.json.pre-v0.2   # 선택
 ```
 
+v0.2.1 binary를 설치한 뒤에도 migration 전 inventory는 읽을 수 있다. 다음 명령은
+v0.1 registry를 메모리에서만 투영하며 원본 byte를 바꾸지 않는다.
+
+```bash
+sanho state --all --json
+```
+
 ### 2단계 — v0.1 transaction 정리
 
 **v0.1 binary로** 진행 중인 상태를 먼저 끝낸다.
@@ -235,7 +242,7 @@ sanho: a v0.1 pull-commit transaction or pending-fix state is still present; fin
 ### 3단계 — binary 교체
 
 ```bash
-go install github.com/irootkernel/sanho/cmd/sanho@v0.2.0
+go install github.com/irootkernel/sanho/cmd/sanho@v0.2.1
 sanho version
 ```
 
