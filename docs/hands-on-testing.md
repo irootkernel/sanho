@@ -179,6 +179,76 @@ v0.1의 Critical C1은 daemon이 없으면 모든 commit이 막히는 것이었�
 
 migrate가 canonical 저장소를 조금이라도 바꾸면 FAIL이다.
 
+### H03을 production과 격리해서 실행하는 방법
+
+실제 v0.1 binary가 남아 있다면 production daemon과 `~/.sanho`를 migration하지
+않고도 위 절차를 반복할 수 있다. 새 로컬 bare canonical과 두 개 이상의 새
+application 저장소를 준비하고, 모든 상태를 실행별 임시 디렉터리에 둔다.
+
+```bash
+h03_root=$(mktemp -d /tmp/sanho-h03.XXXXXX)
+h03_home="$h03_root/v1-home"
+h03_socket="$h03_root/sanhod.sock"
+mkdir -p "$h03_home"
+chmod 0700 "$h03_home"
+
+# 별도 terminal에서 실행한다. production service를 unload하지 않는다.
+/path/to/v0.1.6/sanhod -home "$h03_home" -socket "$h03_socket"
+
+# v0.1 workspace는 반드시 이 socket을 명시해서 만든다.
+/path/to/v0.1.6/sanho --socket "$h03_socket" init \
+  --project <fixture-project> \
+  --docs-repo-url "$h03_root/canonical.git" \
+  --docs-dir docs
+```
+
+application fixture에도 `origin`이 있어야 한다. v0.1은 workspace 등록 요청에
+현재 저장소의 origin URL을 넣으므로 origin이 없으면 `missing required fields`로
+초기화가 거절된다.
+
+binary 교체 상태는 설치 경로를 덮어쓰지 않고 임시 `PATH`로 만든다. hook은
+`sanho`라는 이름을 호출하므로 Git을 실행한 process의 `PATH`가 곧 교체 경계다.
+
+```bash
+mkdir -p "$h03_root/v2-bin"
+ln -s /absolute/path/to/checkout/bin/sanho "$h03_root/v2-bin/sanho"
+
+SANHO_HOME="$h03_home" \
+PATH="$h03_root/v2-bin:$PATH" git commit -m 'docs: migration fixture'
+SANHO_HOME="$h03_home" \
+PATH="$h03_root/v2-bin:$PATH" git push
+SANHO_HOME="$h03_home" \
+  /absolute/path/to/checkout/bin/sanho migrate
+```
+
+transaction 거절은 managed 파일을 직접 만들지 말고, base와 canonical 양쪽에서
+같은 파일을 다르게 수정한 뒤 v0.1 `sanho pull-commit`으로 진짜 conflict
+transaction을 만든다. v0.2의 거절을 확인한 뒤 같은 v0.1 binary와 socket으로
+`sanho pull-commit --abort`를 실행해 원래 staged/unstaged 상태가 복원되는지
+확인한다.
+
+migrate 직전과 직후에는 bare canonical의 refs와 tree를 비교한다. 정상적인
+commit → sync → push 확인으로 canonical을 전진시키기 **전**에 비교해야 migration
+자체의 불변성을 증명할 수 있다.
+
+```bash
+git --git-dir="$h03_root/canonical.git" show-ref | sort >before.refs
+git --git-dir="$h03_root/canonical.git" rev-parse 'main^{tree}' >before.tree
+# sanho migrate
+git --git-dir="$h03_root/canonical.git" show-ref | sort >after.refs
+git --git-dir="$h03_root/canonical.git" rev-parse 'main^{tree}' >after.tree
+diff -u before.refs after.refs
+diff -u before.tree after.tree
+```
+
+service lifecycle도 확인하려면 production과 다른 label(예:
+`xyz.rootkernel.sanho.h03.<실행-ID>`)과 임시 plist를 사용한다. plist의 `-home`,
+`-socket`, stdout, stderr가 모두 위 임시 디렉터리를 가리키는지 확인한 뒤에만
+bootstrap/bootout한다. migrate가 출력한 고정 production label의 bootout 명령은
+이 격리 시험에서 실행하지 않는다. 시작 전후에 production label의 PID와 plist,
+`~/.sanho/state.json` checksum을 비교하고, 종료 시에는 임시 PID 또는 임시
+label만 정리한다.
+
 ## H04. linked worktree와 공유 clone (변형)
 
 1. 하나의 애플리케이션 저장소에 `git worktree add`로 두 linked worktree를

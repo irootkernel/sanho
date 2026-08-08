@@ -412,8 +412,15 @@ rm -f .sanho_base.json
 cp ~/.sanho/state.json.v1.bak ~/.sanho/state.json
 cp ~/.sanho/state.json.v1.bak ~/.sanho/state.json.bak
 
-# 4) v0.1 hook을 되살린다 — v0.2 migrate가 v0.1 라인을 제거했다
-sanho init --project <name> --docs-repo-url <url>   # v0.1 binary로 실행
+# 4) migrate가 보존한 v0.1 hook을 mode와 함께 되살린다
+for hook in pre-commit commit-msg post-commit post-merge \
+            post-checkout post-rewrite pre-push; do
+  test -f ".git/hooks/$hook.bak" || {
+    echo "missing migration hook backup: $hook.bak" >&2
+    exit 1
+  }
+  cp -p ".git/hooks/$hook.bak" ".git/hooks/$hook"
+done
 
 # 5) daemon을 다시 등록·기동한다 (사용자 소유)
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/xyz.rootkernel.sanho.plist
@@ -427,6 +434,12 @@ sanho state --all
 
 private clone(`<git-common-dir>/sanho/canonical`)은 남겨 두어도 무해하다.
 v0.1은 그 경로를 보지 않는다. 정리하고 싶으면 디렉터리째 삭제한다.
+
+복원한 `.sanho.json`이 존재하는 상태에서 v0.1 `sanho init`을 다시 실행하면
+`already a sanho workspace`로 거절된다. `--force`는 docs를 canonical 내용으로
+교체할 수 있으므로 hook 복구 수단으로 사용하지 않는다. 위 hook backup은
+`migrate`가 각 v0.1 hook을 바꾸기 전에 만든 원본이며 custom 내용과 permission
+bit도 함께 보존한다.
 
 canonical 저장소 자체는 migration으로 전혀 바뀌지 않는다. 같은 저장소, 같은
 선형 main이며, 앞으로 만들어질 commit의 메시지 규약만 달라진다. 따라서 롤백이
