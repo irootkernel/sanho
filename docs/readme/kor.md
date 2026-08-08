@@ -328,6 +328,11 @@ sanho version
 hook 설치와 제거는 **정확한 줄 일치**로만 하므로, 기존 custom hook 내용은
 원문 그대로 보존된다.
 
+repository-local `core.hooksPath` 또는 Husky 9를 쓰는 저장소는 `sanho init`이나
+`sanho migrate`에 `--manage-custom-hooks`를 명시한다. 전역·저장소 외부 경로는
+여러 workspace가 공유할 수 있으므로 지원하지 않는다. Husky의 생성 shim
+`.husky/_`는 수정하지 않고 `.husky/*` 사용자 script만 관리한다.
+
 ## 상태 파일
 
 ```text

@@ -199,6 +199,84 @@ func TestMigrateRefusesCustomHooksPathBeforeMutation(t *testing.T) {
 	}
 }
 
+func TestMigrateManagesHusky9HooksWithExplicitOptIn(t *testing.T) {
+	w := newWorld(t, map[string]string{"api.md": "canonical api\n"})
+	writeFile(t, w.appPath("docs", "api.md"), "canonical api\n")
+	w.git(w.app, "add", "-A")
+	baseCommit := w.canonicalHead()
+	w.git(w.app, "commit", "-m", "docs: adopt canonical\n\ndocs-version: "+baseCommit)
+	seedV1Workspace(t, w, baseCommit, true)
+
+	for name := range legacyHookLines {
+		if err := os.Remove(w.hookPath(name)); err != nil {
+			t.Fatalf("remove default v1 hook %s: %v", name, err)
+		}
+	}
+	husky := w.appPath(".husky")
+	shimDir := filepath.Join(husky, "_")
+	mkdirAll(t, shimDir)
+	h := "#!/usr/bin/env sh\nn=$(basename \"$0\")\ns=$(dirname \"$(dirname \"$0\")\")/$n\nsh -e \"$s\" \"$@\"\n"
+	writeFile(t, filepath.Join(shimDir, "h"), h)
+	shim := "#!/usr/bin/env sh\n. \"$(dirname \"$0\")/h\"\n"
+	for _, name := range []string{"pre-commit", "commit-msg", "pre-push", "post-checkout", "post-merge", "post-rewrite"} {
+		writeFile(t, filepath.Join(shimDir, name), shim)
+		if err := os.Chmod(filepath.Join(shimDir, name), 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for name, line := range legacyHookLines {
+		content := "#!/usr/bin/env sh\n" + line + "\n"
+		if name == "pre-commit" {
+			content = "#!/usr/bin/env sh\nbun run lint-staged\n" + line + "\n"
+		}
+		writeFile(t, filepath.Join(husky, name), content)
+		if err := os.Chmod(filepath.Join(husky, name), 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeFile(t, filepath.Join(w.binDir, "bun"), "#!/bin/sh\nexit 0\n")
+	if err := os.Chmod(filepath.Join(w.binDir, "bun"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	w.git(w.app, "config", "core.hooksPath", ".husky/_")
+	w.git(w.app, "add", ".husky")
+	w.git(w.app, "commit", "-m", "chore: seed Husky hooks")
+
+	w.sanho(w.app, "migrate", "--manage-custom-hooks")
+
+	config := readFile(t, w.appPath(".sanho.json"))
+	requireContains(t, "config", config, `"hook_mode": "husky"`)
+	requireContains(t, "config", config, `"hook_dir": ".husky"`)
+	if got := readFile(t, filepath.Join(shimDir, "pre-commit")); got != shim {
+		t.Fatalf("Husky shim changed from %q to %q", shim, got)
+	}
+	preCommit := readFile(t, filepath.Join(husky, "pre-commit"))
+	requireContains(t, "Husky pre-commit", preCommit, "bun run lint-staged")
+	requireContains(t, "Husky pre-commit", preCommit, "command -v sanho")
+	requireNotContains(t, "Husky pre-commit", preCommit, "\nsanho hook pre-commit\n")
+	for _, name := range []string{"pre-commit", "commit-msg", "pre-push", "post-checkout", "post-merge", "post-rewrite", "post-commit"} {
+		if !fileExists(t, filepath.Join(husky, name+".bak")) {
+			t.Errorf("Husky hook %s has no rollback backup", name)
+		}
+	}
+	postCommit := readFile(t, filepath.Join(husky, "post-commit"))
+	requireNotContains(t, "Husky post-commit", postCommit, "sanho hook post-commit")
+	requireContains(t, "Husky post-commit", postCommit, "#!/usr/bin/env sh")
+	doctor := w.sanho(w.app, "doctor", "--json").stdout
+	requireContains(t, "doctor", doctor, `"warnings": 0`)
+	writeFile(t, w.appPath("docs", "api.md"), "Husky migration works\n")
+	w.git(w.app, "add", "docs/api.md")
+	w.git(w.app, "commit", "-m", "docs: verify migrated Husky hooks")
+	requireContains(t, "commit message", w.headMessage(), "docs-base:")
+	push := w.push()
+	if push.exitCode != 0 {
+		t.Fatalf("push through Husky pre-push failed\n%s", push.combined())
+	}
+	if got := w.canonicalFile(w.canonicalHead(), "api.md"); got != "Husky migration works\n" {
+		t.Fatalf("canonical api.md = %q", got)
+	}
+}
+
 // migrate needs the docs repository URL, which only the daemon knew.
 // Without the legacy state it says so and names the flag that supplies
 // it — guidance that succeeds where it is printed (D3).

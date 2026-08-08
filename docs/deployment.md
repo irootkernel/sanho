@@ -113,6 +113,7 @@ sanho init \
 | `--docs-repo-url` | (필수) | canonical docs 저장소 URL. 작업공간 설정에 직접 기록된다. |
 | `--docs-dir` | `docs` | 저장소 root 기준 docs 디렉터리. |
 | `--actor-email` | `git config user.email` | canonical commit에 기록되는 주소. |
+| `--manage-custom-hooks` | off | repository-local custom `core.hooksPath` 또는 인식된 Husky 9 사용자 script를 명시적으로 관리한다. 전역·저장소 외부 경로는 거절한다. |
 | `--force` | off | 기존 docs 디렉터리를 canonical 내용으로 대체한다. `-y`가 함께 필요하다. |
 | `-y`, `--yes` | off | 파괴적 동작을 확인 없이 진행한다. |
 
@@ -268,6 +269,14 @@ legacy state에 docs 저장소 URL이 없으면 명시한다.
 
 ```bash
 sanho migrate --docs-repo-url git@github.com:example/example-docs.git
+```
+
+repository-local custom hooksPath 또는 Husky 9 workspace는 소유권 opt-in을
+명시한다. 플래그가 없으면 migration은 어떤 backup이나 상태도 쓰기 전에
+거절한다.
+
+```bash
+sanho migrate --manage-custom-hooks
 ```
 
 `sanho migrate`가 하는 일은 다음과 같다.

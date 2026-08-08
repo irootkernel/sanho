@@ -168,6 +168,165 @@ func TestInstallHooksRefusesGlobalCustomHooksPath(t *testing.T) {
 	}
 }
 
+func TestInstallHooksManagesRepositoryLocalCustomPathWithOptIn(t *testing.T) {
+	dir, _ := newRepoWithDocs(t)
+	custom := filepath.Join(dir, ".githooks")
+	if err := os.MkdirAll(custom, 0755); err != nil {
+		t.Fatal(err)
+	}
+	foreign := "#!/bin/sh\necho foreign\n"
+	if err := os.WriteFile(filepath.Join(custom, "pre-commit"), []byte(foreign), 0640); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, dir, "config", "core.hooksPath", ".githooks")
+	repo := newRepoHandle(t, dir)
+
+	config, err := repo.DetectHookConfig(context.Background(), true)
+	if err != nil {
+		t.Fatalf("DetectHookConfig: %v", err)
+	}
+	if config.Mode != appgit.HookModeCustom || config.Dir != ".githooks" {
+		t.Fatalf("config = %+v, want custom .githooks", config)
+	}
+	repo = repo.WithHooks(config)
+	if err := repo.InstallHooks(context.Background()); err != nil {
+		t.Fatalf("InstallHooks: %v", err)
+	}
+
+	content, err := os.ReadFile(filepath.Join(custom, "pre-commit"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(content)
+	if !strings.Contains(got, "echo foreign") || !strings.Contains(got, "command -v sanho") || strings.Contains(got, "'/") {
+		t.Fatalf("custom pre-commit = %q, want preserved foreign content and portable sanho line", got)
+	}
+	info, err := os.Stat(filepath.Join(custom, "pre-commit"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0740 {
+		t.Fatalf("mode = %o, want 740", info.Mode().Perm())
+	}
+	if hookExists(t, dir, "pre-commit") {
+		t.Fatal("default hook directory was mutated")
+	}
+	states, err := repo.HooksStatus(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, state := range states {
+		if !state.Installed || state.Occurrences != 1 {
+			t.Fatalf("state %+v, want one installed portable line", state)
+		}
+	}
+}
+
+func TestDetectHookConfigRefusesPathOutsideWorktree(t *testing.T) {
+	dir, _ := newRepoWithDocs(t)
+	outside := filepath.Join(t.TempDir(), "shared-hooks")
+	gitRun(t, dir, "config", "core.hooksPath", outside)
+
+	_, err := newRepoHandle(t, dir).DetectHookConfig(context.Background(), true)
+	if !errors.Is(err, appgit.ErrManagedHooksPath) {
+		t.Fatalf("DetectHookConfig = %v, want ErrManagedHooksPath", err)
+	}
+}
+
+func TestDetectHookConfigRefusesSymlinkedRepositoryLocalPath(t *testing.T) {
+	dir, _ := newRepoWithDocs(t)
+	realDir := filepath.Join(dir, ".real-hooks")
+	if err := os.MkdirAll(realDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	custom := filepath.Join(dir, ".githooks")
+	if err := os.Symlink(realDir, custom); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, dir, "config", "core.hooksPath", ".githooks")
+
+	_, err := newRepoHandle(t, dir).DetectHookConfig(context.Background(), true)
+	if !errors.Is(err, appgit.ErrManagedHooksPath) {
+		t.Fatalf("DetectHookConfig = %v, want ErrManagedHooksPath", err)
+	}
+}
+
+func TestDetectHookConfigRefusesUnrecognizedHuskyLayout(t *testing.T) {
+	dir, _ := newRepoWithDocs(t)
+	shimDir := filepath.Join(dir, ".husky", "_")
+	if err := os.MkdirAll(shimDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(shimDir, "h"), []byte("#!/bin/sh\necho custom\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, dir, "config", "core.hooksPath", ".husky/_")
+
+	_, err := newRepoHandle(t, dir).DetectHookConfig(context.Background(), true)
+	if !errors.Is(err, appgit.ErrManagedHooksPath) {
+		t.Fatalf("DetectHookConfig = %v, want ErrManagedHooksPath", err)
+	}
+}
+
+func TestInstallHooksManagesRecognizedHusky9WithoutChangingShims(t *testing.T) {
+	dir, _ := newRepoWithDocs(t)
+	husky := filepath.Join(dir, ".husky")
+	shimDir := filepath.Join(husky, "_")
+	if err := os.MkdirAll(shimDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	h := `#!/usr/bin/env sh
+n=$(basename "$0")
+s=$(dirname "$(dirname "$0")")/$n
+sh -e "$s" "$@"
+`
+	if err := os.WriteFile(filepath.Join(shimDir, "h"), []byte(h), 0644); err != nil {
+		t.Fatal(err)
+	}
+	shim := "#!/usr/bin/env sh\n. \"$(dirname \"$0\")/h\"\n"
+	for _, hook := range appgit.Hooks() {
+		if err := os.WriteFile(filepath.Join(shimDir, hook.Name), []byte(shim), 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	legacy := "#!/usr/bin/env sh\nbun run lint-staged\nsanho hook pre-commit\n"
+	if err := os.WriteFile(filepath.Join(husky, "pre-commit"), []byte(legacy), 0755); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, dir, "config", "core.hooksPath", ".husky/_")
+	repo := newRepoHandle(t, dir)
+
+	config, err := repo.DetectHookConfig(context.Background(), true)
+	if err != nil {
+		t.Fatalf("DetectHookConfig: %v", err)
+	}
+	if config.Mode != appgit.HookModeHusky || config.Dir != ".husky" {
+		t.Fatalf("config = %+v, want husky .husky", config)
+	}
+	repo = repo.WithHooks(config)
+	if err := repo.RemoveHooks(context.Background()); err != nil {
+		t.Fatalf("RemoveHooks: %v", err)
+	}
+	if err := repo.InstallHooks(context.Background()); err != nil {
+		t.Fatalf("InstallHooks: %v", err)
+	}
+
+	if got, err := os.ReadFile(filepath.Join(shimDir, "pre-commit")); err != nil || string(got) != shim {
+		t.Fatalf("Husky shim changed: %q, %v", got, err)
+	}
+	got, err := os.ReadFile(filepath.Join(husky, "pre-commit"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(got)
+	if !strings.Contains(content, "bun run lint-staged") || !strings.Contains(content, "command -v sanho") {
+		t.Fatalf("public Husky hook = %q", content)
+	}
+	if countLine(content, "sanho hook pre-commit") != 0 {
+		t.Fatalf("legacy Husky line survived: %q", content)
+	}
+}
+
 func TestInstallHooksIsIdempotent(t *testing.T) {
 	dir, _ := newRepoWithDocs(t)
 	repo := newRepoHandle(t, dir)

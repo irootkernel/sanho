@@ -715,7 +715,7 @@ func doctorPublicationPendingMessage() string {
 // It deliberately gives a condition rather than a command: the right
 // Git configuration scope is a user decision.
 func customHooksPathMessage(path string) string {
-	return fmt.Sprintf("custom core.hooksPath %q is unsupported; restore Git's default hooks directory before Sanho manages hooks in this workspace", path)
+	return fmt.Sprintf("custom core.hooksPath %q requires explicit management; repository-local paths and recognized Husky 9 layouts can be initialized or migrated with --manage-custom-hooks", path)
 }
 
 // syncNotePendingMessage is the unfinished-sync line `sanho status` and

@@ -83,6 +83,11 @@ adds Sanho's state files to `.gitignore`. Then, depending on what it finds:
 - You already have local `docs/` — the base is derived from the provenance
   already in your repository's history. Your files are never touched.
 
+For a repository-local custom `core.hooksPath` or a recognized Husky 9 layout,
+add `--manage-custom-hooks`. This explicit opt-in preserves existing scripts
+and uses portable `sanho` invocations; global or repository-external hook paths
+remain unsupported.
+
 ### The daily loop
 
 ```bash

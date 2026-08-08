@@ -53,10 +53,33 @@ type Hook struct {
 	Line string
 }
 
+// HookMode records where Sanho-managed hook lines live. Default hooks use
+// Git's private hooks directory. Custom hooks use a repository-local
+// core.hooksPath directly. Husky hooks live in the public .husky directory,
+// while Git executes the generated shims in .husky/_.
+type HookMode string
+
+const (
+	HookModeDefault HookMode = ""
+	HookModeCustom  HookMode = "custom"
+	HookModeHusky   HookMode = "husky"
+)
+
+// HookConfig is persisted by the CLI for an explicitly managed custom hook
+// directory. Dir is slash-separated and relative to the worktree root.
+type HookConfig struct {
+	Mode HookMode
+	Dir  string
+}
+
 // ErrCustomHooksPath reports a core.hooksPath outside git's private
 // <common-dir>/hooks directory. Installing there would mutate a tracked
 // or shared script whose ownership extends beyond this workspace.
 var ErrCustomHooksPath = errors.New("custom core.hooksPath is unsupported")
+
+// ErrManagedHooksPath reports a persisted custom hook configuration that is
+// unsafe or no longer matches Git's active core.hooksPath.
+var ErrManagedHooksPath = errors.New("managed hook path is invalid")
 
 // CustomHooksPathError names the path InstallHooks refused.
 type CustomHooksPathError struct{ Path string }
@@ -66,6 +89,18 @@ func (e *CustomHooksPathError) Error() string {
 }
 
 func (e *CustomHooksPathError) Is(target error) bool { return target == ErrCustomHooksPath }
+
+// ManagedHooksPathError names an invalid explicitly managed hook path.
+type ManagedHooksPathError struct {
+	Path   string
+	Reason string
+}
+
+func (e *ManagedHooksPathError) Error() string {
+	return fmt.Sprintf("%s %q: %s", ErrManagedHooksPath, e.Path, e.Reason)
+}
+
+func (e *ManagedHooksPathError) Is(target error) bool { return target == ErrManagedHooksPath }
 
 // Hooks is the §5.10 inventory, in table order. The quoted argument
 // forms are git's own hook contracts, not decoration: `commit-msg`
@@ -139,20 +174,23 @@ type HookState struct {
 // alone. It is idempotent: a file that already carries the exact line is
 // left as it is (except for the executable bit, which is repaired).
 func (r *Repo) InstallHooks(ctx context.Context) error {
-	dir, err := r.DefaultHooksDir(ctx)
+	dir, portable, err := r.managedHooksDir(ctx)
 	if err != nil {
 		return err
 	}
-	binary, err := hookBinaryToken()
-	if err != nil {
-		return err
+	binary := "sanho"
+	if !portable {
+		binary, err = hookBinaryToken()
+		if err != nil {
+			return err
+		}
 	}
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("appgit: create hooks directory %s: %w", dir, err)
 	}
 
 	for _, hook := range Hooks() {
-		if err := installHookLine(filepath.Join(dir, hook.Name), hook, binary); err != nil {
+		if err := installHookLine(filepath.Join(dir, hook.Name), hook, binary, portable); err != nil {
 			return err
 		}
 	}
@@ -163,13 +201,16 @@ func (r *Repo) InstallHooks(ctx context.Context) error {
 // v0.1 lines — from every hook file, preserving all foreign content. A
 // file left with nothing but its shebang (or nothing at all) is deleted.
 func (r *Repo) RemoveHooks(ctx context.Context) error {
-	dir, err := r.hooksDir(ctx)
+	dir, portable, err := r.existingHooksDir(ctx)
 	if err != nil {
 		return err
 	}
-	binary, err := hookBinaryToken()
-	if err != nil {
-		return err
+	binary := "sanho"
+	if !portable {
+		binary, err = hookBinaryToken()
+		if err != nil {
+			return err
+		}
 	}
 
 	for _, name := range hookNames() {
@@ -189,20 +230,23 @@ func (r *Repo) RemoveHooks(ctx context.Context) error {
 // commit, a subcommand that no longer exists, forever. A check that only
 // looked at the six current hooks could not see it.
 func (r *Repo) HooksStatus(ctx context.Context) ([]HookState, error) {
-	dir, err := r.hooksDir(ctx)
+	dir, portable, err := r.existingHooksDir(ctx)
 	if err != nil {
 		return nil, err
 	}
-	binary, err := hookBinaryToken()
-	if err != nil {
-		return nil, err
+	binary := "sanho"
+	if !portable {
+		binary, err = hookBinaryToken()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	current := make(map[string]bool, len(Hooks()))
 	states := make([]HookState, 0, len(Hooks()))
 	for _, hook := range Hooks() {
 		current[hook.Name] = true
-		state, err := hookStatus(filepath.Join(dir, hook.Name), hook, binary)
+		state, err := hookStatus(filepath.Join(dir, hook.Name), hook, binary, portable)
 		if err != nil {
 			return nil, err
 		}
@@ -258,6 +302,40 @@ func (r *Repo) hooksDir(ctx context.Context) (string, error) {
 	return path, nil
 }
 
+// DetectHookConfig resolves the active hook layout before init or migrate
+// writes any workspace state. A custom path is accepted only with explicit
+// opt-in, only when it stays inside this worktree, and only when it is either
+// a direct hook directory or a recognized Husky 9 shim directory.
+func (r *Repo) DetectHookConfig(ctx context.Context, manageCustom bool) (HookConfig, error) {
+	actual, err := r.hooksDir(ctx)
+	if err != nil {
+		return HookConfig{}, err
+	}
+	expected, err := r.privateHooksDir(ctx)
+	if err != nil {
+		return HookConfig{}, err
+	}
+	if comparablePath(actual) == comparablePath(expected) {
+		return HookConfig{}, nil
+	}
+	if !manageCustom {
+		return HookConfig{}, &CustomHooksPathError{Path: actual}
+	}
+
+	rel, err := r.localHookDir(actual)
+	if err != nil {
+		return HookConfig{}, err
+	}
+	if filepath.Base(actual) == "_" && filepath.Base(filepath.Dir(actual)) == ".husky" {
+		if err := validateHusky9(actual); err != nil {
+			return HookConfig{}, err
+		}
+		rel = filepath.Dir(rel)
+		return HookConfig{Mode: HookModeHusky, Dir: filepath.ToSlash(rel)}, nil
+	}
+	return HookConfig{Mode: HookModeCustom, Dir: filepath.ToSlash(rel)}, nil
+}
+
 // DefaultHooksDir returns git's private hooks directory, refusing a
 // custom core.hooksPath. The check is public so lifecycle commands can
 // perform it before writing config, registry, backup, clone, or docs
@@ -267,6 +345,17 @@ func (r *Repo) DefaultHooksDir(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	expected, err := r.privateHooksDir(ctx)
+	if err != nil {
+		return "", err
+	}
+	if comparablePath(actual) != comparablePath(expected) {
+		return "", &CustomHooksPathError{Path: actual}
+	}
+	return actual, nil
+}
+
+func (r *Repo) privateHooksDir(ctx context.Context) (string, error) {
 	common, err := r.git.Line(ctx, "rev-parse", "--git-common-dir")
 	if err != nil {
 		return "", fmt.Errorf("appgit: resolve git common directory of %s: %w", r.workDir, err)
@@ -274,11 +363,103 @@ func (r *Repo) DefaultHooksDir(ctx context.Context) (string, error) {
 	if !filepath.IsAbs(common) {
 		common = filepath.Join(r.workDir, common)
 	}
-	expected := filepath.Join(common, "hooks")
-	if comparablePath(actual) != comparablePath(expected) {
-		return "", &CustomHooksPathError{Path: actual}
+	return filepath.Join(common, "hooks"), nil
+}
+
+func (r *Repo) managedHooksDir(ctx context.Context) (string, bool, error) {
+	if r.hooks.Mode == HookModeDefault {
+		dir, err := r.DefaultHooksDir(ctx)
+		return dir, false, err
 	}
-	return actual, nil
+	if r.hooks.Mode != HookModeCustom && r.hooks.Mode != HookModeHusky {
+		return "", false, &ManagedHooksPathError{Path: r.hooks.Dir, Reason: "unknown hook mode"}
+	}
+	if r.hooks.Dir == "" || filepath.IsAbs(filepath.FromSlash(r.hooks.Dir)) {
+		return "", false, &ManagedHooksPathError{Path: r.hooks.Dir, Reason: "the directory must be relative to the worktree"}
+	}
+	target := filepath.Join(r.workDir, filepath.FromSlash(r.hooks.Dir))
+	rel, err := r.localHookDir(target)
+	if err != nil || filepath.ToSlash(rel) != r.hooks.Dir {
+		if err != nil {
+			return "", false, err
+		}
+		return "", false, &ManagedHooksPathError{Path: r.hooks.Dir, Reason: "the directory is not normalized"}
+	}
+	actual, err := r.hooksDir(ctx)
+	if err != nil {
+		return "", false, err
+	}
+	expected := target
+	if r.hooks.Mode == HookModeHusky {
+		expected = filepath.Join(target, "_")
+		if err := validateHusky9(expected); err != nil {
+			return "", false, err
+		}
+	}
+	if comparablePath(actual) != comparablePath(expected) {
+		return "", false, &ManagedHooksPathError{Path: actual, Reason: "core.hooksPath no longer matches the managed directory"}
+	}
+	return target, true, nil
+}
+
+func (r *Repo) existingHooksDir(ctx context.Context) (string, bool, error) {
+	if r.hooks.Mode == HookModeDefault {
+		dir, err := r.hooksDir(ctx)
+		return dir, false, err
+	}
+	return r.managedHooksDir(ctx)
+}
+
+func (r *Repo) localHookDir(candidate string) (string, error) {
+	root, err := filepath.Abs(r.workDir)
+	if err != nil {
+		return "", err
+	}
+	candidate, err = filepath.Abs(candidate)
+	if err != nil {
+		return "", err
+	}
+	rel, err := filepath.Rel(root, candidate)
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", &ManagedHooksPathError{Path: candidate, Reason: "the directory must stay inside the worktree"}
+	}
+	current := root
+	for _, part := range strings.Split(rel, string(filepath.Separator)) {
+		current = filepath.Join(current, part)
+		info, statErr := os.Lstat(current)
+		if os.IsNotExist(statErr) {
+			break
+		}
+		if statErr != nil {
+			return "", fmt.Errorf("appgit: inspect managed hook path %s: %w", current, statErr)
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return "", &ManagedHooksPathError{Path: current, Reason: "symbolic links are not supported"}
+		}
+	}
+	return filepath.Clean(rel), nil
+}
+
+func validateHusky9(dir string) error {
+	hPath := filepath.Join(dir, "h")
+	data, err := os.ReadFile(hPath)
+	if err != nil {
+		return &ManagedHooksPathError{Path: dir, Reason: "the Husky 9 dispatcher is missing"}
+	}
+	text := string(data)
+	for _, marker := range []string{`n=$(basename "$0")`, `s=$(dirname "$(dirname "$0")")/$n`, `sh -e "$s" "$@"`} {
+		if !strings.Contains(text, marker) {
+			return &ManagedHooksPathError{Path: hPath, Reason: "the Husky dispatcher is not a recognized v9 layout"}
+		}
+	}
+	shim := "#!/usr/bin/env sh\n. \"$(dirname \"$0\")/h\""
+	for _, hook := range Hooks() {
+		data, err := os.ReadFile(filepath.Join(dir, hook.Name))
+		if err != nil || strings.TrimSpace(string(data)) != shim {
+			return &ManagedHooksPathError{Path: filepath.Join(dir, hook.Name), Reason: "the Husky v9 hook shim is missing or modified"}
+		}
+	}
+	return nil
 }
 
 func comparablePath(path string) string {
@@ -292,21 +473,21 @@ func comparablePath(path string) string {
 	return filepath.Clean(path)
 }
 
-func installHookLine(path string, hook Hook, binary string) error {
+func installHookLine(path string, hook Hook, binary string, portable bool) error {
 	existing, mode, present, err := readHookFile(path)
 	if err != nil {
 		return err
 	}
 
 	if !present {
-		line := currentHookLine(hook, binary, false)
+		line := currentHookLine(hook, binary, portable, false)
 		content := hookShebang + "\n" + line + "\n"
 		return writeHookFile(path, content, hookFileMode)
 	}
 
 	lines := strings.Split(existing, "\n")
 	foreign := withoutOwnedHookLines(lines, hook.Name, binary)
-	line := currentHookLine(hook, binary, needsStatusPreservation(foreign))
+	line := currentHookLine(hook, binary, portable, needsStatusPreservation(foreign))
 	current, owned := 0, 0
 	for _, candidate := range lines {
 		if isOwnedHookLine(hook.Name, candidate, binary) {
@@ -355,11 +536,15 @@ func shellQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
 }
 
-func currentHookLine(hook Hook, binary string, preserve bool) string {
+func currentHookLine(hook Hook, binary string, portable, preserve bool) string {
 	core := strings.TrimPrefix(hook.Line, "sanho ")
 	invocation := binary + " " + core
 	if hook.Name != "pre-push" {
-		invocation = "! [ -x " + binary + " ] || " + invocation
+		if portable {
+			invocation = "! command -v sanho >/dev/null 2>&1 || " + invocation
+		} else {
+			invocation = "! [ -x " + binary + " ] || " + invocation
+		}
 	}
 	if !preserve {
 		return invocation
@@ -416,7 +601,7 @@ func removeHookLines(path, name, binary string) error {
 	return writeHookFile(path, withTrailingNewline(strings.Join(kept, "\n")), mode)
 }
 
-func hookStatus(path string, hook Hook, binary string) (HookState, error) {
+func hookStatus(path string, hook Hook, binary string, portable bool) (HookState, error) {
 	state := HookState{Name: hook.Name, Path: path}
 
 	existing, mode, present, err := readHookFile(path)
@@ -425,7 +610,7 @@ func hookStatus(path string, hook Hook, binary string) (HookState, error) {
 	}
 	state.Executable = mode&ownerExecute != 0
 	lines := strings.Split(existing, "\n")
-	state.Line = currentHookLine(hook, binary, needsStatusPreservation(withoutOwnedHookLines(lines, hook.Name, binary)))
+	state.Line = currentHookLine(hook, binary, portable, needsStatusPreservation(withoutOwnedHookLines(lines, hook.Name, binary)))
 
 	for _, line := range lines {
 		switch {
@@ -517,7 +702,10 @@ func isOwnedHookLine(name, line, currentBinary string) bool {
 	}
 
 	guardToken := ""
-	if strings.HasPrefix(line, "! [ -x ") {
+	if strings.HasPrefix(line, "! command -v sanho >/dev/null 2>&1 || ") {
+		guardToken = "sanho"
+		line = strings.TrimPrefix(line, "! command -v sanho >/dev/null 2>&1 || ")
+	} else if strings.HasPrefix(line, "! [ -x ") {
 		end := strings.Index(line, " ] || ")
 		if end < 0 {
 			return false

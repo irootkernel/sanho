@@ -1015,7 +1015,7 @@ private clone으로 가져온다.
 
 | 파일 | 위치 | 권한 | 수명과 내용 |
 |---|---|---|---|
-| `.sanho.json` | 작업공간 root | `0644` | v2 workspace 설정. `schema_version`, `workspace_id`, `project`, `docs_repo_url`, `actor_email`, `docs_dir`. `socket_path`는 없다. **v0.1 판정 기준은 `socket_path`의 존재다.** `schema_version`도 `socket_path`도 없는 파일은 v0.1이 아니라 손상이며(`ErrConfigCorrupt`), 파일 이름을 말하며 거절한다. v0.1로 오판하면 `sanho migrate`가 없는 필드로부터 그 파일을 다시 쓰게 된다. |
+| `.sanho.json` | 작업공간 root | `0644` | v2 workspace 설정. `schema_version`, `workspace_id`, `project`, `docs_repo_url`, `actor_email`, `docs_dir`와 선택적인 `hook_mode` / `hook_dir`. `socket_path`는 없다. **v0.1 판정 기준은 `socket_path`의 존재다.** `schema_version`도 `socket_path`도 없는 파일은 v0.1이 아니라 손상이며(`ErrConfigCorrupt`), 파일 이름을 말하며 거절한다. v0.1로 오판하면 `sanho migrate`가 없는 필드로부터 그 파일을 다시 쓰게 된다. |
 | `.sanho_base.json` | 작업공간 root | `0644` | base 포인터. `{"version": 2, "commit": "<oid>", "tree": "<oid>"}`. tree는 비어 있을 수 있다(legacy 채택). 손상되면 fail-closed로 오류다. |
 | `.sanho_docs_hash` | 작업공간 root | — | v0.1 legacy. 읽기 전용 호환 입력이며 Sanho는 쓰지 않는다. `.sanho_base.json`이 없을 때만 한 줄 OID로 읽는다. |
 | `sanho/sync.json` | git-dir | `0644` (디렉터리 `0700`) | 충돌 sync 진행 중에만 존재. `{prev_base, target, started_at, entry_head, entry_docs_tree, merged_tree, conflicts}`. `entry_head`·`entry_docs_tree`는 마커를 쓸 당시의 `HEAD`와 그 docs tree, `merged_tree`는 충돌 병합이 만든 docs tree, `conflicts`는 병합이 해결하지 못한 저장소 기준 경로들이다. `entry_head`는 `--continue`의 네 번째 전제(같은 이력 위인가)를 판정하고, `merged_tree`는 완료가 병합 결과에서 얼마나 벗어났는지 보고한다. 셋은 끝나지 않은 sync가 어떤 모양인지 **보고**하기 위한 것이며, 무엇도 완료시키지 않는다. `target`은 창 동안 **대상을 담고 있는 유일한 기록**이다 — base 파일은 `sanho sync --continue`가 완료할 때까지 직전 값에 머무른다. 파싱에 실패해도 **존재는 참**이므로 게이트는 계속 거절하고 `sanho sync --abort`는 성립한다(그리고 base 파일을 지운다). |
@@ -1232,10 +1232,17 @@ upgrade·제거한다. 부분 문자열 검사는 쓰지 않으므로 `sanho hoo
   `post-commit` 포함)도 들어간다.
 
 `core.hooksPath`가 Git의 `<common-dir>/hooks`가 아닌 곳을 가리키면 `init`과
-`migrate`는 workspace·registry·backup·clone을 쓰기 전에 거절한다. 그 경로는
-tracked이거나 여러 저장소가 공유할 수 있어 Sanho가 소유권을 가정할 수 없기
-때문이다. `doctor --fix`도 경고만 하고 그 경로를 수정하지 않는다. 명시적인
-`clean -y`는 정리 요청이므로 인식 가능한 기존 Sanho 줄만 제거할 수 있다.
+`migrate`는 기본적으로 workspace·registry·backup·clone을 쓰기 전에 거절한다.
+`--manage-custom-hooks`를 명시한 경우에만 worktree 안의 정규화된 경로를 관리할
+수 있다. worktree 밖·전역 공유 경로, symlink 경로는 opt-in이어도 거절한다.
+
+일반 custom 경로는 그 디렉터리에, 인식된 Husky 9의 `.husky/_` 구조는 shim을
+건드리지 않고 `.husky/*` 사용자 script에 설치한다. custom script는 tracked일
+수 있으므로 설치 binary의 로컬 절대 경로 대신 portable `sanho` 호출을 쓴다.
+commit/post hook은 `command -v sanho` guard로 binary가 없으면 통과하고,
+`pre-push`는 guard 없이 fail-closed다. 선택한 `hook_mode`와 `hook_dir`은
+`.sanho.json`에 기록한다. 이후 `doctor --fix`와 `clean`은 그 대상만 다루며,
+실제 `core.hooksPath`가 기록과 달라지면 어느 쪽도 수정하지 않는다.
 
 `sanho doctor`의 hooks 검사는 설치 여부, 중복 설치 횟수, 실행 비트,
 남아 있는 v0.1 라인을 각각 보고한다.

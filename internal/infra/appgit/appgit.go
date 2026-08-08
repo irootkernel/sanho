@@ -58,10 +58,19 @@ type Repo struct {
 	workDir string
 	docsDir string
 	git     *gitx.Runner
+	hooks   HookConfig
 
 	emptyTreeOnce sync.Once
 	emptyTree     string
 	emptyTreeErr  error
+}
+
+// WithHooks configures this newly constructed handle to manage hooks according
+// to config and returns it for constructor chaining. Callers bind it before
+// the Repo is shared or used; the zero value preserves default hooks.
+func (r *Repo) WithHooks(config HookConfig) *Repo {
+	r.hooks = config
+	return r
 }
 
 // New returns a Repo rooted at workDir (the worktree root) for docsDir

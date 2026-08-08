@@ -76,6 +76,7 @@ type legacyDaemonState struct {
 
 func newMigrateCmd() *cobra.Command {
 	var docsRepoURL string
+	var manageHooks bool
 
 	cmd := &cobra.Command{
 		Use:   "migrate",
@@ -87,14 +88,16 @@ hook lines for the six v0.2 ones, and register the workspace.
 Every rewritten file gets a .bak sibling. The command is idempotent and never
 stops or reconfigures the v0.1 daemon; it prints the command to do that.`,
 		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error { return runMigrate(cmd, docsRepoURL) },
+		RunE: func(cmd *cobra.Command, _ []string) error { return runMigrate(cmd, docsRepoURL, manageHooks) },
 	}
 	cmd.Flags().StringVar(&docsRepoURL, "docs-repo-url", "",
 		"Canonical docs repository URL (required when the legacy state does not record one)")
+	cmd.Flags().BoolVar(&manageHooks, "manage-custom-hooks", false,
+		"Manage a repository-local custom core.hooksPath or recognized Husky 9 hooks")
 	return cmd
 }
 
-func runMigrate(cmd *cobra.Command, docsRepoURLFlag string) error {
+func runMigrate(cmd *cobra.Command, docsRepoURLFlag string, manageHooks bool) error {
 	ctx := cmd.Context()
 
 	root, err := requireGitWorktreeRoot(ctx)
@@ -120,7 +123,9 @@ func runMigrate(cmd *cobra.Command, docsRepoURLFlag string) error {
 			return nil
 		}
 	}
-	if err := requireDefaultHooksDir(ctx, appgit.New(root, config.DocsDir, gitx.New(root))); err != nil {
+	repo := appgit.New(root, config.DocsDir, gitx.New(root))
+	hooks, err := detectHookConfig(ctx, repo, manageHooks)
+	if err != nil {
 		return err
 	}
 
@@ -142,7 +147,7 @@ func runMigrate(cmd *cobra.Command, docsRepoURLFlag string) error {
 	// that is still recognizably v0.1 and that re-running completes.
 	// Writing it first — the previous order — made every failure produce
 	// a workspace v0.2 refused to migrate and v0.1 could no longer read.
-	site, err := openMigrationSite(ctx, root, legacy.DocsDir, docsRepoURL)
+	site, err := openMigrationSite(ctx, root, legacy.DocsDir, docsRepoURL, hooks)
 	if err != nil {
 		return err
 	}
@@ -208,7 +213,7 @@ func runMigrate(cmd *cobra.Command, docsRepoURLFlag string) error {
 	if err := ensureGitignoreEntries(root); err != nil {
 		return err
 	}
-	if err := writeV2Config(root, legacy, docsRepoURL); err != nil {
+	if err := writeV2Config(root, legacy, docsRepoURL, hooks); err != nil {
 		return err
 	}
 
@@ -239,7 +244,7 @@ type migrationSite struct {
 // statePort is migrate's guarded state adapter.
 func (m migrationSite) statePort() statePort { return m.workspace.statePort() }
 
-func openMigrationSite(ctx context.Context, root, docsDir, docsRepoURL string) (migrationSite, error) {
+func openMigrationSite(ctx context.Context, root, docsDir, docsRepoURL string, hooks appgit.HookConfig) (migrationSite, error) {
 	run := gitx.New(root)
 	common, err := run.Line(ctx, "rev-parse", "--git-common-dir")
 	if err != nil {
@@ -253,7 +258,7 @@ func openMigrationSite(ctx context.Context, root, docsDir, docsRepoURL string) (
 		return migrationSite{}, fmt.Errorf("%s is not inside a git repository: %w", root, err)
 	}
 
-	repo := appgit.New(root, docsDir, run)
+	repo := appgit.New(root, docsDir, run).WithHooks(hooks)
 	site := migrationSite{
 		commonDir: filepath.Clean(common),
 		gitDir:    gitDir,
@@ -264,8 +269,13 @@ func openMigrationSite(ctx context.Context, root, docsDir, docsRepoURL string) (
 		configRoot: root,
 		gitDir:     gitDir,
 		commonDir:  site.commonDir,
-		config:     wsstate.Config{DocsRepoURL: docsRepoURL, DocsDir: repo.DocsDir()},
-		repo:       repo,
+		config: wsstate.Config{
+			DocsRepoURL: docsRepoURL,
+			DocsDir:     repo.DocsDir(),
+			HookMode:    string(hooks.Mode),
+			HookDir:     hooks.Dir,
+		},
+		repo: repo,
 	}
 	return site, nil
 }
@@ -273,7 +283,11 @@ func openMigrationSite(ctx context.Context, root, docsDir, docsRepoURL string) (
 // migrationComplete reports whether a v2 workspace really finished
 // migrating: config, clone, and all six hooks (F-H8b).
 func migrationComplete(ctx context.Context, root string, config wsstate.Config) (bool, error) {
-	site, err := openMigrationSite(ctx, root, config.DocsDir, config.DocsRepoURL)
+	hooks, err := workspaceHookConfig(config)
+	if err != nil {
+		return false, err
+	}
+	site, err := openMigrationSite(ctx, root, config.DocsDir, config.DocsRepoURL, hooks)
 	if err != nil {
 		return false, err
 	}
@@ -388,7 +402,7 @@ func docsRepoURLFrom(path, project string) string {
 }
 
 // writeV2Config backs the v0.1 config up and replaces it.
-func writeV2Config(root string, legacy v1Config, docsRepoURL string) error {
+func writeV2Config(root string, legacy v1Config, docsRepoURL string, hooks appgit.HookConfig) error {
 	configPath := filepath.Join(root, wsstate.ConfigFileName)
 	if err := backupFile(configPath); err != nil {
 		return err
@@ -404,6 +418,8 @@ func writeV2Config(root string, legacy v1Config, docsRepoURL string) error {
 		DocsRepoURL: docsRepoURL,
 		ActorEmail:  legacy.ActorEmail,
 		DocsDir:     legacy.DocsDir,
+		HookMode:    string(hooks.Mode),
+		HookDir:     hooks.Dir,
 	})
 }
 

@@ -27,7 +27,7 @@ func TestGeneratedHookLinesPreserveForeignExitSemantics(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "hook")
-			content := "#!/bin/sh\n" + tt.foreign + currentHookLine(tt.hook, shellQuote(tt.binary), tt.preserve) + "\n"
+			content := "#!/bin/sh\n" + tt.foreign + currentHookLine(tt.hook, shellQuote(tt.binary), false, tt.preserve) + "\n"
 			if err := os.WriteFile(path, []byte(content), 0755); err != nil {
 				t.Fatalf("write hook: %v", err)
 			}
@@ -60,7 +60,7 @@ func TestInsertHookLinePreservesDynamicExitAndConstantExit(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			lines := strings.Split(tt.foreign, "\n")
-			line := currentHookLine(Hook{Name: "pre-commit", Line: "sanho hook pre-commit"}, shellQuote("/bin/true"), needsStatusPreservation(lines))
+			line := currentHookLine(Hook{Name: "pre-commit", Line: "sanho hook pre-commit"}, shellQuote("/bin/true"), false, needsStatusPreservation(lines))
 			content := insertHookLine(lines, line)
 			path := filepath.Join(t.TempDir(), "hook")
 			if err := os.WriteFile(path, []byte(content), 0755); err != nil {

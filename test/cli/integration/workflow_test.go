@@ -95,6 +95,86 @@ func TestInitRefusesCustomHooksPathBeforeMutation(t *testing.T) {
 	}
 }
 
+func TestInitManagesRepositoryLocalCustomHooksWithExplicitOptIn(t *testing.T) {
+	w := newWorld(t, map[string]string{"api.md": "canonical api\n"})
+	custom := w.appPath(".githooks")
+	mkdirAll(t, custom)
+	foreign := "#!/bin/sh\necho foreign\n"
+	writeFile(t, filepath.Join(custom, "pre-commit"), foreign)
+	w.git(w.app, "config", "core.hooksPath", ".githooks")
+
+	w.sanho(w.app, "init",
+		"--project", "product",
+		"--docs-repo-url", w.origin,
+		"--actor-email", "author@example.test",
+		"--manage-custom-hooks")
+
+	config := readFile(t, w.appPath(".sanho.json"))
+	requireContains(t, "config", config, `"hook_mode": "custom"`)
+	requireContains(t, "config", config, `"hook_dir": ".githooks"`)
+	preCommit := readFile(t, filepath.Join(custom, "pre-commit"))
+	requireContains(t, "custom pre-commit", preCommit, "echo foreign")
+	requireContains(t, "custom pre-commit", preCommit, "command -v sanho")
+	requireNotContains(t, "custom pre-commit", preCommit, "'/")
+	for _, name := range []string{"commit-msg", "pre-push", "post-checkout", "post-merge", "post-rewrite"} {
+		if !fileExists(t, filepath.Join(custom, name)) {
+			t.Errorf("custom hook %s was not installed", name)
+		}
+	}
+	if fileExists(t, w.hookPath("pre-commit")) {
+		t.Fatal("the default hook directory was mutated")
+	}
+	w.git(w.app, "add", "-A")
+	w.git(w.app, "commit", "-m", "docs: adopt canonical")
+	w.commitDocs("docs: custom hooks execute", map[string]string{"api.md": "custom hook update\n"})
+	requireContains(t, "commit message", w.headMessage(), "docs-base:")
+	push := w.push()
+	if push.exitCode != 0 {
+		t.Fatalf("push through custom pre-push failed\n%s", push.combined())
+	}
+	if got := w.canonicalFile(w.canonicalHead(), "api.md"); got != "custom hook update\n" {
+		t.Fatalf("canonical api.md = %q", got)
+	}
+	doctor := w.sanho(w.app, "doctor", "--json").stdout
+	requireContains(t, "doctor", doctor, `"warnings": 0`)
+
+	prePush := filepath.Join(custom, "pre-push")
+	writeFile(t, prePush, "#!/bin/sh\n# keep this comment\n")
+	w.sanho(w.app, "doctor", "--fix")
+	requireContains(t, "repaired custom pre-push", readFile(t, prePush), `sanho hook pre-push "$@"`)
+
+	w.sanho(w.app, "clean", "-y")
+	cleanedPreCommit := readFile(t, filepath.Join(custom, "pre-commit"))
+	requireContains(t, "cleaned pre-commit", cleanedPreCommit, "echo foreign")
+	requireNotContains(t, "cleaned pre-commit", cleanedPreCommit, "sanho hook")
+	requireContains(t, "cleaned pre-push", readFile(t, prePush), "# keep this comment")
+	requireNotContains(t, "cleaned pre-push", readFile(t, prePush), "sanho hook")
+}
+
+func TestDoctorRefusesToRepairManagedHooksAfterCorePathChanges(t *testing.T) {
+	w := newWorld(t, map[string]string{"api.md": "canonical api\n"})
+	custom := w.appPath(".githooks")
+	mkdirAll(t, custom)
+	w.git(w.app, "config", "core.hooksPath", ".githooks")
+	w.sanho(w.app, "init",
+		"--project", "product",
+		"--docs-repo-url", w.origin,
+		"--actor-email", "author@example.test",
+		"--manage-custom-hooks")
+	before := readFile(t, filepath.Join(custom, "pre-commit"))
+	mkdirAll(t, w.appPath(".other-hooks"))
+	w.git(w.app, "config", "core.hooksPath", ".other-hooks")
+
+	out := w.sanho(w.app, "doctor", "--fix", "--json").stdout
+	requireContains(t, "doctor", out, "core.hooksPath no longer matches")
+	if got := readFile(t, filepath.Join(custom, "pre-commit")); got != before {
+		t.Fatalf("doctor changed the configured hook after core.hooksPath moved")
+	}
+	if fileExists(t, w.appPath(".other-hooks", "pre-commit")) {
+		t.Fatal("doctor wrote the new unapproved custom hook directory")
+	}
+}
+
 func TestDoctorDoesNotRepairCustomHooksPath(t *testing.T) {
 	w := newWorld(t, map[string]string{"api.md": "canonical api\n"})
 	w.initAndAdoptDocs()

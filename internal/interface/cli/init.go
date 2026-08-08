@@ -66,6 +66,7 @@ type initOptions struct {
 	actorEmail  string
 	force       bool
 	confirmed   bool
+	manageHooks bool
 }
 
 func newInitCmd() *cobra.Command {
@@ -83,6 +84,7 @@ func newInitCmd() *cobra.Command {
 	cmd.Flags().StringVar(&opts.actorEmail, "actor-email", "", "Email recorded on canonical commits (default: git config user.email)")
 	cmd.Flags().BoolVar(&opts.force, "force", false, "Replace an existing docs directory with canonical content")
 	cmd.Flags().BoolVarP(&opts.confirmed, "yes", "y", false, "Confirm destructive operations without prompting")
+	cmd.Flags().BoolVar(&opts.manageHooks, "manage-custom-hooks", false, "Manage a repository-local custom core.hooksPath or recognized Husky 9 hooks")
 	return cmd
 }
 
@@ -102,7 +104,9 @@ func runInit(cmd *cobra.Command, opts initOptions) error {
 	if _, err := os.Stat(filepath.Join(root, wsstate.ConfigFileName)); err == nil && !opts.force {
 		return fmt.Errorf("%s already exists in %s; rerun with --force to reinitialize", wsstate.ConfigFileName, root)
 	}
-	if err := requireDefaultHooksDir(ctx, appgit.New(root, opts.docsDir, gitx.New(root))); err != nil {
+	repo := appgit.New(root, opts.docsDir, gitx.New(root))
+	hooks, err := detectHookConfig(ctx, repo, opts.manageHooks)
+	if err != nil {
 		return err
 	}
 	// The sync note is consulted before the dirty-docs check, and the
@@ -131,6 +135,8 @@ func runInit(cmd *cobra.Command, opts initOptions) error {
 		DocsRepoURL: opts.docsRepoURL,
 		ActorEmail:  opts.actorEmail,
 		DocsDir:     opts.docsDir,
+		HookMode:    string(hooks.Mode),
+		HookDir:     hooks.Dir,
 	}
 
 	// The registry first: a project whose name is already bound to a
@@ -215,20 +221,19 @@ func runInit(cmd *cobra.Command, opts initOptions) error {
 	return nil
 }
 
-// requireDefaultHooksDir keeps lifecycle commands out of custom hook
-// directories before they mutate workspace, registry, clone, or backup
-// state. Such directories are commonly tracked or shared across
-// worktrees, so Sanho cannot safely claim ownership of their scripts.
-func requireDefaultHooksDir(ctx context.Context, repo *appgit.Repo) error {
-	_, err := repo.DefaultHooksDir(ctx)
+// detectHookConfig keeps lifecycle commands out of custom hook directories
+// before mutation unless the caller explicitly opts into a repository-local
+// target. The infra resolver distinguishes direct hooks from Husky shims.
+func detectHookConfig(ctx context.Context, repo *appgit.Repo, manageCustom bool) (appgit.HookConfig, error) {
+	config, err := repo.DetectHookConfig(ctx, manageCustom)
 	if err == nil {
-		return nil
+		return config, nil
 	}
 	var custom *appgit.CustomHooksPathError
 	if errors.As(err, &custom) {
-		return errors.New(customHooksPathMessage(custom.Path))
+		return appgit.HookConfig{}, errors.New(customHooksPathMessage(custom.Path))
 	}
-	return initGitError("resolve the git hooks directory", err)
+	return appgit.HookConfig{}, initGitError("resolve the git hooks directory", err)
 }
 
 func configExists(root string) bool {

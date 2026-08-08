@@ -118,12 +118,33 @@ func openWorkspace(ctx context.Context) (*workspace, error) {
 	// staged-marker gate must read. Every other runner in the process,
 	// including every command against the private canonical clone, has it
 	// scrubbed (see gitx.scrubbedEnvVars).
-	ws.repo = appgit.New(root, cfg.DocsDir, gitx.New(root, gitx.WithInheritedIndexFile()))
+	hooks, err := workspaceHookConfig(cfg)
+	if err != nil {
+		return nil, err
+	}
+	ws.repo = appgit.New(root, cfg.DocsDir, gitx.New(root, gitx.WithInheritedIndexFile())).WithHooks(hooks)
 
 	if cfg.SchemaVersion == 1 {
 		return ws, errV1Workspace
 	}
 	return ws, nil
+}
+
+func workspaceHookConfig(cfg wsstate.Config) (appgit.HookConfig, error) {
+	mode := appgit.HookMode(cfg.HookMode)
+	switch mode {
+	case appgit.HookModeDefault:
+		if cfg.HookDir != "" {
+			return appgit.HookConfig{}, fmt.Errorf("%w: hook_dir requires hook_mode", wsstate.ErrConfigCorrupt)
+		}
+	case appgit.HookModeCustom, appgit.HookModeHusky:
+		if cfg.HookDir == "" {
+			return appgit.HookConfig{}, fmt.Errorf("%w: hook_mode %q requires hook_dir", wsstate.ErrConfigCorrupt, cfg.HookMode)
+		}
+	default:
+		return appgit.HookConfig{}, fmt.Errorf("%w: unknown hook_mode %q", wsstate.ErrConfigCorrupt, cfg.HookMode)
+	}
+	return appgit.HookConfig{Mode: mode, Dir: cfg.HookDir}, nil
 }
 
 // resolveConfigRoot finds the `.sanho.json` governing root.

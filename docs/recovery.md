@@ -256,10 +256,11 @@ sanho doctor --fix      # hook 재설치가 필요할 때
 ```
 
 hook 설치는 Sanho 호출 구조만 인식하고 남의 줄은 원문 그대로 보존하므로,
-재설치가 기존 hook 내용을 지우지 않는다. custom `core.hooksPath`에서는 소유권을
-가정하지 않고 `doctor --fix`가 경고만 한다. private clone은 Sanho 소유이며
-언제든 다시 만들 수 있다. `sanho sync`와 `sanho pull` 같은 쓰기 경로는 clone이
-없으면 스스로 만든다.
+재설치가 기존 hook 내용을 지우지 않는다. 명시적으로 관리하도록 초기화한
+repository-local custom/Husky hook은 기록된 디렉터리만 복구한다. opt-in하지 않은
+custom 경로나 기록 뒤 바뀐 `core.hooksPath`는 `doctor --fix`가 경고만 한다.
+private clone은 Sanho 소유이며 언제든 다시 만들 수 있다. `sanho sync`와
+`sanho pull` 같은 쓰기 경로는 clone이 없으면 스스로 만든다.
 
 hook이 꺼진 동안 docs commit과 app push가 이미 끝났다면 복구 직후 다음 경고가
 나올 수 있다.

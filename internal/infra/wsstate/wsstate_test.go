@@ -122,6 +122,8 @@ func TestLoadConfig_V2RoundTripViaSaveConfig(t *testing.T) {
 		DocsRepoURL:   "https://example.com/docs.git",
 		ActorEmail:    "actor@example.com",
 		DocsDir:       "docs",
+		HookMode:      "husky",
+		HookDir:       ".husky",
 	}
 
 	if err := wsstate.SaveConfig(dir, want); err != nil {

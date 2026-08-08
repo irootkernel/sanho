@@ -77,6 +77,8 @@ type Config struct {
 	DocsRepoURL   string `json:"docs_repo_url"`
 	ActorEmail    string `json:"actor_email"`
 	DocsDir       string `json:"docs_dir"`
+	HookMode      string `json:"hook_mode,omitempty"`
+	HookDir       string `json:"hook_dir,omitempty"`
 }
 
 // ApplyDefaults fills zero-value optional fields (DocsDir "docs").
@@ -97,6 +99,8 @@ type v1ConfigFields struct {
 	DocsRepoURL   string `json:"docs_repo_url"`
 	ActorEmail    string `json:"actor_email"`
 	DocsDir       string `json:"docs_dir"`
+	HookMode      string `json:"hook_mode"`
+	HookDir       string `json:"hook_dir"`
 }
 
 // LoadConfig reads ConfigFileName in workDir. A v0.1 config (no
@@ -140,6 +144,8 @@ func LoadConfig(workDir string) (Config, error) {
 		DocsRepoURL:   raw.DocsRepoURL,
 		ActorEmail:    raw.ActorEmail,
 		DocsDir:       raw.DocsDir,
+		HookMode:      raw.HookMode,
+		HookDir:       raw.HookDir,
 	}, nil
 }
 
