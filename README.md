@@ -47,7 +47,7 @@ Node.js and npm are not required. The only runtime dependency is cobra.
 ### Install
 
 ```bash
-go install github.com/irootkernel/sanho/cmd/sanho@v0.2.3
+go install github.com/irootkernel/sanho/cmd/sanho@v0.2.4
 sanho version
 ```
 
