@@ -1,5 +1,7 @@
 # Sanho
 
+![Sanho synchronizing application documentation with a canonical Git repository](.github/assets/sanho-hero.png)
+
 Sanho keeps the `docs/` directories of multiple application repositories
 synchronized with one canonical docs repository, and tells you early when they
 have drifted apart.
