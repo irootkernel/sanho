@@ -6,17 +6,12 @@ import (
 	"github.com/irootkernel/sanho/internal/interface/cli"
 )
 
-// Build-time variables injected via ldflags
-var (
-	version   = "dev"
-	commit    = "unknown"
-	buildDate = "unknown"
-)
+// version is injected via ldflags for checkout builds. Module builds derive it
+// from Go build information instead.
+var version = "dev"
 
 func main() {
 	cli.Execute(cli.BuildInfo{
-		Version:   buildinfo.ResolveVersion(version),
-		Commit:    commit,
-		BuildDate: buildDate,
+		Version: buildinfo.ResolveVersion(version),
 	})
 }

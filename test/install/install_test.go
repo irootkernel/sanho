@@ -25,7 +25,6 @@ func TestGoInstallProducesTheCLIBinary(t *testing.T) {
 		t.Fatalf("go install failed: %v\n%s", err, output)
 	}
 
-	const wantPrefix = "sanho version "
 	binary := filepath.Join(binDir, "sanho")
 	info, err := os.Stat(binary)
 	if err != nil {
@@ -38,8 +37,13 @@ func TestGoInstallProducesTheCLIBinary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sanho version command failed: %v\n%s", err, output)
 	}
-	if !strings.HasPrefix(string(output), wantPrefix) {
-		t.Fatalf("sanho output = %q, want prefix %q", output, wantPrefix)
+	line, ok := strings.CutSuffix(string(output), "\n")
+	if !ok {
+		t.Fatalf("sanho output = %q, want one trailing newline", output)
+	}
+	prefix, version, ok := strings.Cut(line, " ")
+	if !ok || prefix != "sanho" || version == "" || strings.Contains(version, " ") {
+		t.Fatalf("sanho output = %q, want %q", output, "sanho <version>\\n")
 	}
 }
 

@@ -94,9 +94,9 @@ Current source emits the complete document as standard compact JSON on one line:
 ```
 
 The command writes one trailing newline. `name` and `version` are the complete
-schema; the whitespace change does not alter either field. Commit and build
-date remain in the human-readable command because they are diagnostics, not
-identifiers. Other successful JSON commands retain the common indented form.
+schema; the whitespace change does not alter either field. The human-readable
+form is `sanho <version>`. Other successful JSON commands retain the common
+indented form.
 
 ## `status`
 

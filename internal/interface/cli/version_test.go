@@ -5,6 +5,21 @@ import (
 	"testing"
 )
 
+func TestVersionTextIsCompact(t *testing.T) {
+	cmd := newVersionCmd(BuildInfo{Version: "v0.2.3"})
+	var stdout bytes.Buffer
+	cmd.SetOut(&stdout)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute version: %v", err)
+	}
+
+	const want = "sanho v0.2.3\n"
+	if got := stdout.String(); got != want {
+		t.Fatalf("version output = %q, want %q", got, want)
+	}
+}
+
 func TestVersionJSONIsCompact(t *testing.T) {
 	cmd := newVersionCmd(BuildInfo{Version: "v0.2.3"})
 	var stdout bytes.Buffer

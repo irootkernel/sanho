@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Human-readable `sanho version` output is now the compact `sanho <version>`
+  form. Commit and build-date diagnostics are no longer emitted or injected;
+  `sanho version --json` retains its stable two-field schema.
+
 ## v0.2.3 - 2026-08-09
 
 ### Fixed

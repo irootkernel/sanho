@@ -45,11 +45,9 @@ var errInternal = errors.New("internal error")
 // renderer prints nothing more for it and exits 1.
 var errAlreadyReported = errors.New("guidance already reported")
 
-// BuildInfo carries the ldflags-injected build identity.
+// BuildInfo carries the resolved release version.
 type BuildInfo struct {
-	Version   string
-	Commit    string
-	BuildDate string
+	Version string
 }
 
 // Execute runs the CLI and terminates the process with the JSON contract exit

@@ -8,10 +8,6 @@ import (
 // from v0.1 unchanged so existing scripts keep working:
 //
 //	{"name": "sanho", "version": "<version>"}
-//
-// Commit and build date stay out of it deliberately: they are
-// diagnostics for a human reading the text form, not identifiers a
-// machine should branch on.
 type versionJSON struct {
 	Name    string `json:"name"`
 	Version string `json:"version"`
@@ -29,8 +25,7 @@ func newVersionCmd(info BuildInfo) *cobra.Command {
 			if asJSON {
 				return writeCompactJSON(cmd.OutOrStdout(), versionJSON{Name: "sanho", Version: resolved.Version})
 			}
-			writef(cmd.OutOrStdout(), "sanho version %s (commit: %s, built: %s)\n",
-				resolved.Version, resolved.Commit, resolved.BuildDate)
+			writef(cmd.OutOrStdout(), "sanho %s\n", resolved.Version)
 			return nil
 		},
 	}
@@ -38,17 +33,10 @@ func newVersionCmd(info BuildInfo) *cobra.Command {
 	return cmd
 }
 
-// withDefaults fills the placeholders a build without ldflags leaves
-// empty, so the output never has a blank field.
+// withDefaults ensures a build without version information stays explicit.
 func withDefaults(info BuildInfo) BuildInfo {
 	if info.Version == "" {
 		info.Version = "dev"
-	}
-	if info.Commit == "" {
-		info.Commit = "unknown"
-	}
-	if info.BuildDate == "" {
-		info.BuildDate = "unknown"
 	}
 	return info
 }
