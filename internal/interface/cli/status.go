@@ -72,8 +72,21 @@ type statusJSON struct {
 		Clean     bool     `json:"clean"`
 		Conflicts []string `json:"conflicts"`
 	} `json:"sync_preview"`
+	WorkingCopy struct {
+		Known     bool `json:"known"`
+		DocsClean bool `json:"docs_clean"`
+	} `json:"working_copy"`
+	LocalReadiness struct {
+		Sync readinessJSON `json:"sync"`
+		Pull readinessJSON `json:"pull"`
+	} `json:"local_readiness"`
 	SyncInProgress bool          `json:"sync_in_progress"`
 	Siblings       []siblingJSON `json:"siblings"`
+}
+
+type readinessJSON struct {
+	Ready     bool     `json:"ready"`
+	BlockedBy []string `json:"blocked_by"`
 }
 
 type baseJSON struct {
@@ -261,7 +274,29 @@ func renderStatus(out io.Writer, ws *workspace, store *canonical.Store, report a
 	if report.PublicationKnown && report.PublicationPending {
 		writeln(out, "publish   : committed docs changes are pending publication")
 	}
+	renderWorkingCopy(out, report)
+	renderReadiness(out, "sync now  ", report.SyncReadiness)
+	renderReadiness(out, "pull now  ", report.PullReadiness)
 	renderSiblings(out, report.Siblings)
+}
+
+func renderWorkingCopy(out io.Writer, report admin.StatusReport) {
+	switch {
+	case !report.WorkingCopyKnown:
+		writeln(out, "working   : docs state unknown")
+	case report.DocsClean:
+		writeln(out, "working   : docs clean")
+	default:
+		writeln(out, "working   : docs have uncommitted changes")
+	}
+}
+
+func renderReadiness(out io.Writer, label string, readiness admin.Readiness) {
+	if readiness.Ready {
+		writef(out, "%s: ready (local checks)\n", label)
+		return
+	}
+	writef(out, "%s: blocked (%s)\n", label, readiness.BlockedBy[0])
 }
 
 // dataAgeLine always states how old the canonical view is (the guidance contract:
@@ -334,6 +369,10 @@ func buildStatusJSON(report admin.StatusReport, store *canonical.Store) statusJS
 	out.SyncPreview.Known = report.SyncPreviewKnown
 	out.SyncPreview.Clean = report.SyncClean
 	out.SyncPreview.Conflicts = orEmpty(report.SyncConflicts)
+	out.WorkingCopy.Known = report.WorkingCopyKnown
+	out.WorkingCopy.DocsClean = report.DocsClean
+	out.LocalReadiness.Sync = readinessJSON{Ready: report.SyncReadiness.Ready, BlockedBy: orEmpty(report.SyncReadiness.BlockedBy)}
+	out.LocalReadiness.Pull = readinessJSON{Ready: report.PullReadiness.Ready, BlockedBy: orEmpty(report.PullReadiness.BlockedBy)}
 	out.SyncInProgress = report.SyncInProgress
 
 	out.Siblings = make([]siblingJSON, 0, len(report.Siblings))

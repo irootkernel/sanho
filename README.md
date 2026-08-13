@@ -177,6 +177,11 @@ sanho pull       # just take canonical's docs (no local edits)
 git push         # publish — there is no `sanho push`
 ```
 
+Status separates the committed-tree merge preview from local command
+readiness. A clean preview says how `HEAD` would merge; `sync now` and `pull
+now` say whether the docs working copy passes those commands' current local
+guards. They do not predict network availability or a later fetch.
+
 A commit on a stale base prints one line and succeeds:
 
 ```text

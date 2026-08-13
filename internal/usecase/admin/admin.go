@@ -95,6 +95,24 @@ type PreviewPort interface {
 // when canonical cannot be refreshed or resolved.
 type LocalPort interface {
 	HeadDocsTree(ctx context.Context) (string, error)
+	DocsClean(ctx context.Context) (bool, error)
+	WorktreeDocsTree(ctx context.Context) (string, error)
+}
+
+const (
+	ReadinessSyncInProgress     = "sync_in_progress"
+	ReadinessDocsDirty          = "docs_dirty"
+	ReadinessWorkingCopyUnknown = "working_copy_unknown"
+	ReadinessNoBase             = "no_base"
+	ReadinessLocalDocsChanged   = "local_docs_changed"
+)
+
+// Readiness reports whether a command passes the local guards status can
+// inspect without fetching. Network availability and the state discovered by
+// a future fetch remain outside this answer.
+type Readiness struct {
+	Ready     bool
+	BlockedBy []string
 }
 
 // DetectPublication compares committed local docs with the last safe
@@ -153,6 +171,10 @@ type StatusReport struct {
 	// local committed docs differ from the last safely published base.
 	PublicationKnown   bool
 	PublicationPending bool
+	WorkingCopyKnown   bool
+	DocsClean          bool
+	SyncReadiness      Readiness
+	PullReadiness      Readiness
 	// Siblings are other registered workspaces of the project.
 	Siblings []SiblingRow
 }
@@ -215,6 +237,7 @@ func (q *StatusQuery) Run(ctx context.Context) (StatusReport, error) {
 	}
 	report.PublicationKnown, report.PublicationPending =
 		DetectPublication(ctx, q.Local, base, hasBase, report.SyncInProgress)
+	q.fillLocalReadiness(ctx, &report, base, hasBase)
 
 	head, headTree, err := q.Canonical.Head(ctx)
 	switch {
@@ -233,6 +256,50 @@ func (q *StatusQuery) Run(ctx context.Context) (StatusReport, error) {
 		report.Siblings = q.siblingRows(ctx, siblings, base, hasBase, report.Head)
 	}
 	return report, nil
+}
+
+func (q *StatusQuery) fillLocalReadiness(ctx context.Context, report *StatusReport, base provenance.Base, hasBase bool) {
+	report.SyncReadiness.Ready = true
+	report.PullReadiness.Ready = true
+
+	if q.Local != nil {
+		clean, err := q.Local.DocsClean(ctx)
+		if err == nil {
+			report.WorkingCopyKnown, report.DocsClean = true, clean
+		}
+	}
+
+	if report.SyncInProgress {
+		report.SyncReadiness = blocked(ReadinessSyncInProgress)
+		report.PullReadiness = blocked(ReadinessSyncInProgress)
+		return
+	}
+	if !report.WorkingCopyKnown {
+		report.SyncReadiness = blocked(ReadinessWorkingCopyUnknown)
+		report.PullReadiness = blocked(ReadinessWorkingCopyUnknown)
+		return
+	}
+	if !report.DocsClean {
+		report.SyncReadiness = blocked(ReadinessDocsDirty)
+		report.PullReadiness = blocked(ReadinessDocsDirty)
+		return
+	}
+	if !hasBase {
+		report.PullReadiness = blocked(ReadinessNoBase)
+		return
+	}
+	worktree, err := q.Local.WorktreeDocsTree(ctx)
+	if err != nil {
+		report.PullReadiness = blocked(ReadinessWorkingCopyUnknown)
+		return
+	}
+	if worktree != base.Tree {
+		report.PullReadiness = blocked(ReadinessLocalDocsChanged)
+	}
+}
+
+func blocked(reason string) Readiness {
+	return Readiness{BlockedBy: []string{reason}}
 }
 
 // fillRelation computes behind/ahead and the sync preview, both of which

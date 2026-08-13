@@ -98,11 +98,22 @@ type fakePreview struct {
 }
 
 type fakeLocal struct {
-	tree string
-	err  error
+	tree        string
+	worktree    string
+	err         error
+	cleanErr    error
+	worktreeErr error
+	dirty       bool
 }
 
 func (l fakeLocal) HeadDocsTree(ctx context.Context) (string, error) { return l.tree, l.err }
+func (l fakeLocal) DocsClean(ctx context.Context) (bool, error)      { return !l.dirty, l.cleanErr }
+func (l fakeLocal) WorktreeDocsTree(ctx context.Context) (string, error) {
+	if l.worktree == "" {
+		return l.tree, l.worktreeErr
+	}
+	return l.worktree, l.worktreeErr
+}
 
 func (p *fakePreview) Preview(ctx context.Context, base provenance.Base, head, headTree string) (bool, bool, []string) {
 	p.calls++
@@ -147,6 +158,83 @@ func TestRunReportsPendingLocalPublication(t *testing.T) {
 	if !report.PublicationKnown || !report.PublicationPending {
 		t.Fatalf("publication = (known=%t, pending=%t), want both true",
 			report.PublicationKnown, report.PublicationPending)
+	}
+}
+
+func TestRunReportsLocalReadiness(t *testing.T) {
+	tests := []struct {
+		name      string
+		state     fakeState
+		local     fakeLocal
+		wantClean bool
+		wantSync  Readiness
+		wantPull  Readiness
+	}{
+		{
+			name:      "ready",
+			state:     fakeState{base: provenance.Base{Commit: baseCommit, Tree: baseTree}, hasBase: true},
+			local:     fakeLocal{tree: baseTree},
+			wantClean: true,
+			wantSync:  Readiness{Ready: true},
+			wantPull:  Readiness{Ready: true},
+		},
+		{
+			name:     "dirty docs",
+			state:    fakeState{base: provenance.Base{Commit: baseCommit, Tree: baseTree}, hasBase: true},
+			local:    fakeLocal{tree: baseTree, dirty: true},
+			wantSync: blocked(ReadinessDocsDirty),
+			wantPull: blocked(ReadinessDocsDirty),
+		},
+		{
+			name:     "active sync outranks dirty docs",
+			state:    fakeState{base: provenance.Base{Commit: baseCommit, Tree: baseTree}, hasBase: true, inProgress: true},
+			local:    fakeLocal{tree: baseTree, dirty: true},
+			wantSync: blocked(ReadinessSyncInProgress),
+			wantPull: blocked(ReadinessSyncInProgress),
+		},
+		{
+			name:      "no base blocks pull only",
+			state:     fakeState{},
+			local:     fakeLocal{tree: baseTree},
+			wantClean: true,
+			wantSync:  Readiness{Ready: true},
+			wantPull:  blocked(ReadinessNoBase),
+		},
+		{
+			name:      "committed local docs block pull only",
+			state:     fakeState{base: provenance.Base{Commit: baseCommit, Tree: baseTree}, hasBase: true},
+			local:     fakeLocal{tree: oid(20)},
+			wantClean: true,
+			wantSync:  Readiness{Ready: true},
+			wantPull:  blocked(ReadinessLocalDocsChanged),
+		},
+		{
+			name:     "unreadable working copy",
+			state:    fakeState{base: provenance.Base{Commit: baseCommit, Tree: baseTree}, hasBase: true},
+			local:    fakeLocal{tree: baseTree, cleanErr: errors.New("status failed")},
+			wantSync: blocked(ReadinessWorkingCopyUnknown),
+			wantPull: blocked(ReadinessWorkingCopyUnknown),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			query, _, _ := newQuery()
+			query.State, query.Local = tt.state, tt.local
+			report, err := query.Run(context.Background())
+			if err != nil {
+				t.Fatalf("Run() error = %v", err)
+			}
+			if report.DocsClean != tt.wantClean {
+				t.Errorf("DocsClean = %t, want %t", report.DocsClean, tt.wantClean)
+			}
+			if !reflect.DeepEqual(report.SyncReadiness, tt.wantSync) {
+				t.Errorf("sync readiness = %+v, want %+v", report.SyncReadiness, tt.wantSync)
+			}
+			if !reflect.DeepEqual(report.PullReadiness, tt.wantPull) {
+				t.Errorf("pull readiness = %+v, want %+v", report.PullReadiness, tt.wantPull)
+			}
+		})
 	}
 }
 

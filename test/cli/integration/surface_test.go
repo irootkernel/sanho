@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -51,6 +52,20 @@ func TestStatusJSONSchema(t *testing.T) {
 			Clean     bool     `json:"clean"`
 			Conflicts []string `json:"conflicts"`
 		} `json:"sync_preview"`
+		WorkingCopy struct {
+			Known     bool `json:"known"`
+			DocsClean bool `json:"docs_clean"`
+		} `json:"working_copy"`
+		LocalReadiness struct {
+			Sync struct {
+				Ready     bool     `json:"ready"`
+				BlockedBy []string `json:"blocked_by"`
+			} `json:"sync"`
+			Pull struct {
+				Ready     bool     `json:"ready"`
+				BlockedBy []string `json:"blocked_by"`
+			} `json:"pull"`
+		} `json:"local_readiness"`
 		SyncInProgress bool `json:"sync_in_progress"`
 		Siblings       []struct {
 			WorkspaceID string `json:"workspace_id"`
@@ -90,6 +105,52 @@ func TestStatusJSONSchema(t *testing.T) {
 	}
 	if document.SyncInProgress {
 		t.Error("sync_in_progress = true, want false")
+	}
+	if !document.WorkingCopy.Known || !document.WorkingCopy.DocsClean {
+		t.Errorf("working_copy = %+v, want known and clean", document.WorkingCopy)
+	}
+	if !document.LocalReadiness.Sync.Ready || !document.LocalReadiness.Pull.Ready {
+		t.Errorf("local_readiness = %+v, want sync and pull ready", document.LocalReadiness)
+	}
+	if document.LocalReadiness.Sync.BlockedBy == nil || document.LocalReadiness.Pull.BlockedBy == nil {
+		t.Error("local_readiness blocked_by = null, want []")
+	}
+}
+
+func TestStatusReportsDirtyDocsAsLocallyBlocked(t *testing.T) {
+	w := newWorld(t, map[string]string{"api.md": "canonical api\n"})
+	w.initAndAdoptDocs()
+	writeFile(t, w.appPath("docs/api.md"), "working edit\n")
+
+	out := w.sanho(w.app, "status", "--json")
+	var document struct {
+		WorkingCopy struct {
+			Known     bool `json:"known"`
+			DocsClean bool `json:"docs_clean"`
+		} `json:"working_copy"`
+		LocalReadiness struct {
+			Sync struct {
+				Ready     bool     `json:"ready"`
+				BlockedBy []string `json:"blocked_by"`
+			} `json:"sync"`
+			Pull struct {
+				Ready     bool     `json:"ready"`
+				BlockedBy []string `json:"blocked_by"`
+			} `json:"pull"`
+		} `json:"local_readiness"`
+	}
+	if err := json.Unmarshal([]byte(out.stdout), &document); err != nil {
+		t.Fatalf("parse status JSON: %v\n%s", err, out.stdout)
+	}
+	if !document.WorkingCopy.Known || document.WorkingCopy.DocsClean {
+		t.Errorf("working_copy = %+v, want known and dirty", document.WorkingCopy)
+	}
+	want := []string{"docs_dirty"}
+	if document.LocalReadiness.Sync.Ready || !reflect.DeepEqual(document.LocalReadiness.Sync.BlockedBy, want) {
+		t.Errorf("sync readiness = %+v, want blocked by docs_dirty", document.LocalReadiness.Sync)
+	}
+	if document.LocalReadiness.Pull.Ready || !reflect.DeepEqual(document.LocalReadiness.Pull.BlockedBy, want) {
+		t.Errorf("pull readiness = %+v, want blocked by docs_dirty", document.LocalReadiness.Pull)
 	}
 }
 

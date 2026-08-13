@@ -196,6 +196,13 @@ meaningful replacement anchor. Sanho never guesses an unsafe target.
 docs work to preserve; otherwise it directs the user to `sanho sync`. `--commit`
 creates an explicit user-authored commit.
 
+Status reports two distinct local views. `sync_preview` predicts the merge of
+the committed `HEAD` docs against the cached canonical state. `working_copy`
+and `local_readiness` inspect the current docs index and worktree using the
+same guard order as sync and pull. Readiness covers only locally provable
+preconditions; it does not promise that a future fetch or network operation
+will succeed.
+
 ## State and persistence
 
 | Path | Mode | Contract |

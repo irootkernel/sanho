@@ -120,6 +120,11 @@ indented form.
   "relation": {"known": true, "behind": 2, "ahead": 0},
   "publication": {"known": true, "pending": false},
   "sync_preview": {"known": true, "clean": true, "conflicts": []},
+  "working_copy": {"known": true, "docs_clean": true},
+  "local_readiness": {
+    "sync": {"ready": true, "blocked_by": []},
+    "pull": {"ready": true, "blocked_by": []}
+  },
   "sync_in_progress": false,
   "siblings": []
 }
@@ -133,6 +138,13 @@ is local and independent from the canonical relationship.
 Sibling rows have `workspace_id`, `base_commit`, `base_tree`, `vs_mine`,
 `vs_head`, `actor_email`, and RFC3339 `last_updated_at`. They are observations
 from the registry and may be `unknown` when the local clone lacks their objects.
+
+`working_copy` covers staged, unstaged, and untracked paths under the configured
+docs directory. `local_readiness` applies the same local guard precedence as
+the command: `sync_in_progress`, `docs_dirty`, `working_copy_unknown`,
+`no_base`, or `local_docs_changed`. `blocked_by` is always an array and is empty
+when `ready` is true. These fields do not test network access or promise that a
+future canonical fetch will preserve the cached relation.
 
 ## `state`
 
@@ -219,8 +231,10 @@ report; it fails only when diagnosis itself cannot run.
 3. On sync success, branch on `status`; `conflicts` requires resolution and
    `sanho sync --continue`.
 4. Treat every `known:false` as unavailable data, not a zero relationship.
-5. Never parse human tables or short OIDs.
-6. Never bypass a named recovery action with force, manual state edits, or
+5. Treat `sync_preview` as a committed-tree prediction and `local_readiness` as
+   current local preconditions; neither guarantees a later network operation.
+6. Never parse human tables or short OIDs.
+7. Never bypass a named recovery action with force, manual state edits, or
    `--no-verify`.
 
 Related documents: [Architecture](architecture.md),

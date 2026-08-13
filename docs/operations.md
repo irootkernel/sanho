@@ -37,10 +37,18 @@ The default uses the last fetched canonical snapshot and reports its age.
 
 - `relation`: whether the base is behind or ahead of canonical;
 - `publication`: whether local committed docs are pending publication;
-- `sync_preview`: whether a sync is expected to be clean.
+- `sync_preview`: whether a sync is expected to be clean;
+- `working_copy`: whether docs have staged, unstaged, or untracked changes;
+- `local_readiness`: whether sync and pull pass their current local guards.
 
 Unknown is not zero. A missing object or base produces `known:false` rather than
 an invented relationship.
+
+The sync preview describes committed `HEAD`, while readiness describes the
+current index and worktree. A clean preview can coexist with `docs_dirty`: the
+predicted merge is clean, but sync first requires the user to commit or stash
+local docs work. Readiness does not test network availability or predict what
+a later fetch will discover.
 
 ### 2. Commit normally
 

@@ -22,9 +22,12 @@ repository. It is a Git-boundary tool, not a general task or session manager.
    `sanho state --all --json` only when project or workspace inventory matters.
 4. Parse the JSON document and process exit separately. Branch on stable
    `error.code`, `known` fields, `sync_in_progress`, `relation`,
-   `publication`, and `sync_preview`; never infer unknown values as zero or a
-   sync outcome from exit 0. Exit 2 means an internal Sanho defect; stop and
-   report it.
+   `publication`, `sync_preview`, `working_copy`, and `local_readiness`.
+   Treat `sync_preview` as a prediction for committed `HEAD` and readiness as
+   current local preconditions; neither proves that a later fetch or network
+   operation will succeed. Never infer unknown values as zero or a sync
+   outcome from exit 0. Exit 2 means an internal Sanho defect; stop and report
+   it.
 5. Derive the next action from current output and Sanho's current guidance,
    not conversation memory. When a Sanho message names a next step, follow
    the message's own sequence, not one command out of it — some named
