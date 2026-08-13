@@ -15,10 +15,12 @@ sanho init \
   --actor-email <email>
 ```
 
-The project and repository URL are required inputs; never guess them. The docs
-directory defaults to `docs`, and the actor email defaults to Git's user email.
-Use defaults unless the user or repository authority establishes another
-value. Do not edit `.sanho.json` manually.
+The project is required. The repository URL may be omitted only when the same
+project already has a non-empty v2 registry URL; inspect it with `sanho state
+--all --json` and never guess it. An explicit URL must match the registration.
+The docs directory defaults to `docs`, and the actor email defaults to Git's
+user email. Use defaults unless the user or repository authority establishes
+another value. Do not edit `.sanho.json` manually.
 
 A project registration can be created independently with explicit intent:
 

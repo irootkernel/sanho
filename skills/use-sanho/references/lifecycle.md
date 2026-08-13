@@ -20,12 +20,18 @@ discovery, not permission to initialize.
 
 ## Initialize or register
 
-Require the user's explicit project name and canonical repository URL before:
+Require an explicit project name. Inspect `sanho state --all --json` when the
+user asks to reuse a registered project; a v2 registration with a non-empty
+matching URL allows init to omit `--docs-repo-url`:
 
 ```bash
 sanho init --project <project> --docs-repo-url <url>
+sanho init --project <registered-project>
 sanho project add <project> --docs-repo-url <url>
 ```
+
+For an unregistered project, require the user's explicit canonical repository
+URL. Never infer one from a repository remote or a similarly named project.
 
 `init` writes workspace state, creates a private clone, installs hooks, and may
 stage canonical docs. `--manage-custom-hooks` is a separate opt-in described in

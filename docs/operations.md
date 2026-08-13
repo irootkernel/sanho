@@ -24,6 +24,10 @@ credentials are the only runtime dependencies.
 
 ## Daily workflow
 
+An already registered project can onboard another checkout without repeating
+its canonical URL: `sanho init --project <name>`. Unregistered projects still
+require `--docs-repo-url`, and an explicit conflicting URL is rejected.
+
 ### 1. Inspect
 
 ```bash

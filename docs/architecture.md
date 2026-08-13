@@ -237,6 +237,12 @@ The registry is observational. Canonical publication correctness does not rely
 on sibling entries. Sibling relationships may be `unknown` when one workspace's
 private clone lacks another workspace's reported object.
 
+One onboarding convenience reads the project table: `sanho init --project`
+may reuse an existing non-empty docs repository URL. That value is copied into
+the new workspace config before cloning; all later publication correctness
+continues to depend on the workspace config, canonical Git state, and guarded
+base rather than on the registry. An explicit conflicting URL is refused.
+
 ## Concurrency
 
 - Registry read/modify/write operations hold `state.lock`.

@@ -80,7 +80,7 @@ func newInitCmd() *cobra.Command {
 		RunE:  func(cmd *cobra.Command, _ []string) error { return runInit(cmd, opts) },
 	}
 	cmd.Flags().StringVar(&opts.project, "project", "", "Project name (required)")
-	cmd.Flags().StringVar(&opts.docsRepoURL, "docs-repo-url", "", "Canonical docs repository URL (required)")
+	cmd.Flags().StringVar(&opts.docsRepoURL, "docs-repo-url", "", "Canonical docs repository URL (required unless the project is registered)")
 	cmd.Flags().StringVar(&opts.docsDir, "docs-dir", appgit.DefaultDocsDir, "Docs directory, relative to the repository root")
 	cmd.Flags().StringVar(&opts.actorEmail, "actor-email", "", "Email recorded on canonical commits (default: git config user.email)")
 	cmd.Flags().BoolVar(&opts.force, "force", false, "Replace an existing docs directory with canonical content")
@@ -96,8 +96,23 @@ func runInit(cmd *cobra.Command, opts initOptions) error {
 	if err != nil {
 		return err
 	}
-	if opts.project == "" || opts.docsRepoURL == "" {
-		return fmt.Errorf("--project and --docs-repo-url are required")
+	if opts.project == "" {
+		return fmt.Errorf("--project is required")
+	}
+	file, err := openRegistry()
+	if err != nil {
+		return err
+	}
+	if opts.docsRepoURL == "" {
+		state, readErr := readRegistry(ctx, file)
+		if readErr != nil {
+			return readErr
+		}
+		project, registered := state.Projects[opts.project]
+		if !registered || project.DocsRepoURL == "" {
+			return fmt.Errorf("--docs-repo-url is required because project %q is not registered", opts.project)
+		}
+		opts.docsRepoURL = project.DocsRepoURL
 	}
 	if opts.docsDir, err = normalizeDocsDir(opts.docsDir); err != nil {
 		return err
@@ -143,10 +158,6 @@ func runInit(cmd *cobra.Command, opts initOptions) error {
 	// The registry first: a project whose name is already bound to a
 	// different docs repository must stop the whole operation before any
 	// file in the workspace changes.
-	file, err := openRegistry()
-	if err != nil {
-		return err
-	}
 	if err := updateRegistry(ctx, file, func(state *registry.State) error {
 		return upsertProject(state, opts.project, opts.docsRepoURL)
 	}); err != nil {

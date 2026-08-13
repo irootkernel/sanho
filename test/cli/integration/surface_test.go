@@ -213,6 +213,34 @@ func TestDiffRefusesWithoutARecordedBase(t *testing.T) {
 	requireContains(t, "diff without base", result.stderr, "no docs base is recorded")
 }
 
+func TestInitReusesARegisteredProjectURL(t *testing.T) {
+	w := newWorld(t, map[string]string{"api.md": "canonical api\n"})
+	w.sanho(w.app, "project", "add", "product", "--docs-repo-url", w.origin)
+
+	result := w.sanho(w.app,
+		"init",
+		"--project", "product",
+		"--actor-email", "author@example.test",
+	)
+	requireContains(t, "init summary", result.stdout, w.origin)
+	w.git(w.app, "commit", "-m", "docs: adopt canonical docs")
+	if status := w.sanho(w.app, "status", "--json"); !strings.Contains(status.stdout, `"publication_url": "`+w.origin+`"`) {
+		t.Fatalf("status did not use registered URL:\n%s", status.stdout)
+	}
+}
+
+func TestInitRequiresAURLForAnUnregisteredProject(t *testing.T) {
+	w := newWorld(t, map[string]string{"api.md": "canonical api\n"})
+	result := w.run(w.app, "init", "--project", "unregistered")
+	if result.exitCode != 1 {
+		t.Fatalf("init exit = %d, want 1", result.exitCode)
+	}
+	requireContains(t, "init error", result.stderr, `--docs-repo-url is required because project "unregistered" is not registered`)
+	if fileExists(t, w.appPath(".sanho.json")) {
+		t.Fatal("init wrote config without a registered URL")
+	}
+}
+
 func TestRegistryHidesAndPrunesSymlinkAliasesWithoutRewritingWorkspaceID(t *testing.T) {
 	w := newWorld(t, map[string]string{"api.md": "canonical api\n"})
 	w.initAndAdoptDocs()

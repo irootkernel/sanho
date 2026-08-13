@@ -52,7 +52,7 @@ sanho init \
 | Flag | Default | Purpose |
 |---|---|---|
 | `--project` | required | Registry project name |
-| `--docs-repo-url` | required | Canonical docs repository |
+| `--docs-repo-url` | registered project URL | Canonical docs repository; required when the project is not registered |
 | `--docs-dir` | `docs` | Repository-relative docs directory |
 | `--actor-email` | Git user email | Canonical commit identity |
 | `--manage-custom-hooks` | off | Opt in to repository-local custom/Husky hooks |
@@ -61,6 +61,17 @@ sanho init \
 
 Init registers the project and workspace, writes v2 config, creates the private
 clone, derives a safe base, installs six hooks, and updates `.gitignore`.
+
+After an explicit project registration, later workspaces sharing the same
+`SANHO_HOME` can omit the URL:
+
+```bash
+sanho project add example --docs-repo-url git@github.com:example/example-docs.git
+sanho init --project example
+```
+
+Supplying a different URL for an existing project is rejected before workspace
+state is written.
 
 If canonical has content and local docs do not exist, init checks out and stages
 the canonical docs; the user makes the commit. If canonical is empty, the first

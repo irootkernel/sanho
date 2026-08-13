@@ -128,6 +128,15 @@ sanho init \
   --docs-repo-url git@github.com:example/example-docs.git
 ```
 
+If `example` was already registered with `sanho project add` or by another
+workspace in the same `SANHO_HOME`, the URL may be reused:
+
+```bash
+sanho init --project example
+```
+
+An explicit URL must match the registered value.
+
 `init` registers the project, writes `.sanho.json`, creates a private clone of
 the docs repository inside `.git/sanho/canonical`, installs six Git hooks, and
 adds Sanho's state files to `.gitignore`. Then, depending on what it finds:
