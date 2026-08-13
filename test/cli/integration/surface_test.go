@@ -358,6 +358,43 @@ func TestCheckRequiresAnExplicitPolicyAndHandlesEmptyCanonical(t *testing.T) {
 	requireContains(t, "invalid argument envelope", invalid.stdout, `"code": "invalid_arguments"`)
 }
 
+func TestCheckOnlyRequiresCanonicalForCurrentPolicy(t *testing.T) {
+	w := newWorld(t, map[string]string{"api.md": "canonical api\n"})
+	w.initAndAdoptDocs()
+
+	cloneDir := filepath.Join(w.app, ".git", "sanho", "canonical")
+	if err := os.RemoveAll(cloneDir); err != nil {
+		t.Fatalf("remove private canonical clone: %v", err)
+	}
+
+	clean := w.sanho(w.app, "check", "--require-clean", "--json")
+	requireContains(t, "clean policy without clone", clean.stdout, `"passed": true`)
+
+	published := w.sanho(w.app, "check", "--require-published", "--json")
+	requireContains(t, "published policy without clone", published.stdout, `"reason": "published"`)
+
+	writeFile(t, w.appPath("docs/api.md"), "working edit\n")
+	dirty := w.run(w.app, "check", "--require-clean", "--json")
+	if dirty.exitCode != 1 {
+		t.Fatalf("dirty check without clone exit = %d, want 1", dirty.exitCode)
+	}
+	requireContains(t, "dirty policy without clone", dirty.stdout, `"reason": "docs_dirty"`)
+	writeFile(t, w.appPath("docs/api.md"), "canonical api\n")
+
+	w.commitDocs("docs: local update", map[string]string{"api.md": "local api\n"})
+	pending := w.run(w.app, "check", "--require-published", "--json")
+	if pending.exitCode != 1 {
+		t.Fatalf("published check without clone exit = %d, want 1", pending.exitCode)
+	}
+	requireContains(t, "pending policy without clone", pending.stdout, `"reason": "publication_pending"`)
+
+	current := w.run(w.app, "check", "--require-current", "--json")
+	if current.exitCode != 1 {
+		t.Fatalf("current check without clone exit = %d, want 1", current.exitCode)
+	}
+	requireContains(t, "current policy error envelope", current.stdout, `"code": "internal"`)
+}
+
 func TestRegistryHidesAndPrunesSymlinkAliasesWithoutRewritingWorkspaceID(t *testing.T) {
 	w := newWorld(t, map[string]string{"api.md": "canonical api\n"})
 	w.initAndAdoptDocs()

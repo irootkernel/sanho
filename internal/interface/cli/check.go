@@ -1,9 +1,12 @@
 package cli
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"io"
 
+	pubdom "github.com/irootkernel/sanho/internal/domain/publish"
 	"github.com/irootkernel/sanho/internal/usecase/admin"
 
 	"github.com/spf13/cobra"
@@ -54,11 +57,7 @@ func runCheck(cmd *cobra.Command, opts checkOptions) error {
 	if err != nil {
 		return finishCommand(cmd, nil, opts.asJSON, err)
 	}
-	store, err := ws.openCanonical()
-	if err != nil {
-		return finishCommand(cmd, nil, opts.asJSON, err)
-	}
-	report, err := queryStatus(ctx, ws, store, opts.requireCurrent)
+	report, err := queryCheckStatus(ctx, ws, opts)
 	if err != nil {
 		return finishCommand(cmd, nil, opts.asJSON, err)
 	}
@@ -74,6 +73,65 @@ func runCheck(cmd *cobra.Command, opts checkOptions) error {
 		return errAlreadyReported
 	}
 	return nil
+}
+
+func queryCheckStatus(ctx context.Context, ws *workspace, opts checkOptions) (admin.StatusReport, error) {
+	var report admin.StatusReport
+
+	if opts.requireClean {
+		clean, err := ws.repo.DocsClean(ctx)
+		if err == nil {
+			report.WorkingCopyKnown, report.DocsClean = true, clean
+		}
+	}
+
+	if opts.requireCurrent || opts.requirePublished {
+		base, hasBase, err := ws.statePort().LoadBase()
+		if err != nil {
+			return admin.StatusReport{}, err
+		}
+		report.Base, report.HasBase = base, hasBase
+	}
+
+	if opts.requirePublished {
+		syncInProgress, err := ws.statePort().SyncInProgress()
+		if err != nil {
+			return admin.StatusReport{}, err
+		}
+		report.SyncInProgress = syncInProgress
+		report.PublicationKnown, report.PublicationPending =
+			admin.DetectPublication(ctx, ws.repo, report.Base, report.HasBase, syncInProgress)
+	}
+
+	if opts.requireCurrent {
+		store, err := ws.openCanonical()
+		if err != nil {
+			return admin.StatusReport{}, errors.New(cloneMissingMessage(ws.cloneDir()))
+		}
+		if err := store.Fetch(ctx); err != nil {
+			return admin.StatusReport{}, err
+		}
+		head, _, err := store.Head(ctx)
+		switch {
+		case err == nil:
+			report.Head = head
+		case errors.Is(err, pubdom.ErrEmptyBranch):
+			report.CanonicalEmpty = true
+		default:
+			return admin.StatusReport{}, err
+		}
+		if report.Head != "" && report.HasBase {
+			known, err := store.ResolveCommit(ctx, report.Base.Commit)
+			if err == nil && known {
+				behind, ahead, err := store.Distance(ctx, report.Base.Commit, report.Head)
+				if err == nil {
+					report.Behind, report.Ahead, report.RelationKnown = behind, ahead, true
+				}
+			}
+		}
+	}
+
+	return report, nil
 }
 
 func buildCheckJSON(report admin.StatusReport, opts checkOptions) policyCheckJSON {
