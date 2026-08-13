@@ -49,7 +49,7 @@ Node.js and npm are not required. The only runtime dependency is cobra.
 ### Install
 
 ```bash
-go install github.com/irootkernel/sanho/cmd/sanho@v0.2.4
+go install github.com/irootkernel/sanho/cmd/sanho@v0.2.5
 sanho version
 ```
 
@@ -95,7 +95,7 @@ agent-specific location:
 (
   set -eu
   sanho_skill_parent=/path/to/agent/skills
-  sanho_skill_ref=main
+  sanho_skill_ref=v0.2.5
   mkdir -p "$sanho_skill_parent"
   sanho_skill_target="$sanho_skill_parent/use-sanho"
   test ! -e "$sanho_skill_target" && test ! -L "$sanho_skill_target"
@@ -113,10 +113,10 @@ agent-specific location:
 ```
 
 The skill is source-distributed: a source archive made from a revision that
-contains it includes the directory. To match a release that distributes this
-skill, set `sanho_skill_ref` to that release's tag. Earlier tags, including
-`v0.2.4`, do not contain it. `go install` installs only the `sanho` binary and
-does not copy or register the skill.
+contains it includes the directory. `sanho_skill_ref` selects a release that
+distributes the skill; earlier tags, including `v0.2.4`, do not contain it.
+`go install` installs only the `sanho` binary and does not copy or register the
+skill.
 
 ### Initialize a workspace
 

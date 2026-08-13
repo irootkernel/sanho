@@ -23,7 +23,7 @@ GIT_TERMINAL_PROMPT=0 git ls-remote <docs-repo-url> refs/heads/main
 Use a pinned release for reproducibility:
 
 ```bash
-go install github.com/irootkernel/sanho/cmd/sanho@v0.2.4
+go install github.com/irootkernel/sanho/cmd/sanho@v0.2.5
 sanho version
 command -v sanho
 ```
