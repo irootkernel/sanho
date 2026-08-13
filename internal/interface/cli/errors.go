@@ -160,6 +160,18 @@ func (e *lockTimeoutError) Error() string { return e.hint }
 
 func (e *lockTimeoutError) Unwrap() error { return fsx.ErrLockTimeout }
 
+var errCloneMissing = errors.New("canonical clone missing")
+
+type cloneMissingError struct{ message string }
+
+func (e *cloneMissingError) Error() string { return e.message }
+
+func (e *cloneMissingError) Unwrap() error { return errCloneMissing }
+
+func newCloneMissingError(cloneDir string) error {
+	return &cloneMissingError{message: cloneMissingMessage(cloneDir)}
+}
+
 // --- machine-readable errors (the JSON contract, F-M9) ------------------------------
 
 // errorJSON is the envelope a `--json` command prints on stdout when it
@@ -191,6 +203,7 @@ const (
 	codeUnknownTarget        = "unknown_target"
 	codeCanonicalUnreachable = "canonical_unreachable"
 	codeRegistryLockTimeout  = "registry_lock_timeout"
+	codeCloneMissing         = "clone_missing"
 	codeMarkersPresent       = "markers_present"
 	codeTooLarge             = "too_large"
 	// codeConfigCorrupt / codeBaseCorrupt are M4: a state file that is
@@ -245,6 +258,8 @@ func machineErrorCode(err error) string {
 		return codeCanonicalUnreachable
 	case errors.Is(err, fsx.ErrLockTimeout):
 		return codeRegistryLockTimeout
+	case errors.Is(err, errCloneMissing):
+		return codeCloneMissing
 	case errors.Is(err, publish.ErrMarkersPresent):
 		return codeMarkersPresent
 	case errors.Is(err, markers.ErrTooLarge):

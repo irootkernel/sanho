@@ -53,6 +53,7 @@ Stable codes are:
 | `unknown_target` | A requested recovery target is not usable |
 | `canonical_unreachable` | Canonical fetch, merge, or publication could not run |
 | `registry_lock_timeout` | Registry locking exceeded the bounded wait |
+| `clone_missing` | The private canonical clone must be recreated with `sanho sync` |
 | `markers_present` | Relevant docs contain complete conflict markers |
 | `too_large` | A text file exceeded the marker-scan safety limit |
 | `config_corrupt` | `.sanho.json` exists but is not a valid supported config |
@@ -232,9 +233,8 @@ as an unreachable canonical required by `--require-current`, use the standard
 error envelope instead.
 
 Stable reasons are `clean`, `current`, `published`, `canonical_empty`,
-`docs_dirty`, `working_copy_unknown`, `no_base`, `relation_unknown`, `behind`,
-`ahead`, `diverged`, `publication_pending`, `sync_in_progress`, and
-`publication_unknown`.
+`docs_dirty`, `no_base`, `relation_unknown`, `behind`, `ahead`, `diverged`,
+`publication_pending`, and `sync_in_progress`.
 
 ## `doctor`
 

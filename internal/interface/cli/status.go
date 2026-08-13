@@ -5,7 +5,6 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"sort"
@@ -131,7 +130,7 @@ func runStatus(cmd *cobra.Command, refresh, asJSON bool) error {
 	if err != nil {
 		// The clone is what every canonical fact comes from; a write
 		// path recreates it (see cloneMissingMessage).
-		return finishCommand(cmd, nil, asJSON, errors.New(cloneMissingMessage(ws.cloneDir())))
+		return finishCommand(cmd, nil, asJSON, newCloneMissingError(ws.cloneDir()))
 	}
 
 	report, err := queryStatus(ctx, ws, store, refresh)

@@ -392,7 +392,33 @@ func TestCheckOnlyRequiresCanonicalForCurrentPolicy(t *testing.T) {
 	if current.exitCode != 1 {
 		t.Fatalf("current check without clone exit = %d, want 1", current.exitCode)
 	}
-	requireContains(t, "current policy error envelope", current.stdout, `"code": "internal"`)
+	requireContains(t, "current policy error envelope", current.stdout, `"code": "clone_missing"`)
+
+	status := w.run(w.app, "status", "--json")
+	if status.exitCode != 1 {
+		t.Fatalf("status without clone exit = %d, want 1", status.exitCode)
+	}
+	requireContains(t, "status clone error envelope", status.stdout, `"code": "clone_missing"`)
+}
+
+func TestCheckCleanReportsGitEvaluationFailure(t *testing.T) {
+	w := newWorld(t, map[string]string{"api.md": "canonical api\n"})
+	w.initAndAdoptDocs()
+
+	indexPath := w.appPath(".git", "index")
+	if err := os.Remove(indexPath); err != nil {
+		t.Fatalf("remove git index: %v", err)
+	}
+	if err := os.Mkdir(indexPath, 0o700); err != nil {
+		t.Fatalf("replace git index with directory: %v", err)
+	}
+
+	out := w.run(w.app, "check", "--require-clean", "--json")
+	if out.exitCode != 1 {
+		t.Fatalf("clean evaluation failure exit = %d, want 1", out.exitCode)
+	}
+	requireContains(t, "clean evaluation error envelope", out.stdout, `"error": {`)
+	requireNotContains(t, "clean evaluation policy result", out.stdout, `"checks":`)
 }
 
 func TestRegistryHidesAndPrunesSymlinkAliasesWithoutRewritingWorkspaceID(t *testing.T) {

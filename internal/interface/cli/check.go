@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/irootkernel/sanho/internal/domain/provenance"
 	pubdom "github.com/irootkernel/sanho/internal/domain/publish"
 	"github.com/irootkernel/sanho/internal/usecase/admin"
 
@@ -80,9 +81,10 @@ func queryCheckStatus(ctx context.Context, ws *workspace, opts checkOptions) (ad
 
 	if opts.requireClean {
 		clean, err := ws.repo.DocsClean(ctx)
-		if err == nil {
-			report.WorkingCopyKnown, report.DocsClean = true, clean
+		if err != nil {
+			return admin.StatusReport{}, err
 		}
+		report.WorkingCopyKnown, report.DocsClean = true, clean
 	}
 
 	if opts.requireCurrent || opts.requirePublished {
@@ -99,14 +101,17 @@ func queryCheckStatus(ctx context.Context, ws *workspace, opts checkOptions) (ad
 			return admin.StatusReport{}, err
 		}
 		report.SyncInProgress = syncInProgress
-		report.PublicationKnown, report.PublicationPending =
-			admin.DetectPublication(ctx, ws.repo, report.Base, report.HasBase, syncInProgress)
+		report.PublicationKnown, report.PublicationPending, err =
+			detectCheckPublication(ctx, ws.repo, report.Base, report.HasBase, syncInProgress)
+		if err != nil {
+			return admin.StatusReport{}, err
+		}
 	}
 
 	if opts.requireCurrent {
 		store, err := ws.openCanonical()
 		if err != nil {
-			return admin.StatusReport{}, errors.New(cloneMissingMessage(ws.cloneDir()))
+			return admin.StatusReport{}, newCloneMissingError(ws.cloneDir())
 		}
 		if err := store.Fetch(ctx); err != nil {
 			return admin.StatusReport{}, err
@@ -121,17 +126,49 @@ func queryCheckStatus(ctx context.Context, ws *workspace, opts checkOptions) (ad
 			return admin.StatusReport{}, err
 		}
 		if report.Head != "" && report.HasBase {
-			known, err := store.ResolveCommit(ctx, report.Base.Commit)
-			if err == nil && known {
-				behind, ahead, err := store.Distance(ctx, report.Base.Commit, report.Head)
-				if err == nil {
-					report.Behind, report.Ahead, report.RelationKnown = behind, ahead, true
-				}
+			report.RelationKnown, report.Behind, report.Ahead, err =
+				detectCheckRelation(ctx, store, report.Base.Commit, report.Head)
+			if err != nil {
+				return admin.StatusReport{}, err
 			}
 		}
 	}
 
 	return report, nil
+}
+
+func detectCheckPublication(
+	ctx context.Context,
+	local interface {
+		HeadDocsTree(context.Context) (string, error)
+	},
+	base provenance.Base,
+	hasBase, syncInProgress bool,
+) (known, pending bool, err error) {
+	if !hasBase || syncInProgress {
+		return false, false, nil
+	}
+	localTree, err := local.HeadDocsTree(ctx)
+	if err != nil {
+		return false, false, err
+	}
+	return true, localTree != base.Tree, nil
+}
+
+func detectCheckRelation(
+	ctx context.Context,
+	canonical interface {
+		ResolveCommit(context.Context, string) (bool, error)
+		Distance(context.Context, string, string) (int, int, error)
+	},
+	base, head string,
+) (known bool, behind, ahead int, err error) {
+	known, err = canonical.ResolveCommit(ctx, base)
+	if err != nil || !known {
+		return known, 0, 0, err
+	}
+	behind, ahead, err = canonical.Distance(ctx, base, head)
+	return known, behind, ahead, err
 }
 
 func buildCheckJSON(report admin.StatusReport, opts checkOptions) policyCheckJSON {

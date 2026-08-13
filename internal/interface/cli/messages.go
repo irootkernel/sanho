@@ -683,8 +683,8 @@ func docsTooLargeMessage(cause string) string {
 
 // --- Status and doctor ------------------------------------------------
 
-// cloneMissingMessage covers the one repair both `sanho status` and
-// `sanho doctor` need to name: the workspace-private clone is gone.
+// cloneMissingMessage covers the one repair status, check, and doctor
+// need to name: the workspace-private clone is gone.
 //
 // It advises `sanho sync`, not `sanho init` (F-H6b). Sync is a write
 // path and therefore opens the clone with Ensure, which recreates and

@@ -21,6 +21,12 @@
 - Repository verification accepts the installed Gaori version instead of
   requiring one exact release.
 
+### Fixed
+
+- `sanho check` now returns an error envelope when a selected policy cannot be
+  evaluated, and missing private clones use the actionable `clone_missing`
+  machine code instead of `internal`.
+
 ## v0.2.5 - 2026-08-13
 
 ### Added
