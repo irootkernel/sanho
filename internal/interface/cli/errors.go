@@ -204,6 +204,7 @@ const (
 	// base it cannot vouch for. It is a `sync_required`-family state:
 	// what establishes a base the workspace can stand behind is a sync.
 	codeBaseNotCorroborated = "base_not_corroborated"
+	codeInvalidArguments    = "invalid_arguments"
 	codeInternal            = "internal"
 )
 
@@ -216,6 +217,8 @@ func machineErrorCode(err error) string {
 		return codeV1Workspace
 	case errors.Is(err, errNotWorkspace):
 		return codeNotInWorkspace
+	case errors.Is(err, errInvalidArguments):
+		return codeInvalidArguments
 	case errors.Is(err, docsync.ErrSyncInProgress), errors.Is(err, docsync.ErrNoSyncInProgress),
 		errors.Is(err, docsync.ErrSyncNoteCorrupt), errors.Is(err, publish.ErrSyncInProgress):
 		return codeSyncInProgress

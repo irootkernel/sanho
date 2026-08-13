@@ -45,6 +45,8 @@ var errInternal = errors.New("internal error")
 // renderer prints nothing more for it and exits 1.
 var errAlreadyReported = errors.New("guidance already reported")
 
+var errInvalidArguments = errors.New("invalid arguments")
+
 // BuildInfo carries the resolved release version.
 type BuildInfo struct {
 	Version string
@@ -139,6 +141,7 @@ commits in your repository.`,
 		newInitCmd(),
 		newStatusCmd(),
 		newDiffCmd(),
+		newCheckCmd(),
 		newStateCmd(),
 		newSyncCmd(),
 		newPullCmd(),

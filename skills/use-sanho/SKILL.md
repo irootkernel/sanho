@@ -24,6 +24,11 @@ repository. It is a Git-boundary tool, not a general task or session manager.
    user asks to inspect incoming or unpublished docs changes. Diff is
    read-only, has no JSON mode, and prints paths relative to the configured
    docs root.
+   Use `sanho check --require-clean`, `--require-current`, and/or
+   `--require-published` when automation needs an explicit policy. Parse the
+   complete result even when exit 1: `passed:false` is a policy mismatch,
+   while an `error` envelope means evaluation failed. A passing check never
+   grants commit or push permission.
 4. Parse the JSON document and process exit separately. Branch on stable
    `error.code`, `known` fields, `sync_in_progress`, `relation`,
    `publication`, `sync_preview`, `working_copy`, and `local_readiness`.

@@ -210,6 +210,14 @@ external diff drivers and text conversion, writes no application ref, index,
 worktree, base, or registry state, and reports paths relative to the configured
 docs root.
 
+`sanho check` evaluates only policies the caller explicitly selects.
+`--require-clean` checks the docs index and worktree, `--require-current`
+fetches and requires the base to equal canonical head, and
+`--require-published` requires committed docs to equal the recorded base.
+Selected policies use AND semantics. An unmet policy exits 1 with a complete
+result document; an inability to evaluate uses the normal command error and
+JSON envelope. Check does not grant permission to commit or push.
+
 ## State and persistence
 
 | Path | Mode | Contract |

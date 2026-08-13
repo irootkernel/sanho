@@ -255,6 +255,22 @@ exit code; inability to diagnose does.
 Use `--verbose` for bounded Git diagnostics on stderr. With `--json`, stdout
 remains one machine document.
 
+## Policy checks
+
+CI and agents can select the exact state they require:
+
+```bash
+sanho check --require-clean
+sanho check --require-current --require-published --json
+```
+
+At least one condition is required and multiple conditions use AND semantics.
+`--require-current` refreshes canonical automatically. An empty canonical with
+no recorded base satisfies current because there is no upstream state to
+consume. Policy mismatch exits 1 with every selected result; execution errors
+use the normal error path. A passing check is evidence about workspace state,
+not authorization to commit or push.
+
 ## Verification
 
 Repository-standard gates are:

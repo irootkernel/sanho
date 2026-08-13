@@ -301,6 +301,63 @@ func TestWorkspaceForgetRefusesALiveCheckout(t *testing.T) {
 	requireContains(t, "live registry row", state, id)
 }
 
+func TestCheckEvaluatesExplicitPolicies(t *testing.T) {
+	w := newWorld(t, map[string]string{"api.md": "canonical api\n"})
+	w.initAndAdoptDocs()
+
+	passed := w.sanho(w.app, "check", "--require-clean", "--require-current", "--require-published", "--json")
+	var document struct {
+		Passed bool `json:"passed"`
+		Checks []struct {
+			Name   string `json:"name"`
+			Passed bool   `json:"passed"`
+			Reason string `json:"reason"`
+		} `json:"checks"`
+	}
+	if err := json.Unmarshal([]byte(passed.stdout), &document); err != nil {
+		t.Fatalf("parse check JSON: %v\n%s", err, passed.stdout)
+	}
+	if !document.Passed || len(document.Checks) != 3 {
+		t.Fatalf("check = %+v, want all three policies passing", document)
+	}
+
+	writeFile(t, w.appPath("docs/api.md"), "working edit\n")
+	dirty := w.run(w.app, "check", "--require-clean", "--json")
+	if dirty.exitCode != 1 {
+		t.Fatalf("dirty check exit = %d, want 1", dirty.exitCode)
+	}
+	requireContains(t, "dirty policy result", dirty.stdout, `"reason": "docs_dirty"`)
+	writeFile(t, w.appPath("docs/api.md"), "canonical api\n")
+
+	w.advanceCanonical(map[string]string{"api.md": "upstream api\n"}, "canonical: advance")
+	behind := w.run(w.app, "check", "--require-current", "--json")
+	if behind.exitCode != 1 {
+		t.Fatalf("current check exit = %d, want 1", behind.exitCode)
+	}
+	requireContains(t, "current policy result", behind.stdout, `"reason": "behind"`)
+
+	w.commitDocs("docs: local update", map[string]string{"api.md": "local api\n"})
+	pending := w.run(w.app, "check", "--require-published", "--json")
+	if pending.exitCode != 1 {
+		t.Fatalf("published check exit = %d, want 1", pending.exitCode)
+	}
+	requireContains(t, "published policy result", pending.stdout, `"reason": "publication_pending"`)
+}
+
+func TestCheckRequiresAnExplicitPolicyAndHandlesEmptyCanonical(t *testing.T) {
+	w := newWorld(t, nil)
+	w.initWorkspace()
+
+	empty := w.sanho(w.app, "check", "--require-current", "--json")
+	requireContains(t, "empty canonical policy", empty.stdout, `"reason": "canonical_empty"`)
+
+	invalid := w.run(w.app, "check", "--json")
+	if invalid.exitCode != 1 {
+		t.Fatalf("policy-free check exit = %d, want 1", invalid.exitCode)
+	}
+	requireContains(t, "invalid argument envelope", invalid.stdout, `"code": "invalid_arguments"`)
+}
+
 func TestRegistryHidesAndPrunesSymlinkAliasesWithoutRewritingWorkspaceID(t *testing.T) {
 	w := newWorld(t, map[string]string{"api.md": "canonical api\n"})
 	w.initAndAdoptDocs()

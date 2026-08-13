@@ -134,6 +134,19 @@ func runStatus(cmd *cobra.Command, refresh, asJSON bool) error {
 		return finishCommand(cmd, nil, asJSON, errors.New(cloneMissingMessage(ws.cloneDir())))
 	}
 
+	report, err := queryStatus(ctx, ws, store, refresh)
+	if err != nil {
+		return finishCommand(cmd, nil, asJSON, err)
+	}
+
+	if asJSON {
+		return writeJSON(cmd.OutOrStdout(), buildStatusJSON(report, store))
+	}
+	renderStatus(cmd.OutOrStdout(), ws, store, report)
+	return nil
+}
+
+func queryStatus(ctx context.Context, ws *workspace, store *canonical.Store, refresh bool) (admin.StatusReport, error) {
 	query := &admin.StatusQuery{
 		Canonical:   store,
 		State:       ws.statePort(),
@@ -144,16 +157,7 @@ func runStatus(cmd *cobra.Command, refresh, asJSON bool) error {
 		WorkspaceID: ws.config.WorkspaceID,
 		Refresh:     refresh,
 	}
-	report, err := query.Run(ctx)
-	if err != nil {
-		return finishCommand(cmd, nil, asJSON, err)
-	}
-
-	if asJSON {
-		return writeJSON(cmd.OutOrStdout(), buildStatusJSON(report, store))
-	}
-	renderStatus(cmd.OutOrStdout(), ws, store, report)
-	return nil
+	return query.Run(ctx)
 }
 
 // --- adapters ---------------------------------------------------------

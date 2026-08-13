@@ -7,6 +7,7 @@ sanho version --json
 sanho status --json
 sanho state --json
 sanho state --all --json
+sanho check --require-<policy> --json
 sanho sync --json
 sanho pull --json
 sanho doctor --json
@@ -57,6 +58,7 @@ Stable codes are:
 | `config_corrupt` | `.sanho.json` exists but is not a valid supported config |
 | `base_corrupt` | The recorded base exists but is invalid |
 | `base_not_corroborated` | Sanho cannot prove a proposed base matches the docs |
+| `invalid_arguments` | The requested flag or policy combination is incomplete or invalid |
 | `internal` | Sanho encountered an internal defect |
 
 The compatibility code `v1_workspace` is part of the current v0.2 error
@@ -208,6 +210,31 @@ byte-identical; any writer still refuses that schema.
 
 `merge_drift` is non-zero only when a completed resolution differs from the
 merge result. `pull --json` uses the same schema.
+
+## `check`
+
+```json
+{
+  "passed": false,
+  "checks": [
+    {"name": "clean", "passed": true, "reason": "clean"},
+    {"name": "current", "passed": false, "reason": "behind"},
+    {"name": "published", "passed": true, "reason": "published"}
+  ]
+}
+```
+
+At least one of `--require-clean`, `--require-current`, or
+`--require-published` is required. Checks appear in that fixed order when
+selected and use AND semantics. Policy mismatch still writes this result and
+exits 1; it is not an error envelope. Failures that prevent evaluation, such
+as an unreachable canonical required by `--require-current`, use the standard
+error envelope instead.
+
+Stable reasons are `clean`, `current`, `published`, `canonical_empty`,
+`docs_dirty`, `working_copy_unknown`, `no_base`, `relation_unknown`, `behind`,
+`ahead`, `diverged`, `publication_pending`, `sync_in_progress`, and
+`publication_unknown`.
 
 ## `doctor`
 

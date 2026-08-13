@@ -100,6 +100,8 @@ Sanho moving or pushing an application ref is a failure.
 4. Confirm a docs push fails with canonical-unreachable guidance and that both
    application and canonical remote refs remain byte-identical.
 5. Confirm explicit network reads such as `status --refresh` fail clearly.
+   Confirm `check --require-current --json` fails through the canonical
+   unreachable error envelope rather than returning a policy result.
 6. Restore the network and retry the same push without deleting state. Confirm
    every offline docs commit is represented by the resulting publication.
 
