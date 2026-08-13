@@ -65,6 +65,59 @@ make cli-build     # bin/sanho
 make install       # go install ./cmd/sanho
 ```
 
+### Optional: configure an AI coding agent
+
+Installing Sanho does not modify a project's `AGENTS.md` and does not install
+an agent skill. Sanho works normally without either integration. You may use
+the template below, the source-distributed skill, both together, or neither.
+
+Copy only these essential project-wide rules into the applicable `AGENTS.md`:
+
+```markdown
+## Sanho
+
+This repository uses Sanho to synchronize `docs/` with a canonical Git repository.
+
+- Do not invoke Sanho for routine editing, review, build, or test work.
+- Before an authorized commit, run `sanho status --json`. Before an authorized push, run `sanho status --refresh --json`; derive any next step from that current state.
+- Let Git run the installed Sanho hooks. Never bypass them with `--no-verify`, a safety-evading force operation, or manual edits to Sanho-managed state.
+- Sanho status never grants permission to commit or push. Re-read status after a Sanho, commit, or push mutation and report only what the resulting evidence proves.
+- Require explicit user intent before `sanho init`, `sanho clean`, `sanho migrate`, `sanho sync --abort`, `sanho sync --rebase-onto`, `sanho doctor --fix`, or `sanho project` changes.
+```
+
+For fuller conditional guidance, use the complete
+[`use-sanho` skill directory](skills/use-sanho/). Agent skill discovery paths
+differ, so consult the agent's documentation for the destination rather than
+assuming a universal path. Download only the skill directory into that
+agent-specific location:
+
+```bash
+(
+  set -eu
+  sanho_skill_parent=/path/to/agent/skills
+  sanho_skill_ref=main
+  mkdir -p "$sanho_skill_parent"
+  sanho_skill_target="$sanho_skill_parent/use-sanho"
+  test ! -e "$sanho_skill_target" && test ! -L "$sanho_skill_target"
+  sanho_skill_tmp="$(mktemp -d "$sanho_skill_parent/.use-sanho.XXXXXX")"
+  trap 'rm -rf "$sanho_skill_tmp"' EXIT
+  mkdir -p "$sanho_skill_tmp/use-sanho/references"
+  sanho_skill_url="https://raw.githubusercontent.com/irootkernel/sanho/$sanho_skill_ref/skills/use-sanho"
+  curl -fsSLo "$sanho_skill_tmp/use-sanho/SKILL.md" "$sanho_skill_url/SKILL.md"
+  for reference in lifecycle authoring recovery; do
+    curl -fsSLo "$sanho_skill_tmp/use-sanho/references/$reference.md" \
+      "$sanho_skill_url/references/$reference.md"
+  done
+  mv "$sanho_skill_tmp/use-sanho" "$sanho_skill_target"
+)
+```
+
+The skill is source-distributed: a source archive made from a revision that
+contains it includes the directory. To match a release that distributes this
+skill, set `sanho_skill_ref` to that release's tag. Earlier tags, including
+`v0.2.4`, do not contain it. `go install` installs only the `sanho` binary and
+does not copy or register the skill.
+
 ### Initialize a workspace
 
 Run this at the **root** of an application Git repository:
@@ -183,7 +236,7 @@ required" plus diagnostics instead of a command that would fail.
 sanho init      # register this repository as a workspace
 sanho status    # base vs canonical, sync preview, siblings   (--refresh, --json)
 sanho state     # registered projects and workspaces          (--all, --json)
-sanho sync      # reconcile        (--abort, --rebase-onto <oid>, --json)
+sanho sync      # reconcile   (--continue, --abort, --rebase-onto <oid>, --json)
 sanho pull      # fast-forward consume                        (--commit, --json)
 sanho clean     # remove Sanho from this workspace  (--dry-run, --remove-docs, -y)
 sanho doctor    # check this workspace                        (--fix, --json)
@@ -211,27 +264,6 @@ fails whenever it finds a problem cannot be used to investigate one.
 
 Hook lines are matched by **exact line**, so foreign hook content is preserved
 verbatim on install and on removal.
-
-## Configure AI coding agents
-
-Add the following shared instructions to the applicable `AGENTS.md` or
-`CLAUDE.md` file in a Sanho-managed project:
-
-```markdown
-## Sanho workflow
-
-This repository uses Sanho to synchronize its `docs/` directory with the canonical docs repository.
-
-- At the start of a task and before any authorized commit or push, run `sanho status --json`. If it fails, report the error and do not bypass Sanho.
-- If the repository is not initialized, stop and ask the user for the project name and docs repository URL. Do not guess these values or initialize the workspace on your own.
-- Edit `docs/` as normal workspace files. Use normal Git commands and let the installed Sanho hooks run. Explicit `sanho sync` and `sanho pull --commit` operations create `[SANHO]` commits with the user's Git identity; Sanho never grants permission to commit or push.
-- On a `sanho: docs base is N commits behind` warning, run `sanho sync`, then continue. That is the whole protocol.
-- If `sanho sync` reports conflicts, it succeeded: markers are in the worktree and the exit code is 0. Resolve them, `git add`, and `git commit` as for any merge. If the correct resolution is not evident from the two sides, stop and ask the user rather than guessing.
-- Never bypass Sanho with `--no-verify`, a force push used to evade a Sanho block, a `sanho push` command (it does not exist), or manual edits to `.sanho.json`, `.sanho_base.json`, `.git/sanho/`, or Sanho-owned hook lines.
-- Do not run `sanho clean`, `sanho init --force`, `sanho sync --abort`, or `sanho migrate` without explicit user approval.
-- When a push is rejected, read the first stderr line, run the command Sanho names, then retry the same `git push`. Sanho only ever names a command that succeeds in the state it was printed in.
-- Read machine output from `--json` on `status`, `state`, `sync`, `pull`, `doctor`, and `version`. Do not parse the human-readable tables, and do not read a sync result from the exit code.
-```
 
 ## Validation
 

@@ -35,6 +35,10 @@ make cli-build       # bin/sanho
 make cli-install
 ```
 
+The source tree also distributes an optional `use-sanho` agent skill under
+`skills/use-sanho/` for AI coding agents. It is documentation, not a deployed
+artifact: installing the binary never installs or registers it.
+
 ## Onboard a workspace
 
 Run from the application repository root:

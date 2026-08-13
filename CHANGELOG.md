@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- An optional, source-distributed AI-agent skill at `skills/use-sanho/`:
+  SKILL.md plus lifecycle, authoring, and recovery references.
+  `make docs-check` now asserts the skill file set and applies the
+  English-only and stale-reference gates to `skills/`.
+
+### Documentation
+
+- The README's agent guidance is rewritten: a shorter essential-rules
+  `AGENTS.md` template plus download instructions for the skill replace the
+  previous workflow-template section.
+
 ## v0.2.4 - 2026-08-09
 
 ### Changed

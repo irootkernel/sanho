@@ -76,12 +76,12 @@ Every changed line must be traceable to the requested outcome or its verificatio
 - `cmd/sanho` is the only entrypoint. Sanho ships a single binary and has no daemon.
 - Core logic sits in `internal/{buildinfo,domain,infra,interface,usecase}`; keep new packages domain-oriented.
 - Layering is enforced by `internal/architecture`: a `usecase` package must not import `infra`, and an `infra` package must not import `usecase`. `internal/interface/cli` is the only place that sees both, so it is where adapters are bound to declared ports.
-- Docs live in `docs/`; runtime artifacts in `data/` and `tmp/` (ignored); builds in `bin/`.
+- Docs live in `docs/`; optional source-distributed AI-agent guidance lives in `skills/`; runtime artifacts live in `data/` and `tmp/` (ignored); builds live in `bin/`.
 - Tests: co-locate package unit tests as `*_test.go`; black-box CLI behavior in `test/cli/integration`; guidance-closure and scenario suites in `test/cli/e2e`; sync/pull flow coverage in `test/docsync`; the install check in `test/install`.
 
 ## Language Policy
 - Code, inline comments, and all CLI/HTTP interfaces stay in English.
-- Documentation under `docs/`, the root README, code, inline comments, and all CLI/HTTP interfaces must be written in English. Team communication may use the user's language. Keep this repository guidance file in English.
+- Documentation under `docs/` and `skills/`, the root README, code, inline comments, and all CLI/HTTP interfaces must be written in English. Team communication may use the user's language. Keep this repository guidance file in English.
 
 ## Project-Specific Operating Rules
 

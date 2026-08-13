@@ -53,11 +53,15 @@ docs-check:
 	@test -f docs/hands-on-testing.md
 	@test -f docs/operations.md
 	@test -f docs/recovery.md
-	@if grep -REn '[가-힣]' README.md docs; then \
+	@test -f skills/use-sanho/SKILL.md
+	@test -f skills/use-sanho/references/lifecycle.md
+	@test -f skills/use-sanho/references/authoring.md
+	@test -f skills/use-sanho/references/recovery.md
+	@if grep -REn '[가-힣]' README.md docs skills; then \
 		echo "Error: repository documentation must be English-only."; \
 		exit 1; \
 	fi
-	@if grep -REn 'sanho-v0\.2\.md' AGENTS.md README.md docs cmd internal test; then \
+	@if grep -REn 'sanho-v0\.2\.md' AGENTS.md README.md docs skills cmd internal test; then \
 		echo "Error: deleted design-record reference found."; \
 		exit 1; \
 	fi
@@ -68,7 +72,7 @@ docs-check:
 		echo "Error: hands-on IDs must end at H08."; \
 		exit 1; \
 	fi
-	@if grep -REn 'docs/requirement\.md|build-server-with-web|run-web-local|run-local-dev-with-web|WEB_DIST_DIR|PTY_' README.md docs; then \
+	@if grep -REn 'docs/requirement\.md|build-server-with-web|run-web-local|run-local-dev-with-web|WEB_DIST_DIR|PTY_' README.md docs skills; then \
 		echo "Error: stale documentation reference found."; \
 		exit 1; \
 	fi
