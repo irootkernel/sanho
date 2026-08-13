@@ -103,8 +103,7 @@ func runDiff(cmd *cobra.Command, opts diffOptions) error {
 	case opts.nameOnly:
 		args = append(args, "--name-only")
 	default:
-		prefix := ws.config.DocsDir + "/"
-		args = append(args, "--src-prefix=a/"+prefix, "--dst-prefix=b/"+prefix)
+		args = append(args, "--src-prefix=a/", "--dst-prefix=b/")
 	}
 	args = append(args, fromTree, toTree, "--")
 	result, err := runner.Run(ctx, args...)

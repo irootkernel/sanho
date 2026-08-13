@@ -165,7 +165,7 @@ func TestDiffInspectsIncomingDocsWithoutChangingTheWorkspace(t *testing.T) {
 	beforeStatus := w.git(w.app, "status", "--porcelain=v1").stdout
 	beforeBase := readFile(t, w.appPath(".sanho_base.json"))
 	patch := w.sanho(w.app, "diff", "--refresh").stdout
-	requireContains(t, "incoming diff path", patch, "b/docs/guide.md")
+	requireContains(t, "incoming diff path", patch, "b/guide.md")
 	requireContains(t, "incoming diff content", patch, "+upstream guide")
 
 	names := w.sanho(w.app, "diff", "--name-only").stdout
@@ -189,7 +189,7 @@ func TestDiffLocalComparesBaseWithApplicationHead(t *testing.T) {
 	w.commitDocs("docs: local update", map[string]string{"api.md": "local api\n"})
 
 	patch := w.sanho(w.app, "diff", "--local").stdout
-	requireContains(t, "local diff path", patch, "a/docs/api.md")
+	requireContains(t, "local diff path", patch, "a/api.md")
 	requireContains(t, "local diff content", patch, "+local api")
 	if names := w.sanho(w.app, "diff", "--local", "--name-only").stdout; names != "api.md\n" {
 		t.Fatalf("local diff --name-only = %q, want api.md", names)
