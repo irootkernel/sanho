@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.2.6 - 2026-08-14
+
+### Added
+
+- `sanho diff` provides read-only incoming and local docs inspection with
+  cached/refresh, patch, diffstat, and name-only modes.
+- `sanho check` evaluates explicit clean, current, and published policies for
+  CI and agents, including stable JSON policy results.
+- `sanho workspace forget <workspace-id>` removes one stale registry row after
+  its checkout path has disappeared.
+
+### Changed
+
+- `sanho status` now separates committed-tree sync prediction from docs
+  working-copy state and local sync/pull readiness in text and JSON output.
+- `sanho init --project <name>` can reuse an existing v2 project registration's
+  canonical repository URL; unregistered projects still require an explicit
+  URL and conflicts remain refused.
+- Repository verification accepts the installed Gaori version instead of
+  requiring one exact release.
+
 ## v0.2.5 - 2026-08-13
 
 ### Added

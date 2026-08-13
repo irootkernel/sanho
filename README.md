@@ -49,7 +49,7 @@ Node.js and npm are not required. The only runtime dependency is cobra.
 ### Install
 
 ```bash
-go install github.com/irootkernel/sanho/cmd/sanho@v0.2.5
+go install github.com/irootkernel/sanho/cmd/sanho@v0.2.6
 sanho version
 ```
 
@@ -95,7 +95,7 @@ agent-specific location:
 (
   set -eu
   sanho_skill_parent=/path/to/agent/skills
-  sanho_skill_ref=v0.2.5
+  sanho_skill_ref=v0.2.6
   mkdir -p "$sanho_skill_parent"
   sanho_skill_target="$sanho_skill_parent/use-sanho"
   test ! -e "$sanho_skill_target" && test ! -L "$sanho_skill_target"
