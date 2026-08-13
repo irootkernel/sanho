@@ -138,6 +138,31 @@ adds Sanho's state files to `.gitignore`. Then, depending on what it finds:
 - You already have local `docs/` — the base is derived from the provenance
   already in your repository's history. Your files are never touched.
 
+#### What belongs in Git
+
+Commit the `.gitignore` update made by `sanho init`, but do not commit Sanho's
+workspace state. Files such as `.sanho.json`, `.sanho_base.json`, the legacy
+`.sanho_docs_hash`, their backups, pending-operation files, and atomic-write
+temporary files describe one local checkout and remain ignored.
+
+In particular, `.sanho.json` is not a shared project configuration file. It
+contains checkout-specific identity, actor, and hook-placement information in
+addition to the project name, docs repository URL, and docs directory. Removing
+it from `.gitignore` or copying it between clones would make distinct
+workspaces claim the same local identity and assumptions.
+
+Each independent clone is therefore initialized separately with `sanho init`,
+even when it belongs to the same project. Linked Git worktrees are the narrow
+exception: they share the main worktree's configuration and private canonical
+clone through the common Git directory while retaining worktree-local sync and
+base state.
+
+To give every contributor the same onboarding inputs, record the standard
+`sanho init --project ... --docs-repo-url ...` command in the project's README
+or `AGENTS.md`; do not publish Sanho's generated state as configuration. What
+the repository shares is the tracked `docs/` tree and its Sanho provenance in
+Git history, not a workspace's local Sanho state.
+
 For a repository-local custom `core.hooksPath` or a recognized Husky 9 layout,
 add `--manage-custom-hooks`. This explicit opt-in preserves existing scripts
 and uses portable `sanho` invocations; global or repository-external hook paths
