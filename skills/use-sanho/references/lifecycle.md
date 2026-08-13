@@ -48,6 +48,7 @@ sanho migrate
 sanho clean --dry-run
 sanho clean -y
 sanho project delete <project>
+sanho workspace forget <workspace-id>
 sanho doctor --fix
 ```
 
@@ -58,6 +59,11 @@ never guess it. Always inspect `clean --dry-run` before an authorized clean.
 `clean --remove-docs -y`, `project delete --force`, and `init --force -y`
 need specific destructive authorization, not a general request to use Sanho.
 Run `sanho doctor --json` after a repair and re-read status after every change.
+
+Use `workspace forget` only for an exact row selected from `sanho state --all
+--json` whose recorded checkout path no longer exists. It removes only that
+registry observation. For a live checkout, use the authorized `clean` flow so
+hooks, clone ownership, and workspace files are handled together.
 
 ## Unsupported lifecycle concepts
 

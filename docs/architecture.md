@@ -243,6 +243,12 @@ the new workspace config before cloning; all later publication correctness
 continues to depend on the workspace config, canonical Git state, and guarded
 base rather than on the registry. An explicit conflicting URL is refused.
 
+`sanho workspace forget <workspace-id>` removes exactly one observational row
+whose recorded checkout path no longer exists. It never changes project
+registrations, workspace files, Git state, hooks, or canonical clones. A live
+path is refused so normal workspace cleanup remains responsible for removing
+owned state.
+
 ## Concurrency
 
 - Registry read/modify/write operations hold `state.lock`.

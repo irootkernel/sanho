@@ -241,6 +241,66 @@ func TestInitRequiresAURLForAnUnregisteredProject(t *testing.T) {
 	}
 }
 
+func TestWorkspaceForgetRemovesOnlyAnExplicitStaleRow(t *testing.T) {
+	w := newWorld(t, map[string]string{"api.md": "canonical api\n"})
+	w.initAndAdoptDocs()
+	statePath := filepath.Join(w.home, "state.json")
+
+	var state map[string]any
+	if err := json.Unmarshal([]byte(readFile(t, statePath)), &state); err != nil {
+		t.Fatalf("parse registry: %v", err)
+	}
+	workspaces := state["workspaces"].(map[string]any)
+	staleID := "product:/missing/workspace"
+	workspaces[staleID] = map[string]any{
+		"project":         "product",
+		"local_path":      filepath.Join(w.t.TempDir(), "deleted"),
+		"base_commit":     "",
+		"base_tree":       "",
+		"actor_email":     "stale@example.test",
+		"last_updated_at": "2026-08-13T00:00:00Z",
+	}
+	encoded, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		t.Fatalf("encode registry: %v", err)
+	}
+	writeFile(t, statePath, string(encoded)+"\n")
+
+	result := w.sanho(w.app, "workspace", "forget", staleID)
+	requireContains(t, "forget result", result.stdout, staleID)
+
+	var after struct {
+		Projects   map[string]json.RawMessage `json:"projects"`
+		Workspaces map[string]json.RawMessage `json:"workspaces"`
+	}
+	if err := json.Unmarshal([]byte(readFile(t, statePath)), &after); err != nil {
+		t.Fatalf("parse registry after forget: %v", err)
+	}
+	if _, ok := after.Workspaces[staleID]; ok {
+		t.Fatal("stale workspace row survived forget")
+	}
+	if _, ok := after.Workspaces["product:"+w.app]; !ok {
+		t.Fatal("live workspace row was removed")
+	}
+	if _, ok := after.Projects["product"]; !ok {
+		t.Fatal("project registration was removed")
+	}
+}
+
+func TestWorkspaceForgetRefusesALiveCheckout(t *testing.T) {
+	w := newWorld(t, map[string]string{"api.md": "canonical api\n"})
+	w.initAndAdoptDocs()
+	id := "product:" + w.app
+
+	result := w.run(w.app, "workspace", "forget", id)
+	if result.exitCode != 1 {
+		t.Fatalf("workspace forget exit = %d, want 1", result.exitCode)
+	}
+	requireContains(t, "live workspace refusal", result.stderr, "still exists")
+	state := w.sanho(w.app, "state", "--json").stdout
+	requireContains(t, "live registry row", state, id)
+}
+
 func TestRegistryHidesAndPrunesSymlinkAliasesWithoutRewritingWorkspaceID(t *testing.T) {
 	w := newWorld(t, map[string]string{"api.md": "canonical api\n"})
 	w.initAndAdoptDocs()

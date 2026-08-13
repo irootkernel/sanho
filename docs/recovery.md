@@ -144,6 +144,17 @@ Lock timeouts are not corruption. Identify the process holding
 `~/.sanho/state.lock`, let it finish or terminate it safely, then retry. Never
 delete managed lock or state files merely to bypass a live owner.
 
+For a single registry row whose checkout was already deleted, use its exact ID
+instead of editing `state.json`:
+
+```bash
+sanho state --all
+sanho workspace forget <workspace-id>
+```
+
+Forget changes only that observational row and refuses if its recorded path
+still exists.
+
 ## Reinitialize as a last resort
 
 Use only after preserving user changes and confirming the canonical URL and

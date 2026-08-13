@@ -152,6 +152,10 @@ Project registration can be removed after its workspaces are clean:
 sanho project delete <project>
 ```
 
+If a checkout directory was deleted without cleaning it first, remove its
+stale registry row with `sanho workspace forget <workspace-id>`. This does not
+replace `sanho clean` for a live checkout.
+
 After every workspace is removed:
 
 ```bash

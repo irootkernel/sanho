@@ -164,6 +164,17 @@ The registry is observational. It reports sibling bases but does not coordinate
 publication. A sibling relationship may be unknown when this workspace's clone
 does not contain the sibling's reported object.
 
+If a checkout was deleted before `sanho clean`, remove only its stale
+observation by copying its exact ID from `sanho state --all`:
+
+```bash
+sanho workspace forget <workspace-id>
+```
+
+The command refuses while the recorded path still exists. Run `sanho clean`
+inside a live checkout instead so its hooks, clone ownership, and local state
+are handled safely.
+
 ## Failure response
 
 ### Canonical unreachable

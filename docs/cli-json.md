@@ -12,9 +12,9 @@ sanho pull --json
 sanho doctor --json
 ```
 
-`init`, `clean`, `project`, `migrate`, and direct `hook` entrypoints do not have
-a JSON success document. `diff` also has no JSON mode; its patch, diffstat, or
-path output is intended for direct inspection.
+`init`, `clean`, `project`, `workspace`, `migrate`, and direct `hook`
+entrypoints do not have a JSON success document. `diff` also has no JSON mode;
+its patch, diffstat, or path output is intended for direct inspection.
 
 ## Common rules
 

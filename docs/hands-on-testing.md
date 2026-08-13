@@ -120,6 +120,9 @@ non-interactive SSH command.
 6. Clean one worktree. The dry run must be read-only, name the sibling, and
    preserve shared hooks/clone. Clean the last owner and confirm shared assets
    are then removed.
+7. Delete a disposable independent checkout without cleaning it, then use its
+   exact registry ID with `sanho workspace forget`. Confirm only that stale row
+   disappears and a live-row forget attempt is refused.
 
 ## H04. Custom hooks and Husky ownership
 

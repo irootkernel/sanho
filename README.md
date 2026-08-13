@@ -282,6 +282,7 @@ sanho pull      # fast-forward consume                        (--commit, --json)
 sanho clean     # remove Sanho from this workspace  (--dry-run, --remove-docs, -y)
 sanho doctor    # check this workspace                        (--fix, --json)
 sanho project   # add | delete a project registration
+sanho workspace # forget a stale workspace registration
 sanho migrate   # legacy workspace conversion (compatibility only)
 sanho hook      # hook entry points (invoked by git, not by hand)
 sanho version   # (--json)
