@@ -50,6 +50,27 @@ predicted merge is clean, but sync first requires the user to commit or stash
 local docs work. Readiness does not test network availability or predict what
 a later fetch will discover.
 
+Inspect incoming changes before syncing:
+
+```bash
+sanho diff
+sanho diff --refresh
+sanho diff --stat
+sanho diff --name-only
+```
+
+The default uses cached canonical state. `--refresh` fetches first. To inspect
+committed docs waiting to be published, compare the recorded base with
+application `HEAD`:
+
+```bash
+sanho diff --local
+```
+
+Diff paths are relative to the configured docs root. `--stat` and
+`--name-only` are mutually exclusive, and `--local` cannot be combined with
+`--refresh` because local comparison does not consult canonical origin.
+
 ### 2. Commit normally
 
 Edit and commit docs with ordinary Git commands:

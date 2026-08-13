@@ -154,6 +154,65 @@ func TestStatusReportsDirtyDocsAsLocallyBlocked(t *testing.T) {
 	}
 }
 
+func TestDiffInspectsIncomingDocsWithoutChangingTheWorkspace(t *testing.T) {
+	w := newWorld(t, map[string]string{"api.md": "canonical api\n"})
+	w.initAndAdoptDocs()
+	w.advanceCanonical(map[string]string{
+		"api.md":   "canonical api\n",
+		"guide.md": "upstream guide\n",
+	}, "canonical: add guide")
+
+	beforeStatus := w.git(w.app, "status", "--porcelain=v1").stdout
+	beforeBase := readFile(t, w.appPath(".sanho_base.json"))
+	patch := w.sanho(w.app, "diff", "--refresh").stdout
+	requireContains(t, "incoming diff path", patch, "b/docs/guide.md")
+	requireContains(t, "incoming diff content", patch, "+upstream guide")
+
+	names := w.sanho(w.app, "diff", "--name-only").stdout
+	if names != "guide.md\n" {
+		t.Fatalf("diff --name-only = %q, want guide.md", names)
+	}
+	stat := w.sanho(w.app, "diff", "--stat").stdout
+	requireContains(t, "incoming diffstat", stat, "guide.md")
+
+	if after := w.git(w.app, "status", "--porcelain=v1").stdout; after != beforeStatus {
+		t.Fatalf("git status changed after diff:\nbefore %q\nafter  %q", beforeStatus, after)
+	}
+	if after := readFile(t, w.appPath(".sanho_base.json")); after != beforeBase {
+		t.Fatal("docs base changed after diff")
+	}
+}
+
+func TestDiffLocalComparesBaseWithApplicationHead(t *testing.T) {
+	w := newWorld(t, map[string]string{"api.md": "canonical api\n"})
+	w.initAndAdoptDocs()
+	w.commitDocs("docs: local update", map[string]string{"api.md": "local api\n"})
+
+	patch := w.sanho(w.app, "diff", "--local").stdout
+	requireContains(t, "local diff path", patch, "a/docs/api.md")
+	requireContains(t, "local diff content", patch, "+local api")
+	if names := w.sanho(w.app, "diff", "--local", "--name-only").stdout; names != "api.md\n" {
+		t.Fatalf("local diff --name-only = %q, want api.md", names)
+	}
+
+	for _, args := range [][]string{{"diff", "--stat", "--name-only"}, {"diff", "--local", "--refresh"}} {
+		if result := w.run(w.app, args...); result.exitCode != 1 {
+			t.Errorf("sanho %s exit = %d, want 1", strings.Join(args, " "), result.exitCode)
+		}
+	}
+}
+
+func TestDiffRefusesWithoutARecordedBase(t *testing.T) {
+	w := newWorld(t, nil)
+	w.initWorkspace()
+
+	result := w.run(w.app, "diff")
+	if result.exitCode != 1 {
+		t.Fatalf("diff exit = %d, want 1", result.exitCode)
+	}
+	requireContains(t, "diff without base", result.stderr, "no docs base is recorded")
+}
+
 func TestRegistryHidesAndPrunesSymlinkAliasesWithoutRewritingWorkspaceID(t *testing.T) {
 	w := newWorld(t, map[string]string{"api.md": "canonical api\n"})
 	w.initAndAdoptDocs()

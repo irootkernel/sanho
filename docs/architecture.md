@@ -203,6 +203,13 @@ same guard order as sync and pull. Readiness covers only locally provable
 preconditions; it does not promise that a future fetch or network operation
 will succeed.
 
+`sanho diff` is the read-only inspection path. By default it compares the
+recorded base tree with the cached canonical head; `--refresh` fetches first,
+and `--local` instead compares the base with application `HEAD`. It disables
+external diff drivers and text conversion, writes no application ref, index,
+worktree, base, or registry state, and reports paths relative to the configured
+docs root.
+
 ## State and persistence
 
 | Path | Mode | Contract |

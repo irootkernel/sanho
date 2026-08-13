@@ -20,6 +20,10 @@ repository. It is a Git-boundary tool, not a general task or session manager.
    `not_in_workspace` error means the current repository is not configured;
    do not initialize it without explicit user intent. Use
    `sanho state --all --json` only when project or workspace inventory matters.
+   Use `sanho diff`, `sanho diff --refresh`, or `sanho diff --local` when the
+   user asks to inspect incoming or unpublished docs changes. Diff is
+   read-only, has no JSON mode, and prints paths relative to the configured
+   docs root.
 4. Parse the JSON document and process exit separately. Branch on stable
    `error.code`, `known` fields, `sync_in_progress`, `relation`,
    `publication`, `sync_preview`, `working_copy`, and `local_readiness`.

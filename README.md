@@ -172,6 +172,7 @@ remain unsupported.
 
 ```bash
 sanho status     # where am I
+sanho diff       # inspect incoming cached canonical changes
 sanho sync       # reconcile with upstream
 sanho pull       # just take canonical's docs (no local edits)
 git push         # publish — there is no `sanho push`
@@ -265,6 +266,7 @@ required" plus diagnostics instead of a command that would fail.
 ```bash
 sanho init      # register this repository as a workspace
 sanho status    # base vs canonical, sync preview, siblings   (--refresh, --json)
+sanho diff      # inspect incoming or local docs changes       (--refresh, --local, --stat, --name-only)
 sanho state     # registered projects and workspaces          (--all, --json)
 sanho sync      # reconcile   (--continue, --abort, --rebase-onto <oid>, --json)
 sanho pull      # fast-forward consume                        (--commit, --json)

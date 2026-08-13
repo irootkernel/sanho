@@ -81,6 +81,8 @@ Use real disposable or explicitly approved `sanho-server`, `sanho-client`, and
    with `[SANHO] Publish docs from <repo>/<branch> (<N> app commits)` plus
    `source` and `commits`.
 4. Refresh client status, sync, and confirm its docs tree equals canonical.
+   Before syncing, confirm `sanho diff --refresh` shows the incoming change and
+   does not alter the application worktree, index, refs, or base.
 5. Change docs in client, publish, then sync server.
 6. Push a code-only commit and confirm canonical does not move.
 7. Confirm tag-only and branch-deletion pushes do not run publication analysis.

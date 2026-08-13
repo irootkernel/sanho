@@ -138,6 +138,7 @@ commits in your repository.`,
 	root.AddCommand(
 		newInitCmd(),
 		newStatusCmd(),
+		newDiffCmd(),
 		newStateCmd(),
 		newSyncCmd(),
 		newPullCmd(),
