@@ -86,15 +86,15 @@ This repository uses Sanho to synchronize `docs/` with a canonical Git repositor
 ```
 
 For fuller conditional guidance, use the complete
-[`use-sanho` skill directory](skills/use-sanho/). Agent skill discovery paths
-differ, so consult the agent's documentation for the destination rather than
-assuming a universal path. Download only the skill directory into that
-agent-specific location:
+[`use-sanho` skill directory](skills/use-sanho/). For Codex, install user-scoped
+skills under `$HOME/.agents/skills`. Other agents may use different discovery
+paths, so consult their documentation before choosing a destination. Download
+only the skill directory into that agent-specific location:
 
 ```bash
 (
   set -eu
-  sanho_skill_parent=/path/to/agent/skills
+  sanho_skill_parent="${HOME}/.agents/skills"
   sanho_skill_ref=v0.2.6
   mkdir -p "$sanho_skill_parent"
   sanho_skill_target="$sanho_skill_parent/use-sanho"
