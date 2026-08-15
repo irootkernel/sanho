@@ -1,0 +1,32 @@
+version: 2
+commands:
+  prepare:
+    command: ["make", "test-prepare"]
+    tags: [go, prepare]
+    parser: generic
+    timeout_sec: 900
+  unit:
+    command: ["make", "test-unit"]
+    tags: [go, unit]
+    parser: go-test
+    timeout_sec: 900
+  integration:
+    command: ["make", "test-int"]
+    tags: [go, integration]
+    parser: go-test
+    timeout_sec: 900
+  e2e:
+    command: ["make", "test-e2e"]
+    tags: [e2e, go]
+    parser: go-test
+    timeout_sec: 1800
+  all:
+    command: ["make", "test"]
+    tags: [full, go]
+    parser: generic
+    timeout_sec: 3600
+redaction:
+  patterns:
+    - name: credential
+      regex: '(?i)(token|api[_-]?key|authorization|password)=\S+'
+      replace: '$1=<redacted>'

@@ -4,11 +4,17 @@ firebase-debug.log
 .omc/
 .codex/
 .claude/
-.gaori/
+.gaori/*
+!.gaori/tester.yaml
+!.gaori/tester/
+.gaori/tester/*
+!.gaori/tester/rules/
+.gaori/tester/rules/*
+!.gaori/tester/rules/*.yaml
 .gjc/
 
-/.mulgae/
-.mulgaeignore
+/.mulgae/*
+!/.mulgae/config.yaml
 
 .vscode
 data/

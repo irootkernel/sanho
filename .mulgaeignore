@@ -1,0 +1,14 @@
+/.sanho*
+/AGENTS.md
+/GEMINI.md
+/data/
+/tmp/
+/bin/
+/.gaori/
+/.mulgae/
+.env
+.env.*
+*.pem
+*.key
+*.raw.log
+credentials/

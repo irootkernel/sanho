@@ -72,6 +72,26 @@ Every changed line must be traceable to the requested outcome or its verificatio
 - Read the nearest relevant implementation and tests instead of copying detailed feature behavior into this file.
 - If authorities or implementation disagree, surface the mismatch and resolve it before changing behavior; do not silently choose the convenient source.
 
+## Development skill references
+
+- Use `$root-kernel:task-handler` for one named roadmap task.
+- Use `$root-kernel:epic-handler` to implement one roadmap epic as sequential task goals.
+- Use `$root-kernel:epic-validator` to cold-validate and remediate one completed roadmap epic.
+- Use `$root-kernel:dev-setup` to diagnose or configure development tooling.
+- Use `$use-sanho` at an authorized commit or push boundary in a Sanho-managed repository, or for an explicitly requested Sanho operation.
+- Use `$use-mulgae` for an authorized Mulgae review, run inspection, finding follow-up, configuration diagnosis, cleanup plan, or recovery.
+- Use `$use-gaori` when a selected long or noisy check is routed through Gaori or existing Gaori evidence must be inspected.
+- Use `$use-podway` for Podway Procedure v2 session operation, authoring, lifecycle, diagnosis, or recovery; Root Kernel workflow skills retain their stricter roadmap, ownership, and approval rules.
+- In repositories opted into Root Kernel Podway procedures, treat the roadmap as lifecycle authority, Podway as active execution and evidence state, and the Codex goal as a temporary projection of actionable work.
+- Use `$lore-commits` for non-trivial commit messages and `$lore-query` to inspect recorded decision context.
+- Repository-specific rules below override defaults from the referenced skills.
+
+### Repository overrides
+
+- Route long or noisy checks through the configured Gaori command IDs: `prepare`, `unit`, `integration`, `e2e`, and `all`. For a dynamically selected Go test, use `gaori --json run --parser go-test --tag go --tag unit -- go test <package> <test arguments>` and give narrower Make subtasks parser and phase tags matching their output.
+- Mulgae reviews require explicit user authorization. Approval of a `$root-kernel:task-handler` plan counts as task-scoped authorization only when that plan explicitly includes the Mulgae review.
+- A full Mulgae review uses the configured `logic`, `security`, `maintainability`, `product`, `documentation`, and `testing` roles. Its objective states the task goal, authoritative requirements, relevant invariants, expected failure boundaries, and desired validation focus.
+
 ## Project Structure & Module Organization
 - `cmd/sanho` is the only entrypoint. Sanho ships a single binary and has no daemon.
 - Core logic sits in `internal/{buildinfo,domain,infra,interface,usecase}`; keep new packages domain-oriented.
@@ -112,29 +132,6 @@ Every changed line must be traceable to the requested outcome or its verificatio
 - Do not mock below the git boundary. Merge, publication, base re-derivation, and marker-detection logic are tested against real `git` in temporary repositories.
 - Point `SANHO_CLI_BINARY` at a fresh build for the CLI suites; `make test-int` does this. Use an isolated `SANHO_HOME` in anything that touches the registry.
 - Keep failing tests that capture expected behavior when fixing regressions; aim for coverage on new branches.
-
-## Gaori Test Evidence
-- The repository documentation and task scope remain authoritative for deciding which tests are required. Gaori is an optional execution and evidence-compression adapter, not an additional test gate or acceptance authority.
-- Run tests that are expected to be long or noisy through Gaori from the repository root: preparation `gaori --json run prepare`, unit `gaori --json run unit`, integration `gaori --json run integration`, E2E `gaori --json run e2e`, and the complete suite `gaori --json run all`.
-- Run a dynamically selected Go test as `gaori --json run --parser go-test --tag go --tag unit -- go test <package> <test arguments>`. Narrower Make subtasks may use the same ad-hoc form with a parser and phase tags that match their actual output.
-- Before the first Gaori run in a task, record `gaori --version`. Configured commands require the local `.gaori/tester.yaml`. Use the installed Gaori version rather than requiring a repository-pinned version. If the binary or config is unavailable, use the repository's normal documented test command and report that Gaori evidence compression was unavailable. Do not install or upgrade Gaori or change local Gaori state without an explicit user request.
-- The executed command's exit code is authoritative for pass/fail. `extractor_status` describes evidence quality only and never changes the result. Tags select project rules, not parsers, and specialized parsers do not automatically fall back to `generic`.
-- When a command passes, do not open its generated logs by default. When it does not pass, inspect `*.summary.md` first, followed by `*.summary.json` or a bounded excerpt for the relevant failure. Read only a bounded raw-log section when compact evidence is insufficient or degraded. Open or share `*.raw.log` only when necessary because raw logs are preserved without redaction and may contain secrets.
-- Keep the entire `.gaori/` directory out of Git. Do not add or commit its config, rules, toolchain metadata, proposals, or evidence.
-- In the final report, include the Gaori command, process exit code, artifact `status`, `extractor_status`, relevant summary and raw-log paths, and any skipped checks. Gaori evidence alone does not establish review acceptance, final acceptance, release, or runtime activation.
-
-## Mulgae Code Review
-- Use Mulgae only when the user explicitly asks for a Mulgae review. Mulgae is advisory and does not replace repository requirements, `make test`, Gaori evidence, hands-on validation, or user approval.
-- Before a review, verify that `mulgae version --json` succeeds and that `.mulgae/config.yaml` exists. If either prerequisite is missing, stop and report it. Do not run `mulgae init` unless the user separately and explicitly asks for initialization.
-- Select exactly one target matching the requested scope: `--diff <base>...HEAD` for a branch or pull request, `--stage` for staged changes, `--dirty` for staged and unstaged changes, and `--workspace` only when the user explicitly requests all tracked files at the current workspace state.
-- Use all six configured roles by default: `--roles logic,security,maintainability,product,documentation,testing`. Use a subset only when the user explicitly narrows the review roles.
-- Write an objective that states the task goal, authoritative requirements, relevant invariants, expected failure boundaries, and desired validation focus. The objective may narrow focus but must not override a role, schema, safety rule, evidence rule, or authority boundary.
-- Before invoking providers, run the same review command with `--preflight --output json`. Inspect the exact transmitted files, primary and fallback routes, AGY permission mode, provider timeouts, and run budget. Stop if the transmission contains an unexpected or sensitive path or the execution envelope differs from the configured policy.
-- Run the approved review with `--output json`. Exit status 0 is success and status 1 is a policy outcome; any other status is an operational failure and must be reported without bypassing Mulgae.
-- Preserve the exact run ID. Inspect results with `mulgae status --run <run-id> --output json` and `mulgae findings --run <run-id> --severity low --output json`.
-- Treat every finding as a hypothesis. Verify it against the captured target, current code, repository contracts, and authorized scope; classify it as valid, invalid, duplicate, or out of scope before proposing action. Do not edit, commit, push, release, or operate a daemon based only on a Mulgae finding.
-- After an authorized fix, use the original run ID and finding ID in `mulgae followup` with a target containing the fix. Do not treat evidence verification as proof that the finding's interpretation is correct.
-- Do not commit or share `.mulgae/`, provider credential directories, raw transcripts, or exported review bundles. Report Mulgae execution and skipped repository checks separately in the final handoff.
 
 ## Commit & Pull Request Guidelines
 - Commit style matches history: `[TYPE] Brief summary (#issue-or-PR)` (e.g., `[BUG-3] Fix pending fix merge edge case (#42)`); one logical change per commit.
