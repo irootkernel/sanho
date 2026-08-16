@@ -74,22 +74,22 @@ Every changed line must be traceable to the requested outcome or its verificatio
 
 ## Development skill references
 
-- Use `$root-kernel:task-handler` for one named roadmap task.
-- Use `$root-kernel:epic-handler` to implement one roadmap epic as sequential task goals.
-- Use `$root-kernel:epic-validator` to cold-validate and remediate one completed roadmap epic.
-- Use `$root-kernel:dev-setup` to diagnose or configure development tooling.
+- Use `$aquarium:task-handler` for one named roadmap task.
+- Use `$aquarium:epic-handler` to implement one roadmap epic as sequential task goals.
+- Use `$aquarium:epic-validator` to cold-validate and remediate one completed roadmap epic.
+- Use `$aquarium:dev-setup` to diagnose or configure development tooling.
 - Use `$use-sanho` at an authorized commit or push boundary in a Sanho-managed repository, or for an explicitly requested Sanho operation.
 - Use `$use-mulgae` for an authorized Mulgae review, run inspection, finding follow-up, configuration diagnosis, cleanup plan, or recovery.
 - Use `$use-gaori` when a selected long or noisy check is routed through Gaori or existing Gaori evidence must be inspected.
-- Use `$use-podway` for Podway Procedure v2 session operation, authoring, lifecycle, diagnosis, or recovery; Root Kernel workflow skills retain their stricter roadmap, ownership, and approval rules.
-- In repositories opted into Root Kernel Podway procedures, treat the roadmap as lifecycle authority, Podway as active execution and evidence state, and the Codex goal as a temporary projection of actionable work.
+- Let `$aquarium:task-handler`, `$aquarium:epic-handler`, and `$aquarium:epic-validator` use Podway by default unless the current user opts out before the first managed-session mutation; Aquarium workflow skills retain their stricter roadmap, ownership, and approval rules.
+- Use `$use-podway` directly for an explicitly requested Procedure v2 session operation, authoring, lifecycle, diagnosis, recovery, cancellation, or current-session discard flow. Keep each handler opt-out local to its current task, epic, or validation request.
 - Use `$lore-commits` for non-trivial commit messages and `$lore-query` to inspect recorded decision context.
 - Repository-specific rules below override defaults from the referenced skills.
 
 ### Repository overrides
 
 - Route long or noisy checks through the configured Gaori command IDs: `prepare`, `unit`, `integration`, `e2e`, and `all`. For a dynamically selected Go test, use `gaori --json run --parser go-test --tag go --tag unit -- go test <package> <test arguments>` and give narrower Make subtasks parser and phase tags matching their output.
-- Mulgae reviews require explicit user authorization. Approval of a `$root-kernel:task-handler` plan counts as task-scoped authorization only when that plan explicitly includes the Mulgae review.
+- Mulgae reviews require explicit user authorization. Approval of a `$aquarium:task-handler` plan counts as task-scoped authorization only when that plan explicitly includes the Mulgae review.
 - A full Mulgae review uses the configured `logic`, `security`, `maintainability`, `product`, `documentation`, and `testing` roles. Its objective states the task goal, authoritative requirements, relevant invariants, expected failure boundaries, and desired validation focus.
 
 ## Project Structure & Module Organization
