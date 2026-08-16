@@ -4,6 +4,11 @@ This checklist covers boundaries that the automatic suite cannot reproduce
 faithfully. Run it only with a release candidate that already passed
 `gaori --json run all` or the equivalent `make test`.
 
+After a successful verdict, an agent may carry this evidence across a
+patch-only release-metadata finalization only under the reduced revalidation
+policy in [AGENTS.md](../AGENTS.md#release-verification). Any product code or
+behavior change invalidates the earlier verdict and requires fresh evidence.
+
 Automatic tests remain authoritative for deterministic behavior: publication
 case analysis, real-Git merge flows, marker gates, sync continuation and abort,
 registry safety, hook ownership, linked-worktree isolation, process concurrency,

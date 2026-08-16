@@ -133,6 +133,16 @@ Every changed line must be traceable to the requested outcome or its verificatio
 - Point `SANHO_CLI_BINARY` at a fresh build for the CLI suites; `make test-int` does this. Use an isolated `SANHO_HOME` in anything that touches the registry.
 - Keep failing tests that capture expected behavior when fixing regressions; aim for coverage on new branches.
 
+## Release Verification
+
+- When the user explicitly requests a release, ask whether to use the full gate or the reduced patch-release gate before running release checks.
+- The full gate runs the configured Gaori `all` command, equivalent to `make test`. A release still requires the hands-on verdict in `docs/hands-on-testing.md`.
+- The reduced gate is available only when the candidate already passed both `make test` and the hands-on release verdict, and every later change is limited to the patch version and release metadata. Ask separately whether each prerequisite passed. The hands-on prerequisite is satisfied when H01 through H08 pass or the release owner explicitly accepts every scope-based skip, as the existing verdict defines.
+- Use the reduced gate only after two explicit affirmative answers. Run the configured Gaori commands `prepare`, `unit`, and `integration` in that order, equivalent to `make test-prepare`, `make test-unit`, and `make test-int`. Do not rerun `test-e2e` or the hands-on cases for this metadata-only finalization.
+- If either answer is negative or uncertain, or if product code or behavior changed after the recorded evidence, do not use the reduced gate. Complete the full automatic gate and any missing hands-on work instead.
+- After either gate, build the candidate with `VERSION=vX.Y.Z make cli-build`. Require `bin/sanho version` to print exactly `sanho vX.Y.Z` and `bin/sanho version --json` to print exactly `{"name":"sanho","version":"vX.Y.Z"}` before releasing.
+- Any failed gate or version check blocks the release. Do not commit, tag, push, or create the GitHub release until the selected verification path passes.
+
 ## Commit & Pull Request Guidelines
 - Commit style matches history: `[TYPE] Brief summary (#issue-or-PR)` (e.g., `[BUG-3] Fix pending fix merge edge case (#42)`); one logical change per commit.
 - PRs outline scope, validation steps, config/env changes, linked issues; include screenshots only when output matters.
