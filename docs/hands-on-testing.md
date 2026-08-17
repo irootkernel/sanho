@@ -78,8 +78,23 @@ git -C "$CLONE" log --oneline -5 refs/remotes/origin/main
 
 ## H01. Real three-repository roundtrip
 
-Use real disposable or explicitly approved `sanho-server`, `sanho-client`, and
-`sanho-docs` repositories.
+Use the project's own verification repositories:
+
+```text
+git@github-irootkernel:irootkernel/sanho-docs.git      canonical docs
+git@github-irootkernel:irootkernel/sanho-server.git    application
+git@github-irootkernel:irootkernel/sanho-client.git    application
+```
+
+These three exist for this checklist, and the release owner has standing
+authorization to commit and push to them during a run. That authorization
+covers these three repositories and nothing else; it does not extend to force
+operations, which Rules forbids as a way to turn a failure into a pass.
+
+Substituting local bare repositories does not discharge this case. Integration
+already drives real bare remotes, so a local run repeats automatic coverage and
+leaves the boundary H01 exists for — real hosting and real credentials —
+untested. Record the substitution and report the case as BLOCKED instead.
 
 1. Record all three starting refs and clean statuses.
 2. Initialize both application clones with the candidate and isolated home.
@@ -162,8 +177,12 @@ Husky shim hashes.
 
 ## H05. SSH and network retry
 
-1. Use a candidate hook and a real or approved disposable SSH remote.
-2. Confirm every network call is non-interactive and bounded.
+1. Use a candidate hook and a real SSH remote — `sanho-docs` from H01, whose
+   `git@` URL exercises the SSH transport, credentials, and host verification
+   that a local path never reaches.
+2. Confirm every network call is non-interactive and bounded. A transport shim
+   standing in for `ssh` may inject the failures of step 3, but the working
+   path must be the real remote, or the credential boundary goes untested.
 3. Inject DNS, route, authentication, and early transport failures where the
    environment permits it.
 4. For each failure, record exit code and both remote refs. No rejected attempt
