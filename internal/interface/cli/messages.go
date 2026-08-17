@@ -242,8 +242,17 @@ func pushConflictMessage(base, head string, files []string) string {
 
 // pushSyncRequiredMessage covers the remaining sync-required reasons.
 // Most route to `sanho sync`; the uncorroborated base==head state routes
-// to a provenance restamp because sync is already a no-op there. Each
-// branch names an action that succeeds in its printed state (D3).
+// to a provenance restamp instead. Each branch names an action that
+// succeeds in its printed state (D3).
+//
+// The restamp is named rather than a sync because it is what the state
+// needs: the base is already canonical head, and what is missing is the
+// branch vouching for it out of its own history. That the restamp
+// REACHES the state is a property of the fast-forward gate, not of this
+// wording — it stamps the base file, and the gate corroborates that
+// value by its docs tree, which is what a re-anchor selected it by. Read
+// only as a commit, the restamped value was refused again and this
+// advice looped; see requireCorroboratedBase.
 func pushSyncRequiredMessage(reason, base, head string) string {
 	if reason == publish.ReasonUncorroboratedBase && base != "" && base == head {
 		return fmt.Sprintf("sanho: docs provenance does not corroborate canonical head %s\n"+

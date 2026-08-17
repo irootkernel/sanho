@@ -1017,13 +1017,16 @@ func (u *UseCase) commitPublication(ctx context.Context, t *tip, tree, parent st
 // Failing all of that, one narrower content warrant remains: the tip
 // must absorb canonical head exactly.
 //
-// If no proof holds, the CLI routes the state to a provenance restamp.
-// That advice assumes the recorded base FILE is current, which is true
-// for the branch-switch state this guard was written for and NOT true
-// after a re-anchor, because decideWithReanchor corrects the base in
-// memory and leaves the file naming a commit canonical no longer has —
-// so the message names `sanho sync` first, which is the only thing that
-// advances the file.
+// If no proof holds, the CLI routes the state to a provenance restamp,
+// and the tree warrant is what makes that advice reach the state it is
+// printed in. A restamp stamps the base FILE, which a re-anchor does not
+// correct — decideWithReanchor rewrites the base in memory and leaves
+// the file naming a commit canonical no longer has. Reading the commit
+// alone, the next push refused the restamped value for the same reason
+// as the first, and the guidance looped. Reading the tree, the file's
+// value is exactly the one FindCommitByDocsTree re-anchors by, so the
+// restamp corroborates and the loop is closed rather than papered over
+// with an extra step.
 //
 // Nothing else about the push changes: an auto-merge combines both
 // sides and never needed this, and a docs-identical tip short-circuits
