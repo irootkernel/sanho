@@ -373,34 +373,12 @@ func (u *UseCase) Run(ctx context.Context, updates []RefUpdate) (Outcome, error)
 		return Outcome{}, fmt.Errorf("refresh canonical repository: %w", err)
 	}
 
-	// Step 4 — marker gate on every pushed tip.
-	//
-	// It runs after the fetch, which reverses the publication contract's listed order, and
-	// the reason is the gate's baseline: what a push introduces is
-	// measured against the docs canonical *already publishes*, so the
-	// gate needs a current canonical head to be sound at all. The
-	// cheap-rejection principle the old order served is kept where it
-	// belongs — the sync-note refusal, which needs nothing but a local
-	// file, is made at the hook boundary before the clone is even
-	// opened.
-	gateSnapshot, err := u.canonicalSnapshot(ctx)
+	// Steps 4 and 5 — the marker gate and tip resolution, shared with
+	// Preview so the two callers cannot drift on the order they apply
+	// them in.
+	tips, base, hasBase, err := u.gateAndResolve(ctx, candidates)
 	if err != nil {
 		return Outcome{}, err
-	}
-	if err := u.gateMarkers(ctx, candidates, gateSnapshot.headTree); err != nil {
-		return Outcome{}, err
-	}
-
-	// Step 5 — resolve docs trees and deduplicate. Identical trees
-	// publish once; stdin order decides which ref describes them.
-	tips, err := u.resolveTips(ctx, candidates)
-	if err != nil {
-		return Outcome{}, err
-	}
-
-	base, hasBase, err := u.State.LoadBase()
-	if err != nil {
-		return Outcome{}, fmt.Errorf("read base file: %w", err)
 	}
 
 	outcome := Outcome{Case: pubdom.CaseUpToDate}
@@ -473,6 +451,115 @@ func (u *UseCase) Run(ctx context.Context, updates []RefUpdate) (Outcome, error)
 		return outcome, err
 	}
 	return outcome, &SyncRequiredError{Base: base.Commit, Head: head, Reason: ReasonCASExhausted}
+}
+
+// gateAndResolve is steps 4 and 5, which Run and Preview both need in
+// the same order.
+//
+// Step 4 runs after a fetch, which reverses the publication contract's
+// listed order, and the reason is the gate's baseline: what a push
+// introduces is measured against the docs canonical *already publishes*,
+// so the gate needs a current canonical head to be sound at all. The
+// cheap-rejection principle the old order served is kept where it
+// belongs — the sync-note refusal, which needs nothing but a local file,
+// is made at the hook boundary before the clone is even opened.
+//
+// Step 5 resolves docs trees and deduplicates: identical trees publish
+// once, and the caller's order decides which ref describes them.
+func (u *UseCase) gateAndResolve(ctx context.Context, candidates []RefUpdate) (
+	tips []tip, base provenance.Base, hasBase bool, err error) {
+	gateSnapshot, err := u.canonicalSnapshot(ctx)
+	if err != nil {
+		return nil, provenance.Base{}, false, err
+	}
+	if err := u.gateMarkers(ctx, candidates, gateSnapshot.headTree); err != nil {
+		return nil, provenance.Base{}, false, err
+	}
+
+	tips, err = u.resolveTips(ctx, candidates)
+	if err != nil {
+		return nil, provenance.Base{}, false, err
+	}
+
+	base, hasBase, err = u.State.LoadBase()
+	if err != nil {
+		return nil, provenance.Base{}, false, fmt.Errorf("read base file: %w", err)
+	}
+	return tips, base, hasBase, nil
+}
+
+// Preview is Run's first pass alone: the verdict a push would reach,
+// with nothing written to canonical and no application state touched.
+//
+// It answers the question `sanho status` has no counterpart for. Status
+// predicts a SYNC of the committed docs; whether the push itself will be
+// accepted, and as which case, could until now only be learned by
+// pushing. The evaluation was already separable — Run's contract is
+// "write nothing until the whole multi-ref push validates" — so this is
+// that same pass, stopped before publishPlan.
+//
+// Two differences from Run are deliberate:
+//
+//   - It does not fetch. The caller decides, because a preview is a
+//     reader and every other reader in the CLI defaults to the cached
+//     snapshot with an explicit --refresh. Run keeps its own fetch: a
+//     publication may never be decided against stale canonical state.
+//   - It does not retry. There is no CAS race to lose without a push,
+//     and a verdict is a statement about one snapshot in any case.
+//
+// A rejection travels back as the same sentinel Run would raise, so a
+// caller reads one vocabulary for "this push would be refused, and why".
+func (u *UseCase) Preview(ctx context.Context, updates []RefUpdate) (Preview, error) {
+	candidates := Publishable(updates)
+	if len(candidates) == 0 {
+		return Preview{Case: pubdom.CaseUpToDate}, nil
+	}
+
+	inProgress, err := u.State.SyncInProgress()
+	if err != nil {
+		return Preview{}, fmt.Errorf("check sync state: %w", err)
+	}
+	if inProgress {
+		return Preview{}, ErrSyncInProgress
+	}
+
+	tips, base, hasBase, err := u.gateAndResolve(ctx, candidates)
+	if err != nil {
+		return Preview{}, err
+	}
+
+	snap, err := u.canonicalSnapshot(ctx)
+	if err != nil {
+		return Preview{}, err
+	}
+
+	anchored := base
+	plan, err := u.evaluate(ctx, tips, &anchored, hasBase, snap)
+	if err != nil {
+		return Preview{Head: snap.head, Bootstrap: snap.bootstrap}, err
+	}
+	return Preview{
+		Case:      plan.decided,
+		Publishes: len(plan.publications) > 0,
+		Head:      snap.head,
+		Bootstrap: snap.bootstrap,
+	}, nil
+}
+
+// Preview reports what a push would do, without doing it.
+type Preview struct {
+	// Case is the case the push would be decided as.
+	Case pubdom.Case
+	// Publishes reports whether a canonical commit would be created.
+	// It is not implied by Case: an up-to-date push is decided and
+	// publishes nothing.
+	Publishes bool
+	// Head is the canonical head the verdict was decided against, and
+	// is empty when nothing has been published into canonical yet.
+	Head string
+	// Bootstrap reports that canonical holds no commits, so the verdict
+	// describes a first publication rather than a comparison.
+	Bootstrap bool
 }
 
 // evaluate is pass 1: decide and compute, never write a ref.

@@ -4,6 +4,32 @@
 
 ### Added
 
+- `sanho preview` reports the verdict a `git push` would reach, without
+  reaching it. `sanho status` predicted a sync of the committed docs; whether
+  the push itself would be accepted, and as which case, could only be learned
+  by pushing and reading the rejection.
+
+  It runs the publication evaluation pass — the same one the pre-push hook
+  runs — and stops before any commit or compare-and-swap, so it changes no
+  application ref, index, worktree, base, or registry state and no canonical
+  ref. The evaluation was already separable: publication's contract is that it
+  writes nothing until the whole multi-ref push validates.
+
+  A rejection is reported as a verdict (`sync_in_progress`, `markers_present`,
+  `sync_required`, `history_rewritten`, `empty_publication`) at exit 0, with
+  the documents in the way, on `doctor`'s principle that a diagnostic which
+  fails whenever it finds a problem cannot be used to investigate one. `sanho
+  check` remains the command that gates. Only a failure to reach a verdict, an
+  unreachable canonical for instance, is an error.
+
+  Unlike the hook it does not fetch unless `--refresh` is given, because every
+  reader in the command surface defaults to the cached snapshot; the verdict
+  says which snapshot it was decided against. `--branch` previews another local
+  branch. A push of several branches at once is not previewed.
+
+  Preview names no next command. Every blocked verdict is a state the push
+  rejection already words with a recovery the closure suite proves runnable,
+  and a second copy of that guidance would be a second copy to keep true.
 - `sanho log --repository <name>` and `sanho log --workspace <id>` narrow the
   listing to what one application repository or one checkout published. It is
   the question a docs repository shared by several repositories raises, and the
@@ -21,6 +47,12 @@
   agent interpolating an unset variable produces. `--path` gains the same
   refusal. An empty listing names the narrowing that matched nothing rather
   than reporting that canonical has no commits.
+
+### Documentation
+
+- `docs/operations.md` quoted `sanho: published docs <oid12> (merged)` as an
+  expected publication line. The case name the publication actually prints is
+  `auto_merge`, which is what `sanho preview` now reports as a verdict too.
 - `sanho show <commit>` reads one canonical commit: the documents it publishes,
   or with `--path` a single document as of that commit. It accepts the same
   revisions as `sanho sync --rebase-onto`, is read-only, needs no recorded

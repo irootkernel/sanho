@@ -48,6 +48,14 @@ repository. It is a Git-boundary tool, not a general task or session manager.
    returns one. `document.content` is null exactly when `document.binary` is
    true, which is the whole answer for a binary asset rather than a truncated
    one; do not retry such a read.
+   Use `sanho preview --json` at an authorized push boundary when the user
+   asks what the push will do, or before performing one whose outcome matters.
+   It runs the publication evaluation and writes nothing. Branch on `blocked`
+   and `verdict`, never on the exit code: a push that would be rejected is
+   reported at exit 0, and only a failure to reach a verdict produces an error
+   envelope. Pass `--refresh` whenever the verdict has to be current, because
+   the hook always fetches and a cached verdict describes an older snapshot.
+   A preview is evidence about one snapshot, not permission to push.
    Use `sanho check --require-clean`, `--require-current`, and/or
    `--require-published` when automation needs an explicit policy. Parse the
    complete result even when exit 1: `passed:false` is a policy mismatch,

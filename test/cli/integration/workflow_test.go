@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -787,4 +788,159 @@ func TestPullFastForwardsAndRefusesOnLocalEdits(t *testing.T) {
 		t.Fatalf("pull with local edits exited %d, want 1", refused.exitCode)
 	}
 	requireContains(t, "pull refusal", refused.stderr, "sanho sync")
+}
+
+// TestPreviewPredictsWhatThePushThenDoes is the claim `sanho preview`
+// makes, so it is tested against the real push rather than asserted.
+//
+// Each leg previews, reads the verdict, then performs the push and
+// requires the outcome the preview named — including the leg where the
+// preview says the push would be rejected, which must still exit 0
+// because a verdict is an answer.
+func TestPreviewPredictsWhatThePushThenDoes(t *testing.T) {
+	w := newWorld(t, map[string]string{"api.md": "canonical api\n"})
+	w.initAndAdoptDocs()
+
+	// 1. Nothing local to publish.
+	upToDate := previewVerdict(t, w, "--refresh")
+	if upToDate.Verdict != "up_to_date" || upToDate.Publishes || upToDate.Blocked {
+		t.Fatalf("preview = %+v, want a non-publishing up_to_date verdict", upToDate)
+	}
+	if upToDate.Branch != "main" || upToDate.Tip == "" {
+		t.Errorf("preview = %+v, want the current branch and its tip", upToDate)
+	}
+
+	// 2. A local docs commit, canonical unmoved.
+	w.commitDocs("docs: local update", map[string]string{"api.md": "local api\n"})
+	fastForward := previewVerdict(t, w, "--refresh")
+	if fastForward.Verdict != "fast_forward" || !fastForward.Publishes || fastForward.Blocked {
+		t.Fatalf("preview = %+v, want a publishing fast_forward verdict", fastForward)
+	}
+	before := w.canonicalHead()
+	if fastForward.Canonical.Head != before {
+		t.Errorf("preview head = %q, want the canonical head %q", fastForward.Canonical.Head, before)
+	}
+
+	push := w.push()
+	if push.exitCode != 0 {
+		t.Fatalf("the push the preview said would succeed exited %d:\n%s", push.exitCode, push.combined())
+	}
+	requireContains(t, "push output", push.combined(), "published docs")
+	requireContains(t, "push case", push.combined(), "(fast_forward)")
+	if w.canonicalHead() == before {
+		t.Error("the push the preview said would publish moved nothing")
+	}
+
+	// 3. Both sides moved incompatibly: the push would be rejected, and
+	//    the preview says so at exit 0 while naming the document.
+	w.commitDocs("docs: my edit", map[string]string{"api.md": "line one\nMINE\n"})
+	w.advanceCanonical(map[string]string{"api.md": "line one\nTHEIRS\n"}, "canonical: their edit")
+
+	blocked := previewVerdict(t, w, "--refresh")
+	if blocked.Verdict != "sync_required" || !blocked.Blocked || blocked.Publishes {
+		t.Fatalf("preview = %+v, want a blocked sync_required verdict", blocked)
+	}
+	if !reflect.DeepEqual(blocked.Conflicts, []string{"docs/api.md"}) {
+		t.Errorf("conflicts = %v, want the conflicted document", blocked.Conflicts)
+	}
+
+	rejected := w.push()
+	if rejected.exitCode == 0 {
+		t.Fatalf("the push the preview said would be rejected succeeded:\n%s", rejected.combined())
+	}
+	requireContains(t, "push rejection", rejected.combined(), "sanho sync")
+}
+
+// TestPreviewIsReadOnlyAndSurvivesItsRefusals covers the properties that
+// make the command safe to run at any time, and the two arguments it
+// refuses.
+func TestPreviewIsReadOnlyAndSurvivesItsRefusals(t *testing.T) {
+	w := newWorld(t, map[string]string{"api.md": "canonical api\n"})
+	w.initAndAdoptDocs()
+	w.commitDocs("docs: local update", map[string]string{"api.md": "local api\n"})
+
+	// The contract is what preview must not change: no application ref,
+	// index, worktree, base, or registry state, and no canonical ref.
+	// The private clone is deliberately not in that list — --refresh
+	// fetches into it, and importing the pushed tip is how the verdict is
+	// computed at all.
+	canonicalBefore := w.canonicalHead()
+	statusBefore := w.git(w.app, "status", "--porcelain=v1").stdout
+	refsBefore := w.git(w.app, "show-ref").stdout
+	baseBefore := readFile(t, w.appPath(".sanho_base.json"))
+	registryBefore := readFile(t, filepath.Join(w.home, "state.json"))
+
+	out := w.sanho(w.app, "preview", "--refresh")
+	requireContains(t, "preview", out.stdout, "would publish docs to canonical")
+
+	if after := w.git(w.app, "status", "--porcelain=v1").stdout; after != statusBefore {
+		t.Errorf("git status changed after preview:\nbefore %q\nafter  %q", statusBefore, after)
+	}
+	if after := w.git(w.app, "show-ref").stdout; after != refsBefore {
+		t.Errorf("application refs moved after preview:\nbefore %q\nafter  %q", refsBefore, after)
+	}
+	if after := readFile(t, w.appPath(".sanho_base.json")); after != baseBefore {
+		t.Error("the docs base changed after preview")
+	}
+	if after := readFile(t, filepath.Join(w.home, "state.json")); after != registryBefore {
+		t.Error("the registry changed after preview")
+	}
+	if w.canonicalHead() != canonicalBefore {
+		t.Error("preview moved the canonical head")
+	}
+
+	// --branch names a branch this repository has, or it is refused.
+	w.git(w.app, "branch", "release")
+	named := previewVerdict(t, w, "--branch", "release")
+	if named.Branch != "release" {
+		t.Errorf("preview --branch reported %q, want release", named.Branch)
+	}
+
+	for _, args := range [][]string{
+		{"preview", "--json", "--branch", "no-such-branch"},
+		{"preview", "--json", "--branch", ""},
+		{"preview", "--json", "extra"},
+	} {
+		refused := w.run(w.app, args...)
+		if refused.exitCode != 1 {
+			t.Fatalf("%v exit = %d, want 1", args, refused.exitCode)
+		}
+		if !strings.Contains(refused.stdout, `"code": "unknown_target"`) &&
+			!strings.Contains(refused.stdout, `"code": "invalid_arguments"`) {
+			t.Fatalf("%v envelope = %s, want unknown_target or invalid_arguments", args, refused.stdout)
+		}
+	}
+}
+
+// previewVerdict runs `sanho preview --json`, requires exit 0, and
+// decodes the document. Exit 0 is part of the assertion: a preview that
+// failed because the answer was unwelcome could not be used to ask.
+func previewVerdict(t *testing.T, w *world, args ...string) previewDocument {
+	t.Helper()
+
+	out := w.run(w.app, append([]string{"preview", "--json"}, args...)...)
+	if out.exitCode != 0 {
+		t.Fatalf("preview %v exit = %d, want 0:\n%s", args, out.exitCode, out.combined())
+	}
+	var document previewDocument
+	if err := json.Unmarshal([]byte(out.stdout), &document); err != nil {
+		t.Fatalf("decode preview JSON: %v\n%s", err, out.stdout)
+	}
+	return document
+}
+
+// previewDocument mirrors the `preview` schema in docs/cli-json.md.
+type previewDocument struct {
+	Branch    string `json:"branch"`
+	Tip       string `json:"tip"`
+	Canonical struct {
+		Head           string `json:"head"`
+		Empty          bool   `json:"empty"`
+		FetchedEver    bool   `json:"fetched_ever"`
+		DataAgeSeconds int64  `json:"data_age_seconds"`
+	} `json:"canonical"`
+	Verdict   string   `json:"verdict"`
+	Publishes bool     `json:"publishes"`
+	Blocked   bool     `json:"blocked"`
+	Conflicts []string `json:"conflicts"`
 }

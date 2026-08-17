@@ -239,6 +239,23 @@ without `--refresh`, and like `log` requires no recorded base — it exists for
 the rewrite-recovery state, where an `external` candidate carries no provenance
 and only its content can settle whether it is a safe anchor.
 
+`sanho preview` is the publication counterpart of `status`'s sync preview. It
+runs the publication evaluation pass above — steps 1 through 5 and the case
+analysis — for one branch and stops before any commit or compare-and-swap, so
+it changes no application ref, index, worktree, base, or registry state and no
+canonical ref. It differs from the hook in two deliberate ways: it does not
+fetch unless `--refresh` is given, because it is a reader and every reader
+defaults to the cached snapshot, and it does not retry, because there is no
+compare-and-swap race to lose without a push. A publication rejection is
+returned as the verdict it is — `sync_in_progress`, `markers_present`,
+`sync_required`, `history_rewritten`, or `empty_publication` — and the command
+still exits 0, on `doctor`'s principle that a diagnostic which fails whenever
+it finds a problem cannot be used to investigate one. Only a failure to reach a
+verdict at all, such as an unreachable canonical, is an error. Preview names no
+next command: every blocked verdict is a state the push rejection already words
+with a proven recovery, and duplicating that guidance would duplicate the
+catalog that closes it. A push of several branches at once is not previewed.
+
 `sanho check` evaluates only policies the caller explicitly selects.
 `--require-clean` checks the docs index and worktree, `--require-current`
 fetches and requires the base to equal canonical head, and

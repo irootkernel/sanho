@@ -9,6 +9,7 @@ sanho state --json
 sanho state --all --json
 sanho log --json
 sanho show <commit> --json
+sanho preview --json
 sanho check --require-<policy> --json
 sanho sync --json
 sanho pull --json
@@ -97,6 +98,11 @@ Always read `sync.status`; never infer the sync result from exit 0 alone.
 - sync statuses: `up_to_date`, `synced`, `conflicts`, `completed`, `aborted`.
 - doctor severities: `ok`, `info`, `warning`.
 - log entry kinds: `publication`, `external`.
+- publication cases: `up_to_date`, `fast_forward`, `auto_merge`, `unknown_base`.
+  They label a `preview` verdict and appear in parentheses on the publication
+  line a push prints.
+- blocked preview verdicts: `sync_in_progress`, `markers_present`,
+  `sync_required`, `history_rewritten`, `empty_publication`.
 
 Unknown is not zero. When Sanho cannot establish a relationship it sets the
 corresponding `known` field to false instead of inventing a count.
@@ -336,6 +342,50 @@ command needs no recorded base.
 `merge_drift` is non-zero only when a completed resolution differs from the
 merge result. `pull --json` uses the same schema.
 
+## `preview`
+
+```json
+{
+  "branch": "main",
+  "tip": "3f0d1a5c7e21e2a3b4c5d6e7f8091a2b3c4d5e6f",
+  "canonical": {
+    "head": "9a41f2cbf0d1e2a3b4c5d6e7f8091a2b3c4d5e6f",
+    "empty": false,
+    "fetched_ever": true,
+    "data_age_seconds": 12
+  },
+  "verdict": "fast_forward",
+  "publishes": true,
+  "blocked": false,
+  "conflicts": []
+}
+```
+
+`verdict` is what the push would be decided as. When `blocked` is false it is a
+publication case — `up_to_date`, `fast_forward`, or `auto_merge` — and
+`publishes` says whether a canonical commit would be created; an up-to-date
+push is decided and publishes nothing. When `blocked` is true the push would be
+rejected and `verdict` is `sync_in_progress`, `markers_present`,
+`sync_required`, `history_rewritten`, or `empty_publication`.
+
+`conflicts` lists the docs paths the verdict names: the conflicted paths for
+`sync_required`, the marker-carrying paths for `markers_present`, and `[]`
+otherwise.
+
+**Preview exits 0 whenever it reached a verdict, including a blocked one.** A
+rejection is the answer, not a failure of the command, and a diagnostic that
+failed on unwelcome news could not be used to ask. Branch on `blocked` and
+`verdict`, never on the exit code. Only a failure to reach a verdict — an
+unreachable canonical, a missing clone — produces an error envelope and exit 1.
+Use `check` when automation needs a gate.
+
+`--branch` previews another local branch; a name this repository does not have
+reports `unknown_target`, and an empty value reports `invalid_arguments`. A
+push of several branches at once is not previewed. `--refresh` fetches first:
+without it the verdict describes the last fetched snapshot, while the pre-push
+hook always fetches, so read `canonical.data_age_seconds` before relying on a
+cached verdict.
+
 ## `check`
 
 ```json
@@ -385,8 +435,12 @@ report; it fails only when diagnosis itself cannot run.
 4. Treat every `known:false` as unavailable data, not a zero relationship.
 5. Treat `sync_preview` as a committed-tree prediction and `local_readiness` as
    current local preconditions; neither guarantees a later network operation.
-6. Never parse human tables or short OIDs.
-7. Never bypass a named recovery action with force, manual state edits, or
+   Read a `preview` verdict the same way: it describes the snapshot it was
+   decided against, and the pre-push hook fetches again.
+6. On `preview`, branch on `blocked` and `verdict`, never on the exit code: a
+   push that would be rejected is reported at exit 0.
+7. Never parse human tables or short OIDs.
+8. Never bypass a named recovery action with force, manual state edits, or
    `--no-verify`.
 
 Related documents: [Architecture](architecture.md),

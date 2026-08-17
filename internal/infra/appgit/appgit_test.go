@@ -665,3 +665,53 @@ func TestWorktreeDocsTreePreservesSymlinksAndModes(t *testing.T) {
 		t.Errorf("executable mode missing:\n%s", listing)
 	}
 }
+
+// TestBranchCommitResolvesOnlyLocalBranches pins the ref namespace: the
+// caller is reasoning about pushing a branch, and a tag or a
+// remote-tracking ref of the same name is not one.
+func TestBranchCommitResolvesOnlyLocalBranches(t *testing.T) {
+	dir, head := newRepoWithDocs(t)
+	gitRun(t, dir, "tag", "release")
+	gitRun(t, dir, "branch", "feature/nested")
+	repo := newRepoHandle(t, dir)
+	ctx := context.Background()
+
+	for _, branch := range []string{"main", "feature/nested"} {
+		commit, found, err := repo.BranchCommit(ctx, branch)
+		if err != nil {
+			t.Fatalf("BranchCommit(%q): %v", branch, err)
+		}
+		if !found {
+			t.Fatalf("BranchCommit(%q) reported no branch", branch)
+		}
+		if commit != head {
+			t.Errorf("BranchCommit(%q) = %s, want %s", branch, commit, head)
+		}
+	}
+
+	// A tag is not a branch, however resolvable its name is.
+	for _, name := range []string{"release", "no-such-branch"} {
+		commit, found, err := repo.BranchCommit(ctx, name)
+		if err != nil {
+			t.Fatalf("BranchCommit(%q): %v", name, err)
+		}
+		if found || commit != "" {
+			t.Errorf("BranchCommit(%q) = (%q, %v), want it reported absent", name, commit, found)
+		}
+	}
+}
+
+// TestBranchCommitReportsAnUnbornBranch: `git init` leaves HEAD pointing
+// at a branch that does not exist yet, which is an ordinary state rather
+// than a failure.
+func TestBranchCommitReportsAnUnbornBranch(t *testing.T) {
+	repo := newRepoHandle(t, newRepo(t))
+
+	commit, found, err := repo.BranchCommit(context.Background(), "main")
+	if err != nil {
+		t.Fatalf("BranchCommit on an unborn branch: %v", err)
+	}
+	if found || commit != "" {
+		t.Errorf("BranchCommit = (%q, %v), want it reported absent", commit, found)
+	}
+}

@@ -156,6 +156,24 @@ func (r *Repo) HeadCommit(ctx context.Context) (string, error) {
 	return firstLine(res.Stdout), nil
 }
 
+// BranchCommit returns the commit a local branch points at, and whether
+// the branch exists at all.
+//
+// It resolves `refs/heads/<branch>` rather than the bare name on
+// purpose: a bare name would also match a tag or a remote-tracking ref,
+// and the caller asking this question is asking about a branch it is
+// about to reason about pushing.
+func (r *Repo) BranchCommit(ctx context.Context, branch string) (string, bool, error) {
+	res, err := r.git.RunExit(ctx, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch+"^{commit}")
+	if err != nil {
+		return "", false, fmt.Errorf("appgit: resolve branch %s in %s: %w", branch, r.workDir, err)
+	}
+	if res.ExitCode != 0 {
+		return "", false, nil
+	}
+	return firstLine(res.Stdout), true, nil
+}
+
 func (r *Repo) commitExists(ctx context.Context, commit string) (bool, error) {
 	res, err := r.git.RunExit(ctx, "cat-file", "-e", commit+"^{commit}")
 	if err != nil {

@@ -1314,3 +1314,220 @@ func TestRunPublishesNothingForADocsFreeTipOnAnEmptyCanonical(t *testing.T) {
 		t.Fatalf("created %d canonical commits, want none", len(s.canonical.created))
 	}
 }
+
+// --- Preview: the same first pass, stopped before anything is written --
+
+func (s *scenario) preview(t *testing.T) (Preview, error) {
+	t.Helper()
+	return s.useCase.Preview(context.Background(), s.updates)
+}
+
+// requireCanonicalUntouched is the property every preview case shares
+// and the reason the command can be run freely: the evaluation creates
+// no canonical commit, moves no canonical ref, and records no base.
+//
+// The publication branch is not compared directly because it only ever
+// moves through PushHead, which is asserted at zero here — and a
+// scenario whose canonical is empty has no head to compare against.
+func (s *scenario) requireCanonicalUntouched(t *testing.T) {
+	t.Helper()
+	if len(s.canonical.created) != 0 {
+		t.Errorf("preview created %d canonical commits", len(s.canonical.created))
+	}
+	if s.canonical.pushes != 0 {
+		t.Errorf("preview pushed %d times", s.canonical.pushes)
+	}
+	if s.state.saved != nil {
+		t.Errorf("preview advanced the base to %+v", s.state.saved)
+	}
+}
+
+// TestPreviewDoesNotFetch is the difference from Run that the CLI's
+// --refresh depends on: the caller decides when canonical is refreshed,
+// exactly as every other reader in the command surface does.
+func TestPreviewDoesNotFetch(t *testing.T) {
+	s := newScenario(t)
+
+	if _, err := s.preview(t); err != nil {
+		t.Fatalf("Preview: %v", err)
+	}
+	if s.canonical.fetches != 0 {
+		t.Errorf("preview fetched %d times, want none", s.canonical.fetches)
+	}
+	s.requireCanonicalUntouched(t)
+}
+
+func TestPreviewReportsEveryPublicationCase(t *testing.T) {
+	tests := map[string]struct {
+		arrange   func(s *scenario)
+		want      pubdom.Case
+		publishes bool
+	}{
+		"fast forward": {
+			arrange:   func(s *scenario) {},
+			want:      pubdom.CaseFastForward,
+			publishes: true,
+		},
+		"auto merge": {
+			arrange:   func(s *scenario) { s.state.base = provenance.Base{Commit: canonRoot, Tree: rootTree} },
+			want:      pubdom.CaseAutoMerge,
+			publishes: true,
+		},
+		"up to date": {
+			arrange:   func(s *scenario) { s.app.docsTrees[appTip] = canonTree },
+			want:      pubdom.CaseUpToDate,
+			publishes: false,
+		},
+		"re-anchored rewritten base": {
+			arrange:   func(s *scenario) { s.state.base = provenance.Base{Commit: commitOID(777), Tree: canonTree} },
+			want:      pubdom.CaseFastForward,
+			publishes: true,
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			s := newScenario(t)
+			test.arrange(s)
+
+			preview, err := s.preview(t)
+			if err != nil {
+				t.Fatalf("Preview: %v", err)
+			}
+			if preview.Case != test.want {
+				t.Errorf("case = %v, want %v", preview.Case, test.want)
+			}
+			if preview.Publishes != test.publishes {
+				t.Errorf("publishes = %v, want %v", preview.Publishes, test.publishes)
+			}
+			if preview.Head != canonHead {
+				t.Errorf("head = %s, want the canonical head %s", preview.Head, canonHead)
+			}
+			if preview.Bootstrap {
+				t.Error("bootstrap = true against a canonical that has commits")
+			}
+			s.requireCanonicalUntouched(t)
+		})
+	}
+}
+
+// TestPreviewReportsEveryRejectionAsItsOwnSentinel is what lets the CLI
+// turn a refusal into a verdict: the preview raises exactly the error
+// the push would, so one vocabulary covers both.
+func TestPreviewReportsEveryRejectionAsItsOwnSentinel(t *testing.T) {
+	tests := map[string]struct {
+		arrange func(s *scenario)
+		want    error
+	}{
+		"unfinished sync": {
+			arrange: func(s *scenario) { s.state.inSync = true },
+			want:    ErrSyncInProgress,
+		},
+		"committed markers": {
+			arrange: func(s *scenario) { s.app.markerPaths[appTip] = []string{"docs/api.md"} },
+			want:    ErrMarkersPresent,
+		},
+		"conflicted merge": {
+			arrange: func(s *scenario) {
+				s.state.base = provenance.Base{Commit: canonRoot, Tree: rootTree}
+				s.canonical.mergeConflicts = []string{"docs/api.md"}
+			},
+			want: ErrSyncRequired,
+		},
+		"rewritten history": {
+			arrange: func(s *scenario) {
+				s.state.base = provenance.Base{Commit: commitOID(777), Tree: treeOID(777)}
+			},
+			want: ErrHistoryRewritten,
+		},
+		"empty publication": {
+			arrange: func(s *scenario) {
+				s.app.emptyTree = treeOID(0x1e)
+				s.app.docsTrees[appTip] = s.app.emptyTree
+				s.canonical.docsCount = 7
+			},
+			want: ErrEmptyPublish,
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			s := newScenario(t)
+			test.arrange(s)
+
+			_, err := s.preview(t)
+			if !errors.Is(err, test.want) {
+				t.Fatalf("error = %v, want %v", err, test.want)
+			}
+			s.requireCanonicalUntouched(t)
+		})
+	}
+}
+
+// TestPreviewAgreesWithRun is the claim the command makes and therefore
+// the one that has to be tested: the verdict a preview reports is the
+// verdict the push then reaches, from the same state.
+func TestPreviewAgreesWithRun(t *testing.T) {
+	arrangements := map[string]func(s *scenario){
+		"fast forward": func(s *scenario) {},
+		"auto merge":   func(s *scenario) { s.state.base = provenance.Base{Commit: canonRoot, Tree: rootTree} },
+		"up to date":   func(s *scenario) { s.app.docsTrees[appTip] = canonTree },
+	}
+	for name, arrange := range arrangements {
+		t.Run(name, func(t *testing.T) {
+			previewed := newScenario(t)
+			arrange(previewed)
+			preview, err := previewed.preview(t)
+			if err != nil {
+				t.Fatalf("Preview: %v", err)
+			}
+
+			published := newScenario(t)
+			arrange(published)
+			outcome, err := published.run(t)
+			if err != nil {
+				t.Fatalf("Run: %v", err)
+			}
+
+			if preview.Case != outcome.Case {
+				t.Errorf("preview said %v, the push did %v", preview.Case, outcome.Case)
+			}
+			if got := outcome.Published != ""; preview.Publishes != got {
+				t.Errorf("preview said publishes=%v, the push published=%v", preview.Publishes, got)
+			}
+		})
+	}
+}
+
+func TestPreviewIgnoresAPushThatPublishesNothing(t *testing.T) {
+	s := newScenario(t)
+	s.updates = []RefUpdate{{LocalRef: "refs/tags/v1", LocalOID: appTip}}
+
+	preview, err := s.preview(t)
+	if err != nil {
+		t.Fatalf("Preview: %v", err)
+	}
+	if preview.Case != pubdom.CaseUpToDate || preview.Publishes {
+		t.Errorf("preview = %+v, want an up-to-date, non-publishing verdict", preview)
+	}
+	s.requireCanonicalUntouched(t)
+}
+
+func TestPreviewReportsAnEmptyCanonicalAsBootstrap(t *testing.T) {
+	s := newScenario(t)
+	s.canonical.branch = nil
+	s.state.hasBase = false
+
+	preview, err := s.preview(t)
+	if err != nil {
+		t.Fatalf("Preview: %v", err)
+	}
+	if !preview.Bootstrap {
+		t.Error("bootstrap = false against a canonical with no commits")
+	}
+	if preview.Head != "" {
+		t.Errorf("head = %q, want empty for a canonical with no commits", preview.Head)
+	}
+	if !preview.Publishes {
+		t.Error("publishes = false for the first publication")
+	}
+	s.requireCanonicalUntouched(t)
+}

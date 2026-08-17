@@ -163,6 +163,23 @@ Abort is destructive and must be explicitly authorized.
 
 ### 4. Publish with Git
 
+Check what the push would do first, when it matters:
+
+```bash
+sanho preview
+sanho preview --refresh
+sanho preview --branch release --json
+```
+
+Preview runs the publication evaluation and stops before anything is written.
+It reports the verdict — `up_to_date`, `fast_forward` or `auto_merge` when the
+push would go through, and `sync_in_progress`, `markers_present`,
+`sync_required`, `history_rewritten` or `empty_publication` when it would be
+rejected — plus the documents in the way. A rejection verdict still exits 0,
+because a diagnostic that failed on unwelcome news could not be used to ask;
+use `sanho check` when automation needs a gate. Without `--refresh` the verdict
+describes the last fetched snapshot, while the hook always fetches.
+
 ```bash
 git push
 ```
@@ -175,7 +192,7 @@ Expected outcomes include:
 
 ```text
 sanho: published docs <oid12> (fast_forward)
-sanho: published docs <oid12> (merged)
+sanho: published docs <oid12> (auto_merge)
 sanho: docs already up to date
 ```
 

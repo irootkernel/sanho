@@ -744,6 +744,54 @@ func showBinaryDocumentMessage(docsPath string, size int64) string {
 		errorPrefix, docsPath, size)
 }
 
+// --- Publication preview -----------------------------------------------
+
+// previewOutcomeMessage reports a verdict that would let the push
+// through. The machine-stable case name is kept in the line, because it
+// is the same word the publication itself will print, and a preview a
+// user cannot match against the result it predicts is worth less.
+func previewOutcomeMessage(branch, verdict string, publishes bool) string {
+	if !publishes {
+		return fmt.Sprintf("%spushing %s would publish nothing: canonical already has these docs (%s)",
+			errorPrefix, branch, verdict)
+	}
+	return fmt.Sprintf("%spushing %s would publish docs to canonical (%s)", errorPrefix, branch, verdict)
+}
+
+// previewBlockedMessage reports a verdict that would refuse the push.
+//
+// It names no next command, and that is the boundary this command keeps
+// rather than an omission: every state below is one the push rejection
+// already words, with a recovery the closure suite proves runnable in
+// it. A second copy here would be a second copy to keep true. What the
+// preview owes is an unambiguous description of the state, which is why
+// each verdict gets a sentence rather than only its machine name.
+func previewBlockedMessage(branch, verdict string) string {
+	reason := map[string]string{
+		previewSyncInProgress:   "a conflicted sync is unfinished and owns the docs worktree",
+		previewMarkersPresent:   "these committed docs carry unresolved conflict markers",
+		previewSyncRequired:     "canonical has moved and these docs must be reconciled first",
+		previewHistoryRewritten: "canonical history was rewritten and the recorded base is gone",
+		previewEmptyPublication: "this branch carries no docs, and publishing it would delete canonical's",
+	}[verdict]
+	if reason == "" {
+		reason = verdict
+	}
+	return fmt.Sprintf("%spushing %s would be rejected — %s (%s)", errorPrefix, branch, reason, verdict)
+}
+
+// previewDetachedHeadMessage refuses a preview with no branch to preview.
+func previewDetachedHeadMessage() string {
+	return "HEAD is detached, so no branch push can be previewed; check out a branch or name one with --branch"
+}
+
+// previewUnknownBranchMessage refuses a branch this repository does not
+// have. No command is named: the correction is to the argument, and
+// sanho cannot name the branch the user meant.
+func previewUnknownBranchMessage(branch string) string {
+	return fmt.Sprintf("%s is not a branch in this repository", branch)
+}
+
 // --- Status and doctor ------------------------------------------------
 
 // cloneMissingMessage covers the one repair status, check, and doctor

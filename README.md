@@ -184,6 +184,7 @@ sanho status     # where am I
 sanho diff       # inspect incoming cached canonical changes
 sanho log        # what changed in canonical, and which repository sent it
 sanho show       # what one canonical commit publishes, and what it said
+sanho preview    # what `git push` would publish, without pushing
 sanho check      # enforce explicit local/current/published policies
 sanho sync       # reconcile with upstream
 sanho pull       # just take canonical's docs (no local edits)
@@ -229,6 +230,25 @@ sanho show 9a41f2cbbbbb --path api.md    # one of them, as of that commit
 
 It accepts the same revisions as `sanho sync --rebase-onto`, needs no recorded
 base, and prints a binary document's size rather than its bytes.
+
+`sanho preview` answers the other direction: what your next `git push` would
+do, before you do it.
+
+```text
+sanho: pushing main would publish docs to canonical (fast_forward)
+```
+
+```text
+sanho: pushing main would be rejected — canonical has moved and these docs
+must be reconciled first (sync_required)
+  docs/api.md
+```
+
+It runs the same evaluation the pre-push hook does and stops before anything is
+written — no canonical commit, no ref, no local state. A rejection is a verdict,
+not a failure, so preview exits 0 either way; `sanho check` is the command that
+gates. The verdict is decided against the last fetched snapshot, so pass
+`--refresh` when it has to be current.
 
 A commit on a stale base prints one line and succeeds:
 
@@ -316,6 +336,7 @@ sanho status    # base vs canonical, sync preview, siblings   (--refresh, --json
 sanho diff      # inspect incoming or local docs changes       (--refresh, --local, --stat, --name-only)
 sanho log       # canonical history and its publication source (--refresh, -n, --path, --repository, --workspace, --json)
 sanho show      # what one canonical commit publishes          (--path, --refresh, --json)
+sanho preview   # what a git push would publish                (--branch, --refresh, --json)
 sanho check     # explicit CI policy checks                    (--require-clean, --require-current, --require-published, --json)
 sanho state     # registered projects and workspaces          (--all, --json)
 sanho sync      # reconcile   (--continue, --abort, --rebase-onto <oid>, --json)
