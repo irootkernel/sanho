@@ -74,6 +74,7 @@ git -C "$CLONE" log --oneline -5 refs/remotes/origin/main
 | Cross-machine publication races | E2E processes with separate `SANHO_HOME` values prove linear CAS publication and explicit conflict recovery |
 | Server-side rejection and publication branch choice | Integration uses real bare remotes and rejection hooks; canonical tests cover main/master selection |
 | Large docs correctness and measurement | `SANHO_SCALE=1 make test-scale` exercises 1,000 files, 500 commits, and about 50 MiB |
+| Publication verdict prediction | Integration proves `sanho preview` reports the verdict the subsequent real push then reaches, across up-to-date, fast-forward, and rejected states, so the command needs no case of its own here |
 
 ## H01. Real three-repository roundtrip
 
@@ -181,8 +182,13 @@ not force-push a shared remote.
 2. Replace history and content. Publication must fail without changing either
    remote. When a commit still carries the recorded docs base tree the rejection
    names that anchor; when none does it states that manual intervention is
-   required and names `sanho log`. Run the named listing in that exact state and
-   require it to succeed, then take the `--rebase-onto` target from its output.
+   required and names `sanho log` to list the candidates and
+   `sanho show <commit>` to read one. Run both in that exact state and require
+   each to succeed: the listing, then `sanho show` on a candidate, without and
+   with `--path`. Reading the candidate is the step provenance cannot replace —
+   a commit made directly in the canonical repository is reported as `external`
+   with no source, so only its contents identify it. Take the `--rebase-onto`
+   target from what those two commands showed.
 3. Reject a nonexistent target.
 4. Resolve against the candidate while intentionally omitting a canonical-only
    file. `sanho sync --continue` reports the difference as `merge_drift` rather

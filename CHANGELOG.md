@@ -48,11 +48,6 @@
   refusal. An empty listing names the narrowing that matched nothing rather
   than reporting that canonical has no commits.
 
-### Documentation
-
-- `docs/operations.md` quoted `sanho: published docs <oid12> (merged)` as an
-  expected publication line. The case name the publication actually prints is
-  `auto_merge`, which is what `sanho preview` now reports as a verdict too.
 - `sanho show <commit>` reads one canonical commit: the documents it publishes,
   or with `--path` a single document as of that commit. It accepts the same
   revisions as `sanho sync --rebase-onto`, is read-only, needs no recorded
@@ -120,6 +115,12 @@
   should a future release remove a hook subcommand outright, a stale script
   naming it will abort its git operation instead of silently succeeding, and
   that removal will need a migration path.
+
+### Documentation
+
+- `docs/operations.md` quoted `sanho: published docs <oid12> (merged)` as an
+  expected publication line. The case name the publication actually prints is
+  `auto_merge`, which is what `sanho preview` now reports as a verdict too.
 
 ## v0.2.6 - 2026-08-14
 
