@@ -85,10 +85,6 @@
   closure suite now executes `sanho log` in the state that prints it. When the
   private clone has gone, the rejection names `sanho sync` rather than a listing
   command that would fail.
-- `docs/recovery.md` uses `sanho log` for the rewrite-recovery candidate
-  listing. It still documents read-only `ls-tree`/`show` inspection of the
-  private clone, because provenance cannot settle a candidate committed
-  directly in the canonical repository and Sanho lists no commit's files.
 
 ### Fixed
 

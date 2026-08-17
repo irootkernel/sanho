@@ -460,12 +460,11 @@ func repairBase(ctx context.Context, ws *workspace, out *report) {
 // The check compares the recorded base against what re-derivation would
 // pick from commit history, and reads the disagreement three ways.
 //
-//   - The recorded base is a *descendant* of the derived one in
-//     canonical history. Nothing is wrong: publication's base-advance
-//     rule moves the base past the commit the trailers name, as do
-//     `pull` and `sync`, so this is the state of every workspace that
-//     has just published. Silence, which is what the commit-hook contract makes the success
-//     signal.
+//   - The recorded base's docs tree is exactly the tree the worktree carries.
+//     Nothing is wrong: publication's base-advance rule moves the base past
+//     the commit the trailers name, as do `pull` and `sync`, so this is the
+//     state of every workspace that has just published. Silence, which is
+//     what the commit-hook contract makes the success signal.
 //   - The docs worktree differs from HEAD's, so the hook contract step 1 held the
 //     re-derivation back on purpose. That is a fact worth stating and
 //     not a problem: `[info]`.
@@ -491,12 +490,14 @@ func checkBaseDerivation(ctx context.Context, ws *workspace, base provenance.Bas
 		// not a second finding here.
 		return
 	}
-	if advanced, known := baseIsAheadOf(ctx, ws, derived.Commit, base.Commit); known && advanced {
+
+	worktreeTree, worktreeErr := ws.repo.WorktreeDocsTree(ctx)
+	if worktreeErr == nil && baseNeedsNoRederivation(ctx, ws, base, worktreeTree) {
 		return
 	}
 
-	clean, cleanErr := docsMatchHead(ctx, ws)
-	if cleanErr == nil && !clean {
+	headTree, headErr := ws.repo.HeadDocsTree(ctx)
+	if worktreeErr == nil && headErr == nil && worktreeTree != headTree {
 		out.info("base-derivation", "the docs worktree differs from HEAD, so the base was not re-derived; "+
 			"history's newest stamped commit names %s, the base file names %s",
 			shortOID(derived.Commit), shortOID(base.Commit))
@@ -557,43 +558,6 @@ func checkBaseReachable(ctx context.Context, ws *workspace, base provenance.Base
 		}
 	}
 	out.warn("base-reachability", "%s", doctorBaseUnreachableMessage(base.Commit, head))
-}
-
-// baseIsAheadOf reports whether the recorded base is a descendant of the
-// derived one in canonical history, and whether that could be decided at
-// all. Without a clone there is nothing to decide it against, and the
-// caller then treats the disagreement at face value.
-func baseIsAheadOf(ctx context.Context, ws *workspace, derived, recorded string) (ahead, known bool) {
-	store := canonicalOrNil(ws)
-	if store == nil {
-		return false, false
-	}
-	port := ws.canonicalPort(store)
-	if resolved, err := port.ResolveCommit(ctx, derived); err != nil || !resolved {
-		return false, false
-	}
-	if resolved, err := port.ResolveCommit(ctx, recorded); err != nil || !resolved {
-		return false, false
-	}
-	ancestor, err := port.IsAncestor(ctx, derived, recorded)
-	if err != nil {
-		return false, false
-	}
-	return ancestor, true
-}
-
-// docsMatchHead is the hook contract step 1's own test: the worktree docs hash to
-// exactly what HEAD carries.
-func docsMatchHead(ctx context.Context, ws *workspace) (bool, error) {
-	worktree, err := ws.repo.WorktreeDocsTree(ctx)
-	if err != nil {
-		return false, err
-	}
-	head, err := ws.repo.HeadDocsTree(ctx)
-	if err != nil {
-		return false, err
-	}
-	return worktree == head, nil
 }
 
 // checkRegistry proves the registry is both readable and lockable. The

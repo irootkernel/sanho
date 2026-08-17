@@ -500,6 +500,36 @@ func TestDoctorIsSilentAboutABaseAPublicationAdvanced(t *testing.T) {
 	requireContains(t, "doctor", report.combined(), "no problems found")
 }
 
+// TestDoctorDoesNotTrustAncestryOverTheDocsTree pins the unsafe shape that
+// an ancestry-only exception admitted. A publication commit is a descendant
+// of the base named by application history, but it is not a valid base for a
+// checkout carrying the older docs tree.
+func TestDoctorDoesNotTrustAncestryOverTheDocsTree(t *testing.T) {
+	t.Parallel()
+
+	w := newWorld(t, defaultCanonicalDocs())
+	ws := w.setup("published-base-on-older-docs")
+	beforePublication := strings.TrimSpace(ws.git("rev-parse", "HEAD").stdout)
+	original := w.canonicalHead()
+
+	ws.commitDocs("docs: my edit", map[string]string{"api.md": "line one\nMINE\n"})
+	requireExit(t, "push", ws.push(), 0)
+	published := w.canonicalHead()
+
+	// Checkout legitimately re-derives the original base. Restore only the
+	// stale descendant pointer to model a missed hook or copied state file.
+	ws.git("checkout", "--quiet", "--detach", beforePublication)
+	writeFile(t, ws.basePath(), fmt.Sprintf("{\n  \"version\": 2,\n  \"commit\": %q,\n  \"tree\": \"\"\n}\n", published))
+
+	report := ws.run("doctor")
+	requireExit(t, "doctor", report, 0)
+	requireContains(t, "doctor", report.combined(), "base-derivation")
+
+	fixed := ws.run("doctor", "--fix")
+	requireExit(t, "doctor --fix", fixed, 0)
+	requireContains(t, "base file after --fix", readFile(t, ws.basePath()), original)
+}
+
 // TestDoctorReportsFailuresWithoutInternalPackageTags is F-M3 measured
 // rather than asserted in a unit test.
 //

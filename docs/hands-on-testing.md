@@ -197,7 +197,11 @@ independent replacement repository and atomically swapping the remote path; do
 not force-push a shared remote.
 
 1. Replace canonical history with an unrelated commit carrying the identical
-   tree. Refresh and confirm automatic tree-based re-derivation.
+   tree. Confirm `sanho status --refresh` leaves the recorded base untouched.
+   Make and preview a docs-changing commit, then publish it. Publication must
+   use the tree proof to re-anchor the base onto the replacement history.
+   Confirm `sanho doctor` reports no `base-derivation` warning and
+   `sanho doctor --fix` leaves both the base and publication status unchanged.
 2. Replace history and content. Publication must fail without changing either
    remote. When a commit still carries the recorded docs base tree the rejection
    names that anchor; when none does it states that manual intervention is

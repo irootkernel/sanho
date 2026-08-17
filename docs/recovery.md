@@ -70,9 +70,10 @@ If Sanho prints a candidate, execute it exactly:
 sanho sync --rebase-onto <candidate>
 ```
 
-An identical-tree replacement can be re-derived automatically. A changed-tree
-rewrite needs an explicit anchor and may produce normal conflicts. Resolve,
-commit, and run `sanho sync --continue`.
+An identical-tree replacement is recognized by its tree when the next docs
+change is published, and that publication re-anchors the recorded base onto the
+replacement history. A changed-tree rewrite needs an explicit anchor and may
+produce normal conflicts. Resolve, commit, and run `sanho sync --continue`.
 
 When no safe candidate exists, list canonical history and choose an anchor:
 

@@ -989,13 +989,54 @@ func TestIdenticalTreeRewriteStillPublishes(t *testing.T) {
 	requireContains(t, "push output", push.combined(), "published docs")
 	requireNotContains(t, "push output", push.combined(), "does not corroborate")
 
-	// The publication re-anchored the base onto the replacement history.
-	if recordedBase(t, w) == "" {
-		t.Fatal("no base recorded after the publication")
+	// The publication re-anchored the base onto the replacement history,
+	// and doctor must recognize that tree-corroborated state rather than
+	// dragging the pointer back to the vanished history.
+	published := w.canonicalHead()
+	if got := recordedBase(t, w); got != published {
+		t.Fatalf("base after publication = %s, want canonical head %s", got, published)
 	}
-	if w.canonicalFile(w.canonicalHead(), "api.md") != "canonical api\nlocal\nmore\n" {
+	if w.canonicalFile(published, "api.md") != "canonical api\nlocal\nmore\n" {
 		t.Errorf("canonical api.md = %q, want the published content",
-			w.canonicalFile(w.canonicalHead(), "api.md"))
+			w.canonicalFile(published, "api.md"))
+	}
+
+	var doctorDocument struct {
+		Checks []struct {
+			Name string `json:"name"`
+		} `json:"checks"`
+		Warnings int `json:"warnings"`
+	}
+	doctor := w.sanho(w.app, "doctor", "--json")
+	if err := json.Unmarshal([]byte(doctor.stdout), &doctorDocument); err != nil {
+		t.Fatalf("decode doctor JSON: %v\n%s", err, doctor.stdout)
+	}
+	if doctorDocument.Warnings != 0 {
+		t.Fatalf("doctor reported %d warnings after publication:\n%s", doctorDocument.Warnings, doctor.stdout)
+	}
+	for _, check := range doctorDocument.Checks {
+		if check.Name == "base-derivation" {
+			t.Fatalf("doctor reported base-derivation after publication:\n%s", doctor.stdout)
+		}
+	}
+
+	baseFileAfterPublication := readFile(t, w.appPath(".sanho_base.json"))
+	w.sanho(w.app, "doctor", "--fix")
+	if got := readFile(t, w.appPath(".sanho_base.json")); got != baseFileAfterPublication {
+		t.Fatalf("doctor --fix rewrote the published base:\nbefore:\n%s\nafter:\n%s", baseFileAfterPublication, got)
+	}
+	var status struct {
+		Publication struct {
+			Known   bool `json:"known"`
+			Pending bool `json:"pending"`
+		} `json:"publication"`
+	}
+	statusOut := w.sanho(w.app, "status", "--json")
+	if err := json.Unmarshal([]byte(statusOut.stdout), &status); err != nil {
+		t.Fatalf("decode status JSON: %v\n%s", err, statusOut.stdout)
+	}
+	if !status.Publication.Known || status.Publication.Pending {
+		t.Fatalf("publication after doctor --fix = %+v, want known and not pending", status.Publication)
 	}
 }
 

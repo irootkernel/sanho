@@ -867,6 +867,20 @@ func TestRewrittenHistoryRecoveryPublishesWithoutARestampCommit(t *testing.T) {
 			t.Errorf("canonical %s = %q, want %q", path, got, want)
 		}
 	}
+
+	published := w.canonicalHead()
+	if got := recordedBase(t, w); got != published {
+		t.Fatalf("base after recovered publication = %s, want canonical head %s", got, published)
+	}
+	baseFileAfterPublication := readFile(t, w.appPath(".sanho_base.json"))
+	doctor := w.sanho(w.app, "doctor")
+	requireNotContains(t, "doctor after recovered publication", doctor.combined(), "base-derivation")
+	requireContains(t, "doctor after recovered publication", doctor.combined(), "no problems found")
+	w.sanho(w.app, "doctor", "--fix")
+	if got := readFile(t, w.appPath(".sanho_base.json")); got != baseFileAfterPublication {
+		t.Fatalf("doctor --fix rewrote the recovered publication base:\nbefore:\n%s\nafter:\n%s",
+			baseFileAfterPublication, got)
+	}
 }
 
 // TestLogJSONSchema pins the reverse-traceability document: what
