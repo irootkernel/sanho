@@ -91,6 +91,22 @@ repository is listed as ordinary history with no source. Paths follow the same
 docs-root-relative convention as `diff`. Unlike `diff`, `log` needs no recorded
 base.
 
+Read a commit the listing named:
+
+```bash
+sanho show <commit>
+sanho show <commit> --path api.md
+sanho show <commit> --refresh --json
+```
+
+Without `--path` it lists the documents that commit publishes; with `--path` it
+prints one of them as of that commit. The revision is anything the canonical
+clone resolves — a full or abbreviated OID, or a ref — which is the same set
+`sync --rebase-onto` accepts. A binary document reports its size on stderr and
+writes nothing to stdout, so redirecting a text document to a file stays exact.
+Like `log`, `show` needs no recorded base and reads the cached snapshot unless
+`--refresh` is given.
+
 ### 2. Commit normally
 
 Edit and commit docs with ordinary Git commands:
@@ -227,9 +243,11 @@ sanho status --refresh
 sanho sync --rebase-onto refs/remotes/origin/main
 ```
 
-The actual candidate may be a commit or the remote branch. Resolve any conflict
-normally and finish with `sanho sync --continue`. Never force-push merely to make
-the old base reachable again.
+The actual candidate may be a commit or the remote branch. When the printed
+guidance names no candidate, list them with `sanho log` and read the one you
+are considering with `sanho show <commit>` before adopting it. Resolve any
+conflict normally and finish with `sanho sync --continue`. Never force-push
+merely to make the old base reachable again.
 
 ### Base missing or corrupt
 

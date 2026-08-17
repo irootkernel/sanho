@@ -66,14 +66,16 @@ choose the target:
 
 ```bash
 sanho log --refresh --json
+sanho show <candidate-commit> --json
 sanho sync --rebase-onto <chosen-commit> --json
 ```
 
-`sanho log` is read-only and requires no base, so it is safe to run in this
-state. Report the candidates with their provenance rather than choosing one. An
-entry whose `kind` is `external` carries no provenance, so do not describe it as
-coming from any repository; see `docs/recovery.md` for the read-only clone
-inspection that settles such a candidate.
+`sanho log` and `sanho show` are read-only and require no base, so both are
+safe to run in this state. Report the candidates with their provenance rather
+than choosing one. An entry whose `kind` is `external` carries no provenance, so
+do not describe it as coming from any repository — read what it publishes with
+`sanho show` and report that instead. Add `--path <document>` when the listing
+alone does not distinguish two candidates.
 
 Never guess an anchor or force-push to recreate the old history. For a missing
 or corrupt base or hooks, diagnose with `sanho doctor --json`. `doctor --fix`

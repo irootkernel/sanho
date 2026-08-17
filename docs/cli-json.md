@@ -8,6 +8,7 @@ sanho status --json
 sanho state --json
 sanho state --all --json
 sanho log --json
+sanho show <commit> --json
 sanho check --require-<policy> --json
 sanho sync --json
 sanho pull --json
@@ -17,7 +18,8 @@ sanho doctor --json
 `init`, `clean`, `project`, `workspace`, `migrate`, and direct `hook`
 entrypoints do not have a JSON success document. `diff` also has no JSON mode;
 its patch, diffstat, or path output is intended for direct inspection. Use
-`log --json` for machine-readable history and publication provenance.
+`log --json` for machine-readable history and publication provenance, and
+`show --json` for what one canonical commit publishes.
 
 ## Common rules
 
@@ -59,7 +61,7 @@ Stable codes are:
 | `sync_required` | Local and canonical docs must be reconciled |
 | `docs_dirty` | The requested operation needs clean or committed docs |
 | `history_rewritten` | The recorded base disappeared from canonical history |
-| `unknown_target` | A requested recovery target is not usable |
+| `unknown_target` | A requested recovery or inspection target is not usable |
 | `canonical_unreachable` | Canonical fetch, merge, or publication could not run |
 | `registry_lock_timeout` | Registry locking exceeded the bounded wait |
 | `clone_missing` | The private canonical clone must be recreated with `sanho sync` |
@@ -238,6 +240,62 @@ Unlike `diff`, `log` does not require a recorded base: it is the listing the
 rewrite-recovery guidance names, and that state is precisely where no base
 resolves. A canonical repository with no commits reports `entries: []` rather
 than an error.
+
+## `show`
+
+Listing mode names no document:
+
+```json
+{
+  "commit": "9a41f2cbf0d1e2a3b4c5d6e7f8091a2b3c4d5e6f",
+  "tree": "7b51f2cbf0d1e2a3b4c5d6e7f8091a2b3c4d5e6f",
+  "path": null,
+  "entries": [
+    {
+      "path": "api.md",
+      "mode": "100644",
+      "oid": "2f41ab90c3d2e1f4a5b6c7d8e9f0a1b2c3d4e5f6",
+      "size": 1234
+    }
+  ],
+  "document": null
+}
+```
+
+`--path <document>` fills the other half:
+
+```json
+{
+  "commit": "9a41f2cbf0d1e2a3b4c5d6e7f8091a2b3c4d5e6f",
+  "tree": "7b51f2cbf0d1e2a3b4c5d6e7f8091a2b3c4d5e6f",
+  "path": "api.md",
+  "entries": [],
+  "document": {
+    "oid": "2f41ab90c3d2e1f4a5b6c7d8e9f0a1b2c3d4e5f6",
+    "size": 1234,
+    "binary": false,
+    "content": "# API\n"
+  }
+}
+```
+
+One shape covers both modes so a consumer never has to know which one it asked
+for: `path` and `document` are null in listing mode and `entries` is `[]` in
+document mode, which is the usual reading — an absent record is null, an empty
+collection is `[]`.
+
+`document.content` is null exactly when `document.binary` is true. Sanho
+classifies what it reads and never returns unclassified bytes, so "this is a
+40 KiB image" is the complete answer rather than a truncated one. In human
+output a binary document writes its note to stderr and leaves stdout empty,
+which is what keeps a redirect of the text case exact.
+
+The `<commit>` argument accepts what `sync --rebase-onto` accepts: a full or
+abbreviated OID, or a ref such as `refs/remotes/origin/main`. A revision the
+private clone cannot resolve, a path the commit does not publish, and a path
+naming a directory all report `unknown_target`. Text past the marker scan
+limit reports `too_large`. `--refresh` fetches before reading; like `log`, the
+command needs no recorded base.
 
 ## `sync` and `pull`
 

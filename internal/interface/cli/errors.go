@@ -218,6 +218,32 @@ func newCloneMissingError(cloneDir string) error {
 	return &cloneMissingError{message: cloneMissingMessage(cloneDir)}
 }
 
+// wordedError pairs a composed user-facing line with the sentinel that
+// carries its machine identity, the way lockTimeoutError and
+// cloneMissingError do.
+//
+// It exists for `sanho show`, whose two refusals are about a *document*
+// while the infra errors underneath them are about an object in a clone
+// directory the user never named. Rewording without it would report the
+// right sentence under the wrong code, which is the mistake
+// lockTimeoutError's comment records.
+type wordedError struct {
+	message  string
+	sentinel error
+}
+
+func (e *wordedError) Error() string { return e.message }
+
+func (e *wordedError) Unwrap() error { return e.sentinel }
+
+func newUnknownTargetError(message string) error {
+	return &wordedError{message: message, sentinel: canonical.ErrUnknownObject}
+}
+
+func newTooLargeError(message string) error {
+	return &wordedError{message: message, sentinel: markers.ErrTooLarge}
+}
+
 // --- machine-readable errors (the JSON contract, F-M9) ------------------------------
 
 // errorJSON is the envelope a `--json` command prints on stdout when it
@@ -298,7 +324,8 @@ func machineErrorCode(err error) string {
 		return codeSyncRequired
 	case errors.Is(err, docsync.ErrUnknownBase), errors.Is(err, publish.ErrHistoryRewritten):
 		return codeHistoryRewritten
-	case errors.Is(err, docsync.ErrUnknownTarget), errors.Is(err, docsync.ErrRebaseOntoHealthy):
+	case errors.Is(err, docsync.ErrUnknownTarget), errors.Is(err, docsync.ErrRebaseOntoHealthy),
+		errors.Is(err, canonical.ErrUnknownObject):
 		return codeUnknownTarget
 	case errors.Is(err, pubdom.ErrUnreachable), errors.Is(err, canonical.ErrMergeFailed):
 		return codeCanonicalUnreachable

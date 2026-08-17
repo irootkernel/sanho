@@ -221,6 +221,18 @@ opens no network without `--refresh`, and deliberately requires no recorded
 base: it is the listing the rewrite-recovery guidance names, and no base
 resolves in that state.
 
+`sanho show` is the content reader for one canonical commit. It resolves the
+revisions `sync --rebase-onto` accepts — a full or abbreviated OID, or a ref —
+lists the documents that commit publishes, and with `--path` prints one of them
+as of that commit. Binary content is classified rather than returned: the
+marker contract's binary rule applies to inspection too, so a binary document
+reports its size and produces no bytes on stdout, and text past the same scan
+limit is refused instead of being loaded without bound. It writes no
+application ref, index, worktree, base, or registry state, opens no network
+without `--refresh`, and like `log` requires no recorded base — it exists for
+the rewrite-recovery state, where an `external` candidate carries no provenance
+and only its content can settle whether it is a safe anchor.
+
 `sanho check` evaluates only policies the caller explicitly selects.
 `--require-clean` checks the docs index and worktree, `--require-current`
 fetches and requires the base to equal canonical head, and

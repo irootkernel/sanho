@@ -4,6 +4,27 @@
 
 ### Added
 
+- `sanho show <commit>` reads one canonical commit: the documents it publishes,
+  or with `--path` a single document as of that commit. It accepts the same
+  revisions as `sanho sync --rebase-onto`, is read-only, needs no recorded
+  base, and supports `--refresh` and `--json`.
+
+  It closes the last recovery step that reached past Sanho's own surface.
+  `docs/recovery.md` used to state that Sanho had no command listing a
+  canonical commit's files and hand the user a `git -C <clone-dir> ls-tree -r`
+  against a private clone they had to locate first. That step is unavoidable
+  where provenance runs out: a commit written directly in the canonical
+  repository is reported as `external` with no source, so only its content can
+  settle whether it is a safe anchor. The push rejection for a rewritten
+  history now names `sanho show <commit>` between `sanho log` and
+  `sanho sync --rebase-onto`, and the guidance closure suite runs it in the
+  state that prints it.
+
+  Binary content is classified rather than returned, applying the marker
+  contract's own rule to inspection: `--json` reports `"binary": true` with a
+  null `content`, and human output writes the note to stderr so a redirect of
+  a text document stays exact. Text past the marker scan limit reports
+  `too_large` instead of being loaded without bound.
 - `sanho log` lists canonical history and decodes the publication provenance
   every canonical commit already carried: the source repository, branch,
   workspace, and application commit behind each docs change. It is read-only,

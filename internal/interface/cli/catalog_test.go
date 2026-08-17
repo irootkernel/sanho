@@ -73,8 +73,14 @@ var selfIdentifyingOutput = map[string]bool{
 // with the `sanho: ` prefix, and "sanho: docs are up to date" advises
 // nothing. Requiring `sanho ` + a real subcommand is what separates the
 // prefix from the guidance.
+//
+// `workspace` is the one subcommand deliberately absent, because it is
+// the only name that is also an ordinary noun in this domain: "a sanho
+// workspace must be initialized at the repository root" states a fact
+// and advises nothing, and listing the word here would turn every such
+// sentence into guidance the catalog has to carry.
 var (
-	advisedSanhoCommand = regexp.MustCompile(`\bsanho (?:init|status|state|sync|pull|clean|doctor|project|hook|migrate|version)\b`)
+	advisedSanhoCommand = regexp.MustCompile(`\bsanho (?:init|status|diff|log|show|check|state|sync|pull|clean|doctor|project|hook|migrate|version)\b`)
 	advisedGitCommand   = regexp.MustCompile(`\bgit (?:add|commit|push|pull|fetch|checkout|log|-C)\b`)
 )
 

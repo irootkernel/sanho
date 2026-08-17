@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/irootkernel/sanho/internal/domain/markers"
 )
 
 // newOrigin creates a bare canonical docs repository seeded with one
@@ -918,6 +920,259 @@ func TestLogReadsACommitWithAnEmptyMessage(t *testing.T) {
 	for _, e := range entries {
 		if len(e.Commit) != 40 || len(e.Tree) != 40 {
 			t.Errorf("entry has misaligned fields: commit=%q tree=%q", e.Commit, e.Tree)
+		}
+	}
+}
+
+// --- inspection readers (`sanho show`) --------------------------------
+
+// TestResolveDocsCommitAcceptsWhatRebaseOntoAccepts is the symmetry the
+// command exists for: a candidate a user can hand `sync --rebase-onto`
+// must be a candidate they can inspect first.
+func TestResolveDocsCommitAcceptsWhatRebaseOntoAccepts(t *testing.T) {
+	origin := newOrigin(t, "main", map[string]entry{"a.md": text("a\n")})
+	store := ensureStore(t, origin)
+	ctx := context.Background()
+
+	head, headTree, err := store.Head(ctx)
+	if err != nil {
+		t.Fatalf("Head: %v", err)
+	}
+
+	for _, rev := range []string{head, head[:8], "refs/remotes/origin/main"} {
+		commit, tree, resolveErr := store.ResolveDocsCommit(ctx, rev)
+		if resolveErr != nil {
+			t.Fatalf("ResolveDocsCommit(%q): %v", rev, resolveErr)
+		}
+		if commit != head {
+			t.Errorf("ResolveDocsCommit(%q) commit = %q, want the full %q", rev, commit, head)
+		}
+		if tree != headTree {
+			t.Errorf("ResolveDocsCommit(%q) tree = %q, want %q", rev, tree, headTree)
+		}
+	}
+}
+
+// TestResolveDocsCommitReportsAnUnknownRevision keeps a mistyped or
+// unfetched candidate a state the user acts on rather than a git
+// failure.
+func TestResolveDocsCommitReportsAnUnknownRevision(t *testing.T) {
+	origin := newOrigin(t, "main", map[string]entry{"a.md": text("a\n")})
+	store := ensureStore(t, origin)
+
+	for _, rev := range []string{strings.Repeat("b", 40), "refs/remotes/origin/nope", "not-a-revision"} {
+		_, _, err := store.ResolveDocsCommit(context.Background(), rev)
+		if !errors.Is(err, ErrUnknownObject) {
+			t.Errorf("ResolveDocsCommit(%q) error = %v, want ErrUnknownObject", rev, err)
+		}
+	}
+}
+
+// TestResolveDocsCommitRefusesATree pins that the argument is a COMMIT.
+// A tree OID resolves to a perfectly good object, and accepting one
+// would let `--rebase-onto` be handed a value it cannot use.
+func TestResolveDocsCommitRefusesATree(t *testing.T) {
+	origin := newOrigin(t, "main", map[string]entry{"a.md": text("a\n")})
+	store := ensureStore(t, origin)
+	ctx := context.Background()
+
+	_, tree, err := store.Head(ctx)
+	if err != nil {
+		t.Fatalf("Head: %v", err)
+	}
+	if _, _, err := store.ResolveDocsCommit(ctx, tree); !errors.Is(err, ErrUnknownObject) {
+		t.Errorf("ResolveDocsCommit(<tree>) error = %v, want ErrUnknownObject", err)
+	}
+}
+
+// TestListTreeReportsEveryDocument covers the record shape -z exists
+// for: a path holding a space would lose its second half to field
+// splitting, and a nested path must arrive whole.
+func TestListTreeReportsEveryDocument(t *testing.T) {
+	origin := newOrigin(t, "main", map[string]entry{
+		"api.md":            text("api\n"),
+		"release notes.md":  text("notes\n"),
+		"guides/setup.md":   text("setup\n"),
+		"assets/tiny.bin":   binary("payload"),
+		"guides/deep/x.md":  text("x\n"),
+		"guides/deep/y.txt": text("y\n"),
+	})
+	store := ensureStore(t, origin)
+	ctx := context.Background()
+
+	head, _, err := store.Head(ctx)
+	if err != nil {
+		t.Fatalf("Head: %v", err)
+	}
+	entries, err := store.ListTree(ctx, head)
+	if err != nil {
+		t.Fatalf("ListTree: %v", err)
+	}
+
+	got := make(map[string]TreeEntry, len(entries))
+	for _, entry := range entries {
+		got[entry.Path] = entry
+	}
+	want := []string{
+		"api.md", "release notes.md", "guides/setup.md",
+		"assets/tiny.bin", "guides/deep/x.md", "guides/deep/y.txt",
+	}
+	if len(entries) != len(want) {
+		t.Fatalf("ListTree returned %d entries, want %d: %+v", len(entries), len(want), entries)
+	}
+	for _, path := range want {
+		entry, ok := got[path]
+		if !ok {
+			t.Fatalf("ListTree omitted %q; got %+v", path, entries)
+		}
+		if entry.Mode == "" || len(entry.OID) != 40 {
+			t.Errorf("entry %q = %+v, want a mode and a full OID", path, entry)
+		}
+		if entry.Size <= 0 {
+			t.Errorf("entry %q size = %d, want the blob's byte count", path, entry.Size)
+		}
+	}
+	if got["api.md"].Size != int64(len("api\n")) {
+		t.Errorf("api.md size = %d, want %d", got["api.md"].Size, len("api\n"))
+	}
+}
+
+// TestListTreeReportsAnEmptyCommit is the answer, not a failure: a
+// canonical commit that publishes nothing is a state rewrite recovery
+// can genuinely be looking at.
+func TestListTreeReportsAnEmptyCommit(t *testing.T) {
+	origin := newOrigin(t, "main", map[string]entry{"a.md": text("a\n")})
+	work := filepath.Join(t.TempDir(), "emptier")
+	if err := os.MkdirAll(work, 0755); err != nil {
+		t.Fatalf("create %s: %v", work, err)
+	}
+	gitRun(t, work, "clone", "--quiet", "--branch", "main", origin, ".")
+	gitRun(t, work, "rm", "--quiet", "a.md")
+	gitRun(t, work, "commit", "--quiet", "-m", "canonical: remove everything")
+	gitRun(t, work, "push", "--quiet", "origin", "HEAD:main")
+
+	store := ensureStore(t, origin)
+	head, _, err := store.Head(context.Background())
+	if err != nil {
+		t.Fatalf("Head: %v", err)
+	}
+	entries, err := store.ListTree(context.Background(), head)
+	if err != nil {
+		t.Fatalf("ListTree over an empty commit: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("ListTree returned %+v, want no entries", entries)
+	}
+}
+
+func TestReadDocumentReturnsText(t *testing.T) {
+	const content = "line one\nline two\n"
+	origin := newOrigin(t, "main", map[string]entry{"guides/api.md": text(content)})
+	store := ensureStore(t, origin)
+	ctx := context.Background()
+
+	head, _, err := store.Head(ctx)
+	if err != nil {
+		t.Fatalf("Head: %v", err)
+	}
+	document, err := store.ReadDocument(ctx, head, "guides/api.md")
+	if err != nil {
+		t.Fatalf("ReadDocument: %v", err)
+	}
+	if document.Binary {
+		t.Error("a text document was classified binary")
+	}
+	if string(document.Content) != content {
+		t.Errorf("content = %q, want %q", document.Content, content)
+	}
+	if document.Size != int64(len(content)) || len(document.OID) != 40 {
+		t.Errorf("document = %+v, want the byte count and a full OID", document)
+	}
+}
+
+// TestReadDocumentClassifiesBinaryWithoutReturningIt is the merge
+// contract's rule applied to inspection: sanho never hands back bytes it
+// has not classified, so binary content is reported as such rather than
+// dumped.
+func TestReadDocumentClassifiesBinaryWithoutReturningIt(t *testing.T) {
+	origin := newOrigin(t, "main", map[string]entry{"logo.bin": binary("payload")})
+	store := ensureStore(t, origin)
+	ctx := context.Background()
+
+	head, _, err := store.Head(ctx)
+	if err != nil {
+		t.Fatalf("Head: %v", err)
+	}
+	document, err := store.ReadDocument(ctx, head, "logo.bin")
+	if err != nil {
+		t.Fatalf("ReadDocument: %v", err)
+	}
+	if !document.Binary {
+		t.Fatal("binary content was not classified as binary")
+	}
+	if document.Content != nil {
+		t.Errorf("content = %q, want nil for binary content", document.Content)
+	}
+	if document.Size == 0 {
+		t.Error("size = 0, want the byte count even with no content")
+	}
+}
+
+// TestReadDocumentAppliesTheSizeCapAfterSniffing is F-M8's order: an
+// oversized ILLUSTRATION is binary, and only oversized TEXT is the
+// fail-closed refusal the cap was written for.
+func TestReadDocumentAppliesTheSizeCapAfterSniffing(t *testing.T) {
+	oversizedText := strings.Repeat("a", int(markers.MaxScanSize)+1)
+	oversizedBinary := make([]byte, markers.MaxScanSize+1)
+	oversizedBinary[7] = 0
+
+	origin := newOrigin(t, "main", map[string]entry{
+		"huge.md":  text(oversizedText),
+		"huge.bin": {content: oversizedBinary},
+	})
+	store := ensureStore(t, origin)
+	ctx := context.Background()
+
+	head, _, err := store.Head(ctx)
+	if err != nil {
+		t.Fatalf("Head: %v", err)
+	}
+
+	image, err := store.ReadDocument(ctx, head, "huge.bin")
+	if err != nil {
+		t.Fatalf("ReadDocument over oversized binary content: %v", err)
+	}
+	if !image.Binary || image.Content != nil {
+		t.Errorf("oversized binary = %+v, want it classified binary with no content", image)
+	}
+
+	_, err = store.ReadDocument(ctx, head, "huge.md")
+	if !errors.Is(err, markers.ErrTooLarge) {
+		t.Fatalf("ReadDocument over oversized text error = %v, want markers.ErrTooLarge", err)
+	}
+	var tooLarge *TooLargeError
+	if !errors.As(err, &tooLarge) {
+		t.Fatalf("error = %v, want a *TooLargeError the CLI can word", err)
+	}
+	if tooLarge.Path != "huge.md" || tooLarge.Size != int64(len(oversizedText)) {
+		t.Errorf("TooLargeError = %+v, want huge.md at %d bytes", tooLarge, len(oversizedText))
+	}
+}
+
+// TestReadDocumentReportsWhatTheCommitDoesNotPublish covers both ways a
+// path fails to name a document: absent, and naming a directory.
+func TestReadDocumentReportsWhatTheCommitDoesNotPublish(t *testing.T) {
+	origin := newOrigin(t, "main", map[string]entry{"guides/api.md": text("api\n")})
+	store := ensureStore(t, origin)
+	ctx := context.Background()
+
+	head, _, err := store.Head(ctx)
+	if err != nil {
+		t.Fatalf("Head: %v", err)
+	}
+	for _, path := range []string{"missing.md", "guides", "guides/missing.md"} {
+		if _, err := store.ReadDocument(ctx, head, path); !errors.Is(err, ErrUnknownObject) {
+			t.Errorf("ReadDocument(%q) error = %v, want ErrUnknownObject", path, err)
 		}
 	}
 }

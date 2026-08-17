@@ -1,6 +1,7 @@
 package cli
 
-// Shared helpers: JSON output, workspace guards, small formatting.
+// Shared helpers: JSON output, workspace guards, small formatting, and
+// the argument checks the read-only canonical readers share.
 
 import (
 	"context"
@@ -8,6 +9,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"path"
+	"path/filepath"
+	"strings"
 )
 
 // writeJSON renders v as an indented JSON document with a trailing
@@ -41,6 +45,31 @@ func orEmpty(values []string) []string {
 		return []string{}
 	}
 	return values
+}
+
+// normalizeDocsPath validates the `--path` a canonical reader was given
+// and returns the cleaned, docs-root-relative form.
+//
+// Canonical is docs-only, so a docs-root-relative path is already a
+// canonical one and needs no translation — only this containment check,
+// and for one concrete reason: the value goes on to become a git
+// pathspec or object spec, and a malformed one fails deep inside git
+// with an error about something else.
+//
+// It is shared rather than duplicated because `sanho log --path` and
+// `sanho show --path` name the same thing, and two copies of a
+// containment check are two chances to disagree about what is inside
+// the docs directory.
+func normalizeDocsPath(value string) (string, error) {
+	cleaned := path.Clean(filepath.ToSlash(strings.TrimRight(value, "/")))
+	if cleaned == "" || cleaned == "." {
+		return "", fmt.Errorf("%w: --path %q names the docs root; name a document", errInvalidArguments, value)
+	}
+	if !filepath.IsLocal(filepath.FromSlash(cleaned)) {
+		return "", fmt.Errorf("%w: --path %q must be inside the docs directory (no leading '/', no '..')",
+			errInvalidArguments, value)
+	}
+	return cleaned, nil
 }
 
 // requireV2Workspace resolves the workspace for a command that needs a

@@ -183,6 +183,7 @@ remain unsupported.
 sanho status     # where am I
 sanho diff       # inspect incoming cached canonical changes
 sanho log        # what changed in canonical, and which repository sent it
+sanho show       # what one canonical commit publishes, and what it said
 sanho check      # enforce explicit local/current/published policies
 sanho sync       # reconcile with upstream
 sanho pull       # just take canonical's docs (no local edits)
@@ -212,6 +213,18 @@ repository; `--json` reports those as `"kind": "external"` with a null `source`.
 `log` reads the last fetched snapshot unless you pass `--refresh`, and unlike
 `diff` it needs no recorded base — it is what the rewrite-recovery message
 tells you to run when the base can no longer be resolved.
+
+`sanho show` reads a commit the listing named. That matters where provenance
+runs out: a commit written directly in the canonical repository has none, so
+only its contents can tell you whether it is the anchor you want.
+
+```bash
+sanho show 9a41f2cbbbbb                  # the documents it publishes
+sanho show 9a41f2cbbbbb --path api.md    # one of them, as of that commit
+```
+
+It accepts the same revisions as `sanho sync --rebase-onto`, needs no recorded
+base, and prints a binary document's size rather than its bytes.
 
 A commit on a stale base prints one line and succeeds:
 
@@ -298,6 +311,7 @@ sanho init      # register this repository as a workspace
 sanho status    # base vs canonical, sync preview, siblings   (--refresh, --json)
 sanho diff      # inspect incoming or local docs changes       (--refresh, --local, --stat, --name-only)
 sanho log       # canonical history and its publication source (--refresh, -n, --path, --json)
+sanho show      # what one canonical commit publishes          (--path, --refresh, --json)
 sanho check     # explicit CI policy checks                    (--require-clean, --require-current, --require-published, --json)
 sanho state     # registered projects and workspaces          (--all, --json)
 sanho sync      # reconcile   (--continue, --abort, --rebase-onto <oid>, --json)

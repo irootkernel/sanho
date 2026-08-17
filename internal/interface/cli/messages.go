@@ -297,8 +297,15 @@ func pushUnreachableMessage(url, cause string) string {
 // at all, and a listing command naming HEAD would exit 128 in the very
 // state that printed it. `sanho log` resolves the clone and the
 // publication branch itself, which is what lets this state stop reaching
-// past sanho's own surface — and lets the catalog drop the only
-// placeholders it carried.
+// past sanho's own surface.
+//
+// The inspection step is `sanho show`, and it is here because the
+// listing alone cannot finish the job. Provenance settles a candidate
+// sanho published; a commit written directly in the canonical
+// repository has none, so choosing between two such candidates is a
+// question about their CONTENT — the reading that used to be an
+// `ls-tree`/`show` pair against a clone path the user had to derive
+// first.
 func pushRewrittenMessage(base, anchor string) string {
 	if anchor != "" {
 		return fmt.Sprintf("sanho: canonical history was rewritten; base %s is no longer reachable\n"+
@@ -308,6 +315,7 @@ func pushRewrittenMessage(base, anchor string) string {
 	return fmt.Sprintf("sanho: canonical history was rewritten; base %s is no longer reachable\n"+
 		"manual intervention required: no canonical commit carries this workspace's docs base tree.\n"+
 		"List the candidates with:  sanho log\n"+
+		"Inspect one with:          sanho show <commit>\n"+
 		"Then run:                  sanho sync --rebase-onto <commit>\n"+
 		"%s", shortOID(base), msgPushRejectedTrailer)
 }
@@ -684,6 +692,56 @@ func syncMergeFailedMessage(cloneDir, cause string) string {
 func docsTooLargeMessage(cause string) string {
 	return fmt.Sprintf("sanho: %s\n"+
 		"Conflict-marker scanning has a size limit; move the file out of the docs directory, or split it, then try again.", cause)
+}
+
+// --- Canonical inspection ----------------------------------------------
+
+// showUnknownCommitMessage refuses a revision the private clone cannot
+// resolve, and names `--refresh` rather than a command.
+//
+// That is docsTooLargeMessage's reason rather than an omission: what
+// fixes a mistyped candidate is a corrected argument, and sanho cannot
+// name the one the user meant. The other reading — a real commit this
+// clone has simply not fetched — IS fixable, by this command's own flag,
+// so the sentence offers it. Where a listing is genuinely the next step,
+// choosing a rewrite-recovery anchor, pushRewrittenMessage names
+// `sanho log` and `sanho show` at the boundary the user meets it.
+func showUnknownCommitMessage(rev string) string {
+	return fmt.Sprintf("%s is not a commit in the canonical repository; "+
+		"if it is newer than this workspace's last fetch, retry with --refresh", rev)
+}
+
+// showUnknownDocumentMessage refuses a path the named commit does not
+// publish. It names no command for the same reason: the correction is
+// to the argument, and running the command without --path lists what
+// the commit does publish.
+func showUnknownDocumentMessage(commit, docsPath string) string {
+	return fmt.Sprintf("canonical commit %s does not publish %s; "+
+		"drop --path to list the documents it does", shortOID(commit), docsPath)
+}
+
+// showTooLargeMessage is the merge contract's read cap met from
+// inspection rather than from a gate (the architecture's marker
+// contracts fix the limit).
+//
+// It is deliberately not docsTooLargeMessage: that one advises moving
+// the file out of the docs directory, which is advice about publishing
+// a document, not about reading one that canonical already carries.
+func showTooLargeMessage(docsPath string, size int64) string {
+	return fmt.Sprintf("%s is %d bytes, past the size sanho will read into memory; "+
+		"inspect it with a tool that streams instead", docsPath, size)
+}
+
+// showBinaryDocumentMessage reports a document whose bytes are not text.
+//
+// It is a success line on stderr, not a refusal: the document was found
+// and classified, which is the complete answer for a binary asset, and
+// keeping stdout empty is what leaves a redirect of the text case
+// honest. `--json` says the same thing as `"binary": true` with a null
+// content.
+func showBinaryDocumentMessage(docsPath string, size int64) string {
+	return fmt.Sprintf("%s%s is binary (%d bytes); its content is not printed",
+		errorPrefix, docsPath, size)
 }
 
 // --- Status and doctor ------------------------------------------------
@@ -1100,6 +1158,7 @@ var Catalog = []CatalogEntry{
 		Match:  "canonical history was rewritten",
 		NextCommands: []string{
 			"sanho log",
+			"sanho show <commit>",
 			"sanho sync --rebase-onto <commit>",
 		},
 	},

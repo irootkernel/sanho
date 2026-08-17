@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/irootkernel/sanho/internal/domain/markers"
 	pubdom "github.com/irootkernel/sanho/internal/domain/publish"
 	"github.com/irootkernel/sanho/internal/infra/fsx"
 	"github.com/irootkernel/sanho/internal/infra/gitx"
@@ -41,6 +42,31 @@ var ErrUnreachable = pubdom.ErrUnreachable
 // nothing has ever been published. Re-exported from domain/publish for
 // the same reason as the two sentinels above.
 var ErrEmptyBranch = pubdom.ErrEmptyBranch
+
+// ErrUnknownObject is the inspection readers' answer for a revision or
+// document path this clone does not hold. It stays distinct from a git
+// failure because it is a state the user acts on — correct the name, or
+// fetch — rather than a broken clone.
+var ErrUnknownObject = errors.New("canonical object not found")
+
+// TooLargeError names the document that exceeded the read cap and its
+// size, so the CLI can compose a sentence about a document rather than
+// re-deriving one from an error string.
+//
+// It carries markers.ErrTooLarge the way EmptyPublishError carries its
+// own sentinel: Error is a diagnostic that locates the failure for us,
+// Unwrap is what keeps the machine code reachable, and the fields are
+// what the user-facing wording is built from.
+type TooLargeError struct {
+	Path string
+	Size int64
+}
+
+func (e *TooLargeError) Error() string {
+	return fmt.Sprintf("canonical: %s is %d bytes: %v", e.Path, e.Size, markers.ErrTooLarge)
+}
+
+func (e *TooLargeError) Unwrap() error { return markers.ErrTooLarge }
 
 const (
 	// CloneRelPath is the clone's location under the app repository's
@@ -772,6 +798,196 @@ func (s *Store) Log(ctx context.Context, maxCount int, path string) ([]LogEntry,
 // logFieldsPerCommit is how many NUL-delimited tokens one commit
 // contributes to Log's output: commit, tree, committer date, message.
 const logFieldsPerCommit = 4
+
+// TreeEntry is one document a canonical commit publishes. Canonical is
+// docs-only, so Path is at once the canonical path and the
+// docs-root-relative one `sanho diff` and `sanho log` report.
+type TreeEntry struct {
+	Path string
+	Mode string
+	OID  string
+	Size int64
+}
+
+// Document is one document's content as of a canonical commit.
+//
+// Content is nil exactly when Binary is true. Classifying rather than
+// returning binary bytes applies the merge contract's own rule to
+// inspection: sanho reads a document in order to show it, and never
+// hands back bytes it has not classified.
+type Document struct {
+	Path    string
+	OID     string
+	Size    int64
+	Binary  bool
+	Content []byte
+}
+
+// ResolveDocsCommit resolves rev to the canonical commit and docs tree
+// it names; for a docs-only repository the commit's root tree is its
+// docs tree.
+//
+// rev is whatever the user typed — a full or abbreviated OID, or a ref
+// such as refs/remotes/origin/main — because the revisions worth
+// inspecting are the ones `sanho sync --rebase-onto` accepts, and a
+// candidate that resolved for one and not the other would be a trap.
+// A rev this clone cannot resolve is ErrUnknownObject rather than a git
+// failure: a mistyped candidate and a commit the clone has not fetched
+// yet look identical from here, and both are states the user acts on.
+func (s *Store) ResolveDocsCommit(ctx context.Context, rev string) (commit, tree string, err error) {
+	run := gitx.New(s.dir)
+	res, err := run.RunExit(ctx, "rev-parse", "--verify", "--quiet", rev+"^{commit}")
+	if err != nil {
+		return "", "", fmt.Errorf("canonical: resolve %s in %s: %w", rev, s.dir, err)
+	}
+	if res.ExitCode != 0 {
+		return "", "", fmt.Errorf("%w: %s in %s", ErrUnknownObject, rev, s.dir)
+	}
+	commit = firstLine(res.Stdout)
+
+	tree, err = run.Line(ctx, "rev-parse", "--verify", commit+"^{tree}")
+	if err != nil {
+		return "", "", fmt.Errorf("canonical: resolve docs tree of %s in %s: %w", commit, s.dir, err)
+	}
+	return commit, tree, nil
+}
+
+// ListTree lists the documents commit publishes, recursively, in git's
+// own tree order.
+//
+// -z is what makes the listing correct rather than merely conventional:
+// without it git quotes any path holding a space, a quote, or a
+// non-ASCII byte, and a documentation repository is exactly the kind
+// that has one.
+func (s *Store) ListTree(ctx context.Context, commit string) ([]TreeEntry, error) {
+	res, err := gitx.New(s.dir).Run(ctx, "ls-tree", "-r", "-z", "--long", commit)
+	if err != nil {
+		return nil, fmt.Errorf("canonical: list documents of %s in %s: %w", commit, s.dir, err)
+	}
+
+	records := strings.Split(string(res.Stdout), "\x00")
+	entries := make([]TreeEntry, 0, len(records))
+	for _, record := range records {
+		if record == "" {
+			continue
+		}
+		entry, parseErr := parseTreeRecord(record)
+		if parseErr != nil {
+			return nil, fmt.Errorf("canonical: list documents of %s in %s: %w", commit, s.dir, parseErr)
+		}
+		entries = append(entries, entry)
+	}
+	return entries, nil
+}
+
+// parseTreeRecord reads one `ls-tree -r -z --long` record:
+//
+//	<mode> SP <type> SP <oid> SP… <size> TAB <path>
+//
+// The TAB is cut first because it is the only delimiter a path cannot
+// contain: field-splitting the whole record would lose the second half
+// of a document named "release notes.md". A submodule entry carries "-"
+// where a blob carries a byte count, so its size reads as zero rather
+// than as a parse failure.
+func parseTreeRecord(record string) (TreeEntry, error) {
+	head, path, found := strings.Cut(record, "\t")
+	if !found {
+		return TreeEntry{}, fmt.Errorf("tree record %q has no path separator", record)
+	}
+	fields := strings.Fields(head)
+	if len(fields) != 4 {
+		return TreeEntry{}, fmt.Errorf("tree record %q has %d fields, want 4", record, len(fields))
+	}
+
+	entry := TreeEntry{Path: path, Mode: fields[0], OID: fields[2]}
+	if fields[3] == "-" {
+		return entry, nil
+	}
+	size, err := strconv.ParseInt(fields[3], 10, 64)
+	if err != nil {
+		return TreeEntry{}, fmt.Errorf("parse size of %s: %w", path, err)
+	}
+	entry.Size = size
+	return entry, nil
+}
+
+// ReadDocument returns one document as of commit.
+//
+// The order is the merge contract's, as corrected by F-M8: sniff first,
+// size second. Binary content is reported as binary however large it
+// is — an illustration under docs/ is not a scanning failure — and only
+// TEXT past markers.MaxScanSize is ErrTooLarge, which is the case the
+// cap was written for. A document at or under the cap is read whole in
+// one process, because markers.Scan classifies what it reads.
+//
+// A path the commit does not publish, or one naming a directory, is
+// ErrUnknownObject: `--batch-check` answers existence, type and size in
+// a single invocation, and its "missing" reply is matched as a suffix
+// because its first field is the requested spec, which may itself hold
+// a space.
+func (s *Store) ReadDocument(ctx context.Context, commit, path string) (Document, error) {
+	spec := commit + ":" + path
+	run := gitx.New(s.dir)
+
+	res, err := run.RunWithStdin(ctx, strings.NewReader(spec+"\n"), "cat-file", "--batch-check")
+	if err != nil {
+		return Document{}, fmt.Errorf("canonical: describe %s in %s: %w", spec, s.dir, err)
+	}
+
+	line := firstLine(res.Stdout)
+	if strings.HasSuffix(line, " missing") || strings.HasSuffix(line, " ambiguous") {
+		return Document{}, fmt.Errorf("%w: %s in %s", ErrUnknownObject, spec, s.dir)
+	}
+	fields := strings.Fields(line)
+	if len(fields) != 3 {
+		return Document{}, fmt.Errorf("canonical: describe %s in %s: unexpected cat-file output %q",
+			spec, s.dir, line)
+	}
+	if fields[1] != "blob" {
+		return Document{}, fmt.Errorf("%w: %s in %s is a %s, not a document",
+			ErrUnknownObject, spec, s.dir, fields[1])
+	}
+	size, err := strconv.ParseInt(fields[2], 10, 64)
+	if err != nil {
+		return Document{}, fmt.Errorf("canonical: parse size of %s in %s: %w", spec, s.dir, err)
+	}
+
+	document := Document{Path: path, OID: fields[0], Size: size}
+	if size > markers.MaxScanSize {
+		binary, sniffErr := s.sniffBinary(ctx, document.OID)
+		if sniffErr != nil {
+			return Document{}, fmt.Errorf("canonical: read %s in %s: %w", spec, s.dir, sniffErr)
+		}
+		if binary {
+			document.Binary = true
+			return document, nil
+		}
+		return Document{}, &TooLargeError{Path: path, Size: size}
+	}
+
+	content, err := run.Run(ctx, "cat-file", "blob", document.OID)
+	if err != nil {
+		return Document{}, fmt.Errorf("canonical: read %s in %s: %w", spec, s.dir, err)
+	}
+	if markers.Scan(content.Stdout).Binary {
+		document.Binary = true
+		return document, nil
+	}
+	document.Content = content.Stdout
+	return document, nil
+}
+
+// sniffBinary reads only the leading bytes of one object, which is all
+// the binary classification needs, and is why an oversized document can
+// be classified without being materialized.
+func (s *Store) sniffBinary(ctx context.Context, object string) (bool, error) {
+	res, err := gitx.New(s.dir, gitx.WithStdoutLimit(markers.BinarySniffSize)).
+		Run(ctx, "cat-file", "blob", object)
+	if err != nil {
+		return false, err
+	}
+	return markers.Scan(res.Stdout).Binary, nil
+}
 
 // FetchFromApp imports ref (an OID or ref name) from the app repository
 // into the clone's object database via local transport, making the app

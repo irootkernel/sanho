@@ -31,6 +31,15 @@ repository. It is a Git-boundary tool, not a general task or session manager.
    given. Read `kind` before `source`: an `external` entry is a commit made
    directly in the canonical repository and reports `source: null`, which is
    absent provenance rather than an empty record.
+   Use `sanho show <commit>` (with `--path`, `--refresh`, or `--json`) when the
+   question is what a specific canonical commit contains rather than what
+   changed — above all when choosing a rewrite-recovery anchor, where an
+   `external` candidate has no provenance to read. It accepts the revisions
+   `sanho sync --rebase-onto` accepts, is read-only, and needs no recorded
+   base. Without `--path` it lists the commit's documents; with `--path` it
+   returns one. `document.content` is null exactly when `document.binary` is
+   true, which is the whole answer for a binary asset rather than a truncated
+   one; do not retry such a read.
    Use `sanho check --require-clean`, `--require-current`, and/or
    `--require-published` when automation needs an explicit policy. Parse the
    complete result even when exit 1: `passed:false` is a policy mismatch,

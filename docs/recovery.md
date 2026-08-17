@@ -88,17 +88,18 @@ document you recognize when the subjects alone are not enough.
 Provenance settles a candidate that Sanho published. It cannot settle one
 committed directly in the canonical repository: such an entry is reported as
 `external` with no source, and `--path` tells you only that a commit touched a
-file, not what the candidate's tree contains. Sanho has no command that lists a
-canonical commit's files, so inspect the candidate in the private clone:
+file, not what the candidate's tree contains. Read the candidate itself:
 
 ```bash
-CLONE="$(git rev-parse --path-format=absolute --git-common-dir)/sanho/canonical"
-git -C "$CLONE" ls-tree -r <candidate>
-git -C "$CLONE" show <candidate>:<document>
+sanho show <candidate>
+sanho show <candidate> --path <document>
 ```
 
-This is read-only inspection, not a Sanho operation; use `sanho log` for the
-candidate listing itself.
+Without `--path` it lists the documents the candidate publishes; with `--path`
+it prints one of them as of that commit. Both are read-only, need no recorded
+base, and accept the same revisions as `--rebase-onto`, so a candidate can be
+inspected in exactly the form it will be adopted in. A binary document is
+reported with its size instead of being printed.
 
 Choose an anchor only when its relationship to the workspace docs is known. Do
 not use force push to recreate history solely to satisfy the old base.

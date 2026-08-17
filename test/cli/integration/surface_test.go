@@ -1051,3 +1051,137 @@ func TestLogReportsAMissingClone(t *testing.T) {
 	}
 	requireContains(t, "log clone error envelope", out.stdout, `"code": "clone_missing"`)
 }
+
+func TestShowJSONSchema(t *testing.T) {
+	w := newWorld(t, map[string]string{
+		"api.md":          "canonical api\n",
+		"guides/setup.md": "setup guide\n",
+	})
+	w.initAndAdoptDocs()
+	head := w.canonicalHead()
+
+	listing := w.sanho(w.app, "show", head, "--json")
+	var document showDocument
+	if err := json.Unmarshal([]byte(listing.stdout), &document); err != nil {
+		t.Fatalf("decode show JSON: %v\n%s", err, listing.stdout)
+	}
+	if document.Commit != head || document.Tree == "" {
+		t.Fatalf("show reported commit/tree = %q/%q, want the full %q and a tree",
+			document.Commit, document.Tree, head)
+	}
+	// Listing mode fills neither of the document fields, and an agent
+	// must be able to read that rather than infer it.
+	if document.Path != nil || document.Document != nil {
+		t.Errorf("listing mode reported path=%v document=%+v, want both null",
+			document.Path, document.Document)
+	}
+	paths := make([]string, 0, len(document.Entries))
+	for _, entry := range document.Entries {
+		paths = append(paths, entry.Path)
+		if len(entry.OID) != 40 || entry.Mode == "" || entry.Size <= 0 {
+			t.Errorf("entry %+v is incomplete", entry)
+		}
+	}
+	if !reflect.DeepEqual(paths, []string{"api.md", "guides/setup.md"}) {
+		t.Errorf("show listed %v, want the docs-root-relative paths", paths)
+	}
+
+	// An abbreviated OID resolves, because `sync --rebase-onto` accepts
+	// one and inspecting a candidate must not need a different spelling.
+	body := w.sanho(w.app, "show", head[:8], "--path", "guides/setup.md", "--json")
+	var read showDocument
+	if err := json.Unmarshal([]byte(body.stdout), &read); err != nil {
+		t.Fatalf("decode show --path JSON: %v\n%s", err, body.stdout)
+	}
+	if read.Path == nil || *read.Path != "guides/setup.md" {
+		t.Fatalf("path = %v, want guides/setup.md", read.Path)
+	}
+	if read.Document == nil || read.Document.Binary {
+		t.Fatalf("document = %+v, want a text document", read.Document)
+	}
+	if read.Document.Content == nil || *read.Document.Content != "setup guide\n" {
+		t.Errorf("content = %v, want the document's bytes", read.Document.Content)
+	}
+	if len(read.Entries) != 0 {
+		t.Errorf("entries = %v, want [] in document mode", read.Entries)
+	}
+
+	// Human mode prints the document itself, so the output can be
+	// redirected into a file.
+	plain := w.sanho(w.app, "show", head, "--path", "api.md")
+	if plain.stdout != "canonical api\n" {
+		t.Errorf("show --path stdout = %q, want exactly the document", plain.stdout)
+	}
+}
+
+// TestShowReadsWhatRewriteRecoveryNeeds is the state the command was
+// added for: canonical history was replaced, so no base resolves and the
+// candidate carries no provenance to decode. Only its content can settle
+// whether it is the right anchor.
+func TestShowReadsWhatRewriteRecoveryNeeds(t *testing.T) {
+	w := newWorld(t, map[string]string{"api.md": "canonical api\n"})
+	w.initAndAdoptDocs()
+	w.commitDocs("docs: local update", map[string]string{"api.md": "local api\n"})
+	w.push()
+
+	rewritten := w.rewriteCanonical(map[string]string{
+		"handbook.md": "an entirely new canonical\n",
+	}, "canonical: rewritten history")
+	w.sanho(w.app, "log", "--refresh")
+
+	// `sanho diff` refuses here: it needs a usable base, and this is the
+	// state that has none. Show must not.
+	listing := w.sanho(w.app, "show", rewritten)
+	requireContains(t, "rewrite candidate listing", listing.stdout, "handbook.md")
+
+	body := w.sanho(w.app, "show", rewritten, "--path", "handbook.md")
+	if body.stdout != "an entirely new canonical\n" {
+		t.Errorf("candidate content = %q, want the rewritten document", body.stdout)
+	}
+}
+
+func TestShowRejectsUnusableTargetsWithAnEnvelope(t *testing.T) {
+	w := newWorld(t, map[string]string{"api.md": "canonical api\n"})
+	w.initAndAdoptDocs()
+	head := w.canonicalHead()
+
+	tests := map[string]struct {
+		args []string
+		code string
+	}{
+		"unknown commit":   {args: []string{"show", strings.Repeat("b", 40), "--json"}, code: "unknown_target"},
+		"unknown document": {args: []string{"show", head, "--path", "nope.md", "--json"}, code: "unknown_target"},
+		"escaping path":    {args: []string{"show", head, "--path", "../escape.md", "--json"}, code: "invalid_arguments"},
+		"no revision":      {args: []string{"show", "--json"}, code: "invalid_arguments"},
+		"two revisions":    {args: []string{"show", head, head, "--json"}, code: "invalid_arguments"},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			out := w.run(w.app, test.args...)
+			if out.exitCode != 1 {
+				t.Fatalf("%v exit = %d, want 1", test.args, out.exitCode)
+			}
+			requireContains(t, "show error envelope", out.stdout, `"code": "`+test.code+`"`)
+		})
+	}
+}
+
+// showDocument mirrors the schema docs/cli-json.md publishes, so a
+// change to either shape has to be made in both places.
+type showDocument struct {
+	Commit  string  `json:"commit"`
+	Tree    string  `json:"tree"`
+	Path    *string `json:"path"`
+	Entries []struct {
+		Path string `json:"path"`
+		Mode string `json:"mode"`
+		OID  string `json:"oid"`
+		Size int64  `json:"size"`
+	} `json:"entries"`
+	Document *struct {
+		OID     string  `json:"oid"`
+		Size    int64   `json:"size"`
+		Binary  bool    `json:"binary"`
+		Content *string `json:"content"`
+	} `json:"document"`
+}

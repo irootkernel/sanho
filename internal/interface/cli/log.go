@@ -19,8 +19,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"path"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -103,11 +101,8 @@ sanho diff reports them.`,
 }
 
 // normalize validates the flags and returns the canonical path to filter
-// on. Canonical is docs-only, so a docs-root-relative path is already a
-// canonical one and needs no translation — only the same containment
-// check normalizeDocsDir applies, for the same reason: the value becomes
-// a git pathspec, and a malformed one fails deep inside git with an
-// error about something else.
+// on, which normalizeDocsPath checks for containment on every reader's
+// behalf.
 func (o logOptions) normalize() (string, error) {
 	if o.maxCount < 1 {
 		return "", fmt.Errorf("%w: --max-count must be at least 1", errInvalidArguments)
@@ -115,15 +110,7 @@ func (o logOptions) normalize() (string, error) {
 	if o.docsPath == "" {
 		return "", nil
 	}
-	cleaned := path.Clean(filepath.ToSlash(strings.TrimRight(o.docsPath, "/")))
-	if cleaned == "" || cleaned == "." {
-		return "", fmt.Errorf("%w: --path %q names the docs root; name a document", errInvalidArguments, o.docsPath)
-	}
-	if !filepath.IsLocal(filepath.FromSlash(cleaned)) {
-		return "", fmt.Errorf("%w: --path %q must be inside the docs directory (no leading '/', no '..')",
-			errInvalidArguments, o.docsPath)
-	}
-	return cleaned, nil
+	return normalizeDocsPath(o.docsPath)
 }
 
 func runLog(cmd *cobra.Command, opts logOptions) error {
