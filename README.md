@@ -49,7 +49,7 @@ Node.js and npm are not required. The only runtime dependency is cobra.
 ### Install
 
 ```bash
-go install github.com/irootkernel/sanho/cmd/sanho@v0.2.6
+go install github.com/irootkernel/sanho/cmd/sanho@v0.2.7
 sanho version
 ```
 
@@ -95,7 +95,7 @@ only the skill directory into that agent-specific location:
 (
   set -eu
   sanho_skill_parent="${HOME}/.agents/skills"
-  sanho_skill_ref=v0.2.6
+  sanho_skill_ref=v0.2.7
   mkdir -p "$sanho_skill_parent"
   sanho_skill_target="$sanho_skill_parent/use-sanho"
   test ! -e "$sanho_skill_target" && test ! -L "$sanho_skill_target"
@@ -183,7 +183,7 @@ remain unsupported.
 sanho status     # where am I
 sanho diff       # inspect incoming cached canonical changes
 sanho log        # what changed in canonical, and which repository sent it
-sanho show       # what one canonical commit publishes, and what it said
+sanho show <commit> # what one canonical commit publishes, and what it said
 sanho preview    # what `git push` would publish, without pushing
 sanho check      # enforce explicit local/current/published policies
 sanho sync       # reconcile with upstream
@@ -335,7 +335,7 @@ sanho init      # register this repository as a workspace
 sanho status    # base vs canonical, sync preview, siblings   (--refresh, --json)
 sanho diff      # inspect incoming or local docs changes       (--refresh, --local, --stat, --name-only)
 sanho log       # canonical history and its publication source (--refresh, -n, --path, --repository, --workspace, --json)
-sanho show      # what one canonical commit publishes          (--path, --refresh, --json)
+sanho show <commit> # what one canonical commit publishes       (--path, --refresh, --json)
 sanho preview   # what a git push would publish                (--branch, --refresh, --json)
 sanho check     # explicit CI policy checks                    (--require-clean, --require-current, --require-published, --json)
 sanho state     # registered projects and workspaces          (--all, --json)
