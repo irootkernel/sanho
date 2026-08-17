@@ -1,6 +1,12 @@
-// Package cli is the sanho v0.2 command-line interface: the nine
-// commands and six hook entry points of docs/cli-json.md and docs/architecture.md "Git hooks", and
-// the one place in the codebase where the layers are wired together.
+// Package cli is the sanho v0.2 command-line interface: the commands of
+// docs/cli-json.md and the six hook entry points of docs/architecture.md
+// "Git hooks", and the one place in the codebase where the layers are
+// wired together.
+//
+// The commands are deliberately not counted here. The number was, and
+// went stale as soon as one was added; the documents named above are
+// where the surface is enumerated, and the hook count stays because six
+// is a contract rather than a tally.
 //
 // That wiring role is deliberate and is the reason several adapters live
 // here rather than in a use case. The architecture gate forbids a
@@ -186,8 +192,14 @@ commits in your repository.`,
 // rather than an omission: cobra's Find only consults legacyArgs — the
 // unknown-command check, suggestions included — while Args is nil, so
 // installing a wrapper on the root would turn `sanho statu` from a
-// refusal into a help page at exit 0. Every command with a JSON mode
-// declares cobra.NoArgs, so the skip costs no coverage.
+// refusal into a help page at exit 0.
+//
+// The skip costs no coverage because every command with a JSON mode
+// declares an Args rule of its own. The rule need not be cobra.NoArgs
+// and once was not asserted to be: `sanho show` declares
+// cobra.ExactArgs(1), and keying on the declaration rather than on one
+// particular rule is what let it owe the same envelope without any
+// change here.
 func classifyArgumentErrors(cmd *cobra.Command) {
 	for _, child := range cmd.Commands() {
 		classifyArgumentErrors(child)

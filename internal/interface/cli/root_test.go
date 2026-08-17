@@ -50,13 +50,22 @@ func requireEnvelope(t *testing.T, label, stdout string) string {
 // that has to hold for the failures cobra detects before the command
 // runs, not only for the ones the command reports itself.
 func TestArgumentFailuresWriteTheJSONEnvelope(t *testing.T) {
-	// The nine machine-readable commands of docs/cli-json.md, each with
-	// whatever flags it needs to get past its own validation, so the
-	// argument failure is the only thing left to report.
+	// Every machine-readable command of docs/cli-json.md, each carrying
+	// whatever flags or arguments it needs to get past its own
+	// validation, so the argument failure is the only thing left to
+	// report. The list is not counted in prose: it went stale twice by
+	// being, and what it has to be is complete.
+	//
+	// `show` is the one entry that supplies a positional rather than a
+	// flag, and it is the reason classifyArgumentErrors keys on "declares
+	// an Args rule" rather than on cobra.NoArgs: its rule is
+	// cobra.ExactArgs(1), and the envelope is owed all the same.
 	commands := [][]string{
 		{"status"},
 		{"state"},
 		{"log"},
+		{"show", "deadbeef"},
+		{"preview"},
 		{"check", "--require-clean"},
 		{"sync"},
 		{"pull"},

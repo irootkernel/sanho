@@ -102,10 +102,10 @@
   positional argument was rejected before the command ran, so nothing rendered
   the envelope and stdout was empty at exit 1 — an agent parsing stdout per
   `docs/cli-json.md` got a JSON parse failure instead of a code to branch on.
-  All nine machine-readable commands were affected. These failures now report
-  `invalid_arguments`, and their stderr line gains the `invalid arguments: `
-  prefix that in-command argument refusals such as `sanho check --json` already
-  used.
+  Every machine-readable command was affected, including the ones this release
+  adds. These failures now report `invalid_arguments`, and their stderr line
+  gains the `invalid arguments: ` prefix that in-command argument refusals such
+  as `sanho check --json` already used.
 - An unknown subcommand under `sanho project`, `sanho workspace`, or
   `sanho hook` is refused instead of silently printing the group's help at exit
   0. Cobra reaches its unknown-command check only at the root, so `sanho project
