@@ -212,8 +212,14 @@ docs root.
 
 `sanho log` is the reader for the publication provenance recorded above. It
 lists canonical commits newest first from the cached clone, bounded by
-`--max-count` and optionally narrowed to one docs-root-relative `--path`;
-`--refresh` fetches first. Each entry is classified `publication` when its
+`--max-count` and optionally narrowed to one docs-root-relative `--path`, one
+`--repository`, or one `--workspace`; `--refresh` fetches first. The source
+filters are applied twice by design. Git narrows on the literal text the
+publication commit convention writes, which is what keeps `--max-count`
+bounding entries listed rather than entries examined; membership is then
+decided on the decoded provenance, so a message carrying that text for a
+reason of its own is not reported as a publication it is not. An `external`
+commit matches no source filter, because it records none. Each entry is classified `publication` when its
 message decodes to the canonical commit convention, or `external` for a commit
 made directly in the canonical repository, whose `source` is null rather than
 empty. It writes no application ref, index, worktree, base, or registry state,

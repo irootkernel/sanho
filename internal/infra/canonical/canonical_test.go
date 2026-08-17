@@ -720,7 +720,7 @@ func TestLogReadsCanonicalHistoryNewestFirst(t *testing.T) {
 		t.Fatalf("Fetch: %v", err)
 	}
 
-	entries, err := store.Log(ctx, 10, "")
+	entries, err := store.Log(ctx, LogQuery{MaxCount: 10})
 	if err != nil {
 		t.Fatalf("Log: %v", err)
 	}
@@ -762,7 +762,7 @@ func TestLogPreservesWholeMessages(t *testing.T) {
 	gitRun(t, work, "push", "--quiet", "origin", "HEAD:main")
 
 	store := ensureStore(t, origin)
-	entries, err := store.Log(context.Background(), 1, "")
+	entries, err := store.Log(context.Background(), LogQuery{MaxCount: 1})
 	if err != nil {
 		t.Fatalf("Log: %v", err)
 	}
@@ -791,7 +791,7 @@ func TestLogBoundsAndFiltersByPath(t *testing.T) {
 		t.Fatalf("Fetch: %v", err)
 	}
 
-	bounded, err := store.Log(ctx, 1, "")
+	bounded, err := store.Log(ctx, LogQuery{MaxCount: 1})
 	if err != nil {
 		t.Fatalf("Log with a bound: %v", err)
 	}
@@ -800,7 +800,7 @@ func TestLogBoundsAndFiltersByPath(t *testing.T) {
 	}
 
 	// Canonical is docs-only, so a canonical path is a docs-root-relative one.
-	filtered, err := store.Log(ctx, 10, "a.md")
+	filtered, err := store.Log(ctx, LogQuery{MaxCount: 10, Path: "a.md"})
 	if err != nil {
 		t.Fatalf("Log with a path: %v", err)
 	}
@@ -808,7 +808,7 @@ func TestLogBoundsAndFiltersByPath(t *testing.T) {
 		t.Fatalf("Log(path a.md) = %d entries, want just %s", len(filtered), first)
 	}
 
-	absent, err := store.Log(ctx, 10, "nothing-here.md")
+	absent, err := store.Log(ctx, LogQuery{MaxCount: 10, Path: "nothing-here.md"})
 	if err != nil {
 		t.Fatalf("Log for an unknown path: %v", err)
 	}
@@ -829,7 +829,7 @@ func TestLogReportsAnEmptyBranch(t *testing.T) {
 	gitRun(t, origin, "init", "--bare", "--quiet", "-b", "main")
 
 	store := ensureStore(t, origin)
-	if _, err := store.Log(context.Background(), 10, ""); !errors.Is(err, ErrEmptyBranch) {
+	if _, err := store.Log(context.Background(), LogQuery{MaxCount: 10}); !errors.Is(err, ErrEmptyBranch) {
 		t.Fatalf("Log on an empty branch = %v, want ErrEmptyBranch", err)
 	}
 }
@@ -866,7 +866,7 @@ func TestLogSurvivesAMessageCarryingADelimiter(t *testing.T) {
 	gitRun(t, work, "push", "--quiet", "origin", "HEAD:main")
 
 	store := ensureStore(t, origin)
-	entries, err := store.Log(context.Background(), 10, "")
+	entries, err := store.Log(context.Background(), LogQuery{MaxCount: 10})
 	if err != nil {
 		t.Fatalf("Log over a message carrying a delimiter: %v", err)
 	}
@@ -903,7 +903,7 @@ func TestLogReadsACommitWithAnEmptyMessage(t *testing.T) {
 	gitRun(t, work, "push", "--quiet", "origin", "HEAD:main")
 
 	store := ensureStore(t, origin)
-	entries, err := store.Log(context.Background(), 10, "")
+	entries, err := store.Log(context.Background(), LogQuery{MaxCount: 10})
 	if err != nil {
 		t.Fatalf("Log over an empty message: %v", err)
 	}
@@ -921,6 +921,72 @@ func TestLogReadsACommitWithAnEmptyMessage(t *testing.T) {
 		if len(e.Commit) != 40 || len(e.Tree) != 40 {
 			t.Errorf("entry has misaligned fields: commit=%q tree=%q", e.Commit, e.Tree)
 		}
+	}
+}
+
+// TestLogNarrowsByMessageLiterals is what keeps MaxCount meaning
+// "entries listed": the filter runs inside git rather than over an
+// already-bounded read.
+func TestLogNarrowsByMessageLiterals(t *testing.T) {
+	origin := newOrigin(t, "main", map[string]entry{"a.md": text("a\n")})
+	work := filepath.Join(t.TempDir(), "author")
+	if err := os.MkdirAll(work, 0755); err != nil {
+		t.Fatalf("create %s: %v", work, err)
+	}
+	gitRun(t, work, "clone", "--quiet", "--branch", "main", origin, ".")
+
+	commit := func(file, content, message string) {
+		materialize(t, work, map[string]entry{file: text(content)})
+		gitRun(t, work, "add", "-A", "--", ".")
+		gitRun(t, work, "commit", "--quiet", "-m", message)
+	}
+	commit("b.md", "b\n", "from app: one")
+	commit("c.md", "c\n", "from site: one")
+	commit("d.md", "d\n", "from app: two")
+	gitRun(t, work, "push", "--quiet", "origin", "HEAD:main")
+
+	store := ensureStore(t, origin)
+	ctx := context.Background()
+
+	one, err := store.Log(ctx, LogQuery{MaxCount: 10, Message: []string{"from app:"}})
+	if err != nil {
+		t.Fatalf("Log with one literal: %v", err)
+	}
+	if len(one) != 2 {
+		t.Fatalf("one literal matched %d commits, want 2", len(one))
+	}
+
+	// The literal is FIXED, not a pattern: regex metacharacters in a
+	// workspace path must match themselves.
+	commit("e.md", "e\n", "from a.b: one")
+	gitRun(t, work, "push", "--quiet", "origin", "HEAD:main")
+	if err := store.Fetch(ctx); err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+	literal, err := store.Log(ctx, LogQuery{MaxCount: 10, Message: []string{"from a.b:"}})
+	if err != nil {
+		t.Fatalf("Log with a metacharacter: %v", err)
+	}
+	if len(literal) != 1 {
+		t.Errorf("fixed-string match found %d commits, want only the literal one", len(literal))
+	}
+
+	// Several literals are AND, not git's default OR.
+	both, err := store.Log(ctx, LogQuery{MaxCount: 10, Message: []string{"from app:", "two"}})
+	if err != nil {
+		t.Fatalf("Log with two literals: %v", err)
+	}
+	if len(both) != 1 || !strings.Contains(both[0].Message, "from app: two") {
+		t.Errorf("two literals matched %+v, want only 'from app: two'", both)
+	}
+
+	// MaxCount still bounds the filtered listing rather than the scan.
+	bounded, err := store.Log(ctx, LogQuery{MaxCount: 1, Message: []string{"from app:"}})
+	if err != nil {
+		t.Fatalf("Log bounded and filtered: %v", err)
+	}
+	if len(bounded) != 1 || !strings.Contains(bounded[0].Message, "from app: two") {
+		t.Errorf("bounded filter returned %+v, want the newest match only", bounded)
 	}
 }
 

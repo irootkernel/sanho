@@ -298,6 +298,27 @@ func parseSubjectLine(line string) (CommitMeta, int, bool) {
 	return CommitMeta{RepoName: source[:slash], Branch: source[slash+1:]}, count, true
 }
 
+// SubjectFragmentFor and SourceFragmentFor return the literal text a
+// canonical commit message carries for one repository or workspace.
+//
+// They exist so a caller narrowing history by source does not have to
+// re-spell the message format: the convention is this package's, and a
+// second copy of "[SANHO] Publish docs from " somewhere else is a second
+// place to get it wrong when the wording next changes.
+//
+// Each fragment ends at the delimiter that bounds the value, so
+// `SubjectFragmentFor("app")` cannot also match a repository named
+// "application". They are narrowing aids, not proof: a message may carry
+// the text for another reason, so a caller still confirms against a
+// decoded CommitMeta.
+func SubjectFragmentFor(repository string) string {
+	return subjectPrefix + repository + "/"
+}
+
+func SourceFragmentFor(workspaceID string) string {
+	return sourcePrefix + workspaceID + sourceSeparator
+}
+
 // parseSourceLine splits "source: <workspace-id> @ <app tip OID>".
 //
 // The separator is found from the right: a workspace ID is

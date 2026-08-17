@@ -4,6 +4,23 @@
 
 ### Added
 
+- `sanho log --repository <name>` and `sanho log --workspace <id>` narrow the
+  listing to what one application repository or one checkout published. It is
+  the question a docs repository shared by several repositories raises, and the
+  provenance to answer it was already decoded but not filterable.
+
+  The filter runs inside git, over the literal text the publication commit
+  convention writes, which is what keeps `--max-count` bounding entries listed
+  rather than entries examined. Each match is then confirmed against its
+  decoded provenance, so a commit whose message quotes that text for a reason
+  of its own is not reported as a publication it is not — and an `external`
+  commit, which records no source, matches no source filter at all.
+
+  A narrowing flag given an empty value is now refused with
+  `invalid_arguments` instead of being read as no filter, which is the shape an
+  agent interpolating an unset variable produces. `--path` gains the same
+  refusal. An empty listing names the narrowing that matched nothing rather
+  than reporting that canonical has no commits.
 - `sanho show <commit>` reads one canonical commit: the documents it publishes,
   or with `--path` a single document as of that commit. It accepts the same
   revisions as `sanho sync --rebase-onto`, is read-only, needs no recorded

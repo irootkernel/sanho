@@ -986,6 +986,12 @@ func TestLogRejectsUnusableArgumentsWithAnEnvelope(t *testing.T) {
 	for _, args := range [][]string{
 		{"log", "--json", "-n", "0"},
 		{"log", "--json", "--path", "../escape.md"},
+		// An empty narrowing value is the shape an agent interpolating an
+		// unset variable produces, and answering it with the whole
+		// listing would attribute every entry to a source never named.
+		{"log", "--json", "--repository", ""},
+		{"log", "--json", "--workspace", ""},
+		{"log", "--json", "--path", ""},
 	} {
 		out := w.run(w.app, args...)
 		if out.exitCode != 1 {
@@ -993,6 +999,84 @@ func TestLogRejectsUnusableArgumentsWithAnEnvelope(t *testing.T) {
 		}
 		requireContains(t, "log argument envelope", out.stdout, `"code": "invalid_arguments"`)
 	}
+}
+
+// TestLogFiltersBySource is the question the multi-repository model
+// makes people ask: which of these documents came from which repository.
+func TestLogFiltersBySource(t *testing.T) {
+	w := newWorld(t, map[string]string{"api.md": "canonical api\n"})
+	w.initAndAdoptDocs()
+	w.commitDocs("docs: local update", map[string]string{"api.md": "local api\n"})
+	w.push()
+	// A docs writer commits straight into the canonical repository, and
+	// quotes the publication subject while doing it.
+	w.advanceCanonical(map[string]string{
+		"api.md":   "local api\n",
+		"guide.md": "see [SANHO] Publish docs from " + filepath.Base(w.app) + "/main for context\n",
+	}, "docs: mention [SANHO] Publish docs from "+filepath.Base(w.app)+"/main")
+
+	all := w.sanho(w.app, "log", "--refresh", "--json")
+	var everything logDocument
+	if err := json.Unmarshal([]byte(all.stdout), &everything); err != nil {
+		t.Fatalf("decode log JSON: %v\n%s", err, all.stdout)
+	}
+	if len(everything.Entries) != 3 {
+		t.Fatalf("unfiltered log listed %d entries, want 3", len(everything.Entries))
+	}
+	var publication struct{ repository, workspace string }
+	for _, entry := range everything.Entries {
+		if entry.Source != nil {
+			publication.repository = entry.Source.Repository
+			publication.workspace = entry.Source.WorkspaceID
+		}
+	}
+	if publication.repository == "" || publication.workspace == "" {
+		t.Fatal("no publication in the listing to filter on")
+	}
+
+	for name, args := range map[string][]string{
+		"by repository": {"log", "--json", "--repository", publication.repository},
+		"by workspace":  {"log", "--json", "--workspace", publication.workspace},
+		"by both":       {"log", "--json", "--repository", publication.repository, "--workspace", publication.workspace},
+	} {
+		t.Run(name, func(t *testing.T) {
+			out := w.sanho(w.app, args...)
+			var filtered logDocument
+			if err := json.Unmarshal([]byte(out.stdout), &filtered); err != nil {
+				t.Fatalf("decode filtered log JSON: %v\n%s", err, out.stdout)
+			}
+			if len(filtered.Entries) != 1 {
+				t.Fatalf("%v listed %d entries, want only the publication: %s", args, len(filtered.Entries), out.stdout)
+			}
+			entry := filtered.Entries[0]
+			if entry.Kind != "publication" || entry.Source == nil {
+				t.Fatalf("filtered entry = %+v, want a decoded publication", entry)
+			}
+			if entry.Source.Repository != publication.repository {
+				t.Errorf("repository = %q, want %q", entry.Source.Repository, publication.repository)
+			}
+		})
+	}
+
+	// A source that published nothing here matches nothing, and the
+	// human line says which narrowing came up empty rather than claiming
+	// canonical is empty.
+	none := w.sanho(w.app, "log", "--repository", "no-such-repository")
+	requireContains(t, "empty filtered listing", none.stdout, "no canonical commits match repository no-such-repository")
+	requireNotContains(t, "empty filtered listing", none.stdout, "canonical has no commits yet")
+}
+
+// logDocument mirrors the `log` schema in docs/cli-json.md.
+type logDocument struct {
+	Branch  string `json:"branch"`
+	Entries []struct {
+		Commit string `json:"commit"`
+		Kind   string `json:"kind"`
+		Source *struct {
+			Repository  string `json:"repository"`
+			WorkspaceID string `json:"workspace_id"`
+		} `json:"source"`
+	} `json:"entries"`
 }
 
 // TestMalformedInvocationWritesAnEnvelope is the same contract one

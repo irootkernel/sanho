@@ -209,7 +209,11 @@ commit, and `log` reads them back:
 
 The second line is absent for a commit made directly in the canonical
 repository; `--json` reports those as `"kind": "external"` with a null `source`.
-`--path <document>` narrows the listing to one file. Like `status` and `diff`,
+`--path <document>` narrows the listing to one file, and `--repository` /
+`--workspace` narrow it to what one application repository or one checkout
+sent — the question a docs repository shared by ten repositories actually
+raises. Only publications carry a source, so a commit written directly in
+canonical never matches either. Like `status` and `diff`,
 `log` reads the last fetched snapshot unless you pass `--refresh`, and unlike
 `diff` it needs no recorded base — it is what the rewrite-recovery message
 tells you to run when the base can no longer be resolved.
@@ -310,7 +314,7 @@ required" plus diagnostics instead of a command that would fail.
 sanho init      # register this repository as a workspace
 sanho status    # base vs canonical, sync preview, siblings   (--refresh, --json)
 sanho diff      # inspect incoming or local docs changes       (--refresh, --local, --stat, --name-only)
-sanho log       # canonical history and its publication source (--refresh, -n, --path, --json)
+sanho log       # canonical history and its publication source (--refresh, -n, --path, --repository, --workspace, --json)
 sanho show      # what one canonical commit publishes          (--path, --refresh, --json)
 sanho check     # explicit CI policy checks                    (--require-clean, --require-current, --require-published, --json)
 sanho state     # registered projects and workspaces          (--all, --json)

@@ -24,13 +24,21 @@ repository. It is a Git-boundary tool, not a general task or session manager.
    user asks to inspect incoming or unpublished docs changes. Diff is
    read-only, has no JSON mode, and prints paths relative to the configured
    docs root.
-   Use `sanho log` (with `--refresh`, `-n`, `--path`, or `--json`) when the
+   Use `sanho log` (with `--refresh`, `-n`, `--path`, `--repository`,
+   `--workspace`, or `--json`) when the
    user asks what changed in canonical or which repository, workspace, or
    application commit a document came from. Log is read-only, needs no
    recorded base, and reads the last fetched snapshot unless `--refresh` is
    given. Read `kind` before `source`: an `external` entry is a commit made
    directly in the canonical repository and reports `source: null`, which is
    absent provenance rather than an empty record.
+   Narrow with `--repository` or `--workspace` when the question is what one
+   application repository or one checkout published; take the exact values
+   from a listing's own `source` fields or from `sanho state --all`, and never
+   pass an empty one, which is refused as `invalid_arguments`. A source filter
+   never lists an `external` commit, and a filtered listing may be shorter
+   than `-n` even when further matches exist deeper in history, so do not read
+   its length as exhaustion.
    Use `sanho show <commit>` (with `--path`, `--refresh`, or `--json`) when the
    question is what a specific canonical commit contains rather than what
    changed — above all when choosing a rewrite-recovery anchor, where an

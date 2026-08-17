@@ -12,6 +12,8 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+
+	"github.com/spf13/cobra"
 )
 
 // writeJSON renders v as an indented JSON document with a trailing
@@ -70,6 +72,25 @@ func normalizeDocsPath(value string) (string, error) {
 			errInvalidArguments, value)
 	}
 	return cleaned, nil
+}
+
+// requireNonEmptyFlags refuses a narrowing flag that was handed an empty
+// value.
+//
+// Absent and empty are the same value once the flag has been parsed into
+// an options struct, and reading "given as empty" as "not given" would
+// answer a narrowed question with the whole listing. That is not a
+// theoretical shape: it is what an agent interpolating an unset variable
+// produces, and the answer it would then attribute to a repository it
+// never named.
+func requireNonEmptyFlags(cmd *cobra.Command, names ...string) error {
+	for _, name := range names {
+		flag := cmd.Flags().Lookup(name)
+		if flag != nil && flag.Changed && flag.Value.String() == "" {
+			return fmt.Errorf("%w: --%s needs a value", errInvalidArguments, name)
+		}
+	}
+	return nil
 }
 
 // requireV2Workspace resolves the workspace for a command that needs a

@@ -82,6 +82,8 @@ sanho log
 sanho log --refresh
 sanho log -n 50
 sanho log --path api.md
+sanho log --repository payments
+sanho log --workspace product:/Users/me/work/app
 sanho log --json
 ```
 
@@ -90,6 +92,13 @@ application commit it came from. A commit made directly in the canonical
 repository is listed as ordinary history with no source. Paths follow the same
 docs-root-relative convention as `diff`. Unlike `diff`, `log` needs no recorded
 base.
+
+`--repository` and `--workspace` answer "what did this repository send" in a
+docs repository several repositories publish into. Take the exact values from a
+listing's own `source` fields, or from `sanho state --all` for a workspace ID.
+Because only publications record a source, neither filter ever lists a commit
+made directly in the canonical repository, and an empty result says which
+narrowing matched nothing rather than claiming canonical is empty.
 
 Read a commit the listing named:
 

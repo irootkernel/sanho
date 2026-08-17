@@ -41,10 +41,42 @@ const (
 )
 
 type logOptions struct {
-	refresh  bool
-	asJSON   bool
-	maxCount int
-	docsPath string
+	refresh    bool
+	asJSON     bool
+	maxCount   int
+	docsPath   string
+	repository string
+	workspace  string
+}
+
+// logFilter is the decoded-side half of a source filter.
+//
+// git does the narrowing, over the message text, so that --max-count
+// keeps meaning "entries listed". That is a fast prefilter and nothing
+// more: a message may carry the literal for a reason of its own, so
+// membership is decided here, on ParseCommitMeta's fields. An external
+// commit never matches — it carries no source at all, which is absent
+// provenance rather than a source that happens to differ.
+type logFilter struct {
+	repository string
+	workspace  string
+}
+
+func (f logFilter) active() bool { return f.repository != "" || f.workspace != "" }
+
+func (f logFilter) matches(meta pubdom.CommitMeta, decoded bool) bool {
+	switch {
+	case !f.active():
+		return true
+	case !decoded:
+		return false
+	case f.repository != "" && meta.RepoName != f.repository:
+		return false
+	case f.workspace != "" && meta.WorkspaceID != f.workspace:
+		return false
+	default:
+		return true
+	}
 }
 
 type logJSON struct {
@@ -87,34 +119,61 @@ are listed as ordinary history.
 
 Use --refresh to fetch canonical first, and --path to narrow to one
 document. Paths are relative to the configured docs root, the same way
-sanho diff reports them.`,
+sanho diff reports them.
+
+--repository and --workspace narrow to the publications one application
+repository or one workspace sent. Both read the provenance every
+publication records, so a commit made directly in the canonical
+repository never matches either.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if err := requireNonEmptyFlags(cmd, "path", "repository", "workspace"); err != nil {
+				return finishCommand(cmd, nil, opts.asJSON, err)
+			}
 			return runLog(cmd, opts)
 		},
 	}
 	cmd.Flags().BoolVar(&opts.refresh, "refresh", false, "Fetch the canonical repository before reading")
 	cmd.Flags().IntVarP(&opts.maxCount, "max-count", "n", defaultLogCount, "Maximum number of commits to list")
 	cmd.Flags().StringVar(&opts.docsPath, "path", "", "Limit to commits touching this docs path")
+	cmd.Flags().StringVar(&opts.repository, "repository", "", "Limit to publications from this application repository")
+	cmd.Flags().StringVar(&opts.workspace, "workspace", "", "Limit to publications from this workspace ID")
 	cmd.Flags().BoolVar(&opts.asJSON, "json", false, "Print machine-readable JSON")
 	return cmd
 }
 
-// normalize validates the flags and returns the canonical path to filter
-// on, which normalizeDocsPath checks for containment on every reader's
-// behalf.
-func (o logOptions) normalize() (string, error) {
+// normalize validates the flags and returns the query to read history
+// with, plus the decoded-side filter that confirms what git narrowed.
+//
+// The message literals come from domain/publish rather than from a
+// format spelled out here: the convention belongs to the package that
+// writes it.
+func (o logOptions) normalize() (canonical.LogQuery, logFilter, error) {
+	filter := logFilter{repository: o.repository, workspace: o.workspace}
 	if o.maxCount < 1 {
-		return "", fmt.Errorf("%w: --max-count must be at least 1", errInvalidArguments)
+		return canonical.LogQuery{}, filter,
+			fmt.Errorf("%w: --max-count must be at least 1", errInvalidArguments)
 	}
-	if o.docsPath == "" {
-		return "", nil
+
+	query := canonical.LogQuery{MaxCount: o.maxCount}
+	if o.docsPath != "" {
+		docsPath, err := normalizeDocsPath(o.docsPath)
+		if err != nil {
+			return canonical.LogQuery{}, filter, err
+		}
+		query.Path = docsPath
 	}
-	return normalizeDocsPath(o.docsPath)
+	if o.repository != "" {
+		query.Message = append(query.Message, pubdom.SubjectFragmentFor(o.repository))
+	}
+	if o.workspace != "" {
+		query.Message = append(query.Message, pubdom.SourceFragmentFor(o.workspace))
+	}
+	return query, filter, nil
 }
 
 func runLog(cmd *cobra.Command, opts logOptions) error {
-	docsPath, err := opts.normalize()
+	query, filter, err := opts.normalize()
 	if err != nil {
 		return finishCommand(cmd, nil, opts.asJSON, err)
 	}
@@ -136,7 +195,7 @@ func runLog(cmd *cobra.Command, opts logOptions) error {
 		}
 	}
 
-	entries, err := store.Log(ctx, opts.maxCount, docsPath)
+	entries, err := store.Log(ctx, query)
 	// A canonical repository nothing has published into yet has no
 	// history, which is an answer rather than a failure — the same
 	// reading `sanho status` gives it with canonical.empty.
@@ -145,19 +204,36 @@ func runLog(cmd *cobra.Command, opts logOptions) error {
 	}
 
 	age, fetchedEver := store.Age()
-	document := buildLogJSON(store.Branch(), age, fetchedEver, entries)
+	document := buildLogJSON(store.Branch(), age, fetchedEver, entries, filter)
 	if opts.asJSON {
 		return writeJSON(cmd.OutOrStdout(), document)
 	}
-	renderLog(cmd.OutOrStdout(), document, docsPath)
+	renderLog(cmd.OutOrStdout(), document, opts.narrowing())
 	writeln(cmd.ErrOrStderr(), dataAgeLine(age, fetchedEver))
 	return nil
+}
+
+// narrowing names the active filters for the empty-listing line, in the
+// order the flags are documented.
+func (o logOptions) narrowing() string {
+	var parts []string
+	if o.docsPath != "" {
+		parts = append(parts, "path "+o.docsPath)
+	}
+	if o.repository != "" {
+		parts = append(parts, "repository "+o.repository)
+	}
+	if o.workspace != "" {
+		parts = append(parts, "workspace "+o.workspace)
+	}
+	return strings.Join(parts, " and ")
 }
 
 // buildLogJSON takes the canonical facts rather than the store so the
 // mapping that decides publication-vs-external can be driven through
 // both kinds without a real clone.
-func buildLogJSON(branch string, age time.Duration, fetchedEver bool, entries []canonical.LogEntry) logJSON {
+func buildLogJSON(branch string, age time.Duration, fetchedEver bool,
+	entries []canonical.LogEntry, filter logFilter) logJSON {
 	document := logJSON{
 		Branch:      branch,
 		FetchedEver: fetchedEver,
@@ -168,6 +244,11 @@ func buildLogJSON(branch string, age time.Duration, fetchedEver bool, entries []
 	}
 
 	for _, entry := range entries {
+		meta, decoded := pubdom.ParseCommitMeta(entry.Message)
+		if !filter.matches(meta, decoded) {
+			continue
+		}
+
 		row := logEntryJSON{
 			Commit:              entry.Commit,
 			Tree:                entry.Tree,
@@ -176,7 +257,7 @@ func buildLogJSON(branch string, age time.Duration, fetchedEver bool, entries []
 			Kind:                logKindExternal,
 			ApplicationSubjects: []string{},
 		}
-		if meta, ok := pubdom.ParseCommitMeta(entry.Message); ok {
+		if decoded {
 			row.Kind = logKindPublication
 			row.Source = &logSourceJSON{
 				Repository:        meta.RepoName,
@@ -198,10 +279,18 @@ func messageSubject(message string) string {
 	return strings.TrimRight(line, "\r")
 }
 
-func renderLog(out io.Writer, document logJSON, docsPath string) {
+// renderLog prints the listing, or says why it is empty.
+//
+// An empty listing has two readings that must not be confused: nothing
+// has ever been published into canonical, or the narrowing matched
+// nothing. Naming the narrowing is what keeps a filtered miss from
+// reading as an empty canonical repository — and it is the reading a
+// source filter makes easy to hit, since only publications ever match
+// one.
+func renderLog(out io.Writer, document logJSON, narrowing string) {
 	if len(document.Entries) == 0 {
-		if docsPath != "" {
-			writef(out, "no canonical commits touch %s\n", docsPath)
+		if narrowing != "" {
+			writef(out, "no canonical commits match %s\n", narrowing)
 			return
 		}
 		writeln(out, "canonical has no commits yet")

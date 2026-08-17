@@ -728,16 +728,36 @@ type LogEntry struct {
 	Message     string
 }
 
-// Log returns up to maxCount canonical commits, newest first, optionally
-// narrowed to one path. path is a canonical path, which for a docs-only
-// repository is the same thing as a docs-root-relative one.
+// LogQuery narrows a history listing. It is a struct rather than a
+// growing positional list because every field is a narrowing, and
+// `Log(ctx, 20, "", nil)` says nothing about which "" is which.
+type LogQuery struct {
+	// MaxCount bounds the entries returned.
+	MaxCount int
+	// Path narrows to commits touching one canonical path, which for a
+	// docs-only repository is a docs-root-relative one.
+	Path string
+	// Message narrows to commits whose message contains every listed
+	// literal. They are FIXED strings, never patterns: the values come
+	// from user input — a workspace ID is an absolute path — and
+	// escaping one into a regular expression is a step with no upside
+	// here.
+	//
+	// Filtering in git rather than after the read is what keeps
+	// MaxCount meaning "entries listed" instead of degrading into
+	// "entries examined".
+	Message []string
+}
+
+// Log returns up to query.MaxCount canonical commits, newest first,
+// narrowed by the query's path and message filters.
 //
 // An empty publication branch is ErrEmptyBranch, the same answer Head
 // gives, so callers keep one vocabulary for "nothing published yet"
 // rather than reading `git log`'s unknown-revision failure. Like
 // FindCommitByDocsTree this reads the clone only; it opens no network
 // and writes nothing.
-func (s *Store) Log(ctx context.Context, maxCount int, path string) ([]LogEntry, error) {
+func (s *Store) Log(ctx context.Context, query LogQuery) ([]LogEntry, error) {
 	ref := s.remoteRef()
 	exists, err := s.refExists(ctx, ref)
 	if err != nil {
@@ -757,10 +777,22 @@ func (s *Store) Log(ctx context.Context, maxCount int, path string) ([]LogEntry,
 	// failed the whole listing or, shaped deliberately, added an entry
 	// git never reported. This is the %x00 idiom appgit already uses to
 	// read whole messages out of git.
-	args := []string{"log", "-z", "--max-count=" + strconv.Itoa(maxCount),
-		"--format=%H%x00%T%x00%cI%x00%B", ref}
-	if path != "" {
-		args = append(args, "--", path)
+	args := []string{"log", "-z", "--max-count=" + strconv.Itoa(query.MaxCount),
+		"--format=%H%x00%T%x00%cI%x00%B"}
+	if len(query.Message) > 0 {
+		args = append(args, "--fixed-strings")
+		for _, literal := range query.Message {
+			args = append(args, "--grep="+literal)
+		}
+		// Several --grep patterns are OR by default; every literal here
+		// is a separate narrowing, so they have to all hold.
+		if len(query.Message) > 1 {
+			args = append(args, "--all-match")
+		}
+	}
+	args = append(args, ref)
+	if query.Path != "" {
+		args = append(args, "--", query.Path)
 	}
 	res, err := gitx.New(s.dir).Run(ctx, args...)
 	if err != nil {

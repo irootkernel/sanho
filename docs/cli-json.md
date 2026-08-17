@@ -227,8 +227,21 @@ byte-identical; any writer still refuses that schema.
 ```
 
 Entries are newest first, bounded by `--max-count` (`-n`, default 20).
-`--path` narrows to one docs-root-relative path, and `--refresh` fetches before
-reading. `branch` is the publication branch the entries come from.
+`--path` narrows to one docs-root-relative path, `--repository` and
+`--workspace` narrow to the publications one application repository or one
+workspace sent, and `--refresh` fetches before reading. Multiple narrowings use
+AND semantics. `branch` is the publication branch the entries come from.
+
+A narrowing flag given an empty value reports `invalid_arguments` rather than
+being read as no filter at all.
+
+Only a `publication` entry carries a source, so an `external` commit matches no
+source filter. The filter runs first inside git, over the message text, which
+is what keeps `--max-count` bounding the entries listed; each match is then
+confirmed against its decoded provenance. A commit whose message coincidentally
+contains the filter text is therefore dropped, so a filtered listing can be
+shorter than `--max-count` even when further matches exist deeper in history.
+Read `entries` rather than inferring exhaustion from its length.
 
 `kind` is `publication` when the commit carries the publication provenance
 Sanho writes, and `external` for a commit made directly in the canonical
