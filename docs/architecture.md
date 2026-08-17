@@ -128,6 +128,16 @@ The publication cases are:
 | Recorded base disappeared but its tree matches rewritten history | Re-derive and continue |
 | Recorded base disappeared and no safe anchor exists | Reject with rewrite guidance |
 
+A fast-forward publishes the pushed tree directly over canonical head, so it
+additionally requires the pushed branch's own provenance to vouch for the base:
+the newest reachable `docs-base` must name it or a canonical ancestor of it.
+A rewrite invalidates that commit without invalidating the derivation, so the
+same stamp's `docs-base-tree` corroborates instead when it names the tree
+canonical head publishes — the content half of the proof, which is what the
+tree trailer exists for. Failing both, the tip must absorb canonical head
+exactly. A branch carrying no provenance at all satisfies none of them and is
+refused, which is the case the requirement was introduced for.
+
 Canonical commits are linear and use:
 
 ```text

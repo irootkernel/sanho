@@ -1531,3 +1531,78 @@ func TestPreviewReportsAnEmptyCanonicalAsBootstrap(t *testing.T) {
 	}
 	s.requireCanonicalUntouched(t)
 }
+
+// TestRunAcceptsAStampWhoseTreeIsCanonicalHead is the squash-in-the-docs-
+// repository state: canonical history was replaced by an unrelated commit
+// carrying the identical docs tree, so the branch's stamp names a commit
+// canonical no longer has — and the same stamp's TREE is exactly what
+// canonical head publishes.
+//
+// Rejecting that was the hands-on H06 defect. The commit half of the
+// stamp is what a rewrite invalidates; the tree half is what it leaves
+// intact, which is the reason the provenance contract records both.
+func TestRunAcceptsAStampWhoseTreeIsCanonicalHead(t *testing.T) {
+	s := newScenario(t)
+	s.app.defaultStampedBase = nil
+	s.app.stampedBases = map[string]provenance.Base{
+		// A commit canonical no longer contains, stamped with the tree
+		// canonical head still publishes.
+		appTip: {Commit: commitOID(777), Tree: canonTree},
+	}
+
+	outcome, err := s.run(t)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if outcome.Case != pubdom.CaseFastForward {
+		t.Fatalf("case = %v, want a fast forward", outcome.Case)
+	}
+	if outcome.Published == "" {
+		t.Fatal("Run published nothing")
+	}
+	// The tree warrant is decided before the absorption merge, which is
+	// the expensive one.
+	if len(s.canonical.absorbCalls) != 0 {
+		t.Errorf("absorption ran despite a matching stamped tree: %v", s.canonical.absorbCalls)
+	}
+}
+
+// TestRunStillRefusesAStampWhoseTreeIsNotCanonicalHead keeps the new path
+// a warrant rather than a hole: a stamp naming some other tree proves
+// nothing about the docs the fast-forward would overwrite.
+func TestRunStillRefusesAStampWhoseTreeIsNotCanonicalHead(t *testing.T) {
+	s := newScenario(t)
+	s.app.defaultStampedBase = nil
+	s.app.stampedBases = map[string]provenance.Base{
+		appTip: {Commit: commitOID(777), Tree: treeOID(778)},
+	}
+
+	_, err := s.run(t)
+	var syncErr *SyncRequiredError
+	if !errors.As(err, &syncErr) {
+		t.Fatalf("error = %v, want a sync-required rejection", err)
+	}
+	if syncErr.Reason != ReasonUncorroboratedBase {
+		t.Errorf("reason = %q, want %q", syncErr.Reason, ReasonUncorroboratedBase)
+	}
+	if s.canonical.pushes != 0 || len(s.canonical.created) != 0 {
+		t.Errorf("the refusal still wrote to canonical")
+	}
+}
+
+// TestRunIgnoresAnEmptyStampedTree pins that the legacy stamp — a
+// docs-version trailer, which carries no tree — cannot satisfy the tree
+// warrant by comparing empty to empty.
+func TestRunIgnoresAnEmptyStampedTree(t *testing.T) {
+	s := newScenario(t)
+	s.app.defaultStampedBase = nil
+	s.app.stampedBases = map[string]provenance.Base{
+		appTip: {Commit: commitOID(777)},
+	}
+	s.canonical.branch = []commitPair{{commit: canonHead, tree: ""}}
+
+	_, err := s.run(t)
+	if !errors.Is(err, ErrSyncRequired) {
+		t.Fatalf("error = %v, want the fail-closed rejection", err)
+	}
+}

@@ -92,6 +92,23 @@
 
 ### Fixed
 
+- A push after a canonical history rewrite that preserved the docs tree — what
+  a squash or rebase in the docs repository leaves behind — is no longer
+  refused as uncorroborated. The fast-forward gate compared only the commit
+  half of the pushed branch's provenance stamp, which is precisely the half a
+  rewrite invalidates, and rejected a branch whose own history proved it
+  derived from exactly the docs canonical head publishes.
+
+  The stamp's `docs-base-tree` now corroborates the base when it names
+  canonical head's tree. That is the same proof the accepted commit match
+  already carries — in a fast-forward the base is canonical head, so a commit
+  match is a tree match — expressed at the level that survives the commit
+  being rewritten, and it is what the tree trailer was recorded for. A branch
+  carrying no provenance, or one naming a different tree, is refused exactly as
+  before.
+
+  Hands-on H06 found this: the state was reachable, and the rejection's own
+  guidance could not leave it.
 - A `--json` command that was invoked incorrectly now writes the documented
   error envelope. An unknown flag, an unparseable flag value, or an unexpected
   positional argument was rejected before the command ran, so nothing rendered

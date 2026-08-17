@@ -944,3 +944,80 @@ type previewDocument struct {
 	Blocked   bool     `json:"blocked"`
 	Conflicts []string `json:"conflicts"`
 }
+
+// TestIdenticalTreeRewriteStillPublishes is hands-on H06 step 1, pinned.
+//
+// A squash or rebase in the docs repository replaces canonical history
+// with an unrelated commit carrying the identical docs tree. The branch's
+// stamp then names a commit canonical no longer has, and the push used to
+// be refused as uncorroborated — with guidance that could not escape the
+// state, because restamping copies the base file, which the re-anchor
+// does not correct.
+//
+// The stamp's TREE is what a rewrite leaves intact, and here it is
+// exactly what canonical head publishes, so the branch has proved what
+// the fast-forward needs.
+func TestIdenticalTreeRewriteStillPublishes(t *testing.T) {
+	docs := map[string]string{"api.md": "canonical api\n"}
+	w := newWorld(t, docs)
+	w.initAndAdoptDocs()
+	w.commitDocs("docs: local update", map[string]string{"api.md": "canonical api\nlocal\n"})
+	w.push()
+
+	// Replace history with an unrelated commit carrying the same tree as
+	// the workspace's recorded base.
+	baseTreeBefore := recordedBaseTree(t, w)
+	rewritten := w.rewriteCanonical(map[string]string{"api.md": "canonical api\nlocal\n"},
+		"canonical: rewritten, identical tree")
+	if got := strings.TrimSpace(w.git(w.origin, "rev-parse", rewritten+"^{tree}").stdout); got != baseTreeBefore {
+		t.Fatalf("the replacement carries tree %s, want the recorded base tree %s", got, baseTreeBefore)
+	}
+
+	// A reader must not repair the base: re-anchoring belongs to the
+	// publication path.
+	baseFileBefore := readFile(t, w.appPath(".sanho_base.json"))
+	w.sanho(w.app, "status", "--refresh")
+	if readFile(t, w.appPath(".sanho_base.json")) != baseFileBefore {
+		t.Fatal("status --refresh rewrote the base file")
+	}
+
+	w.commitDocs("docs: after the rewrite", map[string]string{"api.md": "canonical api\nlocal\nmore\n"})
+	push := w.push()
+	if push.exitCode != 0 {
+		t.Fatalf("the push after an identical-tree rewrite exited %d:\n%s", push.exitCode, push.combined())
+	}
+	requireContains(t, "push output", push.combined(), "published docs")
+	requireNotContains(t, "push output", push.combined(), "does not corroborate")
+
+	// The publication re-anchored the base onto the replacement history.
+	if recordedBase(t, w) == "" {
+		t.Fatal("no base recorded after the publication")
+	}
+	if w.canonicalFile(w.canonicalHead(), "api.md") != "canonical api\nlocal\nmore\n" {
+		t.Errorf("canonical api.md = %q, want the published content",
+			w.canonicalFile(w.canonicalHead(), "api.md"))
+	}
+}
+
+// recordedBase and recordedBaseTree read the workspace's base pointer.
+func recordedBase(t *testing.T, w *world) string {
+	t.Helper()
+	var base struct {
+		Commit string `json:"commit"`
+	}
+	if err := json.Unmarshal([]byte(readFile(t, w.appPath(".sanho_base.json"))), &base); err != nil {
+		t.Fatalf("decode base file: %v", err)
+	}
+	return base.Commit
+}
+
+func recordedBaseTree(t *testing.T, w *world) string {
+	t.Helper()
+	var base struct {
+		Tree string `json:"tree"`
+	}
+	if err := json.Unmarshal([]byte(readFile(t, w.appPath(".sanho_base.json"))), &base); err != nil {
+		t.Fatalf("decode base file: %v", err)
+	}
+	return base.Tree
+}

@@ -612,7 +612,7 @@ func (u *UseCase) evaluate(ctx context.Context, tips []tip, base *provenance.Bas
 				return pushPlan{}, fmt.Errorf("import %s into the canonical clone: %w", shortOID(t.oid), err)
 			}
 			imported = true
-			if err := u.requireCorroboratedBase(ctx, t, *base, snap.head); err != nil {
+			if err := u.requireCorroboratedBase(ctx, t, *base, snap.head, snap.headTree); err != nil {
 				return pushPlan{}, err
 			}
 		}
@@ -1004,13 +1004,31 @@ func (u *UseCase) commitPublication(ctx context.Context, t *tip, tree, parent st
 // the commit the trailers name, so every workspace that has just pushed
 // is in it.
 //
-// A trailer invalidated by rewritten history gets one narrower content
-// warrant: the tip must absorb canonical head exactly. If neither proof
-// holds, the CLI routes the base==head state to an explicit provenance
-// restamp; `sanho sync` would be a no-op there. Nothing else about the
-// push changes: an auto-merge combines both sides and never needed this,
-// and a docs-identical tip short-circuits before the base is consulted.
-func (u *UseCase) requireCorroboratedBase(ctx context.Context, t *tip, base provenance.Base, head string) error {
+// A trailer whose COMMIT a rewrite invalidated is not thereby
+// uncorroborated, and reading it that way is what made a squash in the
+// docs repository unrecoverable. The stamp carries a tree as well, and
+// the provenance contract says what for: the commit identifies
+// ancestry, the tree corroborates content across canonical history
+// rewrites. When the branch's own stamp names the tree canonical head
+// publishes, it has proved exactly what the commit match proves — in a
+// fast-forward base == head, so a commit match IS a tree match — only
+// at the level that survives the commit being rewritten.
+//
+// Failing all of that, one narrower content warrant remains: the tip
+// must absorb canonical head exactly.
+//
+// If no proof holds, the CLI routes the state to a provenance restamp.
+// That advice assumes the recorded base FILE is current, which is true
+// for the branch-switch state this guard was written for and NOT true
+// after a re-anchor, because decideWithReanchor corrects the base in
+// memory and leaves the file naming a commit canonical no longer has —
+// so the message names `sanho sync` first, which is the only thing that
+// advances the file.
+//
+// Nothing else about the push changes: an auto-merge combines both
+// sides and never needed this, and a docs-identical tip short-circuits
+// before the base is consulted.
+func (u *UseCase) requireCorroboratedBase(ctx context.Context, t *tip, base provenance.Base, head, headTree string) error {
 	stamped, found, err := u.App.NewestDocsBase(ctx, t.oid)
 	if err != nil {
 		return fmt.Errorf("read the docs provenance of %s: %w", shortOID(t.oid), err)
@@ -1026,6 +1044,13 @@ func (u *UseCase) requireCorroboratedBase(ctx context.Context, t *tip, base prov
 			return fmt.Errorf("check whether %s precedes the recorded base: %w", shortOID(stamped.Commit), err)
 		}
 		if ancestor {
+			return nil
+		}
+		// The content half of the same stamp, which is what a rewrite
+		// leaves intact. It is checked before the absorption warrant
+		// below because comparing two OIDs costs nothing while
+		// absorption is a merge run clone-side.
+		if stamped.Tree != "" && stamped.Tree == headTree {
 			return nil
 		}
 	}
