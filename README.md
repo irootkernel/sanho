@@ -182,6 +182,7 @@ remain unsupported.
 ```bash
 sanho status     # where am I
 sanho diff       # inspect incoming cached canonical changes
+sanho log        # what changed in canonical, and which repository sent it
 sanho check      # enforce explicit local/current/published policies
 sanho sync       # reconcile with upstream
 sanho pull       # just take canonical's docs (no local edits)
@@ -192,6 +193,25 @@ Status separates the committed-tree merge preview from local command
 readiness. A clean preview says how `HEAD` would merge; `sync now` and `pull
 now` say whether the docs working copy passes those commands' current local
 guards. They do not predict network availability or a later fetch.
+
+`sanho log` answers the other question — where a document came from. Every
+publication records its source repository, branch, workspace and application
+commit, and `log` reads them back:
+
+```text
+9a41f2cbbbbb  2026-08-14  [SANHO] Publish docs from app/main (2 app commits)
+              from product:/Users/me/work/app @ 3f0d1a5c7e21
+                - docs: update the API guide
+                - docs: fix a typo
+5a2b0c1d4e6f  2026-08-12  docs: reworded upstream
+```
+
+The second line is absent for a commit made directly in the canonical
+repository; `--json` reports those as `"kind": "external"` with a null `source`.
+`--path <document>` narrows the listing to one file. Like `status` and `diff`,
+`log` reads the last fetched snapshot unless you pass `--refresh`, and unlike
+`diff` it needs no recorded base — it is what the rewrite-recovery message
+tells you to run when the base can no longer be resolved.
 
 A commit on a stale base prints one line and succeeds:
 
@@ -277,6 +297,7 @@ required" plus diagnostics instead of a command that would fail.
 sanho init      # register this repository as a workspace
 sanho status    # base vs canonical, sync preview, siblings   (--refresh, --json)
 sanho diff      # inspect incoming or local docs changes       (--refresh, --local, --stat, --name-only)
+sanho log       # canonical history and its publication source (--refresh, -n, --path, --json)
 sanho check     # explicit CI policy checks                    (--require-clean, --require-current, --require-published, --json)
 sanho state     # registered projects and workspaces          (--all, --json)
 sanho sync      # reconcile   (--continue, --abort, --rebase-onto <oid>, --json)

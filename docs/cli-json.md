@@ -7,6 +7,7 @@ sanho version --json
 sanho status --json
 sanho state --json
 sanho state --all --json
+sanho log --json
 sanho check --require-<policy> --json
 sanho sync --json
 sanho pull --json
@@ -15,7 +16,8 @@ sanho doctor --json
 
 `init`, `clean`, `project`, `workspace`, `migrate`, and direct `hook`
 entrypoints do not have a JSON success document. `diff` also has no JSON mode;
-its patch, diffstat, or path output is intended for direct inspection.
+its patch, diffstat, or path output is intended for direct inspection. Use
+`log --json` for machine-readable history and publication provenance.
 
 ## Common rules
 
@@ -85,6 +87,7 @@ Always read `sync.status`; never infer the sync result from exit 0 alone.
 - sibling relations: `same`, `behind N`, `ahead N`, `diverged A/B`, `unknown`.
 - sync statuses: `up_to_date`, `synced`, `conflicts`, `completed`, `aborted`.
 - doctor severities: `ok`, `info`, `warning`.
+- log entry kinds: `publication`, `external`.
 
 Unknown is not zero. When Sanho cannot establish a relationship it sets the
 corresponding `known` field to false instead of inventing a count.
@@ -185,6 +188,47 @@ Projects and workspaces are sorted for stable output.
 For inventory before conversion, `state` can project the supported legacy
 registry into this schema in memory. The read leaves both registry files
 byte-identical; any writer still refuses that schema.
+
+## `log`
+
+```json
+{
+  "branch": "main",
+  "fetched_ever": true,
+  "data_age_seconds": 12,
+  "entries": [
+    {
+      "commit": "9a41f2cbf0d1e2a3b4c5d6e7f8091a2b3c4d5e6f",
+      "tree": "7b51f2cbf0d1e2a3b4c5d6e7f8091a2b3c4d5e6f",
+      "committed_at": "2026-08-14T09:14:03Z",
+      "subject": "[SANHO] Publish docs from app/main (2 app commits)",
+      "kind": "publication",
+      "source": {
+        "repository": "app",
+        "branch": "main",
+        "workspace_id": "product:/Users/name/work/app",
+        "application_commit": "3f0d1a5c7e21e2a3b4c5d6e7f8091a2b3c4d5e6f"
+      },
+      "application_subjects": ["docs: update the API guide", "docs: fix a typo"]
+    }
+  ]
+}
+```
+
+Entries are newest first, bounded by `--max-count` (`-n`, default 20).
+`--path` narrows to one docs-root-relative path, and `--refresh` fetches before
+reading. `branch` is the publication branch the entries come from.
+
+`kind` is `publication` when the commit carries the publication provenance
+Sanho writes, and `external` for a commit made directly in the canonical
+repository. An `external` entry has `source: null` and an empty
+`application_subjects`; both fields describe a record that does not exist
+rather than an empty one. `committed_at` is RFC3339 in UTC.
+
+Unlike `diff`, `log` does not require a recorded base: it is the listing the
+rewrite-recovery guidance names, and that state is precisely where no base
+resolves. A canonical repository with no commits reports `entries: []` rather
+than an error.
 
 ## `sync` and `pull`
 

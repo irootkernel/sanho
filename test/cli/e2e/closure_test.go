@@ -839,11 +839,10 @@ func reachHistoryRewritten(t *testing.T, w *world) closureState {
 	return closureState{
 		ws:     ws,
 		output: push.combined(),
-		substitutions: map[string]string{
-			"<clone-dir>": ws.cloneDir(),
-			"<branch>":    "main",
-			"<commit>":    rewritten,
-		},
+		// The listing step is `sanho log`, which resolves the clone and
+		// the publication branch itself — so this state no longer has to
+		// hand the suite a clone path and a branch name to substitute.
+		substitutions: map[string]string{"<commit>": rewritten},
 	}
 }
 

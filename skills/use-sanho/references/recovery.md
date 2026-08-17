@@ -60,14 +60,20 @@ sanho status --refresh --json
 For `history_rewritten`, require explicit recovery intent before any rebase
 and take the target from the message that raised it. When the message names a
 rebase target, use exactly that value. When it names none — the push rejection
-states manual intervention is required and prints a candidate-listing
-`git log` command; the sync message says only to pick a canonical commit —
-inspect canonical history in the private clone and let the user choose the
-target for:
+states manual intervention is required and names `sanho log`; the sync message
+says only to pick a canonical commit — list the candidates and let the user
+choose the target:
 
 ```bash
+sanho log --refresh --json
 sanho sync --rebase-onto <chosen-commit> --json
 ```
+
+`sanho log` is read-only and requires no base, so it is safe to run in this
+state. Report the candidates with their provenance rather than choosing one. An
+entry whose `kind` is `external` carries no provenance, so do not describe it as
+coming from any repository; see `docs/recovery.md` for the read-only clone
+inspection that settles such a candidate.
 
 Never guess an anchor or force-push to recreate the old history. For a missing
 or corrupt base or hooks, diagnose with `sanho doctor --json`. `doctor --fix`

@@ -829,28 +829,30 @@ func reportPushError(cmd *cobra.Command, ws *workspace, err error) error {
 // say whether one exists. When it does not, the message says so rather
 // than printing a command that would fail (D3, audit H5).
 func rewrittenGuidance(ctx context.Context, ws *workspace) string {
-	// The publication branch names the ref the listing command reads.
-	// It comes from the clone whenever there is one — and there always
-	// is when this message is reached, since publication could not have
-	// got as far as case  otherwise.
-	branch := canonical.DefaultBranch
+	// The clone is opened first and its failure is answered rather than
+	// ignored. Reaching here means `ensureCanonical` already succeeded in
+	// this same push, so the only way the clone is now gone is a
+	// concurrent deletion — a filesystem race, not a state a user
+	// arrives in. It is still answered rather than ignored, because the
+	// alternative is printing "List the candidates with: sanho log" when
+	// that command would fail on the missing clone, which is exactly the
+	// closure failure D3 forbids. `sanho sync` recreates the clone and is
+	// runnable here.
 	store, openErr := ws.openCanonical()
-	if openErr == nil {
-		branch = store.Branch()
+	if openErr != nil {
+		return cloneMissingMessage(ws.cloneDir()) + "\n" + msgPushRejectedTrailer
 	}
 
 	base, hasBase, err := ws.statePort().LoadBase()
 	if err != nil || !hasBase {
-		return pushRewrittenMessage("", "", ws.cloneDir(), branch)
+		return pushRewrittenMessage("", "")
 	}
 
 	anchor := ""
-	if openErr == nil {
-		if found, ok, searchErr := store.FindCommitByDocsTree(ctx, base.Tree); searchErr == nil && ok {
-			anchor = found
-		}
+	if found, ok, searchErr := store.FindCommitByDocsTree(ctx, base.Tree); searchErr == nil && ok {
+		anchor = found
 	}
-	return pushRewrittenMessage(base.Commit, anchor, ws.cloneDir(), branch)
+	return pushRewrittenMessage(base.Commit, anchor)
 }
 
 // causeLine reduces an error chain to the one line worth showing, per

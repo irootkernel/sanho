@@ -868,3 +868,145 @@ func TestRewrittenHistoryRecoveryPublishesWithoutARestampCommit(t *testing.T) {
 		}
 	}
 }
+
+// TestLogJSONSchema pins the reverse-traceability document: what
+// publication has always recorded in canonical commits, now readable.
+func TestLogJSONSchema(t *testing.T) {
+	w := newWorld(t, map[string]string{"api.md": "canonical api\n"})
+	w.initAndAdoptDocs()
+	w.commitDocs("docs: local update", map[string]string{"api.md": "local api\n"})
+	w.push()
+	// A docs writer commits straight into the canonical repository.
+	w.advanceCanonical(map[string]string{
+		"api.md":   "local api\n",
+		"guide.md": "upstream guide\n",
+	}, "docs: hand-edited upstream")
+
+	out := w.sanho(w.app, "log", "--refresh", "--json")
+
+	var document struct {
+		Branch         string `json:"branch"`
+		FetchedEver    bool   `json:"fetched_ever"`
+		DataAgeSeconds int64  `json:"data_age_seconds"`
+		Entries        []struct {
+			Commit      string `json:"commit"`
+			Tree        string `json:"tree"`
+			CommittedAt string `json:"committed_at"`
+			Subject     string `json:"subject"`
+			Kind        string `json:"kind"`
+			Source      *struct {
+				Repository        string `json:"repository"`
+				Branch            string `json:"branch"`
+				WorkspaceID       string `json:"workspace_id"`
+				ApplicationCommit string `json:"application_commit"`
+			} `json:"source"`
+			ApplicationSubjects []string `json:"application_subjects"`
+		} `json:"entries"`
+	}
+	if err := json.Unmarshal([]byte(out.stdout), &document); err != nil {
+		t.Fatalf("decode log JSON: %v\n%s", err, out.stdout)
+	}
+
+	if document.Branch != "main" || !document.FetchedEver {
+		t.Fatalf("canonical facts = %+v, want branch main and a recorded fetch", document)
+	}
+	// Newest first: the hand edit, this workspace's publication, and the
+	// seed newWorld put in canonical before anything was published.
+	if len(document.Entries) != 3 {
+		t.Fatalf("log listed %d entries, want the hand edit, the publication and the seed", len(document.Entries))
+	}
+	if document.Entries[2].Kind != "external" {
+		t.Errorf("seed commit kind = %q, want external", document.Entries[2].Kind)
+	}
+
+	external := document.Entries[0]
+	if external.Kind != "external" {
+		t.Errorf("upstream commit kind = %q, want external", external.Kind)
+	}
+	if external.Source != nil {
+		t.Errorf("upstream commit source = %+v, want null", external.Source)
+	}
+	if external.ApplicationSubjects == nil {
+		t.Error("upstream commit application_subjects is null, want []")
+	}
+
+	published := document.Entries[1]
+	if published.Kind != "publication" {
+		t.Fatalf("publication kind = %q, want publication", published.Kind)
+	}
+	if published.Source == nil {
+		t.Fatal("publication reported no source")
+	}
+	if published.Source.Branch != "main" {
+		t.Errorf("source branch = %q, want main", published.Source.Branch)
+	}
+	if published.Source.WorkspaceID == "" || published.Source.Repository == "" {
+		t.Errorf("source = %+v, want a repository and workspace", published.Source)
+	}
+	// Machine OIDs are full length; the human form shortens them.
+	tip := strings.TrimSpace(w.git(w.app, "rev-parse", "HEAD").stdout)
+	if published.Source.ApplicationCommit != tip {
+		t.Errorf("application_commit = %q, want the full-length pushed tip %q",
+			published.Source.ApplicationCommit, tip)
+	}
+	if len(published.ApplicationSubjects) == 0 {
+		t.Error("publication listed no application subjects")
+	}
+	if published.Commit == "" || published.Tree == "" || published.CommittedAt == "" {
+		t.Errorf("publication row is incomplete: %+v", published)
+	}
+}
+
+// TestLogSurvivesTheStatesItIsAdvisedIn covers the two states `sanho log`
+// exists to serve: a canonical nothing has published into, and a
+// workspace whose base is unusable. Neither may refuse.
+func TestLogSurvivesTheStatesItIsAdvisedIn(t *testing.T) {
+	w := newWorld(t, nil)
+	w.initWorkspace()
+
+	empty := w.sanho(w.app, "log", "--json")
+	requireContains(t, "empty canonical entries", empty.stdout, `"entries": []`)
+
+	w.commitDocs("docs: first", map[string]string{"api.md": "local api\n"})
+	w.push()
+	// Replace canonical history wholesale: the recorded base is gone and
+	// no commit carries its tree. `sanho diff` refuses without a usable
+	// base; log must not, because this is the state that names it.
+	w.rewriteCanonical(map[string]string{"handbook.md": "an entirely new canonical\n"},
+		"canonical: rewritten history")
+
+	rewritten := w.sanho(w.app, "log", "--refresh")
+	requireContains(t, "log after a rewrite", rewritten.stdout, "canonical: rewritten history")
+}
+
+func TestLogRejectsUnusableArgumentsWithAnEnvelope(t *testing.T) {
+	w := newWorld(t, map[string]string{"api.md": "canonical api\n"})
+	w.initAndAdoptDocs()
+
+	for _, args := range [][]string{
+		{"log", "--json", "-n", "0"},
+		{"log", "--json", "--path", "../escape.md"},
+	} {
+		out := w.run(w.app, args...)
+		if out.exitCode != 1 {
+			t.Fatalf("%v exit = %d, want 1", args, out.exitCode)
+		}
+		requireContains(t, "log argument envelope", out.stdout, `"code": "invalid_arguments"`)
+	}
+}
+
+func TestLogReportsAMissingClone(t *testing.T) {
+	w := newWorld(t, map[string]string{"api.md": "canonical api\n"})
+	w.initAndAdoptDocs()
+
+	cloneDir := filepath.Join(w.app, ".git", "sanho", "canonical")
+	if err := os.RemoveAll(cloneDir); err != nil {
+		t.Fatalf("remove private canonical clone: %v", err)
+	}
+
+	out := w.run(w.app, "log", "--json")
+	if out.exitCode != 1 {
+		t.Fatalf("log without clone exit = %d, want 1", out.exitCode)
+	}
+	requireContains(t, "log clone error envelope", out.stdout, `"code": "clone_missing"`)
+}

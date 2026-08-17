@@ -74,14 +74,31 @@ An identical-tree replacement can be re-derived automatically. A changed-tree
 rewrite needs an explicit anchor and may produce normal conflicts. Resolve,
 commit, and run `sanho sync --continue`.
 
-When no safe candidate exists, inspect canonical history and trees in the
-private clone:
+When no safe candidate exists, list canonical history and choose an anchor:
+
+```bash
+sanho log --refresh -n 50
+sanho log --path <document>
+```
+
+Each entry names the commit, its date, and — for a Sanho publication — the
+repository, branch, workspace, and application commit behind it. Narrow to a
+document you recognize when the subjects alone are not enough.
+
+Provenance settles a candidate that Sanho published. It cannot settle one
+committed directly in the canonical repository: such an entry is reported as
+`external` with no source, and `--path` tells you only that a commit touched a
+file, not what the candidate's tree contains. Sanho has no command that lists a
+canonical commit's files, so inspect the candidate in the private clone:
 
 ```bash
 CLONE="$(git rev-parse --path-format=absolute --git-common-dir)/sanho/canonical"
-git -C "$CLONE" log --oneline --all --decorate -30
 git -C "$CLONE" ls-tree -r <candidate>
+git -C "$CLONE" show <candidate>:<document>
 ```
+
+This is read-only inspection, not a Sanho operation; use `sanho log` for the
+candidate listing itself.
 
 Choose an anchor only when its relationship to the workspace docs is known. Do
 not use force push to recreate history solely to satisfy the old base.

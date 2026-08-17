@@ -89,11 +89,6 @@ const (
 	networkTimeout = 120 * time.Second
 )
 
-// DefaultBranch is the publication branch the private-clone contract assumes before a clone
-// has been consulted. User-facing guidance that must name a ref while
-// the clone is unavailable uses it rather than inventing a name.
-const DefaultBranch = defaultBranch
-
 // Store is a handle on the private bare clone at
 // <git-common-dir>/sanho/canonical.
 type Store struct {
@@ -695,6 +690,88 @@ func (s *Store) FindCommitByDocsTree(ctx context.Context, tree string) (commit s
 	}
 	return "", false, nil
 }
+
+// LogEntry is one canonical commit as read from the clone. Message is
+// the raw commit message; decoding a publication out of it belongs to
+// domain/publish.ParseCommitMeta, because canonical history also carries
+// commits made directly in the docs repository.
+type LogEntry struct {
+	Commit      string
+	Tree        string
+	CommittedAt time.Time
+	Message     string
+}
+
+// Log returns up to maxCount canonical commits, newest first, optionally
+// narrowed to one path. path is a canonical path, which for a docs-only
+// repository is the same thing as a docs-root-relative one.
+//
+// An empty publication branch is ErrEmptyBranch, the same answer Head
+// gives, so callers keep one vocabulary for "nothing published yet"
+// rather than reading `git log`'s unknown-revision failure. Like
+// FindCommitByDocsTree this reads the clone only; it opens no network
+// and writes nothing.
+func (s *Store) Log(ctx context.Context, maxCount int, path string) ([]LogEntry, error) {
+	ref := s.remoteRef()
+	exists, err := s.refExists(ctx, ref)
+	if err != nil {
+		return nil, fmt.Errorf("canonical: resolve head of %s: %w", s.branch, err)
+	}
+	if !exists {
+		return nil, fmt.Errorf("%w: %s in %s", ErrEmptyBranch, s.branch, s.dir)
+	}
+
+	// NUL delimits both the fields and the commits, and the message is
+	// last. NUL is the only byte that can do this job: git refuses a NUL
+	// in a commit log message ("a NUL byte in commit log message not
+	// allowed"), while every other candidate is a byte some third party
+	// committing directly into the canonical repository may legitimately
+	// have used. An earlier form separated records with %x1e and broke on
+	// exactly that — a message carrying its own record separator either
+	// failed the whole listing or, shaped deliberately, added an entry
+	// git never reported. This is the %x00 idiom appgit already uses to
+	// read whole messages out of git.
+	args := []string{"log", "-z", "--max-count=" + strconv.Itoa(maxCount),
+		"--format=%H%x00%T%x00%cI%x00%B", ref}
+	if path != "" {
+		args = append(args, "--", path)
+	}
+	res, err := gitx.New(s.dir).Run(ctx, args...)
+	if err != nil {
+		return nil, fmt.Errorf("canonical: read history of %s in %s: %w", s.branch, s.dir, err)
+	}
+
+	// One flat token stream, four tokens per commit, read positionally.
+	// An empty token is data — a commit may have an empty message — so
+	// nothing here may skip one.
+	fields := strings.Split(string(res.Stdout), "\x00")
+	if len(fields) > 0 && fields[len(fields)-1] == "" {
+		fields = fields[:len(fields)-1] // the terminator of the last record
+	}
+	if len(fields)%logFieldsPerCommit != 0 {
+		return nil, fmt.Errorf("canonical: read history of %s in %s: %d log fields is not a whole number of commits",
+			s.branch, s.dir, len(fields))
+	}
+
+	entries := make([]LogEntry, 0, len(fields)/logFieldsPerCommit)
+	for i := 0; i < len(fields); i += logFieldsPerCommit {
+		committedAt, err := time.Parse(time.RFC3339, fields[i+2])
+		if err != nil {
+			return nil, fmt.Errorf("canonical: parse commit date of %s: %w", fields[i], err)
+		}
+		entries = append(entries, LogEntry{
+			Commit:      fields[i],
+			Tree:        fields[i+1],
+			CommittedAt: committedAt,
+			Message:     fields[i+3],
+		})
+	}
+	return entries, nil
+}
+
+// logFieldsPerCommit is how many NUL-delimited tokens one commit
+// contributes to Log's output: commit, tree, committer date, message.
+const logFieldsPerCommit = 4
 
 // FetchFromApp imports ref (an OID or ref name) from the app repository
 // into the clone's object database via local transport, making the app

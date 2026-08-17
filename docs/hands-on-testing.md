@@ -89,9 +89,14 @@ Use real disposable or explicitly approved `sanho-server`, `sanho-client`, and
    Before syncing, confirm `sanho diff --refresh` shows the incoming change and
    does not alter the application worktree, index, refs, or base.
 5. Change docs in client, publish, then sync server.
-6. Push a code-only commit and confirm canonical does not move.
-7. Confirm tag-only and branch-deletion pushes do not run publication analysis.
-8. Record final app/canonical refs, bases, status, and doctor output.
+6. Confirm `sanho log --refresh` reports both repositories' publications, that
+   each entry's `application_commit` resolves in the repository its `source`
+   names, and that a commit made directly in the canonical repository is
+   reported as `external` with a null `source`. Confirm `log` alters no
+   application worktree, index, ref, base, or registry state.
+7. Push a code-only commit and confirm canonical does not move.
+8. Confirm tag-only and branch-deletion pushes do not run publication analysis.
+9. Record final app/canonical refs, bases, status, and doctor output.
 
 Sanho moving or pushing an application ref is a failure.
 
@@ -101,12 +106,12 @@ Sanho moving or pushing an application ref is a failure.
 2. Disconnect network using an approved OS-level method or a disposable
    transport shim that fails the SSH executable Sanho actually invokes.
 3. Confirm code and docs commits, amend, branch creation, rebase, cached status,
-   state, and doctor remain available.
+   state, log, and doctor remain available.
 4. Confirm a docs push fails with canonical-unreachable guidance and that both
    application and canonical remote refs remain byte-identical.
-5. Confirm explicit network reads such as `status --refresh` fail clearly.
-   Confirm `check --require-current --json` fails through the canonical
-   unreachable error envelope rather than returning a policy result.
+5. Confirm explicit network reads such as `status --refresh` and `log --refresh`
+   fail clearly. Confirm `check --require-current --json` fails through the
+   canonical unreachable error envelope rather than returning a policy result.
 6. Restore the network and retry the same push without deleting state. Confirm
    every offline docs commit is represented by the resulting publication.
 
@@ -174,13 +179,20 @@ not force-push a shared remote.
 1. Replace canonical history with an unrelated commit carrying the identical
    tree. Refresh and confirm automatic tree-based re-derivation.
 2. Replace history and content. Publication must fail without changing either
-   remote and print a usable `--rebase-onto` candidate.
+   remote. When a commit still carries the recorded docs base tree the rejection
+   names that anchor; when none does it states that manual intervention is
+   required and names `sanho log`. Run the named listing in that exact state and
+   require it to succeed, then take the `--rebase-onto` target from its output.
 3. Reject a nonexistent target.
 4. Resolve against the candidate while intentionally omitting a canonical-only
-   file. Completion/publication must refuse the failed absorption proof.
+   file. `sanho sync --continue` reports the difference as `merge_drift` rather
+   than refusing it, so the boundary that must hold is publication: the push has
+   to be refused and the canonical-only file must survive in canonical.
 5. Restore the file, amend the resolution, continue, and publish successfully.
-6. Repeat branch guidance against a master-only canonical and confirm Sanho uses
-   `refs/remotes/origin/master`, never `origin/HEAD`.
+6. Repeat against a canonical that carries `master` and no `main`. Sanho must
+   resolve the publication branch itself: `status` and `log --json` must both
+   report `master`, `sanho log` must read `refs/remotes/origin/master` and
+   succeed, and the private clone must carry no `refs/remotes/origin/HEAD`.
 7. Confirm final canonical history is linear and contains all intended files.
 
 ## H07. Symlink, mode, and binary roundtrip

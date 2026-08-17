@@ -703,3 +703,221 @@ func TestFirstMeaningfulLine(t *testing.T) {
 		}
 	}
 }
+
+func TestLogReadsCanonicalHistoryNewestFirst(t *testing.T) {
+	origin := newOrigin(t, "main", map[string]entry{"a.md": text("a\n")})
+	store := ensureStore(t, origin)
+	ctx := context.Background()
+
+	first, _, err := store.Head(ctx)
+	if err != nil {
+		t.Fatalf("Head: %v", err)
+	}
+	second := commitToOrigin(t, origin, "main", map[string]entry{"b.md": text("b\n")})
+	if err := store.Fetch(ctx); err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+
+	entries, err := store.Log(ctx, 10, "")
+	if err != nil {
+		t.Fatalf("Log: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("Log returned %d entries, want 2", len(entries))
+	}
+	if entries[0].Commit != second || entries[1].Commit != first {
+		t.Fatalf("Log order = [%s %s], want newest first [%s %s]",
+			entries[0].Commit, entries[1].Commit, second, first)
+	}
+	if entries[0].Tree == "" || entries[0].Tree == entries[1].Tree {
+		t.Errorf("Log did not report distinct trees: %q and %q", entries[0].Tree, entries[1].Tree)
+	}
+	if entries[0].CommittedAt.IsZero() {
+		t.Error("Log reported a zero commit date")
+	}
+	if entries[0].CommittedAt.Before(entries[1].CommittedAt) {
+		t.Errorf("Log dates run backwards: %s before %s", entries[0].CommittedAt, entries[1].CommittedAt)
+	}
+	if !strings.Contains(entries[0].Message, "canonical: racer") {
+		t.Errorf("Log message = %q, want the commit subject", entries[0].Message)
+	}
+}
+
+// TestLogPreservesWholeMessages is the property `sanho log` depends on:
+// a publication body is multi-line, so nothing line-oriented can delimit
+// one commit from the next.
+func TestLogPreservesWholeMessages(t *testing.T) {
+	origin := newOrigin(t, "main", map[string]entry{"a.md": text("a\n")})
+	work := filepath.Join(t.TempDir(), "author")
+	if err := os.MkdirAll(work, 0755); err != nil {
+		t.Fatalf("create %s: %v", work, err)
+	}
+	gitRun(t, work, "clone", "--quiet", "--branch", "main", origin, ".")
+	materialize(t, work, map[string]entry{"b.md": text("b\n")})
+	gitRun(t, work, "add", "-A", "--", ".")
+	body := "subject line\n\nsource: p:/w @ 1111111111111111111111111111111111111111\ncommits:\n  - docs: one\n  - docs: two"
+	gitRun(t, work, "commit", "--quiet", "-m", body)
+	gitRun(t, work, "push", "--quiet", "origin", "HEAD:main")
+
+	store := ensureStore(t, origin)
+	entries, err := store.Log(context.Background(), 1, "")
+	if err != nil {
+		t.Fatalf("Log: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("Log returned %d entries, want 1", len(entries))
+	}
+	if got := strings.TrimRight(entries[0].Message, "\n"); got != body {
+		t.Fatalf("Log message =\n%q\nwant\n%q", got, body)
+	}
+}
+
+func TestLogBoundsAndFiltersByPath(t *testing.T) {
+	origin := newOrigin(t, "main", map[string]entry{"a.md": text("a\n")})
+	store := ensureStore(t, origin)
+	ctx := context.Background()
+
+	first, _, err := store.Head(ctx)
+	if err != nil {
+		t.Fatalf("Head: %v", err)
+	}
+	// Keep a.md so the second commit genuinely does not touch it —
+	// materialize clears the worktree, and dropping it would make this a
+	// deletion that `git log -- a.md` rightly reports.
+	second := commitToOrigin(t, origin, "main", map[string]entry{"a.md": text("a\n"), "b.md": text("b\n")})
+	if err := store.Fetch(ctx); err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+
+	bounded, err := store.Log(ctx, 1, "")
+	if err != nil {
+		t.Fatalf("Log with a bound: %v", err)
+	}
+	if len(bounded) != 1 || bounded[0].Commit != second {
+		t.Fatalf("Log(1) = %d entries, want just %s", len(bounded), second)
+	}
+
+	// Canonical is docs-only, so a canonical path is a docs-root-relative one.
+	filtered, err := store.Log(ctx, 10, "a.md")
+	if err != nil {
+		t.Fatalf("Log with a path: %v", err)
+	}
+	if len(filtered) != 1 || filtered[0].Commit != first {
+		t.Fatalf("Log(path a.md) = %d entries, want just %s", len(filtered), first)
+	}
+
+	absent, err := store.Log(ctx, 10, "nothing-here.md")
+	if err != nil {
+		t.Fatalf("Log for an unknown path: %v", err)
+	}
+	if len(absent) != 0 {
+		t.Fatalf("Log for an unknown path returned %d entries, want none", len(absent))
+	}
+}
+
+// TestLogReportsAnEmptyBranch keeps "nothing published yet" in the same
+// vocabulary Head uses, rather than surfacing git's unknown-revision
+// failure to callers that have a correct answer for the state.
+func TestLogReportsAnEmptyBranch(t *testing.T) {
+	root := t.TempDir()
+	origin := filepath.Join(root, "origin.git")
+	if err := os.MkdirAll(origin, 0755); err != nil {
+		t.Fatalf("create %s: %v", origin, err)
+	}
+	gitRun(t, origin, "init", "--bare", "--quiet", "-b", "main")
+
+	store := ensureStore(t, origin)
+	if _, err := store.Log(context.Background(), 10, ""); !errors.Is(err, ErrEmptyBranch) {
+		t.Fatalf("Log on an empty branch = %v, want ErrEmptyBranch", err)
+	}
+}
+
+// TestLogSurvivesAMessageCarryingADelimiter is the framing regression.
+//
+// An earlier Log separated records with %x1e, and git stores that byte in
+// a commit message verbatim — so one commit made directly in the
+// canonical repository broke the entire listing. NUL is the only
+// delimiter git guarantees cannot appear in a log message, which is why
+// the format now uses it for records as well as fields. (A forged record
+// is unreachable for the same reason: it would need NUL separators, and
+// `git commit` refuses "a NUL byte in commit log message".)
+func TestLogSurvivesAMessageCarryingADelimiter(t *testing.T) {
+	origin := newOrigin(t, "main", map[string]entry{"a.md": text("a\n")})
+	work := filepath.Join(t.TempDir(), "author")
+	if err := os.MkdirAll(work, 0755); err != nil {
+		t.Fatalf("create %s: %v", work, err)
+	}
+	gitRun(t, work, "clone", "--quiet", "--branch", "main", origin, ".")
+	materialize(t, work, map[string]entry{"a.md": text("a\n"), "b.md": text("b\n")})
+	gitRun(t, work, "add", "-A", "--", ".")
+
+	// Record separators in the subject and in the body, plus a tail
+	// shaped like the fields a record carries. -F because a separator
+	// cannot be smuggled through argv on every platform.
+	message := "real \x1esubject\n\nbody \x1e " + strings.Repeat("d", 40) +
+		" \x1e 2000-01-01T00:00:00+00:00 \x1e forged entry\n"
+	messageFile := filepath.Join(t.TempDir(), "message")
+	if err := os.WriteFile(messageFile, []byte(message), 0600); err != nil {
+		t.Fatalf("write commit message: %v", err)
+	}
+	gitRun(t, work, "commit", "--quiet", "-F", messageFile)
+	gitRun(t, work, "push", "--quiet", "origin", "HEAD:main")
+
+	store := ensureStore(t, origin)
+	entries, err := store.Log(context.Background(), 10, "")
+	if err != nil {
+		t.Fatalf("Log over a message carrying a delimiter: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("Log returned %d entries, want the seed and the delimiter-carrying commit", len(entries))
+	}
+	for _, e := range entries {
+		if len(e.Commit) != 40 || len(e.Tree) != 40 {
+			t.Errorf("entry has misaligned fields: commit=%q tree=%q", e.Commit, e.Tree)
+		}
+		if e.Commit == strings.Repeat("d", 40) {
+			t.Fatalf("Log reported a commit %s that git never listed", e.Commit)
+		}
+	}
+	// The message survives byte for byte, separators included.
+	if got := strings.TrimRight(entries[0].Message, "\n"); got != strings.TrimRight(message, "\n") {
+		t.Fatalf("Log message =\n%q\nwant\n%q", got, message)
+	}
+}
+
+// TestLogReadsACommitWithAnEmptyMessage pins the positional grouping: an
+// empty field is data, so nothing may skip it and shift every later
+// commit's fields by one.
+func TestLogReadsACommitWithAnEmptyMessage(t *testing.T) {
+	origin := newOrigin(t, "main", map[string]entry{"a.md": text("a\n")})
+	work := filepath.Join(t.TempDir(), "author")
+	if err := os.MkdirAll(work, 0755); err != nil {
+		t.Fatalf("create %s: %v", work, err)
+	}
+	gitRun(t, work, "clone", "--quiet", "--branch", "main", origin, ".")
+	materialize(t, work, map[string]entry{"a.md": text("a\n"), "b.md": text("b\n")})
+	gitRun(t, work, "add", "-A", "--", ".")
+	gitRun(t, work, "commit", "--quiet", "--allow-empty-message", "-m", "")
+	gitRun(t, work, "push", "--quiet", "origin", "HEAD:main")
+
+	store := ensureStore(t, origin)
+	entries, err := store.Log(context.Background(), 10, "")
+	if err != nil {
+		t.Fatalf("Log over an empty message: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("Log returned %d entries, want 2", len(entries))
+	}
+	if strings.TrimSpace(entries[0].Message) != "" {
+		t.Errorf("newest message = %q, want empty", entries[0].Message)
+	}
+	// The seed's fields must not have shifted.
+	if !strings.Contains(entries[1].Message, "canonical: seed") {
+		t.Errorf("older message = %q, want the seed subject", entries[1].Message)
+	}
+	for _, e := range entries {
+		if len(e.Commit) != 40 || len(e.Tree) != 40 {
+			t.Errorf("entry has misaligned fields: commit=%q tree=%q", e.Commit, e.Tree)
+		}
+	}
+}

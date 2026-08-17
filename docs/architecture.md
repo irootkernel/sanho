@@ -210,6 +210,17 @@ external diff drivers and text conversion, writes no application ref, index,
 worktree, base, or registry state, and reports paths relative to the configured
 docs root.
 
+`sanho log` is the reader for the publication provenance recorded above. It
+lists canonical commits newest first from the cached clone, bounded by
+`--max-count` and optionally narrowed to one docs-root-relative `--path`;
+`--refresh` fetches first. Each entry is classified `publication` when its
+message decodes to the canonical commit convention, or `external` for a commit
+made directly in the canonical repository, whose `source` is null rather than
+empty. It writes no application ref, index, worktree, base, or registry state,
+opens no network without `--refresh`, and deliberately requires no recorded
+base: it is the listing the rewrite-recovery guidance names, and no base
+resolves in that state.
+
 `sanho check` evaluates only policies the caller explicitly selects.
 `--require-clean` checks the docs index and worktree, `--require-current`
 fetches and requires the base to equal canonical head, and

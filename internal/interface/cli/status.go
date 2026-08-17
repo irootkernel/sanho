@@ -252,7 +252,7 @@ func renderStatus(out io.Writer, ws *workspace, store *canonical.Store, report a
 	default:
 		writef(out, "canonical : %s\n", shortOID(report.Head))
 	}
-	writef(out, "data      : %s\n", dataAgeLine(report))
+	writef(out, "data      : %s\n", dataAgeLine(report.DataAge, report.FetchedEver))
 
 	switch {
 	case report.CanonicalEmpty:
@@ -303,15 +303,17 @@ func renderReadiness(out io.Writer, label string, readiness admin.Readiness) {
 }
 
 // dataAgeLine always states how old the canonical view is (the guidance contract:
-// degraded-mode lines always include data age).
-func dataAgeLine(report admin.StatusReport) string {
-	if !report.FetchedEver {
+// degraded-mode lines always include data age). It takes the two facts
+// rather than a StatusReport because `sanho log` owes its reader the same
+// sentence for the same reason, and reads them from the store directly.
+func dataAgeLine(age time.Duration, fetchedEver bool) string {
+	if !fetchedEver {
 		return neverFetchedLine
 	}
-	if report.DataAge > staleDataThreshold {
-		return staleCanonicalLine(report.DataAge)
+	if age > staleDataThreshold {
+		return staleCanonicalLine(age)
 	}
-	return fmt.Sprintf("canonical data is %s old", humanizeAge(report.DataAge))
+	return fmt.Sprintf("canonical data is %s old", humanizeAge(age))
 }
 
 func renderSyncPreview(out io.Writer, report admin.StatusReport) {

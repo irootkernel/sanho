@@ -1,5 +1,30 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `sanho log` lists canonical history and decodes the publication provenance
+  every canonical commit already carried: the source repository, branch,
+  workspace, and application commit behind each docs change. It is read-only,
+  answers from the cached clone unless `--refresh` is given, supports
+  `--max-count`/`-n`, `--path`, and `--json`, and requires no recorded base.
+  Commits made directly in the canonical repository are reported as
+  `"kind": "external"` with a null `source`.
+
+### Changed
+
+- The rewrite-recovery push rejection now names `sanho log` instead of a raw
+  `git -C <clone-dir> log --oneline refs/remotes/origin/<branch>`. It was the
+  only guidance state that reached past Sanho's own surface, and the guidance
+  closure suite now executes `sanho log` in the state that prints it. When the
+  private clone has gone, the rejection names `sanho sync` rather than a listing
+  command that would fail.
+- `docs/recovery.md` uses `sanho log` for the rewrite-recovery candidate
+  listing. It still documents read-only `ls-tree`/`show` inspection of the
+  private clone, because provenance cannot settle a candidate committed
+  directly in the canonical repository and Sanho lists no commit's files.
+
 ## v0.2.6 - 2026-08-14
 
 ### Added

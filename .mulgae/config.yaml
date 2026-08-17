@@ -2,7 +2,8 @@ version: 3
 project:
   name: "sanho"
 providers:
-  zcode: {}
+  zcode:
+    timeout: "60m"
 execution:
   workspace_access: "none"
 roles:

@@ -186,7 +186,7 @@ func TestRewrittenGuidanceOnlyNamesARunnableCommand(t *testing.T) {
 	base := "67c4bbfeada37f5dda8fb79aa43216ef062cd8df"
 	anchor := "1111111111111111111111111111111111111111"
 
-	withAnchor := pushRewrittenMessage(base, anchor, "/repo/.git/sanho/canonical", "main")
+	withAnchor := pushRewrittenMessage(base, anchor)
 	if !strings.Contains(withAnchor, "sanho sync --rebase-onto "+anchor) {
 		t.Fatalf("message with an anchor =\n%s\nwant it to name the anchor commit", withAnchor)
 	}
@@ -194,30 +194,27 @@ func TestRewrittenGuidanceOnlyNamesARunnableCommand(t *testing.T) {
 		t.Fatalf("message with an anchor =\n%s\nwant no manual-intervention text", withAnchor)
 	}
 
-	withoutAnchor := pushRewrittenMessage(base, "", "/repo/.git/sanho/canonical", "main")
+	withoutAnchor := pushRewrittenMessage(base, "")
 	if !strings.Contains(withoutAnchor, "manual intervention required") {
 		t.Fatalf("message without an anchor =\n%s\nwant it to say manual intervention is required", withoutAnchor)
 	}
 	// It must still tell the user how to find a target.
-	if !strings.Contains(withoutAnchor, "git -C /repo/.git/sanho/canonical log") {
+	if !strings.Contains(withoutAnchor, "sanho log") {
 		t.Fatalf("message without an anchor =\n%s\nwant it to show how to list candidates", withoutAnchor)
 	}
 
-	// And the ref it names must be one the private clone actually has.
-	// The clone is `git init --bare` plus a fetch (the private-clone contract), so it carries
-	// refs/remotes/origin/<branch> and no origin/HEAD: naming HEAD made
-	// the advised command exit 128 in the state that printed it.
-	if !strings.Contains(withoutAnchor, "refs/remotes/origin/main") {
-		t.Fatalf("message without an anchor =\n%s\nwant it to name the publication branch's remote-tracking ref", withoutAnchor)
-	}
-	if strings.Contains(withoutAnchor, "refs/remotes/origin/HEAD") {
-		t.Fatalf("message without an anchor =\n%s\nnames refs/remotes/origin/HEAD, which the private clone never has", withoutAnchor)
-	}
-
-	// A workspace publishing to master must be told about master.
-	onMaster := pushRewrittenMessage(base, "", "/repo/.git/sanho/canonical", "master")
-	if !strings.Contains(onMaster, "refs/remotes/origin/master") {
-		t.Fatalf("message on a master workspace =\n%s\nwant it to name refs/remotes/origin/master", onMaster)
+	// And it must reach no further than sanho's own surface. This state
+	// used to print a raw `git -C <clone> log refs/remotes/origin/<branch>`,
+	// which made the *arguments* load-bearing: the private clone is
+	// `git init --bare` plus a fetch (the private-clone contract), so it
+	// carries refs/remotes/origin/<branch> and no origin/HEAD, and
+	// naming HEAD made the advised command exit 128 in the state that
+	// printed it. `sanho log` resolves both itself, so the property
+	// worth pinning is now the stronger one: no raw git at all.
+	for _, forbidden := range []string{"git -C ", "refs/remotes/"} {
+		if strings.Contains(withoutAnchor, forbidden) {
+			t.Fatalf("message without an anchor =\n%s\nreaches past sanho's surface with %q", withoutAnchor, forbidden)
+		}
 	}
 }
 
@@ -291,7 +288,7 @@ func TestMessagesAreEnglishOnly(t *testing.T) {
 		pushSyncRequiredMessage(publish.ReasonUncorroboratedBase, sampleHeadOID, sampleHeadOID),
 		pushMarkersMessage([]string{"docs/a.md"}),
 		pushUnreachableMessage("git@host:docs.git", "connection refused"),
-		pushRewrittenMessage("a", "b", "/clone", "main"),
+		pushRewrittenMessage("a", "b"),
 		pushPublishedMessage("abc", "fast_forward"),
 		syncedMessage("abc", "def"),
 		upToDateMessage("abc"),

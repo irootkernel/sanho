@@ -289,12 +289,17 @@ func pushUnreachableMessage(url, cause string) string {
 // the diagnostics needed to choose a target — never a command that will
 // fail (D3).
 //
-// branch is the publication branch, and naming it is load-bearing. The
-// private clone is `git init --bare` plus a fetch (the private-clone contract), so it holds
-// `refs/remotes/origin/<branch>` and no `refs/remotes/origin/HEAD` at
-// all: a listing command naming HEAD exits 128 in the very state that
-// prints it, which is exactly the closure failure D3 forbids.
-func pushRewrittenMessage(base, anchor, cloneDir, branch string) string {
+// The listing step is `sanho log`. It used to be a raw
+// `git -C <clone-dir> log --oneline refs/remotes/origin/<branch>`, and
+// both of those arguments were load-bearing: the private clone is
+// `git init --bare` plus a fetch (the private-clone contract), so it
+// holds `refs/remotes/origin/<branch>` and no `refs/remotes/origin/HEAD`
+// at all, and a listing command naming HEAD would exit 128 in the very
+// state that printed it. `sanho log` resolves the clone and the
+// publication branch itself, which is what lets this state stop reaching
+// past sanho's own surface — and lets the catalog drop the only
+// placeholders it carried.
+func pushRewrittenMessage(base, anchor string) string {
 	if anchor != "" {
 		return fmt.Sprintf("sanho: canonical history was rewritten; base %s is no longer reachable\n"+
 			"Run 'sanho sync --rebase-onto %s', resolve if needed, commit, then push again.\n"+
@@ -302,9 +307,9 @@ func pushRewrittenMessage(base, anchor, cloneDir, branch string) string {
 	}
 	return fmt.Sprintf("sanho: canonical history was rewritten; base %s is no longer reachable\n"+
 		"manual intervention required: no canonical commit carries this workspace's docs base tree.\n"+
-		"List the candidates with:  git -C %s log --oneline refs/remotes/origin/%s\n"+
+		"List the candidates with:  sanho log\n"+
 		"Then run:                  sanho sync --rebase-onto <commit>\n"+
-		"%s", shortOID(base), cloneDir, branch, msgPushRejectedTrailer)
+		"%s", shortOID(base), msgPushRejectedTrailer)
 }
 
 // pushEmptyDocsMessage is the publication contract empty-publication refusal (F-H2).
@@ -883,13 +888,10 @@ const (
 	sampleHeadOID = "9a41f2c0e1d2c3b4a5968778695a4b3c2d1e0f9a"
 )
 
-// samplePlaceholderClone and samplePlaceholderBranch are the
-// placeholders the rewrite-recovery entry carries, so its Sample and its
-// NextCommands agree character for character before substitution.
-const (
-	samplePlaceholderClone  = "<clone-dir>"
-	samplePlaceholderBranch = "<branch>"
-)
+// samplePlaceholderClone stands in for the clone path in the
+// clone-missing entry's Sample, so the rendering the catalog carries
+// matches the one a fixture substitutes into.
+const samplePlaceholderClone = "<clone-dir>"
 
 // Catalog is the enumerable form of the guidance contract.
 var Catalog = []CatalogEntry{
@@ -1094,10 +1096,10 @@ var Catalog = []CatalogEntry{
 		// user actually meets is this one. The anchor rendering stays
 		// pinned by messages_test.go rather than by a fixture that
 		// cannot exist.
-		Sample: pushRewrittenMessage(sampleBaseOID, "", samplePlaceholderClone, samplePlaceholderBranch),
+		Sample: pushRewrittenMessage(sampleBaseOID, ""),
 		Match:  "canonical history was rewritten",
 		NextCommands: []string{
-			"git -C " + samplePlaceholderClone + " log --oneline refs/remotes/origin/" + samplePlaceholderBranch,
+			"sanho log",
 			"sanho sync --rebase-onto <commit>",
 		},
 	},

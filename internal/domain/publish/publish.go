@@ -184,3 +184,143 @@ func (m CommitMeta) Message() string {
 	}
 	return b.String()
 }
+
+// The tokens ParseCommitMeta reads. They are deliberately spelled here
+// rather than shared with Subject/Message: those two render the most
+// safety-critical string the product writes, and rewriting them to
+// consume constants would be an unrequested edit to working code. What
+// binds the two halves instead is the round-trip property in
+// publish_test.go — ParseCommitMeta(m.Message()) must return m — which
+// fails the build the moment either side drifts.
+const (
+	subjectPrefix   = "[SANHO] Publish docs from "
+	subjectCountSep = " ("
+	subjectSuffix   = " app commits)"
+	sourcePrefix    = "source: "
+	sourceSeparator = " @ "
+	commitsHeader   = "commits:"
+	commitsItem     = "  - "
+)
+
+// ParseCommitMeta decodes a canonical commit message back into the
+// CommitMeta that produced it, reporting false for any message Message
+// did not write.
+//
+// It is the reader half of a contract the product has so far only
+// written: Subject's doc comment already calls the format "a
+// machine-readable contract that ... readers match on", and CommitMeta
+// records WorkspaceID and TipOID expressly "for reverse traceability".
+// `sanho log` is the reader that makes those claims true.
+//
+// Parsing is strict, and the false return is a real answer rather than a
+// failure. Canonical history is not all Sanho commits — docs writers
+// commit into the canonical repository directly — so a message that does
+// not match exactly is an ordinary foreign commit, and reporting a
+// half-decoded `source:` for it would assert provenance nothing proved.
+// This is the same discipline provenance.adoptFrom applies to a
+// malformed trailer: disqualify the record, do not salvage it.
+func ParseCommitMeta(message string) (CommitMeta, bool) {
+	lines := trimTrailingBlanks(strings.Split(strings.ReplaceAll(message, "\r\n", "\n"), "\n"))
+	if len(lines) < 3 {
+		return CommitMeta{}, false
+	}
+
+	meta, subjectCount, ok := parseSubjectLine(lines[0])
+	if !ok {
+		return CommitMeta{}, false
+	}
+	// Message writes exactly one blank line between subject and body.
+	if lines[1] != "" {
+		return CommitMeta{}, false
+	}
+	if !parseSourceLine(lines[2], &meta) {
+		return CommitMeta{}, false
+	}
+
+	body := lines[3:]
+	if subjectCount == 0 {
+		// Message omits the header entirely rather than leaving a
+		// dangling one, so anything here means a different format.
+		return meta, len(body) == 0
+	}
+	if len(body) == 0 || body[0] != commitsHeader {
+		return CommitMeta{}, false
+	}
+	for _, line := range body[1:] {
+		item, found := strings.CutPrefix(line, commitsItem)
+		if !found {
+			return CommitMeta{}, false
+		}
+		meta.Subjects = append(meta.Subjects, item)
+	}
+	// Subject derives its count from len(Subjects), so a message whose
+	// two halves disagree was not written by Message.
+	if len(meta.Subjects) != subjectCount {
+		return CommitMeta{}, false
+	}
+	return meta, true
+}
+
+// parseSubjectLine splits "[SANHO] Publish docs from <repo>/<branch> (<N> app commits)".
+//
+// The count group is located from the right and the repository/branch
+// boundary from the left, because only that pairing survives both real
+// inputs: a branch may contain slashes (`feature/x`), while a repository
+// name taken from a directory may contain spaces and parentheses.
+func parseSubjectLine(line string) (CommitMeta, int, bool) {
+	rest, ok := strings.CutPrefix(line, subjectPrefix)
+	if !ok {
+		return CommitMeta{}, 0, false
+	}
+	open := strings.LastIndex(rest, subjectCountSep)
+	if open < 0 {
+		return CommitMeta{}, 0, false
+	}
+	digits, ok := strings.CutSuffix(rest[open+len(subjectCountSep):], subjectSuffix)
+	if !ok {
+		return CommitMeta{}, 0, false
+	}
+	count, err := strconv.Atoi(digits)
+	// Atoi also accepts a sign and leading zeros, and Subject renders
+	// neither: it writes strconv.Itoa(len(Subjects)). Requiring the
+	// canonical form back keeps "-0", "+1" and "01" out — each of which
+	// would otherwise be reported as a publication and given a source no
+	// Sanho publication ever wrote. count < 0 is still checked because
+	// "-1" does survive the round trip.
+	if err != nil || count < 0 || strconv.Itoa(count) != digits {
+		return CommitMeta{}, 0, false
+	}
+	source := rest[:open]
+	slash := strings.Index(source, "/")
+	if slash < 0 {
+		return CommitMeta{}, 0, false
+	}
+	return CommitMeta{RepoName: source[:slash], Branch: source[slash+1:]}, count, true
+}
+
+// parseSourceLine splits "source: <workspace-id> @ <app tip OID>".
+//
+// The separator is found from the right: a workspace ID is
+// "<project>:<absolute path>", and a path is free to contain " @ ".
+func parseSourceLine(line string, meta *CommitMeta) bool {
+	source, ok := strings.CutPrefix(line, sourcePrefix)
+	if !ok {
+		return false
+	}
+	sep := strings.LastIndex(source, sourceSeparator)
+	if sep < 0 {
+		return false
+	}
+	meta.WorkspaceID = source[:sep]
+	meta.TipOID = source[sep+len(sourceSeparator):]
+	return meta.WorkspaceID != "" && provenance.OIDPattern.MatchString(meta.TipOID)
+}
+
+// trimTrailingBlanks drops the empty strings Split leaves behind for the
+// message's final newline, and any git added normalizing it.
+func trimTrailingBlanks(lines []string) []string {
+	for len(lines) > 0 && lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
+	return lines
+}

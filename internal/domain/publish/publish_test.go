@@ -289,3 +289,122 @@ func TestCommitMetaMessageStartsWithSubjectAndBlankLine(t *testing.T) {
 		t.Errorf("second line = %q, want a blank separator line", lines[1])
 	}
 }
+
+// TestParseCommitMetaRoundTrip is the property that binds ParseCommitMeta
+// to Message. The two are spelled independently — the parser carries its
+// own tokens rather than rewriting the writer — so this is what fails the
+// build if either side drifts.
+func TestParseCommitMetaRoundTrip(t *testing.T) {
+	metas := []publish.CommitMeta{
+		{RepoName: "sanho", Branch: "main", WorkspaceID: "sanho:/home/u/sanho", TipOID: oidHead,
+			Subjects: []string{"docs: add api guide", "docs: fix typo"}},
+		{RepoName: "sanho", Branch: "main", WorkspaceID: "ws", TipOID: oidHead},
+		{RepoName: "sanho", Branch: "feature/x", WorkspaceID: "p:/w", TipOID: oidBase,
+			Subjects: []string{"docs: one"}},
+		// A repository name taken from a directory may hold spaces and
+		// parentheses; a workspace path may hold the source separator.
+		{RepoName: "my (old) repo", Branch: "main", WorkspaceID: "p:/home/u/a @ b", TipOID: oidHead,
+			Subjects: []string{"docs: only"}},
+		// Subjects are copied verbatim, including one shaped like the
+		// list syntax that carries them.
+		{RepoName: "r", Branch: "b", WorkspaceID: "w", TipOID: oidHead,
+			Subjects: []string{"- dash first", "  - indented", "commits:"}},
+	}
+
+	for _, want := range metas {
+		t.Run(want.Subject(), func(t *testing.T) {
+			got, ok := publish.ParseCommitMeta(want.Message())
+			if !ok {
+				t.Fatalf("ParseCommitMeta(%q) reported no publication", want.Message())
+			}
+			requireMetaEqual(t, got, want)
+		})
+	}
+}
+
+// TestParseCommitMetaAcceptsGitNormalization covers the message as git
+// hands it back rather than as Message built it.
+func TestParseCommitMetaAcceptsGitNormalization(t *testing.T) {
+	meta := publish.CommitMeta{RepoName: "r", Branch: "b", WorkspaceID: "w", TipOID: oidHead,
+		Subjects: []string{"docs: one"}}
+
+	for _, suffix := range []string{"", "\n", "\n\n\n"} {
+		got, ok := publish.ParseCommitMeta(meta.Message() + suffix)
+		if !ok {
+			t.Fatalf("trailing %q rejected a publication", suffix)
+		}
+		requireMetaEqual(t, got, meta)
+	}
+
+	got, ok := publish.ParseCommitMeta(strings.ReplaceAll(meta.Message(), "\n", "\r\n"))
+	if !ok {
+		t.Fatal("CRLF line endings rejected a publication")
+	}
+	requireMetaEqual(t, got, meta)
+}
+
+// TestParseCommitMetaRejectsForeignMessages pins the false return as a
+// real answer: canonical history also carries commits made directly in
+// the docs repository, and a half-decoded source line would assert
+// provenance nothing proved.
+func TestParseCommitMetaRejectsForeignMessages(t *testing.T) {
+	tests := []struct {
+		name    string
+		message string
+	}{
+		{"empty", ""},
+		{"a hand-written docs commit", "docs: fix the api guide\n"},
+		{"subject only", "[SANHO] Publish docs from r/b (0 app commits)\n"},
+		{"no repository/branch slash", "[SANHO] Publish docs from rb (0 app commits)\n\nsource: w @ " + oidHead + "\n"},
+		{"unparsable commit count", "[SANHO] Publish docs from r/b (many app commits)\n\nsource: w @ " + oidHead + "\n"},
+		// Atoi accepts a sign and leading zeros; Subject writes neither.
+		// Each of these once parsed as a publication and reported a
+		// source that no publication had written.
+		{"negative zero count", "[SANHO] Publish docs from r/b (-0 app commits)\n\nsource: w @ " + oidHead + "\n"},
+		{"negative count", "[SANHO] Publish docs from r/b (-1 app commits)\n\nsource: w @ " + oidHead + "\n"},
+		{"signed count", "[SANHO] Publish docs from r/b (+1 app commits)\n\nsource: w @ " + oidHead + "\ncommits:\n  - docs: one\n"},
+		{"zero-padded count", "[SANHO] Publish docs from r/b (01 app commits)\n\nsource: w @ " + oidHead + "\ncommits:\n  - docs: one\n"},
+		{"count with whitespace", "[SANHO] Publish docs from r/b ( 1 app commits)\n\nsource: w @ " + oidHead + "\ncommits:\n  - docs: one\n"},
+		{"missing blank separator line", "[SANHO] Publish docs from r/b (0 app commits)\nsource: w @ " + oidHead + "\n"},
+		{"missing source line", "[SANHO] Publish docs from r/b (0 app commits)\n\ncommits:\n  - docs: one\n"},
+		{"no source separator", "[SANHO] Publish docs from r/b (0 app commits)\n\nsource: w\n"},
+		{"empty workspace id", "[SANHO] Publish docs from r/b (0 app commits)\n\nsource:  @ " + oidHead + "\n"},
+		{"short tip oid", "[SANHO] Publish docs from r/b (0 app commits)\n\nsource: w @ abc123\n"},
+		{"count disagrees with the list", "[SANHO] Publish docs from r/b (2 app commits)\n\nsource: w @ " + oidHead + "\ncommits:\n  - docs: one\n"},
+		{"dangling commits header", "[SANHO] Publish docs from r/b (0 app commits)\n\nsource: w @ " + oidHead + "\ncommits:\n"},
+		{"unindented list item", "[SANHO] Publish docs from r/b (1 app commits)\n\nsource: w @ " + oidHead + "\ncommits:\n- docs: one\n"},
+		{"trailing foreign trailer", "[SANHO] Publish docs from r/b (0 app commits)\n\nsource: w @ " + oidHead + "\nSigned-off-by: someone\n"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got, ok := publish.ParseCommitMeta(test.message); ok {
+				t.Fatalf("ParseCommitMeta(%q) = %+v, true; want a foreign commit", test.message, got)
+			}
+		})
+	}
+}
+
+func requireMetaEqual(t *testing.T, got, want publish.CommitMeta) {
+	t.Helper()
+	if got.RepoName != want.RepoName {
+		t.Errorf("RepoName = %q, want %q", got.RepoName, want.RepoName)
+	}
+	if got.Branch != want.Branch {
+		t.Errorf("Branch = %q, want %q", got.Branch, want.Branch)
+	}
+	if got.WorkspaceID != want.WorkspaceID {
+		t.Errorf("WorkspaceID = %q, want %q", got.WorkspaceID, want.WorkspaceID)
+	}
+	if got.TipOID != want.TipOID {
+		t.Errorf("TipOID = %q, want %q", got.TipOID, want.TipOID)
+	}
+	if len(got.Subjects) != len(want.Subjects) {
+		t.Fatalf("Subjects = %q, want %q", got.Subjects, want.Subjects)
+	}
+	for i := range want.Subjects {
+		if got.Subjects[i] != want.Subjects[i] {
+			t.Errorf("Subjects[%d] = %q, want %q", i, got.Subjects[i], want.Subjects[i])
+		}
+	}
+}

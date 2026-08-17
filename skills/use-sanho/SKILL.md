@@ -24,6 +24,13 @@ repository. It is a Git-boundary tool, not a general task or session manager.
    user asks to inspect incoming or unpublished docs changes. Diff is
    read-only, has no JSON mode, and prints paths relative to the configured
    docs root.
+   Use `sanho log` (with `--refresh`, `-n`, `--path`, or `--json`) when the
+   user asks what changed in canonical or which repository, workspace, or
+   application commit a document came from. Log is read-only, needs no
+   recorded base, and reads the last fetched snapshot unless `--refresh` is
+   given. Read `kind` before `source`: an `external` entry is a commit made
+   directly in the canonical repository and reports `source: null`, which is
+   absent provenance rather than an empty record.
    Use `sanho check --require-clean`, `--require-current`, and/or
    `--require-published` when automation needs an explicit policy. Parse the
    complete result even when exit 1: `passed:false` is a policy mismatch,

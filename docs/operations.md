@@ -75,6 +75,22 @@ Diff paths are relative to the configured docs root. `--stat` and
 `--name-only` are mutually exclusive, and `--local` cannot be combined with
 `--refresh` because local comparison does not consult canonical origin.
 
+Inspect who published what, and from where:
+
+```bash
+sanho log
+sanho log --refresh
+sanho log -n 50
+sanho log --path api.md
+sanho log --json
+```
+
+Each publication reports the source repository, branch, workspace, and
+application commit it came from. A commit made directly in the canonical
+repository is listed as ordinary history with no source. Paths follow the same
+docs-root-relative convention as `diff`. Unlike `diff`, `log` needs no recorded
+base.
+
 ### 2. Commit normally
 
 Edit and commit docs with ordinary Git commands:
