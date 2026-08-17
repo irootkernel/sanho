@@ -826,6 +826,21 @@ func doctorHooksMessage(problems string) string {
 	return fmt.Sprintf("%s — run 'sanho doctor --fix' to reinstall them", problems)
 }
 
+// doctorBaseUnreachableMessage reports a recorded base sitting on
+// history canonical no longer contains — what a squash, a rebase, or a
+// replaced docs repository leaves behind.
+//
+// It names `sanho sync` because sync is what moves the base onto the
+// history canonical actually has: it re-derives by docs tree where it
+// can, and reconciles where it cannot. `doctor --fix` is deliberately
+// not named, because its re-derivation reads local commit history,
+// which in this state agrees with the base file and would change
+// nothing.
+func doctorBaseUnreachableMessage(base, head string) string {
+	return fmt.Sprintf("the recorded base %s is not in the history canonical head %s names — "+
+		"run 'sanho sync' to reconcile with what canonical has now", shortOID(base), shortOID(head))
+}
+
 func doctorPublicationPendingMessage() string {
 	return "committed docs differ from the publication base after hook repair; make another docs-changing commit, then run 'git push' to publish them"
 }
@@ -1274,6 +1289,14 @@ var Catalog = []CatalogEntry{
 		Sample:       doctorHooksMessage("pre-commit: missing"),
 		Match:        "to reinstall them",
 		NextCommands: []string{"sanho doctor --fix"},
+	},
+	{
+		ID:           "doctor_base_unreachable",
+		Source:       "doctorBaseUnreachableMessage",
+		Scenario:     "doctor_base_unreachable",
+		Sample:       doctorBaseUnreachableMessage(sampleBaseOID, sampleHeadOID),
+		Match:        "is not in the history canonical head",
+		NextCommands: []string{"sanho sync"},
 	},
 	{
 		ID:           "doctor_publication_pending",

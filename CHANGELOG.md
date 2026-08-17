@@ -109,6 +109,15 @@
 
   Hands-on H06 found this: the state was reachable, and the rejection's own
   guidance could not leave it.
+- `sanho doctor` reports a recorded base that is not in the history canonical
+  head names, and names `sanho sync`. It previously answered "no problems
+  found" there: the base object survives in the private clone as unreferenced
+  garbage, and local history still agrees with the base file, so neither the
+  existing base row nor the derivation row had anything to disagree with. The
+  new row asks the only question that settles it — reachability from the
+  publication branch — and stays silent when the clone has never fetched, when
+  canonical is empty, or when the base is merely ahead of a clone that has not
+  caught up.
 - A `--json` command that was invoked incorrectly now writes the documented
   error envelope. An unknown flag, an unparseable flag value, or an unexpected
   positional argument was rejected before the command ran, so nothing rendered

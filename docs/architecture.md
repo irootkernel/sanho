@@ -392,7 +392,11 @@ the named state and executes each recommendation.
 | 2 | internal defect |
 
 `doctor` exits 0 when it reports warnings and exits 1 only when diagnosis itself
-cannot run.
+cannot run. Its base rows report two independent facts: whether local history
+agrees with the recorded base, and whether canonical still contains it. The
+second needs the fetched clone and is decided by reachability from the
+publication branch, because a rewritten-away base object survives in the clone
+and resolving it proves nothing.
 
 A malformed invocation is classified at the CLI boundary, before any use case
 runs: a rejected flag or a rejected positional argument carries

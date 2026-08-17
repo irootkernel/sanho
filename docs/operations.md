@@ -286,6 +286,13 @@ Doctor re-derives a base only when history and current docs corroborate it. If
 no safe base can be proved, run `sanho sync`; do not write `.sanho_base.json`
 manually.
 
+Doctor also reports a base that is not in the history canonical head names —
+what a squash, a rebase, or a replaced docs repository leaves behind. Nothing
+local reveals that state: the base object survives in the private clone and
+local history still agrees with the base file, so every other row reads
+healthy. It names `sanho sync` rather than `doctor --fix`, because re-derivation
+reads the same local history and would change nothing.
+
 ### Registry lock or corruption
 
 The lock wait is bounded. Find the process holding `~/.sanho/state.lock` before

@@ -397,6 +397,7 @@ func checkBase(ctx context.Context, ws *workspace, fix bool, out *report) {
 	default:
 		out.ok("base", "commit %s, tree %s", shortOID(base.Commit), shortOID(base.Tree))
 		checkBaseDerivation(ctx, ws, base, fix, out)
+		checkBaseReachable(ctx, ws, base, out)
 		return
 	}
 
@@ -507,6 +508,55 @@ func checkBaseDerivation(ctx context.Context, ws *workspace, base provenance.Bas
 	if fix {
 		repairBase(ctx, ws, out)
 	}
+}
+
+// checkBaseReachable asks the one question about the recorded base that
+// checkBaseDerivation cannot: whether canonical still contains it.
+//
+// The derivation check compares the base file against history's newest
+// stamp, and a rewrite orphans BOTH — they agree, so it reports nothing.
+// Resolving the commit settles nothing either: the object survives in
+// the private clone as unreferenced garbage long after the branch that
+// held it is gone. Only reachability from the publication branch decides
+// it, and the state it names is the one a user opens doctor in — a
+// workspace whose docs derive from history canonical no longer has,
+// where every other row reads healthy.
+func checkBaseReachable(ctx context.Context, ws *workspace, base provenance.Base, out *report) {
+	if _, syncing, noteErr := ws.statePort().LoadSyncNote(); syncing || noteErr != nil {
+		return
+	}
+	store := canonicalOrNil(ws)
+	if store == nil {
+		return
+	}
+	// A clone that has never fetched holds no opinion about canonical,
+	// and reporting from it would be crying wolf at an empty cache.
+	if _, fetched := store.Age(); !fetched {
+		return
+	}
+	// An empty publication branch has no history for the base to be
+	// absent from; any other head failure is checkClone's to report.
+	head, _, err := store.Head(ctx)
+	if err != nil {
+		return
+	}
+
+	port := ws.canonicalPort(store)
+	resolved, err := port.ResolveCommit(ctx, base.Commit)
+	if err != nil {
+		return
+	}
+	if resolved {
+		if reachable, err := port.IsAncestor(ctx, base.Commit, head); err != nil || reachable {
+			return
+		}
+		// A base ahead of canonical head is a clone that has not caught
+		// up, which the clone and data-age rows already speak for.
+		if ahead, err := port.IsAncestor(ctx, head, base.Commit); err != nil || ahead {
+			return
+		}
+	}
+	out.warn("base-reachability", "%s", doctorBaseUnreachableMessage(base.Commit, head))
 }
 
 // baseIsAheadOf reports whether the recorded base is a descendant of the

@@ -257,6 +257,7 @@ var closureFixtures = map[string]closureFixture{
 	"push_empty_docs":            reachPushEmptyDocs,
 	"clone_missing":              reachCloneMissing,
 	"doctor_hooks":               reachDoctorHooks,
+	"doctor_base_unreachable":    reachDoctorBaseUnreachable,
 	"doctor_publication_pending": reachDoctorPublicationPending,
 	"sync_note_pending":          reachSyncNotePending,
 	"base_needs_sync":            reachBaseNeedsSync,
@@ -933,6 +934,37 @@ func reachCloneMissing(t *testing.T, w *world) closureState {
 				if !fileExists(t, ws.cloneDir()) {
 					t.Error("the advised sync did not recreate the clone")
 				}
+			},
+		},
+	}
+}
+
+// reachDoctorBaseUnreachable orphans the recorded base: canonical
+// history is replaced wholesale, so the base sits on a line of history
+// canonical no longer contains.
+//
+// Every other doctor row reads healthy here, which is the point — the
+// base object still resolves in the private clone as unreferenced
+// garbage, and history's newest stamp agrees with the base file, so the
+// derivation check has nothing to compare. Only reachability sees it.
+func reachDoctorBaseUnreachable(t *testing.T, w *world) closureState {
+	ws := w.setup("orphaned-base")
+	w.rewriteCanonical(map[string]string{"api.md": "line one\nline two\n"},
+		"canonical: rewritten history", true)
+	// Populate the cache, so the check is reading a fetched canonical
+	// rather than an empty one.
+	ws.sanho("status", "--refresh")
+
+	return closureState{
+		ws:     ws,
+		output: ws.sanho("doctor").combined(),
+		verify: map[string]func(*testing.T, *workspace){
+			"sanho sync": func(t *testing.T, ws *workspace) {
+				// The advised sync moves the base onto the history
+				// canonical actually has, which is the whole claim.
+				requireEqual(t, "base file", recordedBase(t, ws), ws.w.canonicalHead())
+				requireNotContains(t, "doctor after the advised sync",
+					ws.sanho("doctor").combined(), "is not in the history canonical head")
 			},
 		},
 	}
