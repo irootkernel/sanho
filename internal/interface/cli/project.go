@@ -16,6 +16,7 @@ func newProjectCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "project",
 		Short: "Manage project registrations",
+		RunE:  runGroup,
 	}
 	cmd.AddCommand(newProjectAddCmd(), newProjectDeleteCmd())
 	return cmd

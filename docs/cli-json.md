@@ -25,7 +25,14 @@ its patch, diffstat, or path output is intended for direct inspection. Use
   newline. The `version` compact-output exception is documented in its section.
 - Human guidance and diagnostics stay on stderr when `--json` is active.
 - A failed JSON command writes one error envelope to stdout and keeps its normal
-  non-zero exit code and stderr guidance.
+  non-zero exit code and stderr guidance. This includes a failure the command
+  never got to report: a rejected flag, an unparseable flag value, or an
+  unexpected positional argument is answered with `invalid_arguments` on stdout,
+  not with an empty one.
+- The commands above are the ones that owe an envelope. A command with no JSON
+  document writes its refusal to stderr only, even when `--json` was typed.
+- `--help` is not a failure. It prints usage on stdout and exits 0 whether or not
+  `--json` is present.
 - Empty arrays are `[]`, never `null`.
 - Optional objects such as `base` are `null` when unknown.
 - Machine OIDs are full length; 12-character OIDs are human-output only.
@@ -61,7 +68,7 @@ Stable codes are:
 | `config_corrupt` | `.sanho.json` exists but is not a valid supported config |
 | `base_corrupt` | The recorded base exists but is invalid |
 | `base_not_corroborated` | Sanho cannot prove a proposed base matches the docs |
-| `invalid_arguments` | The requested flag or policy combination is incomplete or invalid |
+| `invalid_arguments` | The invocation is malformed: an incomplete or invalid flag or policy combination, an unknown flag, an unparseable flag value, or an unexpected positional argument |
 | `internal` | Sanho encountered an internal defect |
 
 The compatibility code `v1_workspace` is part of the current v0.2 error
@@ -103,7 +110,9 @@ Current source emits the complete document as standard compact JSON on one line:
 The command writes one trailing newline. `name` and `version` are the complete
 schema; the whitespace change does not alter either field. The human-readable
 form is `sanho <version>`. Other successful JSON commands retain the common
-indented form.
+indented form, and the compact exception covers only this success document: a
+failed `version --json` writes the common indented error envelope like every
+other command.
 
 ## `status`
 

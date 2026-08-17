@@ -36,8 +36,11 @@ repository. It is a Git-boundary tool, not a general task or session manager.
    complete result even when exit 1: `passed:false` is a policy mismatch,
    while an `error` envelope means evaluation failed. A passing check never
    grants commit or push permission.
-4. Parse the JSON document and process exit separately. Branch on stable
-   `error.code`, `known` fields, `sync_in_progress`, `relation`,
+4. Parse the JSON document and process exit separately. A failed `--json`
+   command always answers with an envelope, including one that rejects the
+   invocation itself: `invalid_arguments` means the command was never run, so
+   correct the flags or arguments rather than reading it as workspace state.
+   Branch on stable `error.code`, `known` fields, `sync_in_progress`, `relation`,
    `publication`, `sync_preview`, `working_copy`, and `local_readiness`.
    Treat `sync_preview` as a prediction for committed `HEAD` and readiness as
    current local preconditions; neither proves that a later fetch or network

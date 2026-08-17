@@ -995,6 +995,47 @@ func TestLogRejectsUnusableArgumentsWithAnEnvelope(t *testing.T) {
 	}
 }
 
+// TestMalformedInvocationWritesAnEnvelope is the same contract one
+// stage earlier: an argument cobra rejects never reaches the command, so
+// nothing inside it could render the envelope. These fail before a
+// workspace is resolved, which is why no init is needed.
+func TestMalformedInvocationWritesAnEnvelope(t *testing.T) {
+	w := newWorld(t, nil)
+
+	for _, args := range [][]string{
+		{"status", "--json", "extra"},
+		{"state", "--json", "--no-such-flag"},
+		{"check", "--require-clean", "--json", "extra"},
+		// The flag's own value is what failed to parse. Reporting that
+		// on an empty stdout would deny the envelope to the very flag
+		// the invocation was engaging.
+		{"status", "--json=maybe"},
+	} {
+		out := w.run(w.app, args...)
+		if out.exitCode != 1 {
+			t.Fatalf("%v exit = %d, want 1", args, out.exitCode)
+		}
+		requireContains(t, "malformed invocation envelope", out.stdout, `"code": "invalid_arguments"`)
+		requireContains(t, "malformed invocation guidance", out.stderr, "sanho: invalid arguments: ")
+	}
+}
+
+// TestUnknownSubcommandIsRefused pins the group refusal at the process
+// boundary. `sanho hook` is the one git itself invokes, so its failure
+// mode is worth proving against the real binary.
+func TestUnknownSubcommandIsRefused(t *testing.T) {
+	w := newWorld(t, nil)
+
+	out := w.run(w.app, "hook", "no-such-hook")
+	if out.exitCode != 1 {
+		t.Fatalf("hook no-such-hook exit = %d, want 1", out.exitCode)
+	}
+	if out.stdout != "" {
+		t.Fatalf("hook no-such-hook stdout = %q, want nothing", out.stdout)
+	}
+	requireContains(t, "unknown subcommand", out.stderr, `unknown command "no-such-hook" for "sanho hook"`)
+}
+
 func TestLogReportsAMissingClone(t *testing.T) {
 	w := newWorld(t, map[string]string{"api.md": "canonical api\n"})
 	w.initAndAdoptDocs()

@@ -17,6 +17,7 @@ package cli
 
 import (
 	"errors"
+	"io"
 	"os"
 	"runtime/debug"
 	"strings"
@@ -63,7 +64,7 @@ func Execute(info BuildInfo) { os.Exit(Run(info, os.Args[1:], os.Stdout, os.Stde
 // A panic anywhere below is classified as exit 2: an internal bug is the
 // one failure class the user cannot act on, so it is reported as such
 // instead of being mistaken for a refusal.
-func Run(info BuildInfo, args []string, stdout, stderr *os.File) (code int) {
+func Run(info BuildInfo, args []string, stdout, stderr io.Writer) (code int) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			writef(stderr, "sanho: internal error: %v\n", recovered)
@@ -77,10 +78,23 @@ func Run(info BuildInfo, args []string, stdout, stderr *os.File) (code int) {
 	root.SetOut(stdout)
 	root.SetErr(stderr)
 
-	if err := root.Execute(); err != nil {
-		return renderError(stderr, err)
+	// ExecuteC rather than Execute for the command it resolved: an
+	// argument cobra rejects never reaches RunE, so this is the only
+	// place that still knows both which command was meant and what it
+	// was handed.
+	cmd, err := root.ExecuteC()
+	if err == nil {
+		return exitSuccess
 	}
-	return exitSuccess
+	// The JSON contract owes an envelope for *every* failure of a --json
+	// command, and a malformed invocation is the one an agent is most
+	// likely to hit first. Writing it here keeps the promise for the
+	// failures the command itself never sees.
+	var argErr *argumentError
+	if errors.As(err, &argErr) && jsonRequested(cmd, args) {
+		writeJSONError(cmd.OutOrStdout(), err)
+	}
+	return renderError(stderr, err)
 }
 
 // errorPrefix heads every user-facing error line.
@@ -95,7 +109,7 @@ const errorPrefix = "sanho: "
 // 'sanho migrate'` exactly, and hooks print it verbatim — so they carry
 // the prefix themselves. Prefixing those again would produce
 // `sanho: sanho: …` and break the very string the spec pins.
-func renderError(stderr *os.File, err error) int {
+func renderError(stderr io.Writer, err error) int {
 	switch {
 	case errors.Is(err, errAlreadyReported):
 		return exitUser
@@ -154,7 +168,55 @@ commits in your repository.`,
 		newMigrateCmd(),
 		newVersionCmd(info),
 	)
+
+	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
+		return newArgumentError(err)
+	})
+	classifyArgumentErrors(root)
 	return root
+}
+
+// classifyArgumentErrors gives every declared Args rule the machine
+// identity its rejection owes an agent, which is what lets Run write the
+// `invalid_arguments` envelope for a command that never got to run.
+//
+// A command whose Args is still nil is skipped, and that is the point
+// rather than an omission: cobra's Find only consults legacyArgs — the
+// unknown-command check, suggestions included — while Args is nil, so
+// installing a wrapper on the root would turn `sanho statu` from a
+// refusal into a help page at exit 0. Every command with a JSON mode
+// declares cobra.NoArgs, so the skip costs no coverage.
+func classifyArgumentErrors(cmd *cobra.Command) {
+	for _, child := range cmd.Commands() {
+		classifyArgumentErrors(child)
+	}
+	declared := cmd.Args
+	if declared == nil {
+		return
+	}
+	cmd.Args = func(c *cobra.Command, args []string) error {
+		if err := declared(c, args); err != nil {
+			return newArgumentError(err)
+		}
+		return nil
+	}
+}
+
+// runGroup is every command group's RunE: list the subcommands when the
+// group was named alone, and refuse a word that resolves to none of
+// them.
+//
+// A group needs a RunE at all because cobra returns flag.ErrHelp for a
+// command it considers unrunnable *before* it validates arguments — so
+// an Args rule on a group is unreachable, and `sanho project ad` printed
+// help and exited 0. Leaving Args nil is equally deliberate: it keeps
+// the group out of classifyArgumentErrors, so the refusal reads exactly
+// like the root's instead of gaining a prefix the root does not have.
+func runGroup(cmd *cobra.Command, args []string) error {
+	if len(args) == 0 {
+		return cmd.Help()
+	}
+	return unknownSubcommandError(cmd, args[0])
 }
 
 // debugf prints a diagnostic line under --verbose. Diagnostics go to

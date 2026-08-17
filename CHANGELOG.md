@@ -25,6 +25,32 @@
   private clone, because provenance cannot settle a candidate committed
   directly in the canonical repository and Sanho lists no commit's files.
 
+### Fixed
+
+- A `--json` command that was invoked incorrectly now writes the documented
+  error envelope. An unknown flag, an unparseable flag value, or an unexpected
+  positional argument was rejected before the command ran, so nothing rendered
+  the envelope and stdout was empty at exit 1 — an agent parsing stdout per
+  `docs/cli-json.md` got a JSON parse failure instead of a code to branch on.
+  All nine machine-readable commands were affected. These failures now report
+  `invalid_arguments`, and their stderr line gains the `invalid arguments: `
+  prefix that in-command argument refusals such as `sanho check --json` already
+  used.
+- An unknown subcommand under `sanho project`, `sanho workspace`, or
+  `sanho hook` is refused instead of silently printing the group's help at exit
+  0. Cobra reaches its unknown-command check only at the root, so `sanho project
+  ad` resolved to the group and succeeded; it now exits 1 and suggests `add`,
+  matching what the same typo already got at the root. Naming a group alone
+  still prints its help at exit 0.
+
+  No installed hook needs reinstalling. Every name a hook script invokes still
+  resolves, including the v0.1 `post-commit` line that v0.2 keeps registered so
+  an unrepaired legacy install stays inert, so no hook reaches the new refusal.
+  What changes is the direction of the failure for a name that does not resolve:
+  should a future release remove a hook subcommand outright, a stale script
+  naming it will abort its git operation instead of silently succeeding, and
+  that removal will need a migration path.
+
 ## v0.2.6 - 2026-08-14
 
 ### Added

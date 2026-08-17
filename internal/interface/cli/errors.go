@@ -11,7 +11,9 @@ package cli
 
 import (
 	"errors"
+	"fmt"
 	"io"
+	"strconv"
 	"strings"
 
 	"github.com/irootkernel/sanho/internal/domain/markers"
@@ -160,6 +162,50 @@ func (e *lockTimeoutError) Error() string { return e.hint }
 
 func (e *lockTimeoutError) Unwrap() error { return fsx.ErrLockTimeout }
 
+// argumentError is a failure cobra detected before the command could
+// run: an unparseable flag or a positional argument the command's own
+// Args rule rejected.
+//
+// It carries errInvalidArguments the way lockTimeoutError carries
+// ErrLockTimeout — Error is the line a user reads, Unwrap keeps the
+// machine code reachable — but the distinct type is doing a second job.
+// A command's RunE never returns one, because RunE is never reached in
+// this state. That is what lets Run write the envelope for it without
+// writing a second one over the envelope finishCommand already wrote
+// for an in-command `invalid_arguments` such as `sanho check --json`.
+type argumentError struct{ cause error }
+
+func (e *argumentError) Error() string {
+	return errInvalidArguments.Error() + ": " + e.cause.Error()
+}
+
+func (e *argumentError) Unwrap() error { return errInvalidArguments }
+
+func newArgumentError(err error) error { return &argumentError{cause: err} }
+
+// unknownSubcommandError is cobra's own unknown-command report,
+// reproduced for a command group.
+//
+// Cobra reaches that report through legacyArgs, whose branch is guarded
+// by !HasParent(), so only the root ever produced it: `sanho project ad`
+// resolved to the group, found it unrunnable, printed help and exited 0
+// — losing both the refusal and the suggestion the same typo gets at the
+// root. The wording and the lazy minimum-distance default are cobra's,
+// so a group's refusal reads exactly like the root's.
+func unknownSubcommandError(cmd *cobra.Command, name string) error {
+	if cmd.SuggestionsMinimumDistance <= 0 {
+		cmd.SuggestionsMinimumDistance = 2
+	}
+	message := fmt.Sprintf("unknown command %q for %q", name, cmd.CommandPath())
+	if suggestions := cmd.SuggestionsFor(name); len(suggestions) > 0 {
+		message += "\n\nDid you mean this?\n"
+		for _, suggestion := range suggestions {
+			message += "\t" + suggestion + "\n"
+		}
+	}
+	return errors.New(message)
+}
+
 var errCloneMissing = errors.New("canonical clone missing")
 
 type cloneMissingError struct{ message string }
@@ -267,6 +313,62 @@ func machineErrorCode(err error) string {
 	default:
 		return codeInternal
 	}
+}
+
+// jsonFlagName is the flag every machine-readable command declares. The
+// boundary looks it up by name because a failure can arrive before the
+// command's own options struct was ever populated.
+const jsonFlagName = "json"
+
+// jsonRequested reports whether a failed invocation asked for the
+// machine-readable contract, and is therefore owed an envelope.
+//
+// A command that declares no such flag is owed nothing: init, clean,
+// project, workspace, migrate, diff and the hook entrypoints have no
+// JSON document at all (docs/cli-json.md), and an envelope on their
+// stdout would be noise rather than contract.
+// A flag pflag did apply is read from pflag, which settles a repeated
+// --json by last-wins exactly as a successful parse would. When the
+// parse aborted, the repetitions after the offending token were never
+// reached, so the last value that was actually applied is the only
+// reading available and the one used here.
+func jsonRequested(cmd *cobra.Command, args []string) bool {
+	flag := cmd.Flags().Lookup(jsonFlagName)
+	if flag == nil {
+		return false
+	}
+	if flag.Changed {
+		return flag.Value.String() == "true"
+	}
+	return argsRequestJSON(args)
+}
+
+// argsRequestJSON reads --json back out of raw argv.
+//
+// It is the fallback for exactly one state, and that state is reachable:
+// pflag stops parsing at the first token it cannot handle, so
+// `sanho status --bogus --json` never applies the flag that was asked
+// for. Without this the envelope rule would hold only when --json
+// happens to precede the mistake, which is a caveat no consumer should
+// have to encode.
+func argsRequestJSON(args []string) bool {
+	const flag = "--" + jsonFlagName
+	for _, arg := range args {
+		switch {
+		case arg == "--":
+			return false
+		case arg == flag:
+			return true
+		case strings.HasPrefix(arg, flag+"="):
+			// Only a value that parses as false opts out. A value that
+			// parses as nothing at all is the failure being reported,
+			// not a request for prose: `--json=maybe` engaged the flag,
+			// so its refusal is owed the envelope like any other.
+			value, err := strconv.ParseBool(strings.TrimPrefix(arg, flag+"="))
+			return err != nil || value
+		}
+	}
+	return false
 }
 
 // writeJSONError prints the JSON contract error envelope to stdout. The exit code

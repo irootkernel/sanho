@@ -349,6 +349,13 @@ the named state and executes each recommendation.
 `doctor` exits 0 when it reports warnings and exits 1 only when diagnosis itself
 cannot run.
 
+A malformed invocation is classified at the CLI boundary, before any use case
+runs: a rejected flag or a rejected positional argument carries
+`invalid_arguments`, exits 1, and writes exactly one JSON envelope when the
+command has a JSON document. The boundary owns that envelope precisely because
+the command it was meant for never executed. A command name that resolves to
+nothing exits 1 at every level of the command tree, not only at the root.
+
 ## Related documentation
 
 - [Operations](operations.md)

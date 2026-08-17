@@ -13,6 +13,7 @@ func newWorkspaceCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "workspace",
 		Short: "Manage workspace registrations",
+		RunE:  runGroup,
 	}
 	cmd.AddCommand(newWorkspaceForgetCmd())
 	return cmd

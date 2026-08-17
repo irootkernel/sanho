@@ -38,6 +38,7 @@ func newHookCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "hook",
 		Short: "Git hook entry points (invoked by git, not by hand)",
+		RunE:  runGroup,
 	}
 	cmd.AddCommand(
 		newPreCommitCmd(),
