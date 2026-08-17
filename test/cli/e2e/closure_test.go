@@ -815,16 +815,16 @@ func reachCanonicalUnreachable(t *testing.T, w *world) closureState {
 // canonical history was replaced wholesale, so neither the recorded base
 // commit nor its docs tree survives.
 //
-// KNOWN PRODUCT DEFECT — the `sanho sync --rebase-onto <commit>` half of
-// this row fails, and the assertion is deliberately left at full
-// strength. `usecase/docsync.resolveBaseTree` refuses whenever the
-// recorded base is unreachable *and* no canonical commit carries its
-// docs-base-tree — which is precisely the state that produces this
-// message — so `--rebase-onto` cannot escape the state its own guidance
-// names, and the error it prints advises the very command that just
-// failed. Fixing it means letting an explicit --rebase-onto target
-// stand in for the failed re-anchor (a flow change in usecase/docsync),
-// not a wording change, so it is reported rather than patched here.
+// The `sanho sync --rebase-onto <commit>` row is the one this scenario
+// earns its keep on, and it is why the flag has an empty-tree fallback
+// at all. `usecase/docsync.resolveBaseTree` used to refuse whenever the
+// recorded base was unreachable AND no canonical commit carried its
+// docs-base-tree — precisely the state that prints this message — so the
+// guidance named a command that could not escape the state it was
+// advised in. An explicit target now stands in for the failed re-anchor
+// and merges against the empty tree, exactly as the no-base state does.
+// The suite caught that violation; keep the assertion at full strength
+// so it would catch a regression the same way.
 func reachHistoryRewritten(t *testing.T, w *world) closureState {
 	ws := w.setup("rewritten")
 	ws.commitDocs("docs: local edit", map[string]string{"api.md": "line one\nmine\n"})
