@@ -1,5 +1,22 @@
 # Changelog
 
+This file records concise shipped outcomes and the planned next stable release.
+
+## v0.2.8 - Unreleased
+
+### Added
+
+- Add tracked Aquarium design and war-room procedures for assisted design and
+  difficult-bug diagnosis workflows.
+
+### Changed
+
+- Expand the Aquarium task, goal, and validation procedures with plan handoff,
+  review identity and mode, and bounded epic-hardening deferral evidence.
+- Route documentation review through AGY while retaining ZCode for the other
+  configured review roles, and align the repository agent guidance with the
+  expanded workflows and their tracked Procedure v2 authorities.
+
 ## v0.2.7 - 2026-08-18
 
 ### Added

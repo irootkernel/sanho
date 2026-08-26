@@ -6,8 +6,8 @@ SANHO_HOME ?=
 CLI_CMD := ./cmd/sanho
 CLI_BINARY := bin/sanho
 
-VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
-LDFLAGS := -ldflags "-X main.version=$(VERSION)"
+VERSION ?=
+LDFLAGS := $(if $(strip $(VERSION)),-ldflags "-X main.version=$(strip $(VERSION))")
 
 UNIT_PACKAGES := \
 	./cmd/sanho \

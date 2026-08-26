@@ -6,9 +6,9 @@ import (
 	"github.com/irootkernel/sanho/internal/interface/cli"
 )
 
-// version is injected via ldflags for checkout builds. Module builds derive it
-// from Go build information instead.
-var version = "dev"
+// version defaults to the planned stable version and remains overridable via
+// ldflags for explicit release verification builds.
+var version = buildinfo.CurrentVersion
 
 func main() {
 	cli.Execute(cli.BuildInfo{
