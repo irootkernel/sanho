@@ -35,7 +35,17 @@ Before implementing:
 - Prefer a robust implementation when the requirement warrants it, but remove layers justified only by possible future needs.
 - If the implementation is substantially larger than the behavior it provides, simplify it before reporting completion.
 
-### 3. Make Surgical Changes
+### 3. Prefer Durable Root-Cause Solutions
+
+**For fixes and solution proposals, address the verified root cause with the smallest complete durable solution.**
+
+- Weigh correctness, performance, maintainability, and structural fit instead of optimizing only for the smallest diff.
+- Prefer durable designs over symptomatic patches while keeping the current work proportional to the verified requirement and repository authority.
+- When a broader ideal design exceeds current scope, implement a bounded durable step that fully satisfies current success criteria and preserves a clear path forward.
+- Record only remaining independent actionable work in the repository's canonical deferred-feedback owner. If no owner exists, report the proposed entry and obtain approval before creating one.
+- Promote epic-sized work to a TODO candidate or roadmap work unit. Do not defer work required for current correctness or acceptance.
+
+### 4. Make Surgical Changes
 
 **Touch only what the requested outcome and its verification require. Clean up only what the change makes obsolete.**
 
@@ -48,7 +58,7 @@ Before implementing:
 
 Every changed line must be traceable to the requested outcome or its verification.
 
-### 4. Work Toward Verifiable Goals
+### 5. Work Toward Verifiable Goals
 
 **Define success before implementation and continue until the result is proved or concretely blocked.**
 
@@ -62,32 +72,32 @@ Every changed line must be traceable to the requested outcome or its verificatio
 - Continue until the requested behavior is verified or a concrete blocker is established.
 - Report skipped checks with the reason and distinguish assumptions from confirmed results.
 
-## Repository Authorities
+## Master Preferences
 
-- Use `README.md` for the product boundary, supported components, public workflows, and top-level validation entrypoint.
-- Use `docs/architecture.md` for runtime, Git, provenance, publication, synchronization, persistence, concurrency, and safety contracts. It is the implementation authority.
-- Use `docs/operations.md`, `docs/recovery.md`, `docs/deployment.md`, `docs/cli-json.md`, and `docs/hands-on-testing.md` for their respective operational, recovery, deployment, interface, and real-environment verification details.
-- Use `CHANGELOG.md` and Git history for released behavior and compatibility history, not as authority for current implementation or unimplemented future work.
-- Use `Makefile` as the entry point for repository-standard generation, lint, build, and test commands.
-- Read the nearest relevant implementation and tests instead of copying detailed feature behavior into this file.
-- If authorities or implementation disagree, surface the mismatch and resolve it before changing behavior; do not silently choose the convenient source.
+- Respond to Master in Korean using polite speech. When directly addressing the user, use exactly `Master`.
+- Keep repository artifacts in the repository's established language and style. When no convention exists, use English unless Master requests otherwise.
+- Report concise conclusions and useful evidence without exposing private chain-of-thought.
 
-## Development skill references
+
+## Aquarium Development Guide
 
 - Use `$aquarium:task-handler` for one named roadmap task.
 - Use `$aquarium:epic-handler` to implement one roadmap epic as sequential task goals.
 - Use `$aquarium:epic-validator` to cold-validate and remediate one completed roadmap epic.
 - Use `$aquarium:new-project`, `$aquarium:new-feature`, or `$aquarium:refactor` for an explicitly requested Ouroboros-assisted project or epic design workflow.
 - Use `$aquarium:war-room` to diagnose one difficult bug and stop at a task, epic, or incomplete-investigation proposal.
-- Use `$aquarium:design-qa` to create, change, reactivate, or retire local Design Gates.
-- Use `$aquarium:dev-setup` to diagnose or configure development tooling.
+- Use `$aquarium:dev-setup` to diagnose or configure development tooling and repository operating guidance.
+- Use `$aquarium:docs-setup` to audit, establish, adopt, or migrate canonical documentation structure and roadmap IDs.
+- Use `$aquarium:test-setup` to audit or configure the common Make testing contract and evidence-backed legacy waivers.
+- Use `$aquarium:release-handler` for one stable release lifecycle and `$aquarium:release-qa` for its exact committed-candidate scenario verification.
 - Use `$use-sanho` at an authorized commit or push boundary in a Sanho-managed repository, or for an explicitly requested Sanho operation.
 - Use `$use-mulgae` for an authorized Mulgae review, run inspection, finding follow-up, configuration diagnosis, cleanup plan, or recovery.
 - Use `$use-gaori` when a selected long or noisy check is routed through Gaori or existing Gaori evidence must be inspected.
-- Let `$aquarium:task-handler`, `$aquarium:epic-handler`, `$aquarium:epic-validator`, `$aquarium:new-project`, `$aquarium:new-feature`, `$aquarium:refactor`, `$aquarium:war-room`, and `$aquarium:design-qa` use Podway by default unless the current user opts out before the first managed-session mutation; Aquarium workflow skills retain their stricter roadmap, ownership, and approval rules.
-- Use `$use-podway` directly for an explicitly requested Procedure v2 session operation, authoring, lifecycle, diagnosis, recovery, cancellation, or current-session discard flow. Keep each handler opt-out local to its current task, epic, or validation request.
+- Let Git-backed Aquarium workflows use Podway by default unless the current user opts out before the first managed-session mutation. No Aquarium skill owns a Podway session; only when starting a different session should the workflow ask whether to preserve, finish, delete, or replace the existing one.
+- Use `$use-podway` directly for an explicitly requested Procedure v2 lifecycle, goal, diagnosis, recovery, cancellation, or discard operation. Keep each handler opt-out local to its current task, epic, or validation request.
 - Use `$lore-commits` for non-trivial commit messages and `$lore-query` to inspect recorded decision context.
 - Use the separately installed upstream `$deslop` skill for task-owned cleanup when an Aquarium workflow requests it.
+- Keep `.mulgae/**`, `.gaori/runs/**`, `.podway/runtime/**`, and disposable roots as local runtime evidence. Do not cite their paths or identities as durable evidence in tracked documentation or commit messages; use a reviewed tracked `aquarium.promoted-evidence/v1` package under `evidence/aquarium/` only when a downstream consumer genuinely requires retained evidence.
 - Treat `.podway/procedures/aquarium-*-v2.yaml` as this repository's authority for normal workflow evidence and routing.
 - Repository-specific rules below override defaults from the referenced skills.
 
@@ -97,18 +107,64 @@ Every changed line must be traceable to the requested outcome or its verificatio
 - Mulgae reviews require explicit user authorization. Approval of a `$aquarium:task-handler` plan counts as task-scoped authorization only when that plan explicitly includes the Mulgae review.
 - A full Mulgae review uses the configured `logic`, `security`, `maintainability`, `product`, `documentation`, and `testing` roles. Its objective states the task goal, authoritative requirements, relevant invariants, expected failure boundaries, and desired validation focus.
 
-## Project Structure & Module Organization
+## Project Configuration
+
+### Repository Index and Authorities
+
+- Use `README.md` for the product boundary, supported components, public workflows, and top-level validation entrypoint.
+- Use `docs/architecture.md` for runtime, Git, provenance, publication, synchronization, persistence, concurrency, and safety contracts. It is the implementation authority.
+- Use `docs/operations.md`, `docs/recovery.md`, `docs/deployment.md`, `docs/cli-json.md`, and `docs/hands-on-testing.md` for their respective operational, recovery, deployment, interface, and real-environment verification details.
+- Use `CHANGELOG.md` and Git history for released behavior and compatibility history, not as authority for current implementation or unimplemented future work.
+- Use `Makefile` as the entry point for repository-standard generation, lint, build, and test commands.
+- Read the nearest relevant implementation and tests instead of copying detailed feature behavior into this file.
+- If authorities or implementation disagree, surface the mismatch and resolve it before changing behavior; do not silently choose the convenient source.
+
+#### Project Structure & Module Organization
+
 - `cmd/sanho` is the only entrypoint. Sanho ships a single binary and has no daemon.
 - Core logic sits in `internal/{buildinfo,domain,infra,interface,usecase}`; keep new packages domain-oriented.
 - Layering is enforced by `internal/architecture`: a `usecase` package must not import `infra`, and an `infra` package must not import `usecase`. `internal/interface/cli` is the only place that sees both, so it is where adapters are bound to declared ports.
 - Docs live in `docs/`; optional source-distributed AI-agent guidance lives in `skills/`; runtime artifacts live in `data/` and `tmp/` (ignored); builds live in `bin/`.
 - Tests: co-locate package unit tests as `*_test.go`; black-box CLI behavior in `test/cli/integration`; guidance-closure and scenario suites in `test/cli/e2e`; sync/pull flow coverage in `test/docsync`; the install check in `test/install`.
 
-## Language Policy
+#### Language Policy
+
 - Code, inline comments, and all CLI/HTTP interfaces stay in English.
 - Documentation under `docs/` and `skills/`, the root README, code, inline comments, and all CLI/HTTP interfaces must be written in English. Team communication may use the user's language. Keep this repository guidance file in English.
 
-## Project-Specific Operating Rules
+#### Build, Test, and Development Commands
+
+- Require Go 1.25+ to build. Git is required at runtime; no minimum git version is enforced, though merge paths need git 2.38+ in practice.
+- Build/install: `make cli-build` → `bin/sanho`; `make cli-install` (aliased by `make install`) installs it to Go's binary directory. `build-cli` and `install-cli` remain as compatibility aliases.
+- The complete `make test` verification runs `test-prepare`, `test-unit`, `test-int`, and `test-e2e` sequentially.
+- `test-prepare` runs generation, formatting, module verification, `docs-check`, `test-package-ownership`, `test-architecture`, vet, and lint. `test-unit` runs the unit packages with `-race`. `test-int` builds `bin/sanho`, passes it through `SANHO_CLI_BINARY`, and runs `test/cli/integration` and `test/docsync`. `test-e2e` drives the built binary through `test/cli/e2e` (the scenario matrix, process-level concurrency, and the guidance-closure suite) and runs the `go install` check in `test/install`.
+- Adding a package under `cmd/...` or `internal/...` requires adding it to `UNIT_PACKAGES` in the `Makefile`, or `test-package-ownership` fails.
+- `make docs-check` asserts that the documented file set exists and greps for retired references; keep it green.
+
+#### Coding Style & Naming Conventions
+
+- Use standard Go formatting (`go fmt ./...` is in prep targets); exported names follow Go casing, packages stay lowercase.
+- Keep names explicit about intent and side effects; command and hook wiring in `internal/interface/cli`, flow orchestration in `internal/usecase`, pure decisions in `internal/domain`, git execution in `internal/infra/gitx`.
+- Every user-facing string that names a next command belongs in `internal/interface/cli/messages.go` and in that file's guidance catalog, not at its call site. A unit test parses the file as source and fails the build when a message advises a command without a catalog entry, and the `test/cli/e2e` closure suite then runs that command in the state the message is printed in.
+- Tests use `TestXxx`/`BenchmarkXxx` patterns; table tests for branch-heavy logic are preferred.
+
+#### Testing Guidelines
+
+- Add unit tests near new code; move cross-adapter flow cases to `test/docsync` and black-box command behavior to `test/cli/integration`.
+- Do not mock below the git boundary. Merge, publication, base re-derivation, and marker-detection logic are tested against real `git` in temporary repositories.
+- Point `SANHO_CLI_BINARY` at a fresh build for the CLI suites; `make test-int` does this. Use an isolated `SANHO_HOME` in anything that touches the registry.
+- Keep failing tests that capture expected behavior when fixing regressions; aim for coverage on new branches.
+
+### Commit Messages
+
+- Commit style matches history: `[TYPE] Brief summary (#issue-or-PR)` (e.g., `[BUG-3] Fix pending fix merge edge case (#42)`); one logical change per commit.
+
+#### Pull Requests
+
+- PRs outline scope, validation steps, config/env changes, linked issues; include screenshots only when output matters.
+- Call out deferred follow-ups explicitly so they can be tracked.
+
+### Project-Specific Operating Rules
 
 - Do not commit, push, release, install binaries, or operate a real remote without explicit authorization.
 - Do not discard, overwrite, unstage, or otherwise disturb unrelated user changes or Git operation metadata.
@@ -118,27 +174,7 @@ Every changed line must be traceable to the requested outcome or its verificatio
 - Never edit generated code manually. Change its source and use the documented generator or `Makefile` target.
 - Keep completion reports compact: state the outcome, changed files, verification performed, and actionable remaining risks or blockers.
 
-## Build, Test, and Development Commands
-- Require Go 1.25+ to build. Git is required at runtime; no minimum git version is enforced, though merge paths need git 2.38+ in practice.
-- Build/install: `make cli-build` → `bin/sanho`; `make cli-install` (aliased by `make install`) installs it to Go's binary directory. `build-cli` and `install-cli` remain as compatibility aliases.
-- The complete `make test` verification runs `test-prepare`, `test-unit`, `test-int`, and `test-e2e` sequentially.
-- `test-prepare` runs generation, formatting, module verification, `docs-check`, `test-package-ownership`, `test-architecture`, vet, and lint. `test-unit` runs the unit packages with `-race`. `test-int` builds `bin/sanho`, passes it through `SANHO_CLI_BINARY`, and runs `test/cli/integration` and `test/docsync`. `test-e2e` drives the built binary through `test/cli/e2e` (the scenario matrix, process-level concurrency, and the guidance-closure suite) and runs the `go install` check in `test/install`.
-- Adding a package under `cmd/...` or `internal/...` requires adding it to `UNIT_PACKAGES` in the `Makefile`, or `test-package-ownership` fails.
-- `make docs-check` asserts that the documented file set exists and greps for retired references; keep it green.
-
-## Coding Style & Naming Conventions
-- Use standard Go formatting (`go fmt ./...` is in prep targets); exported names follow Go casing, packages stay lowercase.
-- Keep names explicit about intent and side effects; command and hook wiring in `internal/interface/cli`, flow orchestration in `internal/usecase`, pure decisions in `internal/domain`, git execution in `internal/infra/gitx`.
-- Every user-facing string that names a next command belongs in `internal/interface/cli/messages.go` and in that file's guidance catalog, not at its call site. A unit test parses the file as source and fails the build when a message advises a command without a catalog entry, and the `test/cli/e2e` closure suite then runs that command in the state the message is printed in.
-- Tests use `TestXxx`/`BenchmarkXxx` patterns; table tests for branch-heavy logic are preferred.
-
-## Testing Guidelines
-- Add unit tests near new code; move cross-adapter flow cases to `test/docsync` and black-box command behavior to `test/cli/integration`.
-- Do not mock below the git boundary. Merge, publication, base re-derivation, and marker-detection logic are tested against real `git` in temporary repositories.
-- Point `SANHO_CLI_BINARY` at a fresh build for the CLI suites; `make test-int` does this. Use an isolated `SANHO_HOME` in anything that touches the registry.
-- Keep failing tests that capture expected behavior when fixing regressions; aim for coverage on new branches.
-
-## Release Verification
+#### Release Verification
 
 - When the user explicitly requests a release, ask whether to use the full gate or the reduced patch-release gate before running release checks.
 - The full gate runs the configured Gaori `all` command, equivalent to `make test`. A release still requires the hands-on verdict in `docs/hands-on-testing.md`.
@@ -148,12 +184,8 @@ Every changed line must be traceable to the requested outcome or its verificatio
 - After either gate, build the candidate with `VERSION=vX.Y.Z make cli-build`. Require `bin/sanho version` to print exactly `sanho vX.Y.Z` and `bin/sanho version --json` to print exactly `{"name":"sanho","version":"vX.Y.Z"}` before releasing.
 - Any failed gate or version check blocks the release. Do not commit, tag, push, or create the GitHub release until the selected verification path passes.
 
-## Commit & Pull Request Guidelines
-- Commit style matches history: `[TYPE] Brief summary (#issue-or-PR)` (e.g., `[BUG-3] Fix pending fix merge edge case (#42)`); one logical change per commit.
-- PRs outline scope, validation steps, config/env changes, linked issues; include screenshots only when output matters.
-- Call out deferred follow-ups explicitly so they can be tracked.
+#### Security & Configuration Tips
 
-## Security & Configuration Tips
 - Do not commit secrets; `.sanho*`, `data/`, and temp repos should stay untracked (init updates `.gitignore`).
 - Prefer disposable repos under a temporary directory for end-to-end runs to avoid polluting real workspaces.
 - Preserve the existing permission discipline: the sanho home is `0700`, the registry and its backup are `0600`, and every state write goes through the shared atomic writer in `internal/infra/fsx`.
