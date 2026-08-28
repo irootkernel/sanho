@@ -47,12 +47,21 @@ cli-install:
 docs-check:
 	@test -f README.md
 	@test -f CHANGELOG.md
+	@test -f docs/README.md
 	@test -f docs/architecture.md
+	@test -f docs/architecture/README.md
+	@test -f docs/architecture-decision-records/README.md
 	@test -f docs/cli-json.md
+	@test -f docs/deferred-feedback/README.md
 	@test -f docs/deployment.md
 	@test -f docs/hands-on-testing.md
+	@test -f docs/implementation-tips/README.md
+	@test -f docs/ops/README.md
 	@test -f docs/operations.md
 	@test -f docs/recovery.md
+	@test -f docs/roadmap/README.md
+	@test -f docs/specs/README.md
+	@test -f docs/todo/README.md
 	@test -f skills/use-sanho/SKILL.md
 	@test -f skills/use-sanho/references/lifecycle.md
 	@test -f skills/use-sanho/references/authoring.md

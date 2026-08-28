@@ -395,6 +395,8 @@ machines are documented in the
 
 ## Documentation
 
+- [Documentation index](docs/README.md) — maintainer ownership, authority,
+  roadmap identity, and contribution routing.
 - [Architecture](docs/architecture.md) — the implementation authority: runtime,
   Git, provenance, publication, sync, persistence, concurrency, and safety
   contracts.

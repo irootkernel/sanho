@@ -112,6 +112,7 @@ Every changed line must be traceable to the requested outcome or its verificatio
 ### Repository Index and Authorities
 
 - Use `README.md` for the product boundary, supported components, public workflows, and top-level validation entrypoint.
+- Use `docs/README.md` for the documentation profile, audience boundary, semantic role ownership, authority routing, roadmap namespace, and dossier lifecycle.
 - Use `docs/architecture.md` for runtime, Git, provenance, publication, synchronization, persistence, concurrency, and safety contracts. It is the implementation authority.
 - Use `docs/operations.md`, `docs/recovery.md`, `docs/deployment.md`, `docs/cli-json.md`, and `docs/hands-on-testing.md` for their respective operational, recovery, deployment, interface, and real-environment verification details.
 - Use `CHANGELOG.md` and Git history for released behavior and compatibility history, not as authority for current implementation or unimplemented future work.
