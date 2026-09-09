@@ -71,7 +71,7 @@ guide; completion does not claim observed agent behavior or performance gains.
 |---|---|---|---|
 | TASK-002 | Implement the Aquarium foreground producer and build identity | Completed | None |
 | TASK-003 | Verify exact-commit builds and publication failure boundaries | Completed | TASK-002 |
-| TASK-004 | Integrate the canonical checkout and hand off the verified candidate | In Progress | TASK-003 |
+| TASK-004 | Integrate the canonical checkout and hand off the verified candidate | Completed | TASK-003 |
 
 Epic acceptance requires the producer, isolated verification, approved host
 integration, and return handoff described in the dossier. Child completion does
