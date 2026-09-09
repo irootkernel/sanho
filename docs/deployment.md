@@ -63,6 +63,57 @@ Use a checkout until a revision containing the new layout is published;
 `v0.2.7` does not include the inspection reference. Copying source, releasing
 Sanho, installing the binary, and activating an agent skill are separate steps.
 
+## Use the Aquarium development channel
+
+Aquarium can select a committed Sanho development build without replacing the
+production installation. Start with a clean local `main` checkout and use its
+absolute path for every manager command:
+
+```bash
+aquarium-dev diagnose --repository <absolute-sanho-checkout>
+aquarium-dev enroll \
+  --repository <absolute-sanho-checkout> \
+  --approve-enrollment \
+  --approve-hook
+aquarium-dev rebuild \
+  --repository <absolute-sanho-checkout> \
+  --approve-build
+aquarium-dev diagnose --repository <absolute-sanho-checkout>
+```
+
+Enrollment records the canonical checkout below `~/.aquarium-dev` and adds an
+Aquarium-owned marker block to its native `post-commit` hook. The manager
+preserves unrelated hook content. On local `main`, the hook admits the new
+commit and starts an asynchronous build request. The commit remains created if
+request admission or worker startup fails, and the hook reports the failure on
+stderr. Commits on other branches and detached HEAD do not request a build.
+
+The approved initial `rebuild` publishes an immutable generation at
+`~/.aquarium-dev/artifacts/sanho/<full-sha>/`. The `current/sanho` selector and
+stable `bin/sanho` entry point advance only after the manager validates the
+manifest, embedded identity, artifact boundary, and checksum. Compare the
+selected command with the launcher before using the candidate:
+
+```bash
+~/.aquarium-dev/bin/sanho version --verbose --json
+aquarium-dev sanho version --verbose --json
+```
+
+The launcher executes the selected generation, preserves an existing
+`CODEX_HOME` value, and prepends `~/.aquarium-dev/bin` to the child `PATH`. It
+does not read or change Codex configuration or credentials. The development
+selection does not replace the production Sanho binary or its state.
+
+Run `diagnose` after enrollment, rebuilds, and any interrupted manager command.
+For a foreground executable, a healthy result has matching checkout and current
+Git SHAs, an owned hook, no pending generation, and a validated current
+artifact. If the hook reports a worker failure or a queued request is known to
+remain, fix the reported producer or host condition and run an explicitly
+approved `rebuild`; a failed publication preserves the previously selected
+generation.
+Use the manager's reported recovery action for broken enrollment, hook, or
+selector state instead of editing files below `~/.aquarium-dev` by hand.
+
 ## Verify with the Aquarium consumer
 
 The portable `make test-int` check does not opt into the native consumer. Run
