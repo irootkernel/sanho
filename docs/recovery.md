@@ -49,9 +49,11 @@ Use only when the entire sync should be discarded:
 sanho sync --abort
 ```
 
-Abort restores the docs and base captured at sync entry and clears the note. It
-does not move application refs. Preserve unrelated work before invoking it and
-obtain explicit authorization.
+Abort restores docs from current `HEAD` and the previous base recorded at sync
+entry, then clears the note. If the previous base cannot be corroborated, it
+clears the base instead. It does not move application refs or remove resolution
+commits. Preserve unrelated work before invoking it and obtain explicit
+authorization.
 
 An unreadable sync note still counts as active. Publication remains blocked,
 while abort remains the supported cleanup path.

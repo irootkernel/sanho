@@ -26,11 +26,12 @@ Two sentences describe the whole model:
 - **Publication happens at `git push`.** Commits are local and private, exactly
   as in plain git.
 - **Detection happens at `git commit`.** The commit path reads local state only,
-  prints at most one line, and never blocks.
+  warns about stale docs, and blocks unresolved conflict markers.
 
-Everything else follows. `git commit` works offline, always. Sanho never authors
-a commit in your repository and never moves your refs. Conflict resolution is
-the standard git idiom you already know: edit, `git add`, `git commit`.
+The commit path needs no network access. A clean `sanho sync` that changes docs
+creates an ordinary commit with your Git identity, as does `sanho pull --commit`
+when it changes docs. A conflicted sync uses the standard Git idiom: resolve,
+`git add`, `git commit`, then `sanho sync --continue`.
 
 ## Requirements
 
@@ -88,23 +89,43 @@ This repository uses Sanho to synchronize `docs/` with a canonical Git repositor
 For fuller conditional guidance, use the complete
 [`use-sanho` skill directory](skills/use-sanho/). For Codex, install user-scoped
 skills under `$HOME/.agents/skills`. Other agents may use different discovery
-paths, so consult their documentation before choosing a destination. Download
-only the skill directory into that agent-specific location:
+paths, so consult their documentation before choosing a destination. From the
+root of the checkout you reviewed, copy the whole directory, including its
+references; do not replace an installed copy without choosing to upgrade it:
 
 ```bash
 (
   set -eu
   sanho_skill_parent="${HOME}/.agents/skills"
-  sanho_skill_ref=v0.2.7
   mkdir -p "$sanho_skill_parent"
   sanho_skill_target="$sanho_skill_parent/use-sanho"
-  test ! -e "$sanho_skill_target" && test ! -L "$sanho_skill_target"
+  test ! -e "$sanho_skill_target"
+  test ! -L "$sanho_skill_target"
+  cp -R skills/use-sanho "$sanho_skill_target"
+)
+```
+
+To download this layout instead, set `SANHO_SKILL_REF` to a published full
+commit ID or release tag containing all five files below. The `v0.2.7` skill
+predates `references/inspection.md`; use a reviewed checkout for these changes
+until a containing revision is published. Do not mix files from different
+revisions.
+
+```bash
+(
+  set -eu
+  sanho_skill_parent="${HOME}/.agents/skills"
+  sanho_skill_ref="${SANHO_SKILL_REF:?Set a published revision containing this skill layout}"
+  mkdir -p "$sanho_skill_parent"
+  sanho_skill_target="$sanho_skill_parent/use-sanho"
+  test ! -e "$sanho_skill_target"
+  test ! -L "$sanho_skill_target"
   sanho_skill_tmp="$(mktemp -d "$sanho_skill_parent/.use-sanho.XXXXXX")"
   trap 'rm -rf "$sanho_skill_tmp"' EXIT
   mkdir -p "$sanho_skill_tmp/use-sanho/references"
   sanho_skill_url="https://raw.githubusercontent.com/irootkernel/sanho/$sanho_skill_ref/skills/use-sanho"
   curl -fsSLo "$sanho_skill_tmp/use-sanho/SKILL.md" "$sanho_skill_url/SKILL.md"
-  for reference in lifecycle authoring recovery; do
+  for reference in lifecycle authoring recovery inspection; do
     curl -fsSLo "$sanho_skill_tmp/use-sanho/references/$reference.md" \
       "$sanho_skill_url/references/$reference.md"
   done
@@ -113,8 +134,8 @@ only the skill directory into that agent-specific location:
 ```
 
 The skill is source-distributed: a source archive made from a revision that
-contains it includes the directory. `sanho_skill_ref` selects a release that
-distributes the skill; earlier tags, including `v0.2.4`, do not contain it.
+contains it includes the directory. Earlier tags, including `v0.2.4`, do not
+contain the skill.
 `go install` installs only the `sanho` binary and does not copy or register the
 skill.
 
@@ -250,15 +271,18 @@ not a failure, so preview exits 0 either way; `sanho check` is the command that
 gates. The verdict is decided against the last fetched snapshot, so pass
 `--refresh` when it has to be current.
 
-A commit on a stale base prints one line and succeeds:
+A stale docs base produces a non-blocking freshness warning:
 
 ```text
 sanho: docs base is 2 commits behind — 'sanho sync' will merge cleanly
 ```
 
-Silence means you are up to date. When you see the warning, run `sanho sync`. On
-a clean merge it writes one `[SANHO] Sync docs to <oid12>` commit with your Git
-identity:
+The warning does not establish whether Git ultimately committed: another hook
+or Git itself can still fail. Check the actual Git result before retrying, and
+do not repeat a successful commit because of the warning. Use status to inspect
+freshness rather than inferring it from silence. When you choose to reconcile,
+`sanho sync` writes one `[SANHO] Sync docs to <oid12>` commit on a clean merge
+that changes docs, using your Git identity:
 
 ```text
 sanho: synced docs to 9a41f2cbbbbb (commit 3f0d1a5c7e21)
@@ -270,8 +294,10 @@ Then push as usual:
 sanho: published docs 9a41f2cbbbbb (fast_forward)
 ```
 
-If a push is rejected, **no remote ref was changed.** Run the command Sanho
-names, then retry the same `git push`.
+If Sanho rejects the push during pre-push validation, no remote ref is changed
+by that attempt. Follow its complete recovery sequence, then retry the same
+`git push`. A later application-remote rejection can occur after canonical
+publication; inspect current state before treating a failed push as unchanged.
 
 ## The conflict idiom
 
@@ -320,9 +346,12 @@ Or undo it:
 sanho sync --abort
 ```
 
-`sanho sync --abort` **cannot fail.** It moves no ref, creates no commit, and
-touches only the docs worktree and two state files. If it is interrupted, run it
-again.
+`sanho sync --abort` moves no application ref and creates no commit. It discards
+uncommitted docs changes by restoring docs from current `HEAD`, preserving any
+resolution commit. It restores the previous base recorded by the sync, or
+clears the base when it cannot safely restore it. After an interruption,
+inspect current state before retrying the same intended abort; do not assume
+it failed or completed.
 
 Every next-step command Sanho prints actually succeeds in the state where it is
 printed. When no command can succeed, Sanho prints "manual intervention
@@ -361,7 +390,7 @@ fails whenever it finds a problem cannot be used to investigate one.
 |---|---|---|
 | `pre-commit` | Staged marker gate, local freshness warning | Markers only |
 | `commit-msg` | Stamp `docs-base` / `docs-base-tree` trailers | Never |
-| `pre-push` | Publish to canonical, marker gate, sync gate | Yes — the only one |
+| `pre-push` | Publish to canonical, marker gate, sync gate | Yes |
 | `post-checkout` | Re-derive the docs base after HEAD moved | Never |
 | `post-merge` | Same | Never |
 | `post-rewrite` | Same (amend, rebase) | Never |

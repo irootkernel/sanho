@@ -1,100 +1,83 @@
 # Sanho Recovery
 
-Load this reference only when state is stale, a mutation was interrupted or
-has an unknown outcome, a sync is active, or a Sanho failure needs recovery.
-Use the smallest supported action and never weaken a safety fence.
+Load this reference for the failure being handled. Preserve existing Git and
+Sanho authorization for the same target and effects; recovery does not expand
+it. Use the smallest supported action without weakening a safety fence.
 
-## Reconcile evidence first
+## Reconcile the affected state
 
-Before retrying or repairing, inspect current Git and Sanho state:
+Use the original command's output and current evidence to select diagnostics:
 
-```bash
-git status --porcelain=v1
-git branch --show-current
-git rev-parse HEAD
-git remote -v
-sanho status --json
-sanho doctor --json
-```
+- For a failed or uncertain commit, inspect Git's result, `git status
+  --porcelain=v1`, `git rev-parse HEAD`, and the relevant commit or index diff.
+  A freshness warning alone says nothing about whether Git created a commit.
+- For sync progress or local readiness, run `sanho status --json` and inspect
+  the relevant docs changes. Refresh only when the decision needs current
+  canonical state.
+- For a changed checkout, branch, or publication target, recheck the affected
+  Git configuration and refs. Do not repeat known environment inventory when
+  it cannot explain the failure.
+- For missing or corrupt base, clone, or hooks, run `sanho doctor --json`.
+  Doctor is not a required diagnostic for every warning or network failure.
 
-Use `sanho status --refresh --json` only when current canonical state is needed.
-Record exit codes and parse stable JSON error codes separately. An interrupted
-or timed-out mutation has an unknown outcome until current state proves what
-happened; do not blindly retry it or claim completion from old output.
+Parse JSON error codes and exits separately. After an interrupted or timed-out
+mutation, establish its actual outcome before retrying. If current evidence
+cannot settle it, report the uncertainty rather than repeating the mutation.
 
-## Active or uncertain sync
+## Complete an active sync
 
-`sync_in_progress: true` means an unfinished sync window exists — conflict
-markers may remain, or the docs may already be resolved and committed without
-the sync being completed. After the user resolves, stages, and commits the
-docs, normal completion is:
+`sync_in_progress: true` means an unfinished sync window exists. Markers may
+remain, or the resolution may already be committed. Follow the CLI's complete
+sequence: resolve the affected docs, stage them, commit the resolution, then
+run `sanho sync --continue --json`. Inspect current state and omit steps already
+completed; do not create a duplicate resolution commit. Keep resolution edits
+and commits within the existing authorization.
 
-```bash
-sanho sync --continue --json
-```
+A plain sync can exit 0 with `status: conflicts`. Continue refuses unresolved
+markers or an uncommitted resolution, reports `completed` on success, and may
+report merge drift. Review that count; it is not an automatic failure.
+Re-read local status after completion.
 
-A plain `sanho sync` exits 0 even when its JSON `status` is `conflicts`, so
-read `status`, never the exit code. `--continue` refuses to run while markers
-remain or the resolution is uncommitted, reports `completed` on success, and
-may report merge drift — review the stated count; drift is not an automatic
-failure. Re-read `sanho status --json` after the command.
+To discard the whole active sync, require explicit abort intent, preserve
+unrelated work, and run `sanho sync --abort --json`. Abort is designed to be
+idempotent after interruption; that does not authorize the initial destructive
+decision. Reconcile its result before any retry.
 
-To discard the whole active sync, require explicit user intent, preserve
-unrelated work, and run:
+## Reconcile stale or rewritten canonical history
 
-```bash
-sanho sync --abort --json
-```
+Use `sanho status --refresh --json` when a stale canonical snapshot affects the
+next step. Ordinary reconciliation for an authorized push can continue without
+another approval when its target and effects, including sync commits, remain
+covered.
 
-Abort is designed to be idempotent after interruption, but that does not make
-the initial destructive decision implicit.
+For `history_rewritten`, require explicit rewrite-recovery intent. If Sanho
+names a rebase target, use that exact value. If no target is named, list
+candidates with `sanho log --refresh --json` and inspect them with
+`sanho show <candidate-commit> --json`; let the user choose the anchor before
+`sanho sync --rebase-onto <chosen-commit> --json`. Read the relevant
+[history and commit inspection sections](inspection.md#read-history-and-provenance)
+for provenance, filtering, and binary content. Neither command needs a base.
 
-## Stale canonical state or rewritten history
+Never guess an anchor or force-push to recreate old history. If rebase recovery
+conflicts, follow its full resolve, stage, commit, and continue sequence.
+For diagnosed managed-state damage, use `sanho doctor --fix` only with explicit
+repair authorization, then diagnose again and re-read status. It is designed
+to be non-destructive but remains a repair decision.
 
-Refresh first:
+## Network, locks, and uncertain publication
 
-```bash
-sanho status --refresh --json
-```
-
-For `history_rewritten`, require explicit recovery intent before any rebase
-and take the target from the message that raised it. When the message names a
-rebase target, use exactly that value. When it names none — the push rejection
-states manual intervention is required and names `sanho log`; the sync message
-says only to pick a canonical commit — list the candidates and let the user
-choose the target:
-
-```bash
-sanho log --refresh --json
-sanho show <candidate-commit> --json
-sanho sync --rebase-onto <chosen-commit> --json
-```
-
-`sanho log` and `sanho show` are read-only and require no base, so both are
-safe to run in this state. Report the candidates with their provenance rather
-than choosing one. An entry whose `kind` is `external` carries no provenance, so
-do not describe it as coming from any repository — read what it publishes with
-`sanho show` and report that instead. Add `--path <document>` when the listing
-alone does not distinguish two candidates.
-
-Never guess an anchor or force-push to recreate the old history. For a missing
-or corrupt base or hooks, diagnose with `sanho doctor --json`. `doctor --fix`
-reinstalls managed state and is designed to be non-destructive, but treat
-repair as the user's decision: use it only with explicit repair authorization,
-then diagnose again.
-
-## Network, locks, and publication uncertainty
-
-For `canonical_unreachable`, restore connectivity and refresh state before
-retrying the original operation. Do not delete the private clone or bypass the
-pre-push hook. If a push outcome is uncertain, compare current application and
-canonical evidence before another push; old stderr is not current proof.
+For `canonical_unreachable`, restore connectivity within the authorized scope
+and refresh state. Retry only after establishing the original operation's
+outcome and current preconditions. Do not delete the private clone or bypass
+pre-push.
+If a push result is uncertain, compare current application and canonical refs
+and publication evidence before deciding whether another push is needed;
+old stderr is not proof of the current result.
 
 For `registry_lock_timeout`, identify the process holding the lock and let it
-finish or terminate it safely. Never delete lock or registry files to bypass a
-live owner.
+finish. Terminate it only when authorized and safe. Never delete lock or registry
+files to bypass a live owner.
 
-Sanho has no durable job queue or service to reconcile or restart. Recovery is
-state reconciliation followed by the smallest supported CLI or Git action. If
-current evidence still cannot establish the mutation outcome, stop and report
-the uncertainty rather than retrying destructively.
+Sanho has no durable job queue or service to restart. Recovery reconciles state
+and then performs the supported CLI or Git action; it does not invent session,
+cancellation, or reset operations.

@@ -5,6 +5,9 @@ releasing Sanho.
 
 - [`../hands-on-testing.md`](../hands-on-testing.md) defines the real-environment
   release verification checklist.
+- [Agent skill verification](agent-skill-verification.md) defines isolated
+  manual skill scenarios, source intake, and the distinction between structural
+  checks and observed agent behavior.
 - The root [`Makefile`](../../Makefile) is the executable entrypoint for
   repository-standard generation, lint, build, and test workflows.
 - [`../../AGENTS.md`](../../AGENTS.md) defines repository operating guidance

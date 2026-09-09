@@ -337,7 +337,7 @@ command needs no recorded base.
 | `synced` | Canonical docs were applied, with `commit` when one was created |
 | `conflicts` | Markers and a sync note were written; inspect `conflicts` |
 | `completed` | `sync --continue` adopted `base` and cleared the note |
-| `aborted` | `sync --abort` restored the pre-sync state |
+| `aborted` | `sync --abort` restored docs from current `HEAD`, restored or cleared the previous base, and cleared the sync note; existing commits remain |
 
 `merge_drift` is non-zero only when a completed resolution differs from the
 merge result. `pull --json` uses the same schema.

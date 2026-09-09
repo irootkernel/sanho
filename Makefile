@@ -56,6 +56,7 @@ docs-check:
 	@test -f docs/deployment.md
 	@test -f docs/hands-on-testing.md
 	@test -f docs/implementation-tips/README.md
+	@test -f docs/implementation-tips/agent-skill-verification.md
 	@test -f docs/ops/README.md
 	@test -f docs/operations.md
 	@test -f docs/recovery.md
@@ -66,6 +67,7 @@ docs-check:
 	@test -f skills/use-sanho/references/lifecycle.md
 	@test -f skills/use-sanho/references/authoring.md
 	@test -f skills/use-sanho/references/recovery.md
+	@test -f skills/use-sanho/references/inspection.md
 	@if grep -REn '[가-힣]' README.md docs skills; then \
 		echo "Error: repository documentation must be English-only."; \
 		exit 1; \

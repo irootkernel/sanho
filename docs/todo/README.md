@@ -13,8 +13,7 @@ Task identity until it is explicitly adopted into the canonical roadmap.
 
 ## Adopted dossiers
 
-- [Sanho skill modernization](TODO-sanho-skill-modernization.md) is the
-  execution dossier for [EPIC-001](../roadmap/README.md#epic-001-sanho-skill-modernization-for-gpt-6-astra).
+No active Epic dossiers are currently registered.
 
 When a candidate is adopted with Tasks, retain its file here as the Epic's
 temporary dossier, identify the Epic in the dossier, register it in this

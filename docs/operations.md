@@ -126,9 +126,9 @@ git add docs/api.md
 git commit -m "docs: update API"
 ```
 
-Commit hooks are local and never fetch. A stale base prints one warning and the
-commit succeeds. Complete staged conflict markers are the only docs condition
-that blocks the commit.
+Commit hooks are local and never fetch. A stale base prints a non-blocking
+warning; determine the commit's result from Git's actual outcome. Complete
+staged conflict markers are the only docs condition that blocks the commit.
 
 ### 3. Reconcile when behind
 
@@ -153,13 +153,17 @@ sanho sync --continue
 Do not infer this result from exit code alone. With `--json`, read `status` and
 `conflicts`.
 
-To discard the entire conflicted sync and restore its entry state:
+To restore tracked docs in the index and worktree from current `HEAD` and end
+the active sync:
 
 ```bash
 sanho sync --abort
 ```
 
-Abort is destructive and must be explicitly authorized.
+Abort restores docs from current `HEAD`, preserving resolution commits, and
+restores or clears the previous base. Untracked docs files you created remain.
+See [abort recovery](recovery.md#abort) for the full behavior. Abort is
+destructive and must be explicitly authorized.
 
 ### 4. Publish with Git
 

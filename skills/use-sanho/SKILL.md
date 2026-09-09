@@ -1,120 +1,80 @@
 ---
 name: use-sanho
-description: Use Sanho safely when preparing an authorized Git commit or push in a Sanho-managed workspace, handling a Sanho warning or rejection, or performing an explicitly requested Sanho initialization, synchronization, lifecycle, or recovery action. Do not use for routine editing, review, build, or test work that does not approach a commit or push boundary.
+description: Use Sanho for authorized commits or pushes in Sanho-managed workspaces, Sanho warnings or rejections, and explicit Sanho operations. Do not use for routine editing, review, build, or test work.
 ---
 
 # Use Sanho
 
-Sanho synchronizes an application's `docs/` directory with a canonical Git
-repository. It is a Git-boundary tool, not a general task or session manager.
+Sanho synchronizes an application's docs with a canonical Git repository.
+Activate this skill only at the Git boundaries or for the requests above.
 
-## Normal workflow
+## Commit and push
 
-1. Confirm this request reaches a commit/push boundary or explicitly concerns
-   Sanho. Otherwise, do not invoke Sanho.
-2. If availability is not already established in the current environment, run
-   `command -v sanho` and `sanho version --json`. If unavailable, report that
-   fact; never install or upgrade it automatically.
-3. At an authorized commit boundary, run `sanho status --json`. At an
-   authorized push boundary, run `sanho status --refresh --json`. A
-   `not_in_workspace` error means the current repository is not configured;
-   do not initialize it without explicit user intent. Use
-   `sanho state --all --json` only when project or workspace inventory matters.
-   Use `sanho diff`, `sanho diff --refresh`, or `sanho diff --local` when the
-   user asks to inspect incoming or unpublished docs changes. Diff is
-   read-only, has no JSON mode, and prints paths relative to the configured
-   docs root.
-   Use `sanho log` (with `--refresh`, `-n`, `--path`, `--repository`,
-   `--workspace`, or `--json`) when the
-   user asks what changed in canonical or which repository, workspace, or
-   application commit a document came from. Log is read-only, needs no
-   recorded base, and reads the last fetched snapshot unless `--refresh` is
-   given. Read `kind` before `source`: an `external` entry is a commit made
-   directly in the canonical repository and reports `source: null`, which is
-   absent provenance rather than an empty record.
-   Narrow with `--repository` or `--workspace` when the question is what one
-   application repository or one checkout published; take the exact values
-   from a listing's own `source` fields or from `sanho state --all`, and never
-   pass an empty one, which is refused as `invalid_arguments`. A source filter
-   never lists an `external` commit, and a filtered listing may be shorter
-   than `-n` even when further matches exist deeper in history, so do not read
-   its length as exhaustion.
-   Use `sanho show <commit>` (with `--path`, `--refresh`, or `--json`) when the
-   question is what a specific canonical commit contains rather than what
-   changed — above all when choosing a rewrite-recovery anchor, where an
-   `external` candidate has no provenance to read. It accepts the revisions
-   `sanho sync --rebase-onto` accepts, is read-only, and needs no recorded
-   base. Without `--path` it lists the commit's documents; with `--path` it
-   returns one. `document.content` is null exactly when `document.binary` is
-   true, which is the whole answer for a binary asset rather than a truncated
-   one; do not retry such a read.
-   Use `sanho preview --json` at an authorized push boundary when the user
-   asks what the push will do, or before performing one whose outcome matters.
-   It runs the publication evaluation and writes nothing. Branch on `blocked`
-   and `verdict`, never on the exit code: a push that would be rejected is
-   reported at exit 0, and only a failure to reach a verdict produces an error
-   envelope. Pass `--refresh` whenever the verdict has to be current, because
-   the hook always fetches and a cached verdict describes an older snapshot.
-   A preview is evidence about one snapshot, not permission to push.
-   Use `sanho check --require-clean`, `--require-current`, and/or
-   `--require-published` when automation needs an explicit policy. Parse the
-   complete result even when exit 1: `passed:false` is a policy mismatch,
-   while an `error` envelope means evaluation failed. A passing check never
-   grants commit or push permission.
-4. Parse the JSON document and process exit separately. A failed `--json`
-   command always answers with an envelope, including one that rejects the
-   invocation itself: `invalid_arguments` means the command was never run, so
-   correct the flags or arguments rather than reading it as workspace state.
-   Branch on stable `error.code`, `known` fields, `sync_in_progress`, `relation`,
-   `publication`, `sync_preview`, `working_copy`, and `local_readiness`.
-   Treat `sync_preview` as a prediction for committed `HEAD` and readiness as
-   current local preconditions; neither proves that a later fetch or network
-   operation will succeed. Never infer unknown values as zero or a sync
-   outcome from exit 0. Exit 2 means an internal Sanho defect; stop and report
-   it.
-5. Derive the next action from current output and Sanho's current guidance,
-   not conversation memory. When a Sanho message names a next step, follow
-   the message's own sequence, not one command out of it — some named
-   commands require a preceding step the message states (resolve,
-   `git add docs/`, `git commit`, then `sanho sync --continue`). Named
-   commands this skill gates — abort, rewrite recovery, repair,
-   initialization, migration, cleanup — still require explicit user
-   intent. A pre-commit behind warning is non-blocking: the commit has already
-   succeeded, so do not retry it or automatically run the mutating sync. When
-   current status requires reconciliation before an authorized push, run
-   `sanho sync` within that authorization; after an authorized push rejection,
-   perform its named recovery sequence and retry the same push. When Sanho
-   states manual intervention is required, stop and follow
-   [recovery.md](references/recovery.md). Use preconditions and idempotent
-   operations where the CLI supports them. Let Git run Sanho's hooks; never
-   use `--no-verify`, force operations to evade a guard, or manual edits to
-   Sanho-managed state.
-6. Perform the authorized Git or Sanho mutation before recording it as done.
-   Re-run the appropriate status command after every mutation and report only
-   claims supported by that evidence. Sanho never grants commit or push
-   permission.
+1. Reuse verified availability and workspace configuration while the environment
+   is unchanged. If availability is unknown, run `command -v sanho` and
+   `sanho version --json`; report absence without installing or upgrading it.
+   A `not_in_workspace` error means the repository is not configured. It grants
+   no initialization authority. Do not run Sanho for subsequent unrelated work.
+2. Before an authorized commit, read current Git state and run
+   `sanho status --json`. Keep this check local; a cached canonical snapshot
+   does not establish current remote state. Perform the authorized Git commit
+   and determine its result from Git's exit status, resulting HEAD, and relevant
+   index/worktree state. A pre-commit freshness warning proves neither success
+   nor failure. Never repeat a successful commit or run sync merely because of
+   that warning. Reconcile an uncertain result through
+   [recovery](references/recovery.md#reconcile-the-affected-state) before retrying.
+3. Before an authorized push, run `sanho status --refresh --json`. If current
+   state requires reconciliation, run `sanho sync` within the existing
+   authorization for that target and its effects, including any commits it
+   creates. After a rejection, follow the complete CLI-advised recovery sequence
+   and retry the same authorized push. Do not ask again for effects already
+   covered; obtain authority if the target or effects exceed that scope.
+4. Follow Sanho's current output in order, including prerequisites such as
+   resolve, stage, commit, then `sanho sync --continue`. Load
+   [recovery](references/recovery.md) for the failure being handled. When Sanho
+   requires manual intervention, establish the recovery decision before acting.
+   An explicit preview request or uncertainty about the publication verdict can
+   justify [preview](references/inspection.md#preview-a-push); it is not a
+   mandatory step for every push.
+5. After each Git or Sanho mutation, re-read the relevant Git state and Sanho
+   status: local status for a commit or local change, refreshed status when
+   verifying canonical publication. Report only the result those checks prove.
+   A local commit is not publication; publication happens through an authorized
+   `git push`. There is no `sanho push` command.
 
-Canonical publication happens through an authorized `git push`. Sanho has no
-`sanho push` command, and a successful local commit is not publication.
+## Evidence and authorization
 
-Routine progression may change docs and create commits: a clean `sanho sync`
-that changes docs writes a `[SANHO] Sync docs to <oid>` commit with the user's
-Git identity, and `sanho pull --commit` creates the same kind of commit when
-the pulled docs differ from HEAD's. Keep those actions within the user's
-existing mutation and Git authorization. Require explicit intent for
+Parse JSON and process exit separately. Branch on stable `error.code`, `known`
+fields, `sync_in_progress`, `relation`, `publication`, `sync_preview`,
+`working_copy`, and `local_readiness`. Unknown is not zero; `sync_preview`
+predicts a merge of committed `HEAD`, while readiness describes current local
+preconditions. Neither guarantees a later fetch or network operation. A sync
+can exit 0 with `status: conflicts`; inspect the result before claiming success.
+`invalid_arguments` means the invocation never ran: correct its arguments,
+not the workspace. Exit 2 reports an internal Sanho defect; stop and report it.
+
+Status, preview, and policy checks never authorize mutations. A clean sync that
+changes docs creates a `[SANHO] Sync docs to <oid>` commit with the user's Git
+identity; `sanho pull --commit` can create the same kind of commit. Keep both
+within the user's mutation and Git authorization. Require explicit intent for
 initialization, workspace replacement or removal, abort, rewrite recovery,
-migration, project changes, or repair.
+migration, project changes, or repair. Preserve unrelated work and any existing
+Git operation. Honor command preconditions and supported idempotency without
+assuming an uncertain mutation is safe to repeat. Let Git run installed hooks;
+never bypass them with `--no-verify`, force operations that evade a guard, or
+manual edits to Sanho-managed state.
 
-## Specialized workflows
+## Read only the reference needed
 
-- Read [lifecycle.md](references/lifecycle.md) only for installation
-  diagnostics, initialization, migration, cleanup, project changes, or other
-  lifecycle requests.
-- Read [authoring.md](references/authoring.md) only for built-in configuration
-  and custom hook selection.
-- Read [recovery.md](references/recovery.md) only for stale state, interrupted
-  or uncertain mutations, active syncs, rewrites, locks, or network failures.
+- [Inspection](references/inspection.md): diff, history, provenance, commit
+  contents, push preview, or explicit policy checks. Read the relevant section.
+- [Recovery](references/recovery.md): stale state, interrupted or uncertain
+  mutations, active syncs, rewrites, locks, or network failures.
+- [Lifecycle](references/lifecycle.md): installation diagnostics, initialization,
+  migration, cleanup, project or workspace changes.
+- [Configuration](references/authoring.md): built-in configuration and custom
+  hook selection.
 
-Sanho has no session/task runtime, daemon or service, cancellation/reset/goal
-commands, durable job queue, or custom workflow/policy/manifest authoring.
-Never invent commands or imply those capabilities.
+Use `sanho state --all --json` only when project or workspace inventory matters.
+Sanho has no session/task runtime, daemon, service, durable job queue, or custom
+workflow authoring. Do not invent cancellation, reset, or goal commands.

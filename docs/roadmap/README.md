@@ -28,14 +28,16 @@ Epic.
 
 | Epic | Title | Status |
 |---|---|---|
-| [EPIC-001](#epic-001-sanho-skill-modernization-for-gpt-6-astra) | Sanho skill modernization for GPT-6 Astra | Planned |
+| [EPIC-001](#epic-001-sanho-skill-modernization-for-gpt-6-astra) | Sanho skill modernization for GPT-6 Astra | Completed |
 
 ## EPIC-001: Sanho skill modernization for GPT-6 Astra
 
-- Status: Planned
+- Status: Completed
 - Objective: Make the source-distributed Sanho skill concise and conditional
   while preserving current Git, synchronization, and authorization contracts.
-- Detailed SOT: [Sanho skill modernization](../todo/TODO-sanho-skill-modernization.md)
+- Canonical Outcomes: [Sanho skill](../../skills/use-sanho/SKILL.md),
+  [distribution guidance](../deployment.md),
+  [agent verification and Aquarium intake](../implementation-tips/agent-skill-verification.md)
 - Dependencies: None. Aquarium integration consumes the resulting local source
   and does not block this Epic.
 - External mapping: Aquarium's proposal label `SKILL-07` maps to this Epic and
@@ -43,9 +45,10 @@ Epic.
 
 | Task | Title | Status | Dependencies |
 |---|---|---|---|
-| TASK-001 | Restructure and verify the Sanho skill for GPT-6 Astra | Planned | None |
+| TASK-001 | Restructure and verify the Sanho skill for GPT-6 Astra | Completed | None |
 
 TASK-001 delivers the skill, affected references and distribution guidance,
-directly related documentation corrections, and verification defined in the
-Detailed SOT as one coherent change. Epic acceptance remains separate from Task
-completion and requires Master's applicable manual verification.
+directly related documentation corrections, and prepared agent verification.
+Master explicitly accepted Epic closeout with the manual Astra scenarios
+unperformed. Those scenarios remain available in the canonical verification
+guide; completion does not claim observed agent behavior or performance gains.

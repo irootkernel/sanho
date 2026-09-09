@@ -194,9 +194,11 @@ and runs `sanho sync --continue`. Continue requires:
   canonical content.
 
 Completion records the target base, reports merge drift, and clears the note. It
-does not create another commit. `sanho sync --abort` restores the recorded
-pre-sync docs/base and clears the note. A corrupt note still counts as active,
-so publication and mutation remain blocked while abort stays available.
+does not create another commit. `sanho sync --abort` restores docs from current
+`HEAD`, restores the recorded previous base when it can be corroborated
+(otherwise clears it), and clears the note. Existing commits remain. A corrupt
+note still counts as active, so publication and mutation remain blocked while
+abort stays available.
 
 `sanho sync --rebase-onto <commit>` is the explicit recovery path after a
 canonical history rewrite. The target must exist in the private clone and be a

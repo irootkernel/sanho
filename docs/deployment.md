@@ -39,6 +39,14 @@ The source tree also distributes an optional `use-sanho` agent skill under
 `skills/use-sanho/` for AI coding agents. It is documentation, not a deployed
 artifact: installing the binary never installs or registers it.
 
+Distribute the complete directory from one reviewed revision: `SKILL.md` and
+the `authoring.md`, `inspection.md`, `lifecycle.md`, and `recovery.md` references.
+The [agent setup instructions](../README.md#optional-configure-an-ai-coding-agent)
+cover checkout copies and downloads into an agent-specific skill directory.
+Use a checkout until a revision containing the new layout is published;
+`v0.2.7` does not include the inspection reference. Copying source, releasing
+Sanho, installing the binary, and activating an agent skill are separate steps.
+
 ## Onboard a workspace
 
 Run from the application repository root:
