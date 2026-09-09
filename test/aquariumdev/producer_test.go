@@ -54,9 +54,12 @@ func TestProducerContract(t *testing.T) {
 	if status := gitOutput(t, fixture, "status", "--porcelain=v1", "--untracked-files=all"); status != "" {
 		t.Fatalf("ignored source made fixture dirty: %q", status)
 	}
+	fixtureBeforeBuild := pathSnapshot(t, fixture)
+	ignoredBeforeBuild := pathSnapshot(t, ignored)
 
 	output := t.TempDir()
 	manifestText := runMake(t, fixture, "aquarium-dev-build", output)
+	assertProducerInputsUnchanged(t, fixture, fixtureBeforeBuild, ignored, ignoredBeforeBuild)
 	var manifest artifactManifest
 	if err := json.Unmarshal([]byte(manifestText), &manifest); err != nil {
 		t.Fatalf("decode build manifest %q: %v", manifestText, err)
@@ -132,6 +135,7 @@ func TestProducerContract(t *testing.T) {
 	if got := pathSnapshot(t, redirectRoot); got != redirectBefore {
 		t.Fatalf("Git redirect environment wrote outside the producer output: %q", got)
 	}
+	assertProducerInputsUnchanged(t, fixture, fixtureBeforeBuild, ignored, ignoredBeforeBuild)
 
 	sentinel := filepath.Join(t.TempDir(), "outside-sentinel")
 	writeFile(t, sentinel, "preserve\n")
@@ -198,7 +202,10 @@ func TestProducerContract(t *testing.T) {
 	// let them hide a committed source file.
 	appendFile(t, filepath.Join(fixture, ".git", "info", "attributes"), "internal/buildinfo/version.go export-ignore\n")
 	localAttributeOutput := t.TempDir()
+	fixtureBeforeLocalAttributeBuild := pathSnapshot(t, fixture)
+	ignoredBeforeLocalAttributeBuild := pathSnapshot(t, ignored)
 	localAttributeManifest := runMake(t, fixture, "aquarium-dev-build", localAttributeOutput)
+	assertProducerInputsUnchanged(t, fixture, fixtureBeforeLocalAttributeBuild, ignored, ignoredBeforeLocalAttributeBuild)
 	if !strings.Contains(localAttributeManifest, `"schema":"aquarium-dev-artifact-manifest/v1"`) {
 		t.Fatalf("local export attributes changed the committed build: %q", localAttributeManifest)
 	}
@@ -328,6 +335,22 @@ func assertOnlyArtifact(t *testing.T, output, artifact string) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func assertProducerInputsUnchanged(t *testing.T, fixture, fixtureBefore, ignored, ignoredBefore string) {
+	t.Helper()
+	if got := pathSnapshot(t, fixture); got != fixtureBefore {
+		t.Fatalf("producer changed source checkout from %q to %q", fixtureBefore, got)
+	}
+	if got := pathSnapshot(t, ignored); got != ignoredBefore {
+		t.Fatalf("producer changed ignored source from %q to %q", ignoredBefore, got)
+	}
+	artifact := filepath.Join(fixture, "bin", "sanho")
+	if _, err := os.Lstat(artifact); err == nil {
+		t.Fatalf("producer created an artifact in the source checkout: %s", artifact)
+	} else if !os.IsNotExist(err) {
+		t.Fatalf("inspect source checkout artifact %s: %v", artifact, err)
 	}
 }
 

@@ -182,6 +182,18 @@ func TestRealConsumer(t *testing.T) {
 	}
 	cleanupOld := runNative(t, consumerRoot, consumerCLI, hostRoot, environment, "cleanup", "--project-id", "sanho", "--git-sha", firstSHA)
 	requireNativeSuccess(t, cleanupOld)
+	retiredGeneration := filepath.Join(hostRoot, "artifacts", "sanho", firstSHA)
+	if _, err := os.Lstat(retiredGeneration); err == nil {
+		t.Fatalf("retired generation still exists after cleanup: %s", retiredGeneration)
+	} else if !os.IsNotExist(err) {
+		t.Fatalf("inspect retired generation %s: %v", retiredGeneration, err)
+	}
+	currentGeneration := filepath.Join(hostRoot, "artifacts", "sanho", secondSHA)
+	if entry, err := os.Lstat(currentGeneration); err != nil {
+		t.Fatalf("inspect current generation %s: %v", currentGeneration, err)
+	} else if entry.Mode()&os.ModeSymlink != 0 || !entry.IsDir() {
+		t.Fatalf("current generation is not a directory: %s", currentGeneration)
+	}
 	cleanupCurrent := runNative(t, consumerRoot, consumerCLI, hostRoot, environment, "cleanup", "--project-id", "sanho", "--git-sha", secondSHA)
 	currentDetails := requireNativeSuccess(t, cleanupCurrent)
 	cleanupStatus, ok := currentDetails["current"].(bool)
