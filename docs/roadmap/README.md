@@ -2,7 +2,7 @@
 
 This file is the sole owner of adopted Epic and Task identity, ordering,
 dependencies, lifecycle vocabulary, and current status for the Sanho delivery
-scope. No roadmap units are currently adopted.
+scope.
 
 ## Identity policy
 
@@ -28,3 +28,24 @@ Epic.
 
 | Epic | Title | Status |
 |---|---|---|
+| [EPIC-001](#epic-001-sanho-skill-modernization-for-gpt-6-astra) | Sanho skill modernization for GPT-6 Astra | Planned |
+
+## EPIC-001: Sanho skill modernization for GPT-6 Astra
+
+- Status: Planned
+- Objective: Make the source-distributed Sanho skill concise and conditional
+  while preserving current Git, synchronization, and authorization contracts.
+- Detailed SOT: [Sanho skill modernization](../todo/TODO-sanho-skill-modernization.md)
+- Dependencies: None. Aquarium integration consumes the resulting local source
+  and does not block this Epic.
+- External mapping: Aquarium's proposal label `SKILL-07` maps to this Epic and
+  its single member Task. It is not a Sanho roadmap identifier.
+
+| Task | Title | Status | Dependencies |
+|---|---|---|---|
+| TASK-001 | Restructure and verify the Sanho skill for GPT-6 Astra | Planned | None |
+
+TASK-001 delivers the skill, affected references and distribution guidance,
+directly related documentation corrections, and verification defined in the
+Detailed SOT as one coherent change. Epic acceptance remains separate from Task
+completion and requires Master's applicable manual verification.

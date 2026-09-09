@@ -17,8 +17,6 @@ This file records concise shipped outcomes and the planned next stable release.
   configured review roles, and align the repository agent guidance with the
   expanded workflows and their tracked Procedure v2 authorities.
 
-### Documentation
-
 - Adopt a canonical single-delivery-scope documentation index with explicit
   semantic role ownership, roadmap identity, and TODO dossier lifecycle while
   preserving the established document paths.
