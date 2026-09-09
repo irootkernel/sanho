@@ -10,8 +10,14 @@ import (
 // ldflags for explicit release verification builds.
 var version = buildinfo.CurrentVersion
 
+// gitSHA is injected by exact-commit development builds. Ordinary source and
+// release builds leave it empty, which the verbose version diagnostic reports
+// as unknown.
+var gitSHA string
+
 func main() {
 	cli.Execute(cli.BuildInfo{
 		Version: buildinfo.ResolveVersion(version),
+		GitSHA:  gitSHA,
 	})
 }

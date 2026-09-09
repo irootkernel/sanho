@@ -29,7 +29,7 @@ Epic.
 | Epic | Title | Status |
 |---|---|---|
 | [EPIC-001](#epic-001-sanho-skill-modernization-for-gpt-6-astra) | Sanho skill modernization for GPT-6 Astra | Completed |
-| [EPIC-002](#epic-002-integrate-sanho-with-the-aquarium-development-channel) | Integrate Sanho with the Aquarium development channel | Planned |
+| [EPIC-002](#epic-002-integrate-sanho-with-the-aquarium-development-channel) | Integrate Sanho with the Aquarium development channel | In Progress |
 
 ## EPIC-001: Sanho skill modernization for GPT-6 Astra
 
@@ -56,7 +56,7 @@ guide; completion does not claim observed agent behavior or performance gains.
 
 ## EPIC-002: Integrate Sanho with the Aquarium development channel
 
-- Status: Planned
+- Status: In Progress
 - Objective: Build Sanho from an exact local commit, integrate its foreground
   executable with `~/.aquarium-dev`, and return verified candidate evidence to
   Aquarium while preserving production installation and native Git behavior.
@@ -69,7 +69,7 @@ guide; completion does not claim observed agent behavior or performance gains.
 
 | Task | Title | Status | Dependencies |
 |---|---|---|---|
-| TASK-002 | Implement the Aquarium foreground producer and build identity | Planned | None |
+| TASK-002 | Implement the Aquarium foreground producer and build identity | Completed | None |
 | TASK-003 | Verify exact-commit builds and publication failure boundaries | Planned | TASK-002 |
 | TASK-004 | Integrate the canonical checkout and hand off the verified candidate | Planned | TASK-003 |
 

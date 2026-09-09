@@ -27,12 +27,14 @@ UNIT_PACKAGES := \
 	./internal/usecase/publish
 
 CHECK_PACKAGES := $(UNIT_PACKAGES) \
-	./test/cli/integration ./test/cli/e2e ./test/install ./test/docsync
+	./test/cli/integration ./test/cli/e2e ./test/install ./test/docsync \
+	./test/aquariumdev
 
 .PHONY: \
 	cli-build cli-install install docs-check test-package-ownership test-architecture \
 	test test-prepare \
 	test-unit test-int test-e2e test-scale \
+	aquarium-dev-describe aquarium-dev-build \
 	build-cli install-cli
 
 # ---- CLI ----
@@ -43,6 +45,144 @@ cli-build:
 
 cli-install:
 	$(GO) install $(LDFLAGS) $(CLI_CMD)
+
+# ---- Aquarium development producer ----
+
+# These targets intentionally stay in Make rather than adding another Go
+# executable.  The source version is read from the existing buildinfo
+# authority, and the build target archives the admitted Git tree before Go
+# sees it.  That keeps ignored and untracked checkout files out of the
+# executable while keeping every temporary write below the caller's output.
+
+aquarium-dev-describe:
+	@set -euo pipefail; \
+		source_version="$$(awk -F'"' '/^[[:space:]]*CurrentVersion[[:space:]]*=[[:space:]]*"/ { print $$2; exit }' internal/buildinfo/version.go)"; \
+		if ! printf '%s\n' "$$source_version" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$$'; then \
+			printf '%s\n' 'aquarium-dev: internal/buildinfo/version.go has no valid CurrentVersion' >&2; \
+			exit 1; \
+		fi; \
+		printf '{"schema":"aquarium-dev-producer-description/v1","project_id":"sanho","next_version":"%s","artifact_kind":"executable","artifact_path":"bin/sanho"}\n' "$$source_version"
+
+aquarium-dev-build:
+	@set -euo pipefail; \
+		output="$${AQUARIUM_DEV_OUTPUT:-}"; \
+		if [[ -z "$$output" || "$${output:0:1}" != / ]]; then \
+			printf '%s\n' 'aquarium-dev: AQUARIUM_DEV_OUTPUT must be an absolute path to an empty directory' >&2; \
+			exit 1; \
+		fi; \
+		if [[ ! -d "$$output" || -L "$$output" ]]; then \
+			printf '%s\n' 'aquarium-dev: AQUARIUM_DEV_OUTPUT must name an existing empty directory' >&2; \
+			exit 1; \
+		fi; \
+		output="$$(cd -- "$$output" && pwd -P)"; \
+		for child in "$$output"/* "$$output"/.[!.]* "$$output"/..?*; do \
+			if [[ -e "$$child" || -L "$$child" ]]; then \
+				printf '%s\n' 'aquarium-dev: AQUARIUM_DEV_OUTPUT must be empty' >&2; \
+				exit 1; \
+			fi; \
+		done; \
+		git_ro() { env \
+			-u GIT_DIR \
+			-u GIT_WORK_TREE \
+			-u GIT_COMMON_DIR \
+			-u GIT_INDEX_FILE \
+			-u GIT_OBJECT_DIRECTORY \
+			-u GIT_ALTERNATE_OBJECT_DIRECTORIES \
+			-u GIT_NAMESPACE \
+			-u GIT_QUARANTINE_PATH \
+			-u GIT_CEILING_DIRECTORIES \
+			-u GIT_CONFIG_GLOBAL \
+			-u GIT_CONFIG_SYSTEM \
+			-u GIT_CONFIG_COUNT \
+			-u GIT_CONFIG_PARAMETERS \
+			-u GIT_TEMPLATE_DIR \
+			-u GIT_TRACE \
+			-u GIT_TRACE_PERFORMANCE \
+			-u GIT_TRACE_PACKET \
+			-u GIT_TRACE2 \
+			-u GIT_TRACE2_EVENT \
+			-u GIT_TRACE2_PERF \
+			-u GIT_TRACE2_BRIEF \
+			GIT_CONFIG_GLOBAL=/dev/null \
+			GIT_CONFIG_SYSTEM=/dev/null \
+			GIT_CONFIG_NOSYSTEM=1 \
+			GIT_ATTR_NOSYSTEM=1 \
+			GIT_OPTIONAL_LOCKS=0 \
+			git "$$@"; }; \
+		repository="$$(git_ro rev-parse --show-toplevel 2>/dev/null)" || { printf '%s\n' 'aquarium-dev: build must run at a Git repository root' >&2; exit 1; }; \
+		if [[ "$$(pwd -P)" != "$$repository" ]]; then \
+			printf '%s\n' 'aquarium-dev: build must run at the Git repository root' >&2; \
+			exit 1; \
+		fi; \
+		branch="$$(git_ro symbolic-ref --quiet --short HEAD 2>/dev/null)" || { printf '%s\n' 'aquarium-dev: build requires local main, not detached HEAD' >&2; exit 1; }; \
+		if [[ "$$branch" != main ]]; then \
+			printf '%s\n' 'aquarium-dev: build requires the local main branch' >&2; \
+			exit 1; \
+		fi; \
+		git_sha="$$(git_ro rev-parse HEAD 2>/dev/null)" || { printf '%s\n' 'aquarium-dev: cannot resolve HEAD' >&2; exit 1; }; \
+		if ! printf '%s\n' "$$git_sha" | grep -Eq '^[0-9a-f]{40}$$'; then \
+			printf '%s\n' 'aquarium-dev: admitted Git SHA must be 40 lowercase hexadecimal characters' >&2; \
+			exit 1; \
+		fi; \
+		main_sha="$$(git_ro rev-parse --verify refs/heads/main 2>/dev/null)" || { printf '%s\n' 'aquarium-dev: local main ref is unavailable' >&2; exit 1; }; \
+		if [[ "$$git_sha" != "$$main_sha" ]]; then \
+			printf '%s\n' 'aquarium-dev: HEAD must equal refs/heads/main' >&2; \
+			exit 1; \
+		fi; \
+		if ! git_status="$$(git_ro status --porcelain=v1 --untracked-files=all 2>/dev/null)"; then \
+			printf '%s\n' 'aquarium-dev: cannot inspect Git checkout status' >&2; \
+			exit 1; \
+		fi; \
+		if [[ -n "$$git_status" ]]; then \
+			printf '%s\n' 'aquarium-dev: build requires a clean checkout' >&2; \
+			exit 1; \
+		fi; \
+		source_dir="$$output/.source"; \
+		cache_root="$$output/.cache"; \
+		cache_dir="$$cache_root/go-build"; \
+		module_cache_dir="$$cache_root/go-mod"; \
+		tmp_dir="$$output/.tmp"; \
+		archive_file="$$tmp_dir/source.tar"; \
+		git_mirror="$$tmp_dir/repository.git"; \
+		export TMPDIR="$$tmp_dir"; \
+		cleanup() { status=$$?; chmod -R u+w "$$source_dir" "$$cache_root" "$$tmp_dir" "$$output/.home" 2>/dev/null || true; rm -rf -- "$$source_dir" "$$cache_root" "$$tmp_dir" "$$output/.home" 2>/dev/null || true; if [[ "$$status" -ne 0 ]]; then rm -f -- "$$output/bin/sanho" 2>/dev/null || true; rmdir "$$output/bin" 2>/dev/null || true; fi; return "$$status"; }; \
+		trap cleanup EXIT; \
+		mkdir -p "$$source_dir" "$$cache_dir" "$$module_cache_dir" "$$tmp_dir"; \
+		git_ro clone --quiet --no-hardlinks --bare -- "$$repository" "$$git_mirror"; \
+		git_ro -C "$$git_mirror" -c core.attributesfile=/dev/null archive --format=tar "$$git_sha" > "$$archive_file"; \
+		tar -xf "$$archive_file" -C "$$source_dir"; \
+		source_version="$$(awk -F'"' '/^[[:space:]]*CurrentVersion[[:space:]]*=[[:space:]]*"/ { print $$2; exit }' "$$source_dir/internal/buildinfo/version.go")"; \
+		if ! printf '%s\n' "$$source_version" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$$'; then \
+			printf '%s\n' 'aquarium-dev: committed CurrentVersion is invalid' >&2; \
+			exit 1; \
+		fi; \
+		development_version="$$source_version-dev.$${git_sha:0:12}"; \
+		artifact="$$output/bin/sanho"; \
+		mkdir -p "$$output/bin"; \
+		( cd -- "$$source_dir" && env -i \
+			PATH="$$PATH" \
+			HOME="$$output/.home" \
+			TMPDIR="$$tmp_dir" \
+			GOCACHE="$$cache_dir" \
+			GOMODCACHE="$$module_cache_dir" \
+			GOPATH="$$cache_root/gopath" \
+			GOTMPDIR="$$tmp_dir" \
+			GOENV=off \
+			GOWORK=off \
+			GOFLAGS= \
+			GOMOD= \
+			GOTOOLCHAIN=local \
+			GO111MODULE=on \
+			CGO_ENABLED=0 \
+			GOOS=darwin \
+			GOARCH=arm64 \
+			go build -buildvcs=false -trimpath -ldflags "-X main.version=$$development_version -X main.gitSHA=$$git_sha" -o "$$artifact" ./cmd/sanho ); \
+		checksum="$$(shasum -a 256 "$$artifact" | awk '{print $$1}')"; \
+		if ! printf '%s\n' "$$checksum" | grep -Eq '^[0-9a-f]{64}$$'; then \
+			printf '%s\n' 'aquarium-dev: could not calculate the executable checksum' >&2; \
+			exit 1; \
+		fi; \
+		printf '{"schema":"aquarium-dev-artifact-manifest/v1","project_id":"sanho","git_sha":"%s","development_version":"%s","artifact_kind":"executable","artifact_path":"bin/sanho","sha256":"sha256:%s"}\n' "$$git_sha" "$$development_version" "$$checksum"
 
 docs-check:
 	@test -f README.md
@@ -131,6 +271,7 @@ test-unit:
 test-int: cli-build
 	SANHO_CLI_BINARY="$(CURDIR)/$(CLI_BINARY)" $(GO) test ./test/cli/integration -count=1 -v -race
 	$(GO) test ./test/docsync -count=1 -race
+	$(GO) test ./test/aquariumdev -count=1 -v
 
 # test/cli/e2e is the v0.2 scenario suite restored by P5: the guidance
 # guidance-closure table, the scenario matrix, and process-level concurrency.
@@ -138,8 +279,10 @@ test-int: cli-build
 # It runs WITHOUT -race, deliberately. Every assertion here is about
 # separate `sanho` and `git` *processes*, so the detector would only
 # instrument the test harness that spawns them — buying nothing while
-# roughly halving throughput. The in-process suites carry -race
-# (test-unit, test-int), which is where it detects anything.
+# roughly halving throughput. The in-process suites carry -race: test-unit,
+# test/cli/integration, and test/docsync. The test/aquariumdev producer suite
+# also drives make, Git, and Go as child processes, so it follows this
+# process-level boundary.
 test-e2e: cli-build
 	SANHO_CLI_BINARY="$(CURDIR)/$(CLI_BINARY)" $(GO) test ./test/cli/e2e -count=1 -v -timeout 20m
 	$(GO) test ./test/install -count=1

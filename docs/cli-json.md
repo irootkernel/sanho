@@ -4,6 +4,7 @@ Sanho exposes stable machine-readable documents for:
 
 ```bash
 sanho version --json
+sanho version --verbose --json
 sanho status --json
 sanho state --json
 sanho state --all --json
@@ -121,6 +122,28 @@ form is `sanho <version>`. Other successful JSON commands retain the common
 indented form, and the compact exception covers only this success document: a
 failed `version --json` writes the common indented error envelope like every
 other command.
+
+`sanho version --verbose` adds the exact Git identity when the executable was
+built with one. Its JSON document is still compact and has exactly these
+fields:
+
+```json
+{"name":"sanho","version":"v0.2.8-dev.0123456789ab","git_sha":"0123456789abcdef0123456789abcdef01234567"}
+```
+
+Source and ordinary release builds have no admitted commit, so `git_sha` is
+`null`; the human form says `git_sha unknown`. The non-verbose forms keep the
+two-field document and `sanho <version>` output unchanged.
+
+The root `--verbose` flag and its `-v` shorthand select the same version
+diagnostic before or after the command name. These forms are equivalent:
+
+```bash
+sanho --verbose version
+sanho -v version
+sanho version --verbose
+sanho version -v
+```
 
 ## `status`
 

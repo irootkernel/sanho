@@ -16,6 +16,18 @@ Sanho ships one executable, `sanho`. There is no daemon, socket, HTTP API, web
 UI, session manager, or application-ref manager. Runtime requirements are Git
 and credentials that can access the canonical repository.
 
+Checkout development uses the two Make targets `aquarium-dev-describe` and
+`aquarium-dev-build`. The producer reads `CurrentVersion` from
+`internal/buildinfo/version.go`, accepts a clean local `main` only when its
+`HEAD` equals `refs/heads/main`, and archives that commit before building. It
+builds for Darwin arm64, keeps the executable and all temporary and cache files
+under the required absolute empty `AQUARIUM_DEV_OUTPUT`, and emits one manifest
+with the full commit SHA, development version, and executable checksum. Go
+workspace and overlay settings are disabled at this boundary, so ignored and
+untracked checkout files cannot enter the build. The result is still the
+single Sanho binary, and `sanho version --verbose --json` reports the injected
+commit identity when present.
+
 Four principles govern every flow:
 
 1. **Publish on push.** Canonical publication occurs only from `pre-push`.

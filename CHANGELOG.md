@@ -8,6 +8,8 @@ This file records concise shipped outcomes and the planned next stable release.
 
 - Add tracked Aquarium design and war-room procedures for assisted design and
   difficult-bug diagnosis workflows.
+- Add Aquarium development producer targets and exact-commit version
+  diagnostics for Darwin arm64 foreground builds.
 
 ### Changed
 

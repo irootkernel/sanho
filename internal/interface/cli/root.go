@@ -54,9 +54,11 @@ var errAlreadyReported = errors.New("guidance already reported")
 
 var errInvalidArguments = errors.New("invalid arguments")
 
-// BuildInfo carries the resolved release version.
+// BuildInfo carries the resolved release version and optional exact source
+// identity for development diagnostics.
 type BuildInfo struct {
 	Version string
+	GitSHA  string
 }
 
 // Execute runs the CLI and terminates the process with the JSON contract exit
@@ -135,8 +137,9 @@ func renderError(stderr io.Writer, err error) int {
 	return exitUser
 }
 
-// verbose is the global --verbose flag. It only ever adds detail; no
-// behavior depends on it.
+// verbose is the global --verbose flag. Commands use it for additional
+// diagnostics, and version treats it as an alias for its verbose build
+// identity output.
 var verbose bool
 
 func newRootCmd(info BuildInfo) *cobra.Command {

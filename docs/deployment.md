@@ -35,6 +35,22 @@ make cli-build       # bin/sanho
 make cli-install
 ```
 
+For an Aquarium development candidate, run the producer from a clean local
+`main` checkout. The target archives committed bytes into a separate build
+directory and keeps its output and Go caches below the required absolute empty
+directory:
+
+```bash
+make aquarium-dev-describe
+make aquarium-dev-build AQUARIUM_DEV_OUTPUT=/absolute/empty/directory
+```
+
+The build prints one `aquarium-dev-artifact-manifest/v1` JSON object on stdout.
+Its executable is `bin/sanho`, built for Darwin arm64, with a version of the
+form `<CurrentVersion>-dev.<sha12>`. Use `sanho version --verbose --json` to
+compare the embedded version and full commit SHA with that manifest. Ordinary
+`sanho version` output remains unchanged.
+
 The source tree also distributes an optional `use-sanho` agent skill under
 `skills/use-sanho/` for AI coding agents. It is documentation, not a deployed
 artifact: installing the binary never installs or registers it.
