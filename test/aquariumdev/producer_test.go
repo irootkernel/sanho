@@ -222,11 +222,7 @@ func TestProducerContract(t *testing.T) {
 
 func fixtureRepository(t *testing.T) string {
 	t.Helper()
-	_, file, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("runtime.Caller failed")
-	}
-	root := filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
+	root := repositoryRoot(t)
 	fixture := filepath.Join(t.TempDir(), "repo")
 	rootSHA := gitOutput(t, root, "rev-parse", "HEAD")
 	gitRun(t, root, "clone", "--quiet", "--template=", "--no-hardlinks", root, fixture)
@@ -269,13 +265,17 @@ func runMakeWithEnv(t *testing.T, repository, target, output string, extraEnviro
 }
 
 func environmentWithOverrides(overrides ...string) []string {
+	return environmentWithOverridesFrom(os.Environ(), overrides...)
+}
+
+func environmentWithOverridesFrom(base []string, overrides ...string) []string {
 	keys := make(map[string]struct{}, len(overrides))
 	for _, override := range overrides {
 		key, _, _ := strings.Cut(override, "=")
 		keys[key] = struct{}{}
 	}
-	environment := make([]string, 0, len(os.Environ())+len(overrides))
-	for _, entry := range os.Environ() {
+	environment := make([]string, 0, len(base)+len(overrides))
+	for _, entry := range base {
 		key, _, _ := strings.Cut(entry, "=")
 		if _, exists := keys[key]; exists {
 			continue

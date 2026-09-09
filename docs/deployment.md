@@ -63,6 +63,48 @@ Use a checkout until a revision containing the new layout is published;
 `v0.2.7` does not include the inspection reference. Copying source, releasing
 Sanho, installing the binary, and activating an agent skill are separate steps.
 
+## Verify with the Aquarium consumer
+
+The portable `make test-int` check does not opt into the native consumer. Run
+the explicit consumer check only with a disposable manager root and a clean,
+reviewed Aquarium checkout:
+
+```bash
+export SANHO_AQUARIUM_ROOT=/absolute/path/to/aquarium/aquarium
+export SANHO_AQUARIUM_REVISION=acef263e647445d1cf4107b241a20c41babe3c3e
+make aquarium-dev-realconsumer
+```
+
+The Make target checks the physical host, the effective Go target, the
+absolute-root shape, and the full lowercase revision shape before dispatching
+the Go test. The test then checks that the root exists, is a clean Git checkout
+at the requested revision, and contains the Aquarium CLI. It clones the
+current Sanho source into a temporary fixture, adds an ignored invalid source
+file to that original fixture, and enrolls the fixture with the Aquarium CLI.
+It verifies the committed SHA, executable checksum, embedded `sanho version
+--verbose --json` identity, and the command and current selectors. It then asks
+the real manager to reject malformed, wrong-SHA, and checksum-mismatched
+manifests and checks that each failure leaves the selected generation and its
+bytes intact.
+Generation cleanup uses the manager's `cleanup` command and stays inside the
+temporary manager root. The external Aquarium checkout is read-only; Python
+is invoked with `-B` and `PYTHONDONTWRITEBYTECODE=1`.
+
+The manager gives each description and dry-run build probe a 30-second limit
+and gives a full validated build a separate 600-second limit. The Sanho
+consumer test measures the producer's description and build targets with a
+30-second bound, using a fresh output directory with fresh Go build and module
+caches for each build. It reports the native rebuild time separately, since
+that measurement also includes the manager's exact clone and immutable
+publication work.
+
+The current Darwin arm64 check used Go 1.26.6 and Git 2.50.1 with the
+per-output caches empty at the start of the producer build. It measured
+description in 54 ms, the cold producer build in 2.71 s, and the native
+consumer rebuild in 3.81 s. These values document the observed dependency and
+toolchain conditions; repeat the check after changing either checkout or
+toolchain rather than treating them as a release latency guarantee.
+
 ## Onboard a workspace
 
 Run from the application repository root:

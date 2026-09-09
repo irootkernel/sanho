@@ -34,7 +34,7 @@ CHECK_PACKAGES := $(UNIT_PACKAGES) \
 	cli-build cli-install install docs-check test-package-ownership test-architecture \
 	test test-prepare \
 	test-unit test-int test-e2e test-scale \
-	aquarium-dev-describe aquarium-dev-build \
+	aquarium-dev-describe aquarium-dev-build aquarium-dev-realconsumer \
 	build-cli install-cli
 
 # ---- CLI ----
@@ -272,6 +272,33 @@ test-int: cli-build
 	SANHO_CLI_BINARY="$(CURDIR)/$(CLI_BINARY)" $(GO) test ./test/cli/integration -count=1 -v -race
 	$(GO) test ./test/docsync -count=1 -race
 	$(GO) test ./test/aquariumdev -count=1 -v
+
+# The native Aquarium consumer is an explicit, opt-in integration boundary.
+# Portable repository checks skip its Go test when the external checkout is
+# absent; this target requires both the checkout and its reviewed revision so
+# a requested real-consumer run cannot pass without executing the consumer.
+# The Go timeout covers five possible 600-second native rebuilds plus probes,
+# the direct producer probes, and cleanup; keep the aggregate envelope at 70m.
+aquarium-dev-realconsumer:
+	@if [[ "$$(uname -s)" != Darwin || "$$(uname -m)" != arm64 ]]; then \
+		echo 'Error: the Aquarium consumer check requires Darwin arm64.' >&2; \
+		exit 2; \
+	fi
+	@goos="$$( $(GO) env GOOS )"; \
+		goarch="$$( $(GO) env GOARCH )"; \
+		if [[ "$$goos $$goarch" != 'darwin arm64' ]]; then \
+			echo "Error: the Aquarium consumer check requires a Darwin arm64 Go target (got $${goos:-unknown}/$${goarch:-unknown})." >&2; \
+			exit 2; \
+		fi
+	@if [[ -z "$${SANHO_AQUARIUM_ROOT:-}" || "$${SANHO_AQUARIUM_ROOT:0:1}" != / ]]; then \
+		echo 'Error: SANHO_AQUARIUM_ROOT must name the absolute Aquarium checkout.' >&2; \
+		exit 2; \
+	fi
+	@if [[ -z "$${SANHO_AQUARIUM_REVISION:-}" || ! "$${SANHO_AQUARIUM_REVISION}" =~ ^[0-9a-f]{40}$$ ]]; then \
+		echo 'Error: SANHO_AQUARIUM_REVISION must be a full lowercase commit SHA.' >&2; \
+		exit 2; \
+	fi
+	SANHO_REALCONSUMER=1 $(GO) test ./test/aquariumdev -run '^(TestRealConsumer|TestConsumerEnvironmentStripsInheritedGit|TestTimedMakePreservesGitIsolation)$$' -count=1 -v -timeout 70m
 
 # test/cli/e2e is the v0.2 scenario suite restored by P5: the guidance
 # guidance-closure table, the scenario matrix, and process-level concurrency.

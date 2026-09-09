@@ -70,7 +70,7 @@ guide; completion does not claim observed agent behavior or performance gains.
 | Task | Title | Status | Dependencies |
 |---|---|---|---|
 | TASK-002 | Implement the Aquarium foreground producer and build identity | Completed | None |
-| TASK-003 | Verify exact-commit builds and publication failure boundaries | Planned | TASK-002 |
+| TASK-003 | Verify exact-commit builds and publication failure boundaries | Completed | TASK-002 |
 | TASK-004 | Integrate the canonical checkout and hand off the verified candidate | Planned | TASK-003 |
 
 Epic acceptance requires the producer, isolated verification, approved host

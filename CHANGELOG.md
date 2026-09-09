@@ -10,6 +10,8 @@ This file records concise shipped outcomes and the planned next stable release.
   difficult-bug diagnosis workflows.
 - Add Aquarium development producer targets and exact-commit version
   diagnostics for Darwin arm64 foreground builds.
+- Add an explicit real-Aquarium-consumer verification target covering exact
+  publication identity, failure rejection, and selected-generation retention.
 
 ### Changed
 
