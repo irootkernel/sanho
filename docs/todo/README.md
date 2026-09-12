@@ -13,8 +13,7 @@ Task identity until it is explicitly adopted into the canonical roadmap.
 
 ## Adopted dossiers
 
-- [Aquarium development integration](TODO-AQUARIUM-DEV.md) provides the delivery
-  requirements for [EPIC-002](../roadmap/README.md#epic-002-integrate-sanho-with-the-aquarium-development-channel).
+No adopted Epic dossiers are currently active.
 
 When a candidate is adopted with Tasks, retain its file here as the Epic's
 temporary dossier, identify the Epic in the dossier, register it in this

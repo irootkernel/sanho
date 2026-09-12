@@ -29,7 +29,7 @@ Epic.
 | Epic | Title | Status |
 |---|---|---|
 | [EPIC-001](#epic-001-sanho-skill-modernization-for-gpt-6-astra) | Sanho skill modernization for GPT-6 Astra | Completed |
-| [EPIC-002](#epic-002-integrate-sanho-with-the-aquarium-development-channel) | Integrate Sanho with the Aquarium development channel | In Progress |
+| [EPIC-002](#epic-002-integrate-sanho-with-the-aquarium-development-channel) | Integrate Sanho with the Aquarium development channel | Completed |
 
 ## EPIC-001: Sanho skill modernization for GPT-6 Astra
 
@@ -56,11 +56,15 @@ guide; completion does not claim observed agent behavior or performance gains.
 
 ## EPIC-002: Integrate Sanho with the Aquarium development channel
 
-- Status: In Progress
+- Status: Completed
 - Objective: Build Sanho from an exact local commit, integrate its foreground
   executable with `~/.aquarium-dev`, and return verified candidate evidence to
   Aquarium while preserving production installation and native Git behavior.
-- Detailed SOT: [Aquarium development integration](../todo/TODO-AQUARIUM-DEV.md)
+- Canonical Outcomes: [producer and verification targets](../../Makefile),
+  [runtime and build contract](../architecture.md),
+  [development deployment guidance](../deployment.md),
+  [verbose version contract](../cli-json.md),
+  [Aquarium consumer tests](../../test/aquariumdev)
 - Dependencies: Aquarium's existing foreground producer contract and native
   development manager. EPIC-001 remains completed and is not reopened.
 - External mapping: Aquarium EPIC-002 / TASK-014 owns consumer integration
@@ -73,6 +77,7 @@ guide; completion does not claim observed agent behavior or performance gains.
 | TASK-003 | Verify exact-commit builds and publication failure boundaries | Completed | TASK-002 |
 | TASK-004 | Integrate the canonical checkout and hand off the verified candidate | Completed | TASK-003 |
 
-Epic acceptance requires the producer, isolated verification, approved host
-integration, and return handoff described in the dossier. Child completion does
-not close the Epic automatically or declare Aquarium TASK-014 complete.
+Master explicitly accepted Epic closeout after all three Tasks completed. This
+Epic delivered the producer, isolated and native-consumer verification,
+approved host integration, and return handoff. Completing it does not complete
+Aquarium TASK-014 or TASK-015.
