@@ -45,6 +45,25 @@ func requireEnvelope(t *testing.T, label, stdout string) string {
 	return envelope.Error.Code
 }
 
+func TestRootHelpDescribesCommitCreatingCommands(t *testing.T) {
+	code, stdout, stderr := runCLI("--help")
+
+	if code != 0 {
+		t.Fatalf("sanho --help exit = %d, want 0; stderr = %q", code, stderr)
+	}
+	if strings.Contains(stdout, "sanho never creates commits") {
+		t.Fatalf("sanho --help still denies commit creation:\n%s", stdout)
+	}
+	for _, want := range []string{"sync may", "[SANHO] Sync docs to <oid>", "sanho pull", "--commit"} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("sanho --help does not contain %q:\n%s", want, stdout)
+		}
+	}
+	if stderr != "" {
+		t.Errorf("sanho --help stderr = %q, want empty", stderr)
+	}
+}
+
 // TestArgumentFailuresWriteTheJSONEnvelope covers the defect the JSON
 // contract names: a --json command that fails writes an envelope, and
 // that has to hold for the failures cobra detects before the command

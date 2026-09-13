@@ -17,6 +17,8 @@ This file records concise shipped outcomes and the planned next stable release.
 
 - Make Sanho agent guidance conditional, with accurate commit outcomes and
   focused inspection and recovery instructions.
+- Clarify that `sanho sync --abort` restores tracked docs from current `HEAD`,
+  preserves resolution commits, and clears an uncorroborated previous base.
 - Expand the Aquarium task, goal, and validation procedures with plan handoff,
   review identity and mode, and bounded epic-hardening deferral evidence.
 - Route documentation review through AGY while retaining ZCode for the other

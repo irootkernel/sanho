@@ -153,8 +153,9 @@ with one canonical docs repository.
 
 Publication happens at 'git push'; the commit path only performs a local,
 network-free freshness check. Reconciling is an explicit command
-('sanho sync') that runs between your own commits — sanho never creates
-commits in your repository.`,
+('sanho sync') that runs between your own commits. When docs change, sync may
+create one '[SANHO] Sync docs to <oid>' commit. 'sanho pull' creates one only
+when '--commit' is requested.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
