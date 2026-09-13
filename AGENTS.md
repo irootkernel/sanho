@@ -162,6 +162,11 @@ improve a small change.
 
 Aquarium release notes: CHANGELOG.md
 
+Aquarium release notes migration: The v0.2.8 preparation may normalize
+completed sections through v0.2.7 to the canonical category schema while
+preserving their semantic release history. After that migration commit, the
+normalized completed sections are the byte-preserved baseline.
+
 - When the user explicitly requests a release, ask whether to use the full gate or the reduced patch-release gate before running release checks.
 - The full gate runs the configured Gaori `all` command, equivalent to `make test`. A release still requires the hands-on verdict in `docs/hands-on-testing.md`.
 - The reduced gate is available only when the candidate already passed both `make test` and the hands-on release verdict, and every later change is limited to the patch version and release metadata. Ask separately whether each prerequisite passed. The hands-on prerequisite is satisfied when H01 through H08 pass or the release owner explicitly accepts every scope-based skip, as the existing verdict defines.
