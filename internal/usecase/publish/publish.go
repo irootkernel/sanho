@@ -1041,14 +1041,12 @@ func (u *UseCase) requireCorroboratedBase(ctx context.Context, t *tip, base prov
 			return nil
 		}
 		// A trailer naming a canonical ancestor of the recorded base is
-		// the post-publication state, not a mismatch.
-		ancestor, err := u.Canonical.IsAncestor(ctx, stamped.Commit, base.Commit)
-		if err != nil {
-			return fmt.Errorf("check whether %s precedes the recorded base: %w", shortOID(stamped.Commit), err)
-		}
-		if ancestor {
-			return nil
-		}
+		// the ordinary post-publication state, but ancestry alone is not a
+		// content warrant. `sync --continue` also advances the base after a
+		// resolution, and that resolution may have discarded a clean
+		// upstream addition while retaining the older trailer. In both
+		// cases the absorption proof below decides whether fast-forwarding
+		// would preserve canonical head.
 		// The content half of the same stamp, which is what a rewrite
 		// leaves intact. It is checked before the absorption warrant
 		// below because comparing two OIDs costs nothing while

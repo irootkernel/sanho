@@ -889,11 +889,13 @@ func TestRunRejectsWhenAbsorptionCannotBeProved(t *testing.T) {
 // TestRunAcceptsAFastForwardStampedWithAnOlderBase is the no-regression
 // half: publication's own advance moves the base file PAST the commit
 // the trailers name, so every workspace that has just published stamps
-// an ancestor of its recorded base. That must still fast-forward.
+// an ancestor of its recorded base. The tip must still prove that it
+// absorbs the newer canonical head before fast-forwarding.
 func TestRunAcceptsAFastForwardStampedWithAnOlderBase(t *testing.T) {
 	s := newScenario(t)
 	stamped := provenance.Base{Commit: canonRoot, Tree: rootTree}
 	s.app.defaultStampedBase = &stamped
+	s.canonical.absorbed = true
 
 	outcome, err := s.run(t)
 	if err != nil {
@@ -901,6 +903,24 @@ func TestRunAcceptsAFastForwardStampedWithAnOlderBase(t *testing.T) {
 	}
 	if outcome.Case != pubdom.CaseFastForward {
 		t.Fatalf("case = %v, want fast_forward", outcome.Case)
+	}
+	if got := s.canonical.absorbCalls; !reflect.DeepEqual(got, []string{tipTree + "|" + canonHead}) {
+		t.Fatalf("absorption calls = %v", got)
+	}
+}
+
+func TestRunRefusesAnOlderStampedBaseWhenTipDoesNotAbsorbCanonicalHead(t *testing.T) {
+	s := newScenario(t)
+	stamped := provenance.Base{Commit: canonRoot, Tree: rootTree}
+	s.app.defaultStampedBase = &stamped
+
+	_, err := s.run(t)
+	var syncErr *SyncRequiredError
+	if !errors.As(err, &syncErr) || syncErr.Reason != ReasonUncorroboratedBase {
+		t.Fatalf("error = %v, want uncorroborated-base rejection", err)
+	}
+	if s.canonical.pushes != 0 {
+		t.Fatalf("canonical was written %d times", s.canonical.pushes)
 	}
 }
 

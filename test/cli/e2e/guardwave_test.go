@@ -165,6 +165,36 @@ func TestContinueReportsDriftFromTheMergeResult(t *testing.T) {
 	requireContains(t, "drift line", out.combined(), "differ from the merge result")
 }
 
+func TestPublicationRejectsAResolutionThatDropsCleanCanonicalContent(t *testing.T) {
+	t.Parallel()
+
+	w := newWorld(t, map[string]string{"api.md": "line one\nline two\n"})
+	ws := w.setup("merge-drift-publication")
+
+	ws.commitDocs("docs: my edit", map[string]string{"api.md": "line one\nMINE\n"})
+	w.advanceCanonical(
+		map[string]string{"api.md": "line one\nTHEIRS\n", "guide.md": "clean upstream addition\n"},
+		"canonical: their edit plus an addition")
+
+	requireContains(t, "sync", ws.sanho("sync").combined(), "have conflicts")
+	ws.writeDocs(map[string]string{"api.md": "line one\nRESOLVED\n"})
+	ws.git("add", "-A", "docs")
+	ws.git("commit", "-m", "docs: resolve without the clean addition")
+
+	out := ws.sanho("sync", "--continue")
+	requireContains(t, "completion", out.combined(), "sync completed")
+	requireContains(t, "drift line", out.combined(), "differ from the merge result")
+
+	before := w.canonicalHead()
+	push := ws.gitExit("push", "--quiet", "origin", "main")
+	requireExit(t, "push after lossy resolution", push, 1)
+	requireContains(t, "rejection", push.combined(), "docs provenance does not corroborate canonical head")
+	requireEqual(t, "canonical head", w.canonicalHead(), before)
+	if got := w.canonicalFile(before, "guide.md"); got != "clean upstream addition\n" {
+		t.Fatalf("canonical guide.md = %q, want preserved upstream content", got)
+	}
+}
+
 // --- C2: an uncorroborated base may not survive a branch switch --------
 
 // TestPreAdoptionBranchCannotDeleteCanonicalDocs is C2's reproduction,

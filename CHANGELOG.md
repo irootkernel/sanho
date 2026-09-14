@@ -29,6 +29,11 @@ This file records concise shipped outcomes and the planned next stable release.
   semantic role ownership, roadmap identity, and TODO dossier lifecycle while
   preserving the established document paths.
 
+### Fixed
+
+- Prevent publication after a conflicted sync resolution drops unrelated
+  canonical content, preserving canonical-only files until provenance is restored.
+
 ## v0.2.7 - 2026-08-18
 
 ### Added
