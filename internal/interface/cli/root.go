@@ -151,8 +151,9 @@ func newRootCmd(info BuildInfo) *cobra.Command {
 		Long: `Sanho keeps the docs/ directory of an application repository synchronized
 with one canonical docs repository.
 
-Publication happens at 'git push'; the commit path only performs a local,
-network-free freshness check. Reconciling is an explicit command
+Publication happens at 'git push'. The commit path stays local and
+network-free: pre-commit checks freshness and blocks unresolved markers;
+commit-msg stamps docs-base provenance. Reconciling is an explicit command
 ('sanho sync') that runs between your own commits. When docs change, sync may
 create one '[SANHO] Sync docs to <oid>' commit. 'sanho pull' creates one only
 when '--commit' is requested.`,

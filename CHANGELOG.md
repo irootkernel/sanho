@@ -15,8 +15,8 @@ This file records concise shipped outcomes and the planned next stable release.
 
 ### Changed
 
-- Make Sanho agent guidance conditional, with accurate commit outcomes and
-  focused inspection and recovery instructions.
+- Make root help and Sanho agent guidance accurately describe commit-producing
+  paths, local marker checks, provenance stamping, and conditional recovery.
 - Clarify that `sanho sync --abort` restores tracked docs from current `HEAD`,
   preserves resolution commits, and clears an uncorroborated previous base.
 - Expand the Aquarium task, goal, and validation procedures with plan handoff,

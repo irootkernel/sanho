@@ -54,7 +54,15 @@ func TestRootHelpDescribesCommitCreatingCommands(t *testing.T) {
 	if strings.Contains(stdout, "sanho never creates commits") {
 		t.Fatalf("sanho --help still denies commit creation:\n%s", stdout)
 	}
-	for _, want := range []string{"sync may", "[SANHO] Sync docs to <oid>", "sanho pull", "--commit"} {
+	for _, want := range []string{
+		"blocks unresolved markers",
+		"commit-msg stamps",
+		"docs-base provenance",
+		"sync may",
+		"[SANHO] Sync docs to <oid>",
+		"sanho pull",
+		"--commit",
+	} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("sanho --help does not contain %q:\n%s", want, stdout)
 		}
