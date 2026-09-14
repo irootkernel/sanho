@@ -245,6 +245,8 @@ func TestAbortThenBranchSwitchDoesNotAdoptAPoisonedTrailer(t *testing.T) {
 // TestNoCommitInTheWindowEverStampsTheMergeTarget is C2's invariant on
 // its own, stated over the two commits that used to be stamped
 // differently: one that touches a conflicted path and one that does not.
+// The unrelated commit also makes completion unsafe: only conflicted
+// paths may differ from the materialized merge result.
 func TestNoCommitInTheWindowEverStampsTheMergeTarget(t *testing.T) {
 	t.Parallel()
 
@@ -270,9 +272,14 @@ func TestNoCommitInTheWindowEverStampsTheMergeTarget(t *testing.T) {
 	requireContains(t, "unrelated commit trailers", ws.headMessage(), "docs-base: "+preMerge)
 	requireNotContains(t, "unrelated commit trailers", ws.headMessage(), theirs)
 
-	// And the target reaches the base file only through the explicit act.
-	ws.sanho("sync", "--continue")
-	requireEqual(t, "base file after --continue", recordedBase(t, ws), theirs)
+	// The unrelated change cannot be folded into the resolution window.
+	// Refusal leaves the older base in place; the user can abort, preserve
+	// both commits, and retry the sync before making that change separately.
+	continued := ws.run("sync", "--continue")
+	requireExit(t, "continue with an unrelated change", continued, 1)
+	requireContains(t, "safe refusal", continued.combined(), "sync cannot be completed safely")
+	requireContains(t, "unrelated path", continued.combined(), "docs/notes.md")
+	requireEqual(t, "base after refused --continue", recordedBase(t, ws), preMerge)
 }
 
 // --- C3 -----------------------------------------------------------------
