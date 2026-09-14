@@ -82,10 +82,11 @@ type AppRepoPort interface {
 	// conflict was put aside" — never how a sync is completed, which is
 	// an explicit act (see Continue).
 	DocsPathsChangedBetween(ctx context.Context, fromTree, toTree string, paths []string) (bool, error)
-	// DocsTreeDifferences counts the paths differing between two docs
-	// trees. `--continue` uses it to say how far the worktree has drifted
-	// from the merge result it is completing; nothing gates on it.
-	DocsTreeDifferences(ctx context.Context, fromTree, toTree string) (int, error)
+	// DocsTreeChangedPaths lists the repository-relative docs paths that
+	// differ between two docs trees. `--continue` uses the exact paths to
+	// distinguish conflict resolution from changes that discarded the
+	// clean half of the merge.
+	DocsTreeChangedPaths(ctx context.Context, fromTree, toTree string) ([]string, error)
 	// IsAncestor reports whether commit a is b or an ancestor of it in
 	// THIS repository's history. It is local and network-free, which is
 	// what lets `--continue` insist on standing where the sync began
@@ -173,10 +174,10 @@ type SyncNote struct {
 	EntryHead     string
 	EntryDocsTree string
 	// MergedTree is the docs tree the conflicted merge produced — markers
-	// and all. It is recorded for one purpose: `--continue` compares the
-	// worktree against it and says how far the completion drifted from
-	// the merge it is completing. Nothing gates on it, and a note written
-	// before the field existed simply carries "".
+	// and all. `--continue` compares the worktree against it: differences
+	// on Conflicts are accepted resolution drift, while any other change
+	// prevents the base from advancing. A note written before this field
+	// existed carries "" and cannot be completed safely.
 	MergedTree string
 	// Conflicts are the docs paths the merge left conflicted,
 	// repository-relative.
@@ -278,6 +279,14 @@ var (
 	// yet".
 	ErrMarkersRemain         = errors.New("the docs worktree still contains conflict markers")
 	ErrResolutionUncommitted = errors.New("the resolution has not been committed")
+	// ErrResolutionChangedNonConflicts refuses to advance the base when
+	// the committed resolution differs from the merge result outside the
+	// paths that actually conflicted.
+	ErrResolutionChangedNonConflicts = errors.New("the resolution changed paths that did not conflict")
+	// ErrResolutionUnverifiable refuses a legacy sync note that has no
+	// recorded merge tree. Without that tree, completion cannot prove
+	// that clean upstream changes survived.
+	ErrResolutionUnverifiable = errors.New("the resolution cannot be verified against the merge result")
 	// ErrContinueForeignHistory refuses a `--continue` run from history
 	// the sync never stood on.
 	//
@@ -687,7 +696,7 @@ func (u *UseCase) restoreBase(ctx context.Context, note SyncNote) error {
 //
 // So completion is an act, in the shape `git rebase --continue` already
 // taught: the user says when the reconciliation is done, and sanho
-// records it. Four preconditions, each of which names what remains:
+// records it. Five preconditions, each of which names what remains:
 //
 //   - A sync note exists. Without one there is nothing to complete.
 //   - No docs file still carries conflict markers. Recording a base for
@@ -696,8 +705,11 @@ func (u *UseCase) restoreBase(ctx context.Context, note SyncNote) error {
 //     describe is committed content rather than an edit in progress.
 //   - HEAD stands on the history the sync began on — it IS the note's
 //     entry head, or descends from it.
+//   - Every path the clean half of the merge produced is still present
+//     and unchanged. Only paths the merge reported as conflicts may
+//     differ from its materialized tree.
 //
-// The fourth is the fix for the fourth review's C1, and the first three
+// The history check is the fix for the fourth review's C1, and the first three
 // are the reason it was needed: every one of them is about the worktree,
 // and a branch switch satisfies all three while replacing the documents
 // entirely. `git stash push -- docs` clears the markers and the dirt;
@@ -763,7 +775,7 @@ func (u *UseCase) Continue(ctx context.Context) (ContinueResult, error) {
 		return ContinueResult{}, err
 	}
 
-	drift, err := u.mergeDrift(ctx, note)
+	drift, err := u.validateMergeResult(ctx, note)
 	if err != nil {
 		return ContinueResult{}, err
 	}
@@ -807,23 +819,37 @@ func (u *UseCase) requireSyncHistory(ctx context.Context, note SyncNote) error {
 		ErrContinueForeignHistory, shortOID(note.EntryHead), shortOID(head))
 }
 
-// mergeDrift counts how far the tree being completed has moved from the
-// tree the conflicted merge produced. A note with no recorded merged
-// tree reports zero: the fact is unknown, and inventing a number would
-// be worse than saying nothing.
-func (u *UseCase) mergeDrift(ctx context.Context, note SyncNote) (int, error) {
+// validateMergeResult allows the user's resolution to differ on the
+// paths that conflicted and nowhere else. A missing merge tree is not a
+// compatibility warrant: abort remains available and preserves every
+// committed resolution, while advancing the base would make an
+// unverified tree eligible for fast-forward publication.
+func (u *UseCase) validateMergeResult(ctx context.Context, note SyncNote) (int, error) {
 	if note.MergedTree == "" {
-		return 0, nil
+		return 0, ErrResolutionUnverifiable
 	}
 	worktree, err := u.App.WorktreeDocsTree(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("hash worktree docs: %w", err)
 	}
-	drift, err := u.App.DocsTreeDifferences(ctx, note.MergedTree, worktree)
+	changed, err := u.App.DocsTreeChangedPaths(ctx, note.MergedTree, worktree)
 	if err != nil {
 		return 0, fmt.Errorf("compare the worktree with the merge result: %w", err)
 	}
-	return drift, nil
+	conflicts := make(map[string]struct{}, len(note.Conflicts))
+	for _, path := range note.Conflicts {
+		conflicts[path] = struct{}{}
+	}
+	var unexpected []string
+	for _, path := range changed {
+		if _, allowed := conflicts[path]; !allowed {
+			unexpected = append(unexpected, path)
+		}
+	}
+	if len(unexpected) > 0 {
+		return 0, fmt.Errorf("%w: %s", ErrResolutionChangedNonConflicts, strings.Join(unexpected, ", "))
+	}
+	return len(changed), nil
 }
 
 // ResolutionState reports where an unfinished sync stands. It is a

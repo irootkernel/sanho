@@ -194,23 +194,26 @@ database, and reconciles base, local docs, and canonical docs.
 - A conflict writes ordinary conflict markers and `sync.json`, then exits 0.
   Conflict is a successful sync outcome and must be read from output/JSON.
 
-The user resolves conflicts with normal Git commands, commits the resolution,
-and runs `sanho sync --continue`. Continue requires:
+The user resolves conflicts with normal Git commands, commits any resolution
+edits, and runs `sanho sync --continue`. Taking the unchanged local side remains
+a valid resolution. Continue requires:
 
 - a valid sync note;
 - no remaining markers;
 - a clean docs index and worktree;
-- committed resolution work;
+- any resolution edits represented by committed `HEAD` content;
 - HEAD on the sync's entry history or a descendant;
-- an absorption proof that the resolution did not silently discard unrelated
-  canonical content.
+- a recorded merge tree whose non-conflicting paths remain unchanged in the
+  committed resolution.
 
-Completion records the target base, reports merge drift, and clears the note. It
-does not create another commit. `sanho sync --abort` restores docs from current
-`HEAD`, restores the recorded previous base when it can be corroborated
-(otherwise clears it), and clears the note. Existing commits remain. A corrupt
-note still counts as active, so publication and mutation remain blocked while
-abort stays available.
+Differences on recorded conflict paths are the merge drift of an accepted
+resolution. A difference anywhere else, or a legacy note with no recorded merge
+tree, leaves the note and previous base untouched. Completion records the target
+base and clears the note without creating another commit. `sanho sync --abort`
+restores docs from current `HEAD`, restores the recorded previous base when it
+can be corroborated (otherwise clears it), and clears the note. Existing commits
+remain. A corrupt note still counts as active, so publication and mutation
+remain blocked while abort stays available.
 
 `sanho sync --rebase-onto <commit>` is the explicit recovery path after a
 canonical history rewrite. The target must exist in the private clone and be a

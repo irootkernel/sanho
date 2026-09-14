@@ -24,15 +24,14 @@ This file records concise shipped outcomes and the planned next stable release.
 - Route documentation review through AGY while retaining ZCode for the other
   configured review roles, and align the repository agent guidance with the
   expanded workflows and their tracked Procedure v2 authorities.
-
 - Adopt a canonical single-delivery-scope documentation index with explicit
   semantic role ownership, roadmap identity, and TODO dossier lifecycle while
   preserving the established document paths.
 
 ### Fixed
 
-- Prevent publication after a conflicted sync resolution drops unrelated
-  canonical content, preserving canonical-only files until provenance is restored.
+- Refuse to complete a conflicted sync when its resolution drops unrelated
+  canonical content, preserving the previous base and canonical-only files.
 
 ## v0.2.7 - 2026-08-18
 

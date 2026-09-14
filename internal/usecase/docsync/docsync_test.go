@@ -678,7 +678,7 @@ func TestResolutionStateComparesOnlyTheConflictedPaths(t *testing.T) {
 
 // --- `sanho sync --continue`: completion as an act ---------------------
 
-// TestContinueRefusesWhatIsNotReady walks the three preconditions. Each
+// TestContinueRefusesWhatIsNotReady walks the refusal preconditions. Each
 // refusal names what remains, and none of them writes anything: a
 // refused completion must leave the workspace exactly as unfinished as
 // it found it, or the next attempt is answering a different question.
@@ -708,6 +708,14 @@ func TestContinueRefusesWhatIsNotReady(t *testing.T) {
 				f.app.docsClean = false
 			},
 			want: ErrResolutionUncommitted,
+		},
+		{
+			name: "the resolution changed a path that did not conflict",
+			arrange: func(f *fixture) {
+				f.state.note = liveNote()
+				f.app.treeChangedPaths = []string{"docs/api.md", "docs/guide.md"}
+			},
+			want: ErrResolutionChangedNonConflicts,
 		},
 		{
 			name: "the note cannot be read",
@@ -770,6 +778,7 @@ func TestContinueRefusesWhatIsNotReady(t *testing.T) {
 func TestContinueCompletesTheSync(t *testing.T) {
 	f := newFixture()
 	f.state.note = liveNote()
+	f.app.treeChangedPaths = []string{"docs/api.md"}
 	entryHead := f.state.note.EntryHead
 
 	result, err := f.useCase().Continue(context.Background())
@@ -781,7 +790,10 @@ func TestContinueCompletesTheSync(t *testing.T) {
 	if result.Base != target {
 		t.Fatalf("adopted base = %+v, want the note's target %+v", result.Base, target)
 	}
-	if got := f.shared.trace(); got != "scan docs-clean clear-note save-sync-target-base" {
+	if result.MergeDrift != 1 {
+		t.Fatalf("merge drift = %d, want the one resolved conflict", result.MergeDrift)
+	}
+	if got := f.shared.trace(); got != "scan docs-clean tree-diff clear-note save-sync-target-base" {
 		t.Fatalf("sequence = %q, want the note dropped BEFORE the base moved", got)
 	}
 	// The completion hands the guard the note's own evidence, so the
@@ -862,11 +874,11 @@ func TestContinueCompletesATakeOursResolution(t *testing.T) {
 	}
 }
 
-// TestContinueCompletesALegacyNote is the other escape the verb opens.
-// A note written before the entry fields existed cannot prove anything,
-// so the previous design could only ever abort it — and the message it
-// printed explained the refusal with a reason nothing knew to be true.
-func TestContinueCompletesALegacyNote(t *testing.T) {
+// TestContinueRefusesALegacyNote fails old state safely. Without the
+// merge tree, completion cannot distinguish a resolved conflict from a
+// discarded clean upstream change. Abort remains available and keeps
+// every committed resolution in HEAD.
+func TestContinueRefusesALegacyNote(t *testing.T) {
 	f := newFixture()
 	f.state.note = &SyncNote{
 		PrevBase:            provenance.Base{Commit: commitOID(0), Tree: treeOID(0)},
@@ -878,11 +890,14 @@ func TestContinueCompletesALegacyNote(t *testing.T) {
 	if err != nil || state != ResolutionUnknown {
 		t.Fatalf("ResolutionState = (%v, %v), want (unknown, nil)", state, err)
 	}
-	if _, err := f.useCase().Continue(context.Background()); err != nil {
-		t.Fatalf("Continue over a legacy note: %v", err)
+	if _, err := f.useCase().Continue(context.Background()); !errors.Is(err, ErrResolutionUnverifiable) {
+		t.Fatalf("Continue over a legacy note = %v, want ErrResolutionUnverifiable", err)
 	}
-	if _, ok, _ := f.state.LoadSyncNote(); ok {
-		t.Error("--continue left the legacy note behind")
+	if _, ok, _ := f.state.LoadSyncNote(); !ok {
+		t.Error("a refused --continue cleared the legacy note")
+	}
+	if len(f.state.savedBases) != 0 {
+		t.Fatalf("a refused --continue advanced the base: %v", f.state.savedBases)
 	}
 }
 
@@ -894,6 +909,7 @@ func liveNote() *SyncNote {
 		Target:        provenance.Base{Commit: commitOID(1), Tree: treeOID(1)},
 		EntryHead:     commitOID(7),
 		EntryDocsTree: treeOID(0),
+		MergedTree:    treeOID(9),
 		Conflicts:     []string{"docs/api.md"},
 	}
 }

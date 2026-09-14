@@ -25,7 +25,7 @@ import (
 //	  "commit":       "<oid>",          // "" when nothing was committed
 //	  "conflicts":    ["docs/api.md"],  // [] unless status is conflicts
 //	  "merge_drift":  0                 // --continue only: how many docs
-//	                                    // paths the completed state
+//	                                    // conflict paths the completed state
 //	                                    // differs from the merge result by
 //	}
 //
@@ -42,8 +42,8 @@ type syncJSON struct {
 	Base      *baseJSON `json:"base"`
 	Commit    string    `json:"commit"`
 	Conflicts []string  `json:"conflicts"`
-	// MergeDrift is how many docs paths the completed state differs from
-	// the merge result by; only `--continue` ever reports a non-zero one.
+	// MergeDrift is how many conflict paths the completed state differs
+	// from the merge result by; only `--continue` reports a non-zero one.
 	MergeDrift int `json:"merge_drift"`
 }
 

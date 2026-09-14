@@ -162,10 +162,10 @@ func writeLegacyNote(t *testing.T, ws *workspace, prev, target string) {
 // ever been exercised in unit tests, and the message the real hooks
 // printed for it stated a reason nothing knew to be true.
 //
-// Such a note cannot say whether a commit settled the conflict, so the
-// tool must not claim that none did — and the workspace must have a way
-// out that is not only the abort. Both are asserted here through `git`
-// and `sanho`, with no test double anywhere.
+// Such a note cannot say whether the committed resolution retained the
+// clean half of the merge. Completion therefore fails closed, while
+// abort preserves committed work and a fresh sync recreates evidence
+// that can be verified.
 func TestALegacyNoteIsDrivenByTheRealHooks(t *testing.T) {
 	t.Parallel()
 
@@ -202,12 +202,22 @@ func TestALegacyNoteIsDrivenByTheRealHooks(t *testing.T) {
 	requireContains(t, "rejection", push.combined(), "is not completed")
 	requireContains(t, "rejection", push.combined(), "no remote ref was changed")
 
-	// And the way out is the ordinary one. Before `--continue` existed,
-	// a legacy note could only be aborted — which threw away a
-	// reconciliation the user had already made.
+	refused := ws.run("sync", "--continue")
+	requireExit(t, "legacy completion", refused, 1)
+	requireContains(t, "legacy refusal", refused.combined(), "sync cannot be completed safely")
+	if !fileExists(t, ws.path(".git", "sanho", "sync.json")) {
+		t.Fatal("a refused legacy completion cleared the sync note")
+	}
+
+	ws.sanho("sync", "--abort")
+	requireEqual(t, "committed resolution after abort", ws.readDocs("api.md"), "line one\nRESOLVED\n")
+	retry := ws.sanho("sync")
+	requireContains(t, "fresh sync", retry.combined(), "have conflicts")
+	ws.writeDocs(map[string]string{"api.md": "line one\nRESOLVED\n"})
+	ws.git("add", "docs/api.md")
 	completed := ws.sanho("sync", "--continue")
 	requireContains(t, "completion", completed.combined(), "sync completed")
-	requireEqual(t, "base file after --continue", recordedBase(t, ws), theirs)
+	requireEqual(t, "base file after verified --continue", recordedBase(t, ws), theirs)
 
 	final := ws.push()
 	requireExit(t, "push after completing a legacy note", final, 0)

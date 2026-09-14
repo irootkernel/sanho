@@ -363,7 +363,9 @@ command needs no recorded base.
 | `aborted` | `sync --abort` restored docs from current `HEAD`, restored or cleared the previous base, and cleared the sync note; existing commits remain |
 
 `merge_drift` is non-zero only when a completed resolution differs from the
-merge result. `pull --json` uses the same schema.
+merge result on recorded conflict paths. A difference on any other path rejects
+completion with the standard `sync_in_progress` failure envelope and leaves the
+sync note and previous base in place. `pull --json` uses the same success schema.
 
 ## `preview`
 

@@ -34,12 +34,15 @@ sanho sync --continue
 ```
 
 Continue verifies the original sync history, committed resolution, absence of
-markers, clean docs state, and canonical-content absorption. It records the
-target base and clears the note without creating another commit.
+markers, clean docs state, and preservation of every non-conflicting merge
+result. It records the target base and clears the note without creating another
+commit.
 
-If continue reports merge drift, review the stated count. Drift is information
-about how the final resolution differs from the original merge result, not an
-automatic failure.
+An accepted completion may report merge drift on the paths that conflicted. If
+another path differs, continue fails without moving the base or clearing the
+note. Run `sanho sync --abort`, then run `sanho sync` again and preserve the
+non-conflicting upstream changes. Make any intentional changes to those paths
+after completing the new sync.
 
 ### Abort
 

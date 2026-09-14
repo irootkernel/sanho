@@ -303,6 +303,7 @@ func TestMessagesAreEnglishOnly(t *testing.T) {
 		syncNeedsContinueMessage("a", "b", true),
 		syncNeedsContinueMessage("a", "b", false),
 		syncContinueBlockedMessage("markers remain"),
+		syncContinueUnverifiedMessage("docs/guide.md changed even though it did not conflict"),
 		baseRederivedMessage("abc"),
 		stagedMarkersMessage([]string{"docs/a.md"}),
 		unresolvedSyncMessage("docs", []string{"docs/a.md"}),

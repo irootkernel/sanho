@@ -492,6 +492,17 @@ func syncContinueBlockedMessage(detail string) string {
 		"Or run 'sanho sync --abort' to undo the sync.", detail)
 }
 
+// syncContinueUnverifiedMessage refuses to advance the base when the
+// completed tree cannot be shown to retain the clean half of the merge.
+// Abort preserves committed resolution work because it restores docs
+// from HEAD; the following sync recreates the merge with current
+// canonical content.
+func syncContinueUnverifiedMessage(detail string) string {
+	return fmt.Sprintf("sanho: the sync cannot be completed safely (%s)\n"+
+		"Run 'sanho sync --abort', then run 'sanho sync' again and preserve every non-conflicting upstream change.\n"+
+		"After that sync is complete, make any intentional changes to those files in a separate commit.", detail)
+}
+
 // syncNoteCorruptMessage covers a sync note that is present and
 // unreadable.
 //
@@ -564,12 +575,9 @@ func baseNotAdvancedMessage(cause string) string {
 // syncCompletedMessage reports a completed `sanho sync --continue`: the
 // note is gone and the base names the state the docs now derive from.
 //
-// drift is how many docs paths differ between the merge result and what
-// was actually completed. It is reported, never refused: completing a
-// sync whose clean half was reverted along with its conflicts is the
-// legitimate "keep my own lines" reading, and it also silently drops
-// upstream content the user was never shown a conflict for. Saying so is
-// the difference between a decision and an accident.
+// drift is how many recorded conflict paths differ between the merge
+// result and what was actually completed. Changes outside those paths
+// are refused before this renderer is reached.
 func syncCompletedMessage(base string, drift int) string {
 	line := fmt.Sprintf("sanho: sync completed; docs base is now %s", shortOID(base))
 	if drift == 0 {
@@ -1172,6 +1180,15 @@ var Catalog = []CatalogEntry{
 		Match:         "the sync is not ready to be completed",
 		NextCommands:  []string{"git add docs/ && git commit", "sanho sync --continue", "sanho sync --abort"},
 		Prerequisites: map[string][]string{"sanho sync --continue": {"git add docs/ && git commit"}},
+	},
+	{
+		ID:            "sync_continue_unverified",
+		Source:        "syncContinueUnverifiedMessage",
+		Scenario:      "sync_continue_unverified",
+		Sample:        syncContinueUnverifiedMessage("docs/guide.md changed even though it did not conflict"),
+		Match:         "the sync cannot be completed safely",
+		NextCommands:  []string{"sanho sync --abort", "sanho sync"},
+		Prerequisites: map[string][]string{"sanho sync": {"sanho sync --abort"}},
 	},
 	{
 		ID:           "sync_note_corrupt",

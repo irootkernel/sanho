@@ -297,12 +297,11 @@ func ClearBase(workDir string) error {
 // revert, or a `git checkout HEAD -- docs`. Reading that wrongly costs a
 // misdirected sentence and nothing more.
 //
-// For COMPLETION, it is the precondition: `sanho sync --continue`
-// requires HEAD to be EntryHead or a descendant of it. Every other
-// precondition is a question about the worktree, and a branch switch
-// satisfies all of them while replacing the documents entirely — which
-// is how a sync came to be completed on history that never took part in
-// it, leaving a base ahead of the docs beneath it.
+// For COMPLETION, it is one history precondition: `sanho sync --continue`
+// requires HEAD to be EntryHead or a descendant of it. MergedTree and
+// Conflicts provide the separate content precondition below; together
+// they prevent completion from foreign history or after clean upstream
+// output has been discarded.
 type SyncNote struct {
 	PrevBase  provenance.Base `json:"prev_base"`
 	Target    provenance.Base `json:"target"`
@@ -315,10 +314,9 @@ type SyncNote struct {
 	// EntryDocsTree is HEAD's docs tree at the same moment.
 	EntryDocsTree string `json:"entry_docs_tree"`
 	// MergedTree is the docs tree the conflicted merge produced, markers
-	// included. It is what `sanho sync --continue` compares the completed
-	// worktree against in order to report how far the completion drifted
-	// from the merge — a note written before the field existed simply
-	// carries "", which reads as "unknown" rather than as "no drift".
+	// included. `sanho sync --continue` uses it to allow resolution drift
+	// only on Conflicts. A note written before this field existed carries
+	// "" and must be aborted and recreated before completion.
 	MergedTree string `json:"merged_tree"`
 	// Conflicts are the docs paths the merge could not settle,
 	// repository-relative. They are what makes the resolution test

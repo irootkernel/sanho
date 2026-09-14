@@ -11,6 +11,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -72,6 +73,31 @@ func buildDocsTree(t *testing.T, dir string, files map[string]blobSpec) string {
 		t.Fatalf("write the composed tree: %v", err)
 	}
 	return tree
+}
+
+func TestDocsTreeChangedPathsReturnsSortedRepositoryPaths(t *testing.T) {
+	dir := newRepo(t)
+	from := buildDocsTree(t, dir, map[string]blobSpec{
+		"changed.md": regular("before\n"),
+		"deleted.md": regular("deleted\n"),
+		"link.md":    regular("plain file\n"),
+		"mode.md":    regular("mode\n"),
+	})
+	to := buildDocsTree(t, dir, map[string]blobSpec{
+		"added.md":   regular("added\n"),
+		"changed.md": regular("after\n"),
+		"link.md":    symlink("changed.md"),
+		"mode.md":    executable("mode\n"),
+	})
+
+	got, err := newRepoHandle(t, dir).DocsTreeChangedPaths(context.Background(), from, to)
+	if err != nil {
+		t.Fatalf("DocsTreeChangedPaths: %v", err)
+	}
+	want := []string{"docs/added.md", "docs/changed.md", "docs/deleted.md", "docs/link.md", "docs/mode.md"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("changed paths = %v, want %v", got, want)
+	}
 }
 
 // statusOutsideDocs renders `git status --porcelain` with every docs

@@ -336,9 +336,10 @@ git push
 
 The commit is ordinary git work; `sanho sync --continue` is what ends the sync.
 It clears the sync note and moves the docs base to the merge target — no commit,
-no network — and until you run it, `git push` is refused and says so. That is
-also how you take your own side wholesale: if the docs already read the way you
-want them, `sanho sync --continue` completes the sync as it stands.
+no network — and until you run it, `git push` is refused and says so. Continue
+allows any resolution on the paths that conflicted, including taking your side
+unchanged. It refuses to advance the base if the resolution also changed or
+omitted a non-conflicting upstream path; abort and run sync again in that case.
 
 Or undo it:
 

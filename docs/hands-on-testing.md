@@ -214,10 +214,10 @@ not force-push a shared remote.
    target from what those two commands showed.
 3. Reject a nonexistent target.
 4. Resolve against the candidate while intentionally omitting a canonical-only
-   file. `sanho sync --continue` reports the difference as `merge_drift` rather
-   than refusing it, so the boundary that must hold is publication: the push has
-   to be refused and the canonical-only file must survive in canonical.
-5. Restore the file, amend the resolution, continue, and publish successfully.
+   file. `sanho sync --continue` must refuse, retain the active sync and previous
+   base, and leave the canonical-only file unchanged in canonical.
+5. Follow the refusal guidance: abort, sync again, preserve the clean addition,
+   resolve the conflict, continue, and publish successfully.
 6. Repeat against a canonical that carries `master` and no `main`. Sanho must
    resolve the publication branch itself: `status` and `log --json` must both
    report `master`, `sanho log` must read `refs/remotes/origin/master` and

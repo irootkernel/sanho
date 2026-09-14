@@ -241,6 +241,7 @@ var closureFixtures = map[string]closureFixture{
 	"sync_not_committed":             reachSyncNotCommitted,
 	"sync_needs_continue":            reachSyncNeedsContinue,
 	"sync_continue_blocked":          reachSyncContinueBlocked,
+	"sync_continue_unverified":       reachSyncContinueUnverified,
 	"sync_note_corrupt":              reachSyncNoteCorrupt,
 	"push_markers":                   reachPushMarkers,
 	"canonical_unreachable":          reachCanonicalUnreachable,
@@ -721,6 +722,47 @@ func reachSyncContinueBlocked(t *testing.T, w *world) closureState {
 		output:  out.combined(),
 		prepare: resolveMarkersFirst(),
 		verify:  resolutionOutcomes(),
+	}
+}
+
+// reachSyncContinueUnverified omits a clean upstream addition while
+// resolving a separate conflict. Completion must retain the note and
+// old base, then route through abort and a fresh sync that materializes
+// the clean addition again.
+func reachSyncContinueUnverified(t *testing.T, w *world) closureState {
+	ws := w.setup("continue-unverified")
+
+	ws.commitDocs("docs: my edit", map[string]string{"api.md": "line one\nMINE\n"})
+	w.advanceCanonical(
+		map[string]string{"api.md": "line one\nTHEIRS\n", "guide.md": "clean upstream addition\n"},
+		"canonical: their edit plus an addition")
+	requireContains(t, "sync output", ws.sanho("sync").combined(), "have conflicts")
+
+	ws.writeDocs(map[string]string{"api.md": "line one\nRESOLVED\n"})
+	removeFile(t, ws.docsPath("guide.md"))
+	ws.git("add", "-A", "docs")
+	ws.git("commit", "-m", "docs: resolve without the clean addition")
+
+	refused := ws.run("sync", "--continue")
+	requireExit(t, "lossy completion", refused, 1)
+
+	return closureState{
+		ws:     ws,
+		output: refused.combined(),
+		verify: map[string]func(*testing.T, *workspace){
+			"sanho sync --abort": func(t *testing.T, ws *workspace) {
+				if fileExists(t, ws.path(".git", "sanho", "sync.json")) {
+					t.Error("abort left the sync note behind")
+				}
+				requireEqual(t, "resolved HEAD", ws.readDocs("api.md"), "line one\nRESOLVED\n")
+			},
+			"sanho sync": func(t *testing.T, ws *workspace) {
+				requireEqual(t, "clean upstream addition", ws.readDocs("guide.md"), "clean upstream addition\n")
+				if !fileExists(t, ws.path(".git", "sanho", "sync.json")) {
+					t.Error("the fresh sync did not retain its conflict note")
+				}
+			},
+		},
 	}
 }
 

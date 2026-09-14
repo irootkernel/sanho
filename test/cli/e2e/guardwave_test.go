@@ -140,10 +140,9 @@ func TestContinueStillCompletesOnTheSyncsOwnHistory(t *testing.T) {
 	})
 }
 
-// TestContinueReportsDriftFromTheMergeResult is W2's semantic warning:
-// a worktree reverted past the clean part of the merge completes anyway,
-// and says how far it drifted rather than pretending the merge result is
-// what was adopted.
+// TestContinueReportsDriftFromTheMergeResult keeps take-ours available
+// on the path that actually conflicted and reports that resolution as
+// drift from the marker-bearing merge tree.
 func TestContinueReportsDriftFromTheMergeResult(t *testing.T) {
 	t.Parallel()
 
@@ -151,11 +150,7 @@ func TestContinueReportsDriftFromTheMergeResult(t *testing.T) {
 	ws := w.setup("merge-drift")
 
 	ws.commitDocs("docs: my edit", map[string]string{"api.md": "line one\nMINE\n"})
-	// Canonical changes the conflicting file AND adds a clean one, so the
-	// merge result carries content the user never sees after a stash.
-	w.advanceCanonical(
-		map[string]string{"api.md": "line one\nTHEIRS\n", "guide.md": "clean upstream addition\n"},
-		"canonical: their edit plus an addition")
+	w.advanceCanonical(map[string]string{"api.md": "line one\nTHEIRS\n"}, "canonical: their edit")
 
 	requireContains(t, "sync", ws.sanho("sync").combined(), "have conflicts")
 	ws.git("stash", "push", "--quiet", "--", "docs")
@@ -178,17 +173,30 @@ func TestPublicationRejectsAResolutionThatDropsCleanCanonicalContent(t *testing.
 
 	requireContains(t, "sync", ws.sanho("sync").combined(), "have conflicts")
 	ws.writeDocs(map[string]string{"api.md": "line one\nRESOLVED\n"})
+	removeFile(t, ws.docsPath("guide.md"))
 	ws.git("add", "-A", "docs")
 	ws.git("commit", "-m", "docs: resolve without the clean addition")
 
-	out := ws.sanho("sync", "--continue")
-	requireContains(t, "completion", out.combined(), "sync completed")
-	requireContains(t, "drift line", out.combined(), "differ from the merge result")
-
 	before := w.canonicalHead()
-	push := ws.gitExit("push", "--quiet", "origin", "main")
-	requireExit(t, "push after lossy resolution", push, 1)
-	requireContains(t, "rejection", push.combined(), "docs provenance does not corroborate canonical head")
+	baseBefore := recordedBase(t, ws)
+	out := ws.run("sync", "--continue")
+	requireExit(t, "lossy completion", out, 1)
+	requireContains(t, "rejection", out.combined(), "sync cannot be completed safely")
+	requireContains(t, "omitted path", out.combined(), "docs/guide.md")
+	requireEqual(t, "recorded base", recordedBase(t, ws), baseBefore)
+	if !fileExists(t, ws.path(".git", "sanho", "sync.json")) {
+		t.Fatal("a refused completion cleared the sync note")
+	}
+
+	jsonOut := ws.run("sync", "--continue", "--json")
+	requireExit(t, "lossy completion JSON", jsonOut, 1)
+	requireContains(t, "JSON error code", jsonOut.combined(), `"code": "sync_in_progress"`)
+	requireContains(t, "JSON omitted path", jsonOut.combined(), "docs/guide.md")
+	requireEqual(t, "recorded base after JSON retry", recordedBase(t, ws), baseBefore)
+	if !fileExists(t, ws.path(".git", "sanho", "sync.json")) {
+		t.Fatal("a refused JSON completion cleared the sync note")
+	}
+
 	requireEqual(t, "canonical head", w.canonicalHead(), before)
 	if got := w.canonicalFile(before, "guide.md"); got != "clean upstream addition\n" {
 		t.Fatalf("canonical guide.md = %q, want preserved upstream content", got)

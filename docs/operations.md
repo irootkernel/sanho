@@ -150,6 +150,10 @@ git commit -m "docs: resolve canonical sync"
 sanho sync --continue
 ```
 
+Continue accepts changes to the reported conflict paths. If the committed
+resolution also changes or omits a non-conflicting upstream path, it retains the
+sync note and previous base and directs you to abort and run sync again.
+
 Do not infer this result from exit code alone. With `--json`, read `status` and
 `conflicts`.
 

@@ -58,6 +58,12 @@ func reportSyncError(cmd *cobra.Command, ws *workspace, err error) error {
 	case errors.Is(err, docsync.ErrContinueForeignHistory):
 		writeln(stderr, syncContinueForeignHistoryMessage(errDetail(err, docsync.ErrContinueForeignHistory)))
 
+	case errors.Is(err, docsync.ErrResolutionChangedNonConflicts):
+		writeln(stderr, syncContinueUnverifiedMessage(errDetail(err, docsync.ErrResolutionChangedNonConflicts)))
+
+	case errors.Is(err, docsync.ErrResolutionUnverifiable):
+		writeln(stderr, syncContinueUnverifiedMessage(errDetail(err, docsync.ErrResolutionUnverifiable)))
+
 	// `--continue`'s own two refusals. They come before the generic
 	// dirty-docs reading because they describe the same worktree from a
 	// different question: not "commit before reconciling" but "your
@@ -314,6 +320,8 @@ func machineErrorCode(err error) string {
 	case errors.Is(err, docsync.ErrBaseNotCorroborated):
 		return codeBaseNotCorroborated
 	case errors.Is(err, docsync.ErrContinueForeignHistory):
+		return codeSyncInProgress
+	case errors.Is(err, docsync.ErrResolutionChangedNonConflicts), errors.Is(err, docsync.ErrResolutionUnverifiable):
 		return codeSyncInProgress
 	case errors.Is(err, docsync.ErrDocsDirty), errors.Is(err, docsync.ErrResolutionUncommitted):
 		return codeDocsDirty

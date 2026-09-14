@@ -44,7 +44,9 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/irootkernel/sanho/internal/domain/markers"
@@ -167,24 +169,24 @@ func (r *Repo) DocsPathsChangedBetween(ctx context.Context, fromTree, toTree str
 	return false, nil
 }
 
-// DocsTreeDifferences counts the paths that differ between two docs
-// trees, whatever they are.
-//
-// It answers a reporting question rather than a gate one: `sanho sync
-// --continue` completes a sync whose merge result the worktree may no
-// longer resemble, and the user is told how far it drifted rather than
-// left to assume the merge is what was adopted. Two identical trees, or
-// an unrecorded one, are "no difference" — the reading that keeps a
-// missing fact from being reported as a change.
-func (r *Repo) DocsTreeDifferences(ctx context.Context, fromTree, toTree string) (int, error) {
+// DocsTreeChangedPaths returns every repository-relative docs path that
+// differs between two trees. The names come from Git as tree-relative
+// paths, so the adapter restores the docs prefix before returning them
+// to the use case. Sorting makes error output deterministic.
+func (r *Repo) DocsTreeChangedPaths(ctx context.Context, fromTree, toTree string) ([]string, error) {
 	if fromTree == "" || toTree == "" || fromTree == toTree {
-		return 0, nil
+		return nil, nil
 	}
 	res, err := r.git.Run(ctx, "diff-tree", "-r", "-z", "--name-only", fromTree, toTree)
 	if err != nil {
-		return 0, fmt.Errorf("appgit: diff docs trees %s..%s in %s: %w", fromTree, toTree, r.workDir, err)
+		return nil, fmt.Errorf("appgit: diff docs trees %s..%s in %s: %w", fromTree, toTree, r.workDir, err)
 	}
-	return len(splitNULPaths(res.Stdout)), nil
+	names := splitNULPaths(res.Stdout)
+	for index, name := range names {
+		names[index] = path.Join(r.docsDir, name)
+	}
+	sort.Strings(names)
+	return names, nil
 }
 
 // CheckoutDocsTree materializes tree — a *docs* tree, whose entries are

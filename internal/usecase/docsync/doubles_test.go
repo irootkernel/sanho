@@ -99,12 +99,12 @@ type fakeApp struct {
 	// different; diffErr makes the comparison itself fail.
 	changedPaths map[string]bool
 	diffErr      error
-	// treeDiffs is the count DocsTreeDifferences reports for two
-	// different trees, and ancestors is IsAncestor's answer table keyed
-	// "a->b".
-	treeDiffs   int
-	ancestors   map[string]bool
-	ancestryErr error
+	// treeChangedPaths is the repository-relative answer returned for a
+	// comparison of two different docs trees, and ancestors is
+	// IsAncestor's answer table keyed "a->b".
+	treeChangedPaths []string
+	ancestors        map[string]bool
+	ancestryErr      error
 
 	commitOID string
 
@@ -196,18 +196,14 @@ func (a *fakeApp) DocsPathsChangedBetween(ctx context.Context, fromTree, toTree 
 	return false, nil
 }
 
-// DocsTreeDifferences counts differing paths for the `--continue` drift
-// report. The doubles model trees as opaque OIDs, so "different" is
-// simply "not the same tree"; treeDiffs lets a test name a count.
-func (a *fakeApp) DocsTreeDifferences(ctx context.Context, fromTree, toTree string) (int, error) {
+// DocsTreeChangedPaths returns the configured repository-relative paths
+// for the `--continue` merge-result guard.
+func (a *fakeApp) DocsTreeChangedPaths(ctx context.Context, fromTree, toTree string) ([]string, error) {
 	a.record("tree-diff")
 	if fromTree == "" || toTree == "" || fromTree == toTree {
-		return 0, nil
+		return nil, nil
 	}
-	if a.treeDiffs != 0 {
-		return a.treeDiffs, nil
-	}
-	return 1, nil
+	return append([]string(nil), a.treeChangedPaths...), nil
 }
 
 // IsAncestor answers `--continue`'s history precondition. ancestors maps
