@@ -4,6 +4,11 @@ This file records concise shipped outcomes and the planned next stable release.
 
 ## v0.2.9 - Unreleased
 
+### Changed
+
+- Update Aquarium procedures for v0.1.16 handler compatibility across task,
+  goal, validation, design, and war-room workflows.
+
 ## v0.2.8 - 2026-09-14
 
 ### Added
