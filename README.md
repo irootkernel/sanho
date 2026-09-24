@@ -35,7 +35,7 @@ when it changes docs. A conflicted sync uses the standard Git idiom: resolve,
 
 ## Requirements
 
-- Go 1.25 or later — **to install only.** The installed binary does not need Go.
+- Go 1.27 or later — **to install only.** The installed binary does not need Go.
 - Git. No minimum version is enforced; merge paths use `git merge-tree
   --write-tree`, which needs git 2.38 or newer in practice.
 - macOS or Linux.

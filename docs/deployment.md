@@ -5,7 +5,8 @@ container image, or frontend asset to deploy.
 
 ## Requirements
 
-- Go 1.25 or newer to build.
+- Go 1.27 or newer to build. On macOS, the Go 1.27 toolchain requires macOS 13
+  Ventura or newer.
 - Git at runtime. No minimum is enforced; merge paths require Git 2.38 or newer
   in practice.
 - Read/write credentials for the canonical docs repository.

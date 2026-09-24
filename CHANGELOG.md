@@ -6,6 +6,8 @@ This file records concise shipped outcomes and the planned next stable release.
 
 ### Changed
 
+- Require Go 1.27 to build and test Sanho, and update the CI toolchain and
+  module dependencies, including golangci-lint v2.14.0.
 - Update Aquarium procedures for v0.1.16 handler compatibility across task,
   goal, validation, design, and war-room workflows.
 
