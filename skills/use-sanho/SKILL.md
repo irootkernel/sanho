@@ -23,12 +23,17 @@ Activate this skill only at the Git boundaries or for the requests above.
    nor failure. Never repeat a successful commit or run sync merely because of
    that warning. Reconcile an uncertain result through
    [recovery](references/recovery.md#reconcile-the-affected-state) before retrying.
-3. Before an authorized push, run `sanho status --refresh --json`. If current
-   state requires reconciliation, run `sanho sync` within the existing
-   authorization for that target and its effects, including any commits it
-   creates. After a rejection, follow the complete CLI-advised recovery sequence
-   and retry the same authorized push. Do not ask again for effects already
-   covered; obtain authority if the target or effects exceed that scope.
+3. Before an authorized push, run `sanho status --refresh --json`. Its canonical
+   fetch is covered by that push's authorization; it needs no separate network
+   approval. If current state requires reconciliation, run `sanho sync` within
+   the existing authorization for that target and its effects, including any
+   commits it creates. If Sanho's pre-push hook rejects, follow its complete
+   CLI-advised recovery sequence. If the application
+   remote rejects after Sanho published docs, check both remote outcomes before
+   retrying; the docs publication and local commits remain in place. For a
+   partial multi-ref result, check that retrying an outstanding ref preserves
+   current canonical docs. Do not ask again for effects already covered;
+   obtain authority if the target or effects exceed that scope.
 4. Follow Sanho's current output in order, including prerequisites such as
    resolve, stage, commit, then `sanho sync --continue`. Load
    [recovery](references/recovery.md) for the failure being handled. When Sanho

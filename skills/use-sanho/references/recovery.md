@@ -33,10 +33,14 @@ run `sanho sync --continue --json`. Inspect current state and omit steps already
 completed; do not create a duplicate resolution commit. Keep resolution edits
 and commits within the existing authorization.
 
-A plain sync can exit 0 with `status: conflicts`. Continue refuses unresolved
-markers or an uncommitted resolution, reports `completed` on success, and may
-report merge drift. Review that count; it is not an automatic failure.
-Re-read local status after completion.
+A plain sync can exit 0 with `status: conflicts`. If continue refuses remaining
+markers or uncommitted resolution edits, finish the named steps before retrying.
+If HEAD is outside the sync's entry history or continue cannot verify the merge's
+non-conflicting paths, follow its abort-then-sync guidance after obtaining
+explicit abort intent; another resolution commit or repeated continue will not
+repair that state. Continue reports `completed` on success and may report drift
+on conflict paths. Review that count; it is not an automatic failure. Re-read
+local status after completion.
 
 To discard the whole active sync, require explicit abort intent, preserve
 unrelated work, and run `sanho sync --abort --json`. Abort is designed to be
@@ -70,6 +74,19 @@ For `canonical_unreachable`, restore connectivity within the authorized scope
 and refresh state. Retry only after establishing the original operation's
 outcome and current preconditions. Do not delete the private clone or bypass
 pre-push.
+Sanho's pre-push can publish docs before Git updates application remote refs.
+If that remote then rejects one or more ref updates, the canonical publication
+remains. Other refs in a non-atomic push may have advanced even when Git exits
+nonzero. Check the per-ref Git result, current application refs, and refreshed
+canonical publication before choosing a remedy.
+Do not repeat a local commit or sync for work that already completed. A partial
+multi-ref failure needs an additional docs check: retrying a rejected ref alone
+can republish its older docs tree and remove content from an accepted ref. Before
+retrying outstanding updates, verify their proposed publication preserves the
+current canonical content that must remain. Reconcile any tip that would discard
+it, with authorization for any new edits or sync effects. Retry only when the
+remaining targets, effects, and current preconditions are covered by the
+existing authorization.
 If a push result is uncertain, compare current application and canonical refs
 and publication evidence before deciding whether another push is needed;
 old stderr is not proof of the current result.

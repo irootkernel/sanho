@@ -193,8 +193,18 @@ git push
 ```
 
 There is no `sanho push`. The pre-push hook publishes docs to canonical before
-Git updates the application remote. It either succeeds completely or rejects
-the application push before any application remote ref changes.
+Git updates the application remote. A hook rejection stops the application
+push before any application remote ref changes.
+
+After a successful pre-push publication, the application remote may still
+reject one or more ref updates. The docs publication remains in canonical.
+Other refs in a non-atomic push may have advanced even when Git exits nonzero.
+Check the per-ref push result, current application refs, and canonical ref
+before retrying. A rejected ref's older docs tree can remove content published
+from an accepted ref if retried alone. Verify that the proposed publication
+preserves canonical content that must remain, and reconcile a divergent tip
+before retrying it. Do not repeat an already completed local commit or sync
+just because the application push failed.
 
 Expected outcomes include:
 

@@ -11,6 +11,11 @@ This file records concise shipped outcomes and the planned next stable release.
 - Update Aquarium procedures for v0.1.16 handler compatibility across task,
   goal, validation, design, and war-room workflows.
 
+### Fixed
+
+- Correct agent recovery guidance for rejected sync continuation and partial
+  application pushes after canonical docs publication.
+
 ## v0.2.8 - 2026-09-14
 
 ### Added
