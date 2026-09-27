@@ -24,8 +24,8 @@ reports an availability error rather than guessing a completion verdict.
 
 ## Authorities and baseline
 
-- Public target contract: [planned CLI diagnostics](../cli-json.md#planned-structured-sync-diagnostics).
-- Implementation target: [planned assessment architecture](../architecture.md#planned-structured-diagnostics-and-sync-inspection).
+- Public target contract: [CLI diagnostics](../cli-json.md#sync-inspection).
+- Implementation target: [assessment architecture](../architecture.md#structured-diagnostics-and-sync-inspection).
 - Current safety and recovery: [architecture](../architecture.md) and [recovery](../recovery.md).
 - Existing operational boundary: [operations](../operations.md) and the source-distributed [skill](../../skills/use-sanho/SKILL.md).
 - Verification entrypoint and package ownership: [Makefile](../../Makefile).
@@ -268,49 +268,49 @@ Verify and finish:
 
 Implement:
 
-- [ ] Add the mutually exclusive inspection mode and argument validation before
+- [x] Add the mutually exclusive inspection mode and argument validation before
   clone setup, mutation, or network calls.
-- [ ] Bind TASK-006's strict application and worktree-local readers without
+- [x] Bind TASK-006's strict application and worktree-local readers without
   the normal sync clone-ensuring constructor or registry updates. Apply the
   execution policy throughout nested reads, not just to final tree comparison.
-- [ ] Stop with TASK-007's availability error when a reached fact cannot be
+- [x] Stop with TASK-007's availability error when a reached fact cannot be
   obtained under that policy. Preserve earlier no-note, corrupt-note, or marker
   diagnoses instead of running later probes or replacing their precedence.
-- [ ] Render the exact planned JSON shape and an equivalent readable report.
+- [x] Render the exact planned JSON shape and an equivalent readable report.
   Mark absent, unknown, skipped, corrupt, and changed observations explicitly.
-- [ ] Expose the first blocker, recorded conflict paths, and allowed/unexpected
+- [x] Expose the first blocker, recorded conflict paths, and allowed/unexpected
   path differences when comparison is reached.
-- [ ] Compare HEAD and note identity/content around assessment, invalidate a
+- [x] Compare HEAD and note identity/content around assessment, invalidate a
   detected change, and keep observation bounded without automatic retry loops.
-- [ ] Use the shared catalog only where guidance is needed. Quote unusual paths
+- [x] Use the shared catalog only where guidance is needed. Quote unusual paths
   safely in text and preserve them losslessly in JSON.
-- [ ] Promote the implemented inspection CLI contract and architecture section
+- [x] Promote the implemented inspection CLI contract and architecture section
   and add conditional usage to operations/recovery without claiming final Epic
   acceptance.
 
 Do not:
 
-- [ ] Treat a missing note as a failed diagnostic, or a corrupt note as absent.
-- [ ] Return a successful empty/ready report for Git, I/O, missing-object, or
+- [x] Treat a missing note as a failed diagnostic, or a corrupt note as absent.
+- [x] Return a successful empty/ready report for Git, I/O, missing-object, or
   scan-limit failures that prevent assessment.
-- [ ] Change the ordinary sync success schema or add refresh/apply/repair flags.
-- [ ] Require a canonical clone or adopt the note's target while inspecting it.
-- [ ] Disable user filters and then return a guessed verdict, run a configured
+- [x] Change the ordinary sync success schema or add refresh/apply/repair flags.
+- [x] Require a canonical clone or adopt the note's target while inspecting it.
+- [x] Disable user filters and then return a guessed verdict, run a configured
   program even on an error path, or fall back to ordinary status/sync/Continue.
 
 Verify and finish:
 
-- [ ] CLI integration tests cover none, ready, each blocker, corrupt/legacy
+- [x] CLI integration tests cover none, ready, each blocker, corrupt/legacy
   notes, changed observation, and invalid combinations including an empty
   supplied rebase target.
-- [ ] Inspect with an unavailable remote and with the private clone removed
+- [x] Inspect with an unavailable remote and with the private clone removed
   from an isolated fixture whose required local objects remain available.
-- [ ] Snapshot protected files, refs, index, and Git metadata before/after
+- [x] Snapshot protected files, refs, index, and Git metadata before/after
   inspection, including error paths and a linked-worktree fixture.
-- [ ] Human and JSON outputs agree; blocked inspection exits 0 while actual
+- [x] Human and JSON outputs agree; blocked inspection exits 0 while actual
   refused Continue retains the old nonzero error path. Unavailable inspection
   exits 1 with its error document and no readiness claim.
-- [ ] Extend CLI fixtures with the S13 read-failure subcases, S05 markers
+- [x] Extend CLI fixtures with the S13 read-failure subcases, S05 markers
   outside recorded conflicts, and S20-S22 indirect-execution probes. Assert
   external sentinel files and protected state remain unchanged on success,
   diagnostic refusal, operational error, and cancellation paths.

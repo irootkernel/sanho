@@ -47,9 +47,9 @@ If authorities disagree, report and reconcile the mismatch instead of choosing
 one silently. Do not use release history as current product truth.
 
 An explicitly marked planned section is an adopted implementation target, not
-an available feature. EPIC-003's target interface and design live in the
-planned sections of [CLI JSON](cli-json.md#planned-structured-sync-diagnostics)
-and [architecture](architecture.md#planned-structured-diagnostics-and-sync-inspection).
+an available feature. Implemented sync diagnostics and inspection are defined
+in [CLI JSON](cli-json.md#sync-inspection) and
+[architecture](architecture.md#structured-diagnostics-and-sync-inspection).
 Its [roadmap](roadmap/README.md#epic-003-structured-diagnostics-and-sync-inspection)
 links the temporary delivery dossier. Promote only behavior that has actually
 been implemented and verified; do not replace current operational instructions

@@ -21,6 +21,14 @@ recipe here.
 
 ## Complete or abort a conflicted sync
 
+For a reported active sync or uncertain completion state, run
+`sanho sync --inspect --json` before choosing a recovery action. Read
+`continuation.reason`, `paths`, and `recovery_id` rather than parsing the human
+message. A blocked diagnosis exits 0; a failure to diagnose exits 1. An
+`inspection_unavailable` error requires stopping and reporting the limitation,
+without retrying ordinary status/sync/Continue or changing filters. A ready
+result authorizes no mutation; Continue checks the current state again.
+
 ### Complete
 
 Inspect the markers and decide the correct content from both sides:

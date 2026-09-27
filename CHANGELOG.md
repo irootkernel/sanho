@@ -6,6 +6,9 @@ This file records concise shipped outcomes and the planned next stable release.
 
 ### Added
 
+- Add local `sanho sync --inspect` reports in human and JSON form, with bounded
+  observation checks and explicit refusal when safe evaluation is unavailable.
+
 - Add stable reasons, exact paths, and guidance recovery IDs to sync and pull
   refusal JSON while preserving existing error codes and exit behavior.
 

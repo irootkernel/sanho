@@ -3,9 +3,8 @@
 This index owns required behavior and durable product contracts for Sanho.
 
 - [`../cli-json.md`](../cli-json.md) is the canonical machine-readable CLI
-  contract. Its [planned structured sync diagnostics](../cli-json.md#planned-structured-sync-diagnostics)
-  section owns EPIC-003's adopted target interface and remains explicitly
-  separate from implemented behavior until the corresponding delivery.
+  contract, including structured sync diagnostics and
+  [local inspection](../cli-json.md#sync-inspection).
 - [`../architecture.md`](../architecture.md) owns the current runtime and
   implementation invariants that constrain behavior.
 - The root [`README.md`](../../README.md) owns the public product boundary and

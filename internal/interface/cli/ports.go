@@ -46,8 +46,7 @@ var errV1Workspace = errors.New(msgMigrateRequired)
 var errNotWorkspace = errors.New(msgNotInWorkspace)
 
 // workspace is one resolved managed checkout and everything built from
-// it. Its zero value is never used; openWorkspace is the only
-// constructor.
+// it. Its zero value is never used; openWorkspace is the only constructor.
 type workspace struct {
 	// root is THIS worktree's root — the directory the hooks run in and
 	// the docs live in. For a linked worktree it is the linked one.
@@ -418,6 +417,10 @@ func (s statePort) ClearBase() error { return wsstate.ClearBase(s.workDir) }
 // still a note, and `sanho sync --abort` must be able to clear it.
 func (s statePort) LoadSyncNote() (docsync.SyncNote, bool, error) {
 	note, ok, err := wsstate.LoadSyncNote(s.gitDir)
+	return adaptSyncNote(note, ok, err)
+}
+
+func adaptSyncNote(note wsstate.SyncNote, ok bool, err error) (docsync.SyncNote, bool, error) {
 	switch {
 	case errors.Is(err, wsstate.ErrSyncNoteCorrupt):
 		return docsync.SyncNote{}, true, fmt.Errorf("%w: %s",

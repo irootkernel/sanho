@@ -353,16 +353,20 @@ func LoadSyncNote(gitDir string) (SyncNote, bool, error) {
 	data, err := os.ReadFile(path)
 	switch {
 	case err == nil:
-		var n SyncNote
-		if jsonErr := json.Unmarshal(data, &n); jsonErr != nil {
-			return SyncNote{}, true, fmt.Errorf("%w: %s: %v", ErrSyncNoteCorrupt, path, jsonErr)
-		}
-		return n, true, nil
+		return decodeSyncNote(data, path)
 	case os.IsNotExist(err):
 		return SyncNote{}, false, nil
 	default:
 		return SyncNote{}, false, fmt.Errorf("read sync note %s: %w", path, err)
 	}
+}
+
+func decodeSyncNote(data []byte, path string) (SyncNote, bool, error) {
+	var note SyncNote
+	if err := json.Unmarshal(data, &note); err != nil {
+		return SyncNote{}, true, fmt.Errorf("%w: %s: %v", ErrSyncNoteCorrupt, path, err)
+	}
+	return note, true, nil
 }
 
 // SaveSyncNote / ClearSyncNote manage the note atomically.

@@ -432,19 +432,18 @@ command has a JSON document. The boundary owns that envelope precisely because
 the command it was meant for never executed. A command name that resolves to
 nothing exits 1 at every level of the command tree, not only at the root.
 
-## Planned structured diagnostics and sync inspection
+## Structured diagnostics and sync inspection
 
-For [EPIC-003](roadmap/README.md#epic-003-structured-diagnostics-and-sync-inspection),
-the shared completion assessment and strict local Git readers are implemented
-in TASK-006. TASK-007 adds typed error details and recovery IDs from the existing CLI
-guidance catalog. The public inspection mode and its availability error remain
-planned in [CLI JSON](cli-json.md#planned-structured-sync-diagnostics).
-The roadmap-linked dossier tracks delivery and verification of each part.
+The CLI uses typed completion findings to expose error details and recovery IDs
+from its guidance catalog. Read-only inspection uses the same assessment with
+strict local Git readers; [CLI JSON](cli-json.md#sync-inspection) defines its
+public interface. The [EPIC-003 roadmap](roadmap/README.md#epic-003-structured-diagnostics-and-sync-inspection)
+tracks combined verification and the consumer handoff.
 
 ### One completion assessment
 
 `AssessCompletion` in `internal/usecase/docsync` supplies the completion
-assessment used by `Continue` and available to the planned inspection mode.
+assessment used by `Continue` and inspection.
 It requests facts through read-only ports and never performs completion state
 writes. Its ordered checks are note existence/validity,
 remaining markers, clean docs, entry-history ancestry, a recorded merge tree,
@@ -505,7 +504,7 @@ The initial execution policy is deliberately conservative:
    programs. Include system, global, repository, worktree, include/includeIf,
    and command/environment configuration with Git's normal precedence.
 2. If any effective `filter.<driver>.clean` or `filter.<driver>.process` has a
-   non-empty command, stop before the filter-capable operation with the planned
+   non-empty command, stop before the filter-capable operation with the
    `inspection_unavailable` / `external_filter_configured` error. This first
    implementation gates the configuration, even when that driver might not
    apply to docs. Attribute-scoped exemptions are outside this Epic. Never run
@@ -598,7 +597,7 @@ Keep domain/use-case blocker types independent of CLI wording and recovery
 identifiers. A typed path-bearing cause must preserve `errors.Is` relationships
 with the existing sentinels so error codes, hook handling, and exit behavior
 remain stable for existing outcomes. The new inspection-only availability
-error has its own code in the planned CLI contract; it must not be mapped to
+error has its own code in the inspection CLI contract; it must not be mapped to
 an existing completion refusal. Paths are data carried from Git results, not
 comma-separated text recovered from an error message.
 

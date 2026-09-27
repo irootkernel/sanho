@@ -90,8 +90,8 @@ Aquarium TASK-014 or TASK-015.
   inspection so operators and agents can understand the actual local Continue
   guards without parsing human error messages or retrying mutations.
 - Detailed SOT: [Implementation dossier](../todo/EPIC-003-structured-diagnostics-sync-inspection.md)
-- Target Contracts: [CLI JSON](../cli-json.md#planned-structured-sync-diagnostics),
-  [assessment architecture](../architecture.md#planned-structured-diagnostics-and-sync-inspection)
+- Target Contracts: [CLI JSON](../cli-json.md#sync-inspection),
+  [assessment architecture](../architecture.md#structured-diagnostics-and-sync-inspection)
 - Dependencies: Existing sync completion guards, CLI guidance catalog, and Git
   adapters. No new external service or runtime dependency. TASK-005's existing
   recovery wording must be preserved and reconciled, but its separate review
@@ -107,7 +107,7 @@ Aquarium TASK-014 or TASK-015.
 |---|---|---|---|
 | TASK-006 | Extract the shared read-only completion assessment | Completed | None |
 | TASK-007 | Add structured error details through the guidance catalog | Completed | TASK-006 |
-| TASK-008 | Deliver local read-only sync inspection | Planned | TASK-007 |
+| TASK-008 | Deliver local read-only sync inspection | Completed | TASK-007 |
 | TASK-009 | Verify cross-surface parity and failure boundaries | Planned | TASK-008 |
 | TASK-010 | Update consumer guidance and prepare Epic acceptance | Planned | TASK-009 |
 

@@ -7,6 +7,7 @@ package cli
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/irootkernel/sanho/internal/infra/gitx"
@@ -59,6 +60,7 @@ func newSyncCmd() *cobra.Command {
 	var (
 		abort      bool
 		proceed    bool
+		inspect    bool
 		rebaseOnto string
 		asJSON     bool
 	)
@@ -73,33 +75,39 @@ A clean merge produces one ordinary commit ('[SANHO] Sync docs to <oid>') author
 you. A conflicted merge writes standard conflict markers into the docs
 directory; resolve them, 'git add' and 'git commit' as you would for any merge,
 then run 'sanho sync --continue' to complete the sync. 'sanho sync --abort'
-restores the pre-sync state instead.`,
+restores tracked docs from current HEAD, keeps existing commits, restores or
+clears the previous base, and clears the sync note.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runSync(cmd, syncFlags{abort: abort, proceed: proceed, rebaseOnto: rebaseOnto, asJSON: asJSON})
+			return runSync(cmd, syncFlags{abort: abort, proceed: proceed, inspect: inspect,
+				rebaseOnto: rebaseOnto, rebaseSupplied: cmd.Flags().Changed("rebase-onto"), asJSON: asJSON})
 		},
 	}
 	cmd.Flags().BoolVar(&abort, "abort", false, "Undo an in-progress conflicted sync")
 	cmd.Flags().BoolVar(&proceed, "continue", false, "Complete the conflicted sync you have resolved and committed")
+	cmd.Flags().BoolVar(&inspect, "inspect", false, "Inspect local sync completion checks without changing workspace state")
 	cmd.Flags().StringVar(&rebaseOnto, "rebase-onto", "", "Reconcile against an explicit canonical commit (rewrite recovery)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "Print machine-readable JSON")
 	return cmd
 }
 
-// syncFlags is `sanho sync`'s flag set. The three mode flags are
+// syncFlags is `sanho sync`'s flag set. The mode flags are
 // mutually exclusive, and passing them together is a mistake worth
 // naming rather than resolving by precedence.
 type syncFlags struct {
-	abort      bool
-	proceed    bool
-	rebaseOnto string
-	asJSON     bool
+	abort          bool
+	proceed        bool
+	inspect        bool
+	rebaseOnto     string
+	rebaseSupplied bool
+	asJSON         bool
 }
 
-// mode reports which of the three exclusive modes was asked for, or an
-// error naming the combination.
+// mode validates exclusive modes and reports the requested mutation.
 func (f syncFlags) mode() (abort, proceed bool, err error) {
 	switch {
+	case f.inspect && (f.abort || f.proceed || f.rebaseSupplied || f.rebaseOnto != ""):
+		return false, false, fmt.Errorf("%w: --inspect cannot be combined with --abort, --continue, or --rebase-onto", errInvalidArguments)
 	case f.abort && f.proceed:
 		return false, false, errors.New("--abort and --continue cannot be combined")
 	case f.abort && f.rebaseOnto != "":
@@ -122,6 +130,9 @@ func runSync(cmd *cobra.Command, flags syncFlags) error {
 	abort, proceed, err := flags.mode()
 	if err != nil {
 		return finishCommand(cmd, nil, asJSON, err)
+	}
+	if flags.inspect {
+		return runSyncInspect(cmd, asJSON)
 	}
 
 	ws, err := requireV2Workspace(ctx)

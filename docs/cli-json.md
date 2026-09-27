@@ -13,6 +13,7 @@ sanho show <commit> --json
 sanho preview --json
 sanho check --require-<policy> --json
 sanho sync --json
+sanho sync --inspect --json
 sanho pull --json
 sanho doctor --json
 ```
@@ -73,6 +74,7 @@ Stable codes are:
 | `base_corrupt` | The recorded base exists but is invalid |
 | `base_not_corroborated` | Sanho cannot prove a proposed base matches the docs |
 | `invalid_arguments` | The invocation is malformed: an incomplete or invalid flag or policy combination, an unknown flag, an unparseable flag value, or an unexpected positional argument |
+| `inspection_unavailable` | Inspection cannot safely obtain a required fact under its execution policy |
 | `internal` | Sanho encountered an internal defect |
 
 The compatibility code `v1_workspace` is part of the current v0.2 error
@@ -508,18 +510,15 @@ Stable reasons are `clean`, `current`, `published`, `canonical_empty`,
 state. Doctor exits 0 when it finds warnings so automation can consume the full
 report; it fails only when diagnosis itself cannot run.
 
-## Planned structured sync diagnostics
+## Sync inspection
 
-This section is the adopted target contract for
-[EPIC-003](roadmap/README.md#epic-003-structured-diagnostics-and-sync-inspection).
-The inspection command and its availability errors remain planned. The shared
-completion assessment and additive existing-command error details are
-implemented. The command list and current contracts above describe available
-behavior; planning does not make the remaining interface available.
+`sanho sync --inspect` exposes the shared local completion assessment. The
+[EPIC-003 roadmap](roadmap/README.md#epic-003-structured-diagnostics-and-sync-inspection)
+tracks the remaining combined verification and consumer handoff.
 
 ### Inspection command and result
 
-The new read-only mode is:
+Run the read-only mode with:
 
 ```bash
 sanho sync --inspect

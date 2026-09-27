@@ -150,6 +150,17 @@ git commit -m "docs: resolve canonical sync"
 sanho sync --continue
 ```
 
+When an active sync is reported or its completion state is uncertain, use
+`sanho sync --inspect` or `sanho sync --inspect --json` to see the first local
+blocker and available evidence. A diagnosis exits 0 even when completion is
+blocked. Readiness describes the observed local checks and does not authorize
+Continue or guarantee its later writes. Inspection is optional in the normal
+successful workflow.
+
+If inspection returns `inspection_unavailable`, stop and report its execution
+limit. Do not retry through ordinary status, sync, or Continue, or change filter
+configuration to obtain a verdict. See [inspection errors](cli-json.md#inspection-availability-errors).
+
 Continue accepts changes to the reported conflict paths. If the committed
 resolution also changes or omits a non-conflicting upstream path, it retains the
 sync note and previous base and directs you to abort and run sync again.
