@@ -5,6 +5,50 @@ Read the section that answers the request. For commands that support
 the last fetched snapshot, which must be reported as cached. The current-state
 policy check below fetches automatically.
 
+## Inspect sync completion
+
+For an active-sync diagnosis or uncertainty about completion, run
+`sanho sync --inspect --json` when supported. It reads local application state
+without fetching or requiring the canonical clone. It is optional diagnostic
+work, not another step in every successful commit or push.
+
+Read `state` first: `none` means no sync note; `corrupt` means a present note is
+unusable; `active` reports its completion assessment; `changed` invalidates an
+observation after a detected HEAD or note change. Discard a changed snapshot
+and obtain a fresh read only if needed; do not retry indefinitely.
+
+Use `continuation.ready`, `reason`, exact `paths`, and `recovery_id` to select
+the relevant [recovery](recovery.md#complete-an-active-sync). A blocked diagnosis
+still exits 0. Checks after the first blocker are `not_evaluated`, and accepted
+legacy entry history may be `not_applicable`; neither proves a check passed.
+`comparison` is null until evaluated, then separates allowed conflict-path
+changes from unexpected changes. The note's target is not an adopted base.
+Keep paths as array values, including embedded commas, newlines, and Unicode.
+
+A ready result is a bounded local observation. It grants no mutation authority,
+does not guarantee persistence or publication, and is not a token for Continue.
+Continue always reassesses current state. Reconcile already completed steps
+before any authorized mutation, including a resolution commit.
+
+`inspection_unavailable` exits 1 with an error envelope and no readiness
+verdict. `external_filter_configured` conservatively covers any effective
+non-empty clean/process command, including unused drivers and global settings.
+`execution_policy_unavailable` means the required reader controls could not be
+established or their admission changed. Earlier no-note, corrupt-note, or
+marker diagnoses can still finish before a filter-capable read is needed.
+Stop and report either availability limitation. Do not change filters, retry
+with ordinary status/sync, or invoke Continue to bypass it. Continue retains
+filter-aware normalization, but this fact does not authorize that fallback.
+Other Git/I/O errors remain errors, not empty or ready evidence.
+
+If an older installed binary rejects the `--inspect` flag, report that
+capability limit and use its existing supported read-only evidence, such as
+local status and Git state, without claiming the new assessment. Never remove
+the flag and run mutating `sanho sync`. Unsupported syntax and
+`inspection_unavailable` are different cases; the compatibility fallback does
+not override the execution-policy stop above. Do not install or upgrade merely
+to make this diagnostic available.
+
 ## Diff incoming or unpublished changes
 
 Use `sanho diff` for incoming changes, `sanho diff --refresh` for a fresh

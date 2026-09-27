@@ -438,7 +438,7 @@ The CLI uses typed completion findings to expose error details and recovery IDs
 from its guidance catalog. Read-only inspection uses the same assessment with
 strict local Git readers; [CLI JSON](cli-json.md#sync-inspection) defines its
 public interface. The [EPIC-003 roadmap](roadmap/README.md#epic-003-structured-diagnostics-and-sync-inspection)
-tracks combined verification and the consumer handoff.
+records the feature's delivery and acceptance status.
 
 ### One completion assessment
 

@@ -11,25 +11,47 @@ Use the original command's output and current evidence to select diagnostics:
 - For a failed or uncertain commit, inspect Git's result, `git status
   --porcelain=v1`, `git rev-parse HEAD`, and the relevant commit or index diff.
   A freshness warning alone says nothing about whether Git created a commit.
-- For sync progress or local readiness, run `sanho status --json` and inspect
-  the relevant docs changes. Refresh only when the decision needs current
-  canonical state.
+- For an active sync or uncertain completion, use
+  [sync inspection](inspection.md#inspect-sync-completion) where supported.
+  Honor its `inspection_unavailable` stop before choosing another diagnostic.
+  For other local readiness questions, use `sanho status --json` and the
+  relevant docs changes. Refresh only when current canonical state is needed.
 - For a changed checkout, branch, or publication target, recheck the affected
   Git configuration and refs. Do not repeat known environment inventory when
   it cannot explain the failure.
 - For missing or corrupt base, clone, or hooks, run `sanho doctor --json`.
   Doctor is not a required diagnostic for every warning or network failure.
 
-Parse JSON error codes and exits separately. After an interrupted or timed-out
-mutation, establish its actual outcome before retrying. If current evidence
-cannot settle it, report the uncertainty rather than repeating the mutation.
+Parse JSON error codes and exits separately. When present, use typed `reason`,
+lossless `paths`, and `recovery_id` rather than parsing English. Keep the
+existing code-based handling and current CLI guidance for older two-field
+envelopes; a generic code alone does not establish a new specific reason.
+After an interrupted or timed-out mutation, establish its actual outcome
+before retrying. If current evidence cannot settle it, report the uncertainty
+rather than repeating the mutation.
 
 ## Complete an active sync
 
 `sync_in_progress: true` means an unfinished sync window exists. Markers may
-remain, or the resolution may already be committed. Follow the CLI's complete
-sequence: resolve the affected docs, stage them, commit the resolution, then
-run `sanho sync --continue --json`. Inspect current state and omit steps already
+remain, or the resolution may already be committed. An `active_sync` refusal
+can be clarified by conditional inspection. Use its `continuation.reason`, or
+the actual refusal's `error.reason`, when available:
+
+- `markers_remaining` or `resolution_uncommitted`: finish only the remaining
+  resolution steps below, using the exact returned paths where supplied.
+- `foreign_entry_history`, `non_conflict_paths_changed`, or `missing_merge_tree`:
+  preserve committed work and follow the refusal-specific abort/restart
+  guidance only with explicit abort intent. Repeating Continue or making an
+  extra resolution commit cannot establish the missing proof.
+- `sync_note_corrupt` or `invalid_sync_target`: report the unusable note and
+  follow the supported CLI recovery with explicit authority. Never edit or
+  delete managed state by hand.
+- `no_sync`: there is no active completion to perform. Reconcile an uncertain
+  earlier result rather than starting another sync merely to clear this reason.
+
+For a usable active window, follow the CLI's complete sequence: resolve the
+affected docs, stage them, commit the resolution, then run
+`sanho sync --continue --json`. Inspect current state and omit steps already
 completed; do not create a duplicate resolution commit. Keep resolution edits
 and commits within the existing authorization.
 
@@ -45,7 +67,9 @@ local status after completion.
 To discard the whole active sync, require explicit abort intent, preserve
 unrelated work, and run `sanho sync --abort --json`. Abort is designed to be
 idempotent after interruption; that does not authorize the initial destructive
-decision. Reconcile its result before any retry.
+decision. It restores tracked docs from current HEAD, preserves existing
+commits, restores or clears the previous base, and clears the sync note.
+Reconcile its result before any retry.
 
 ## Reconcile stale or rewritten canonical history
 

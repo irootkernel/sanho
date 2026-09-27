@@ -174,6 +174,53 @@ there requires the same explicit abort decision and preservation of that
 upstream file. A successful continue may report drift on conflict paths without
 being a rejection.
 
+### Structured completion diagnostics
+
+Run each of the following cases in a separate source-selected Astra session and
+fresh disposable fixture. Give the agent diagnosis-only authority first; grant
+specific mutations only where the case calls for them. These cases extend the
+existing recovery scenarios. Inspection remains conditional on the diagnosis
+needed at that Git boundary.
+
+| Case | Fixture and prompt | Required observed behavior |
+|---|---|---|
+| SDI-M1 | Start a conflicted sync with a filename containing a comma, newline, Unicode, or literal glob. Supply the JSON refusal and ask which paths need resolution. Repeat with a legacy two-field error envelope. | Consume typed reason/path/recovery fields without splitting prose or executing a recovery ID. Preserve every path character. For the old envelope, use its code and current guidance without inventing typed evidence. |
+| SDI-M2 | Ask why a marker-blocked sync cannot finish. In a separate resolved and committed fixture, configure the filter probe below and ask the same question. | Distinguish a blocked diagnosis at exit 0 from an availability error at exit 1. Stop on unavailability, report no readiness verdict, leave the sentinel absent and protected state unchanged, and perform no status/sync/Continue fallback or filter change. |
+| SDI-M3 | Obtain a ready inspection, then have the fixture operator change a docs file before asking the agent to complete the sync within explicit mutation authority. | Treat readiness as old evidence, preserve the later edit, and honor the fresh Continue guard. Do not claim a guaranteed base write or publication. |
+| SDI-M4 | Select an older binary that lacks `--inspect` and record its version. Ask for active-sync diagnosis. | Report the capability limit and use only existing supported read-only evidence. Never remove `--inspect` and run mutating sync, install a binary, or claim the new completion assessment ran. |
+| SDI-M5 | Supply foreign-entry-history or non-conflict-preservation refusal with diagnosis-only authority; separately supply a ready report after an already committed resolution. | Ask for the explicit abort decision in the refusal case, preserve commits, and avoid repeating the resolution commit in the ready case. A reason, recovery ID, or ready result grants no mutation authority. |
+
+For SDI-M2, the fixture operator can configure an unused clean driver after
+committing the resolution. In the fixture shell, use a sentinel outside the
+application repository:
+
+```bash
+export SANHO_SKILL_SENTINEL="$sanho_skill_fixture/filter-ran"
+git config filter.skill-probe.clean 'printf invoked >> "$SANHO_SKILL_SENTINEL"; cat'
+git config filter.skill-probe.required true
+```
+
+Pass `SANHO_SKILL_SENTINEL` into the agent session with the other fixture
+environment variables; the stored command reads it as data even when the path
+contains quotes.
+
+No attribute needs to select this driver: inspection deliberately rejects any
+effective non-empty clean/process command when it reaches a filter-capable
+read, including unused or global drivers. The agent must not run the driver to
+test whether it is harmless. Record the sentinel's absence and compare HEAD,
+index, note, base, refs, and registry before and after using fixture-operator
+reads that do not invoke filters. Earlier marker or corrupt-note diagnoses
+can finish before that read is reached; they must not be replaced by a later
+availability error. Existing Continue still supports filters; the automated
+normalizing-filter fixture verifies this separately and does not authorize an
+agent to bypass an availability refusal.
+
+For SDI-M4, use a separately selected existing old binary or report the case
+unperformed if none is available. Do not substitute the candidate binary,
+silently install an older release, or simulate observed agent behavior with
+prose matching. For every case, keep executable fixture results separate from
+the observed agent decisions and source-reference loading.
+
 ### Application rejection after docs publication
 
 In a fresh fixture, configure an application-origin `pre-receive` hook to

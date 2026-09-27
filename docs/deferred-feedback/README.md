@@ -18,12 +18,14 @@ work.
 ## Structured diagnostic documentation drift
 
 - **Owner:** The CLI error contract in `docs/cli-json.md` and
-  `internal/interface/cli/sync_diagnostics.go`.
+  `internal/interface/cli/sync_diagnostics.go`, together with the independently
+  distributed `skills/use-sanho/references/recovery.md` and `inspection.md`.
 - **Impact:** The current reason table agrees with the implementation and
   behavioral tests. Future vocabulary changes could leave the documentation
-  behind because the table is checked manually.
+  behind because the table and source-skill reason guidance are checked manually.
 - **Re-entry:** When the diagnostic vocabulary grows or a mismatch is found,
-  assess a focused documentation consistency check. Keep behavioral contract
+  assess a focused consistency check across the contract and source skill.
+  The distributed skill must retain its local references. Keep behavioral contract
   tests and real recovery scenarios; matching prose cannot replace them.
 
 ## Workspace discovery convergence

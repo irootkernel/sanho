@@ -514,7 +514,7 @@ report; it fails only when diagnosis itself cannot run.
 
 `sanho sync --inspect` exposes the shared local completion assessment. The
 [EPIC-003 roadmap](roadmap/README.md#epic-003-structured-diagnostics-and-sync-inspection)
-tracks the remaining combined verification and consumer handoff.
+records the feature's delivery and acceptance status.
 
 ### Inspection command and result
 

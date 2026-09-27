@@ -109,7 +109,7 @@ Aquarium TASK-014 or TASK-015.
 | TASK-007 | Add structured error details through the guidance catalog | Completed | TASK-006 |
 | TASK-008 | Deliver local read-only sync inspection | Completed | TASK-007 |
 | TASK-009 | Verify cross-surface parity and failure boundaries | Completed | TASK-008 |
-| TASK-010 | Update consumer guidance and prepare Epic acceptance | Planned | TASK-009 |
+| TASK-010 | Update consumer guidance and prepare Epic acceptance | Completed | TASK-009 |
 
 Planning-review corrections are mandatory within these existing Tasks:
 TASK-006 owns whole-read-path execution safety, positive unborn classification,

@@ -45,11 +45,10 @@ Existing implementation anchors:
 | Git and comparable trees | `internal/infra/appgit/`, `internal/infra/gitx/` | Preserve literal paths and conversion semantics; harden HEAD/object reads and enforce the inspection-only execution boundary |
 | Regression evidence | `internal/usecase/docsync/`, `internal/interface/cli/`, `test/docsync/`, `test/cli/integration/`, `test/cli/e2e/` | Extend real-Git and guidance-closure coverage instead of replacing it with prose checks |
 
-TASK-005 remains a separate existing work item. Its recovery-guidance changes
-are inputs to preserve, not implementation of this Epic. Do not reopen or
-complete TASK-005, EPIC-001, or EPIC-002 as part of this work. No runtime
-implementation dependency on TASK-005 acceptance is introduced; the final
-source-skill update must reconcile with whatever its current reviewed text is.
+TASK-005's reviewed recovery guidance is an input to preserve. Keep its
+separate lifecycle and the completed EPIC-001 and EPIC-002 states intact.
+This Epic introduces no runtime dependency on TASK-005 acceptance; its source
+skill changes build on that work's current reviewed text.
 
 ## Review resolutions and fixed implementation choices
 
@@ -86,46 +85,46 @@ choices are fixed for this bounded delivery:
 
 ## Scope and acceptance requirements
 
-- [ ] SDI-01: Supported sync refusals expose the additive typed `reason`,
+- [x] SDI-01: Supported sync refusals expose the additive typed `reason`,
   `paths`, and `recovery_id` contract while preserving their existing code,
   message meaning, exit behavior, and stdout/stderr separation.
-- [ ] SDI-02: Path-bearing diagnoses retain exact, sorted repository-relative
+- [x] SDI-02: Path-bearing diagnoses retain exact, sorted repository-relative
   paths as data. Commas, spaces, newlines, Unicode, and literal glob characters
   must not become parsing delimiters or pathspec expansion.
-- [ ] SDI-03: One non-writing assessment supplies the ordered completion
+- [x] SDI-03: One non-writing assessment supplies the ordered completion
   decision and evidence through mode-appropriate readers. Inspection cannot
   execute configured programs; Continue's existing conversion support remains.
   Hook resolution heuristics are not substituted for the completion proof.
-- [ ] SDI-04: `sanho sync --inspect [--json]` distinguishes no note, corrupt
+- [x] SDI-04: `sanho sync --inspect [--json]` distinguishes no note, corrupt
   note, active sync, and detected observation changes; it reports the first
   actual blocker and marks unevaluated checks honestly. Policy-limited
   assessment instead returns the specified availability error and exit 1.
-- [ ] SDI-05: Inspection exposes the recorded entry/target/merge identities and,
+- [x] SDI-05: Inspection exposes the recorded entry/target/merge identities and,
   when evaluated, exact allowed versus unexpected path changes. A note target
   is never presented as an already adopted base.
-- [ ] SDI-06: Inspection is local and non-mutating under the architecture's
+- [x] SDI-06: Inspection is local and non-mutating under the architecture's
   scratch and external-execution policies, including status/cleanliness reads.
   It does not create side effects through filters or fsmonitor, require/create/
   repair/fetch a canonical clone, update a registry, or run a commit/push/hook.
-- [ ] SDI-07: Inspection and Continue agree on unchanged fixtures where the
+- [x] SDI-07: Inspection and Continue agree on unchanged fixtures where the
   strict readers can evaluate the required facts, including local-side
   resolutions with no new commit and accepted unrecorded legacy entry history.
   A missing merge tree still blocks completion. Availability errors are not
   completion refusals and must not newly reject filter use by Continue.
-- [ ] SDI-08: Existing failure guards and persistence order remain intact;
+- [x] SDI-08: Existing failure guards and persistence order remain intact;
   fix false unborn/empty success fallbacks on HEAD/object/read failures.
   Readiness is not a guarantee of a later write and never bypasses a fresh
   assessment, base guard, or authorization boundary.
-- [ ] SDI-09: Human guidance and machine recovery IDs use one CLI catalog with
+- [x] SDI-09: Human guidance and machine recovery IDs use one CLI catalog with
   executable closure coverage. No agent must parse English to identify the
   newly distinguished refusal reasons.
-- [ ] SDI-10: Existing clients continue to work with unchanged success shapes
+- [x] SDI-10: Existing clients continue to work with unchanged success shapes
   and old two-field error envelopes. New consumers tolerate either error form.
   Hook entrypoints gain no JSON stdout protocol.
-- [ ] SDI-11: Machine state and source guidance describe conditional inspection,
+- [x] SDI-11: Machine state and source guidance describe conditional inspection,
   not a mandatory extra command on every commit/push. Already completed work
   is not repeated merely because a diagnostic reports a blocker.
-- [ ] SDI-12: Focused, integration, failure-path, and full repository verification
+- [x] SDI-12: Focused, integration, failure-path, and full repository verification
   pass with explicit reporting of any unperformed manual agent checks.
 
 ## Non-goals
@@ -369,7 +368,7 @@ implemented capability, installed capability, and user authorization.
 
 Implement:
 
-- [ ] Update the source skill and only its relevant recovery/inspection
+- [x] Update the source skill and only its relevant recovery/inspection
   references to branch on typed reasons when present and retain current
   fallback behavior for an older installed binary. An unsupported `--inspect`
   flag must never fall back to running mutating `sanho sync`; use existing
@@ -377,27 +376,27 @@ Implement:
   old-binary fallback is not permission to bypass an execution-policy refusal:
   on `inspection_unavailable`, stop and report the limitation without retrying
   through ordinary status/sync, changing filters, or invoking Continue.
-- [ ] Make inspection conditional on an active-sync diagnosis or uncertainty.
+- [x] Make inspection conditional on an active-sync diagnosis or uncertainty.
   Do not require it in the ordinary successful commit/push loop.
-- [ ] Preserve TASK-005's refusal-specific recovery and partial-push guidance;
+- [x] Preserve TASK-005's refusal-specific recovery and partial-push guidance;
   update current documents rather than copying conflicting instructions.
-- [ ] Remove delivered planned labels, integrate the implemented schema and
+- [x] Remove delivered planned labels, integrate the implemented schema and
   invariants into their canonical sections, and remove obsolete duplication.
-- [ ] Extend the existing agent-verification guide with bounded cases for
+- [x] Extend the existing agent-verification guide with bounded cases for
   structured recovery, blocked versus unavailable inspection, old-binary
   fallback, and approval boundaries. Explain the conservative configured-filter
   limit and preserved Continue support. Do not silently install the edited skill.
 
 Verify and finish:
 
-- [ ] Run `make docs-check`, focused changed-area tests, and the complete
+- [x] Run `make docs-check`, focused changed-area tests, and the complete
   repository `make test` gate through the configured execution policy.
-- [ ] Use a fresh checkout-built binary and isolated `SANHO_HOME` for CLI
+- [x] Use a fresh checkout-built binary and isolated `SANHO_HOME` for CLI
   scenarios. Record command, tested revision, exit/result, and failure fixes.
-- [ ] Report manual agent cases as performed, unperformed, or explicitly
+- [x] Report manual agent cases as performed, unperformed, or explicitly
   accepted skips; documentation and fixtures alone are not observed agent
   behavior. Do not claim a release or installation from these tests.
-- [ ] Present acceptance against SDI-01 through SDI-12 and prepare the proposed
+- [x] Present acceptance against SDI-01 through SDI-12 and prepare the proposed
   canonical outcomes/closeout changes. Complete this Task's handoff before
   requesting Epic acceptance; leave the dossier available for that review.
   Member Task completion does not automatically complete the Epic.
@@ -499,8 +498,100 @@ TASK-009 verification passed on the candidate based on `34b26a9`:
   `eol=lf`; using the intended `eol=crlf` contract proves normalized LF blobs
   and successful completion without weakening the clean-docs guard.
 
-The complete repository gate and manual agent-case reporting remain TASK-010
-work. These fixtures do not claim observed agent approval behavior.
+These fixtures do not claim observed agent approval behavior. TASK-010's
+combined verification and manual-case report follow below.
+
+## TASK-010 acceptance handoff
+
+The source skill now selects inspection for active-sync or uncertain-completion
+diagnosis. It uses typed reasons and lossless paths where available, preserves
+older error-envelope handling, and stops on inspection unavailability. An
+unsupported flag can use older supported read-only evidence; it cannot turn
+into a mutating sync or override the execution-policy stop. Existing successful
+commit and partial-push reconciliation guidance remains in its original owner.
+
+| Requirement | Implementation and executable evidence | Canonical owner |
+|---|---|---|
+| SDI-01 | `sync_diagnostics.go`, `errors.go`; typed-diagnostic compatibility unit tests and CLI error-envelope integration tests | [Additive error details](../cli-json.md#additive-error-details) |
+| SDI-02 | Sorted typed paths, literal Git pathspecs, JSON arrays and quoted human rendering; S05/S11 actual-CLI cases | [Error paths](../cli-json.md#additive-error-details) |
+| SDI-03 | `docsync.AssessCompletion` shared by Continue and strict inspection readers; ordered-blocker tests, S10/S20 filter parity | [One completion assessment](../architecture.md#one-completion-assessment) |
+| SDI-04 | `sync_inspect.go` and separate availability-error mapping; none/corrupt/active/changed, skipped-check and invalid-mode tests | [Sync inspection](../cli-json.md#sync-inspection) |
+| SDI-05 | Note and comparison renderers retain unknown/null identities and exact allowed/unexpected paths; legacy and parity cases | [Inspection command and result](../cli-json.md#inspection-command-and-result) |
+| SDI-06 | Inspection-only workspace binding, Git controls, filter admission and scratch isolation; S12/S17/S20-S22 protected-state and external-sentinel cases | [Read-only boundary](../architecture.md#read-only-boundary) |
+| SDI-07 | S01/S02/S09/S10 actual Continue comparisons and real clean/process normalization controls | [Scenario test owners](#scenario-test-owners) and [inspection contract](../cli-json.md#sync-inspection) |
+| SDI-08 | Strict local object reads, fresh Continue assessment, note-clear-before-guarded-base-write ordering; read-failure, stale-read and persistence-failure regressions | [Assessment architecture](../architecture.md#structured-diagnostics-and-sync-inspection) |
+| SDI-09 | One CLI guidance catalog supplies recovery IDs and human messages; catalog tests and executable `TestGuidanceClosure` | [Recovery](../recovery.md) and [source recovery](../../skills/use-sanho/references/recovery.md) |
+| SDI-10 | Existing success documents and old code/exit behavior remain; old two-field decoder and unrelated-error tests pass, hooks retain their output boundary | [CLI JSON](../cli-json.md) |
+| SDI-11 | Conditional source inspection, explicit availability stop, older-binary fallback, and retained no-duplicate-commit/partial-push handling | [Source skill](../../skills/use-sanho/SKILL.md) and [inspection reference](../../skills/use-sanho/references/inspection.md#inspect-sync-completion) |
+| SDI-12 | Focused real-CLI checks, structural validation, and the complete repository gate passed; results are recorded below. Manual agent cases are explicitly unperformed. | [Agent verification](../implementation-tips/agent-skill-verification.md#structured-completion-diagnostics) and [Makefile](../../Makefile) |
+
+Verification used the candidate based on `5867d89`, with TASK-010 limited to
+Markdown guidance and evidence changes:
+
+- `make cli-build`: passed; the focused CLI command used that fresh
+  `bin/sanho` through `SANHO_CLI_BINARY`, with fixture-owned isolated homes.
+- `go test ./test/cli/e2e -run
+  '^(TestSyncInspectionDiagnosesLocalCompletion|TestSyncInspectionReadyDoesNotAuthorizeLaterState|TestSyncInspectionFilterNormalizationPreservesContinue|TestGuidanceClosure)$'
+  -count=1`: passed through an ad-hoc Gaori run with the `go-test` parser and
+  `go`/`e2e` tags, exit 0.
+- Configured Gaori `all` (`make test`): passed, exit 0, including sequential
+  prepare, race unit, integration, E2E, and isolated install checks. No failure
+  correction was needed in this combined run.
+- `make docs-check`, parsed YAML frontmatter, exact five-file README/Makefile
+  inventory comparison, all changed-document local links and anchors, and
+  staged/unstaged whitespace checks: passed. Final evidence prose received a
+  focused documentation recheck after the combined gate.
+
+The structural checks above used these additional commands on the candidate
+with base `5867d89`; they are separate from `make docs-check`. The Python check
+reported matching YAML metadata and the five-file inventory, with 67 valid
+local links/anchors; every command exited 0.
+
+```bash
+python3 - <<'PY'
+from pathlib import Path
+import re,yaml
+root=Path.cwd(); skill=root/'skills/use-sanho'; paths=sorted(skill.rglob('*.md'))
+entry=(skill/'SKILL.md').read_text(); metadata=yaml.safe_load(entry.split('---',2)[1]); assert metadata['name']=='use-sanho' and isinstance(metadata['description'],str)
+actual={p.relative_to(skill).as_posix() for p in paths}
+readme=(root/'README.md').read_text(); make=(root/'Makefile').read_text()
+refs=re.search(r'for reference in ([^;]+); do',readme).group(1).split()
+download={'SKILL.md',*('references/'+r+'.md' for r in refs)}
+inventory=set(re.findall(r'@test -f skills/use-sanho/(\S+)',make))
+assert actual==download==inventory,(actual,download,inventory)
+changed=[root/p for p in __import__('subprocess').check_output(['git','diff','--name-only','HEAD'],text=True).splitlines() if p.endswith('.md')]
+count=0
+for p in set(paths+changed):
+ s=re.sub(r'```.*?```','',p.read_text(),flags=re.S)
+ for link in re.findall(r'\]\(([^)]+)\)',s):
+  if re.match(r'\w+://',link):continue
+  path,_,anchor=link.partition('#'); target=(p.parent/path).resolve() if path else p
+  assert target.exists(),(p,link)
+  if anchor and target.suffix=='.md':
+   headings=re.findall(r'^#{1,6}\s+(.+)$',target.read_text(),re.M)
+   anchors=[re.sub(r'[^\w\- ]','',h.replace('`','').lower()).replace(' ','-') for h in headings]
+   assert anchor in anchors,(p,link)
+  count+=1
+print(f'PASS: YAML metadata parsed; exact five-file inventory agrees with README/Makefile; {count} local links and anchors resolve.')
+PY
+make docs-check
+git diff --check
+git diff --cached --check
+```
+
+Manual cases SDI-M1 through SDI-M5 are **unperformed**: this execution did not
+open a separate Astra session with the candidate source skill selected and
+Master observing its decisions. No older installed binary was selected for
+SDI-M4. Automated CLI fixtures prove executable behavior, not reference loading,
+agent choices, or approval discipline. No existing manual case is claimed as
+newly observed, and no skip has been accepted on Master's behalf.
+
+The proposed Epic closeout retains the CLI, architecture, operations, recovery,
+source skill, tests, and manual verification guide as canonical outcomes. After
+whole-Epic validation and Master's explicit acceptance, replace this Epic's
+roadmap dossier link with those outcomes, remove this dossier and its TODO
+entry, and mark EPIC-003 Completed. No release, installation, activation, push,
+or real-remote operation is part of this handoff.
 
 ## Verification discipline and closeout
 

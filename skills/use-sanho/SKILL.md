@@ -34,8 +34,15 @@ Activate this skill only at the Git boundaries or for the requests above.
    partial multi-ref result, check that retrying an outstanding ref preserves
    current canonical docs. Do not ask again for effects already covered;
    obtain authority if the target or effects exceed that scope.
-4. Follow Sanho's current output in order, including prerequisites such as
-   resolve, stage, commit, then `sanho sync --continue`. Load
+4. For an active-sync diagnosis or uncertain completion, use
+   [sync inspection](references/inspection.md#inspect-sync-completion) when the
+   installed binary supports it. Do not add inspection to every commit or push.
+   On `inspection_unavailable`, stop and report the limitation; do not retry
+   through ordinary status/sync, change filters, or invoke Continue as a bypass.
+   When inspection is available or no inspection is needed, follow Sanho's
+   current output in order: resolve, stage, commit, then `sanho sync --continue`.
+   For an unsupported flag, use only the compatibility diagnostics in the
+   inspection reference. Load
    [recovery](references/recovery.md) for the failure being handled. When Sanho
    requires manual intervention, establish the recovery decision before acting.
    An explicit preview request or uncertainty about the publication verdict can
@@ -49,9 +56,16 @@ Activate this skill only at the Git boundaries or for the requests above.
 
 ## Evidence and authorization
 
-Parse JSON and process exit separately. Branch on stable `error.code`, `known`
-fields, `sync_in_progress`, `relation`, `publication`, `sync_preview`,
-`working_copy`, and `local_readiness`. Unknown is not zero; `sync_preview`
+Parse JSON and process exit separately. Use `error.reason`, exact `error.paths`,
+and `error.recovery_id` when present; never split a message to recover paths.
+An older binary may return only `code` and `message`: retain its existing
+code-based recovery and current human guidance without inventing a typed reason.
+A recovery ID identifies guidance, not an executable command or permission.
+The source skill does not establish which features the installed binary has.
+
+Branch on stable `error.code`, `known` fields, `sync_in_progress`, `relation`,
+`publication`, `sync_preview`, `working_copy`, and `local_readiness`. Unknown
+is not zero; `sync_preview`
 predicts a merge of committed `HEAD`, while readiness describes current local
 preconditions. Neither guarantees a later fetch or network operation. A sync
 can exit 0 with `status: conflicts`; inspect the result before claiming success.
@@ -71,8 +85,9 @@ manual edits to Sanho-managed state.
 
 ## Read only the reference needed
 
-- [Inspection](references/inspection.md): diff, history, provenance, commit
-  contents, push preview, or explicit policy checks. Read the relevant section.
+- [Inspection](references/inspection.md): local sync completion, diff, history,
+  provenance, commit contents, push preview, or explicit policy checks. Read the
+  relevant section.
 - [Recovery](references/recovery.md): stale state, interrupted or uncertain
   mutations, active syncs, rewrites, locks, or network failures.
 - [Lifecycle](references/lifecycle.md): installation diagnostics, initialization,
