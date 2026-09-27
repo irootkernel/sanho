@@ -172,11 +172,19 @@ Merges use real Git objects and `git merge-tree --write-tree`. All participating
 objects are imported into one object database before the merge. A lock protects
 fixed merge helper refs in the shared private clone.
 
-Marker detection is scoped to the relevant diff:
+Marker detection has a different scope at each boundary:
 
 - pre-commit scans staged changed docs;
 - pre-push scans docs changed by pushed commits;
-- sync completion scans the paths in the active conflict set.
+- sync completion scans regular files throughout the configured docs worktree,
+  including untracked and ignored files, not only recorded conflict paths.
+  Deleted files are absent; symlinks and other irregular entries are skipped.
+
+The recorded conflict set instead bounds the changes allowed by the subsequent
+merge-result preservation check. It does not narrow the marker scan. A complete
+marker sequence outside that set still blocks completion before clean-docs or
+merge-result checks. This describes the existing worktree scanner, not a new
+expansion of its scope.
 
 Files with a NUL byte in the first 8 KiB are treated as binary and skipped.
 Text files larger than the configured safety limit are reported instead of
@@ -421,6 +429,188 @@ runs: a rejected flag or a rejected positional argument carries
 command has a JSON document. The boundary owns that envelope precisely because
 the command it was meant for never executed. A command name that resolves to
 nothing exits 1 at every level of the command tree, not only at the root.
+
+## Planned structured diagnostics and sync inspection
+
+This is the adopted implementation design for
+[EPIC-003](roadmap/README.md#epic-003-structured-diagnostics-and-sync-inspection),
+not a claim about current executable behavior. The planned public interface is
+owned by [CLI JSON](cli-json.md#planned-structured-sync-diagnostics); delivery
+and verification detail lives in the Epic's roadmap-linked dossier. The
+existing contracts above remain in force until the corresponding implementation
+and verification are complete.
+
+### One completion assessment
+
+Extract one completion assessment in `internal/usecase/docsync` and make both
+`Continue` and the new inspection mode consume it. The assessment requests
+facts through ports and never performs the completion state writes. Keep the
+ordered checks that actual Continue currently applies: note existence/validity,
+remaining markers, clean docs, entry-history ancestry, a recorded merge tree,
+and preservation of paths outside the recorded conflict set. The first blocker
+remains the command's refusal; subsequent checks are explicitly unevaluated.
+
+Inspection binds strictly non-executing Git readers as described below;
+Continue retains the existing filter-aware Git comparison behavior. They share
+the decision algorithm, not permission to run the same subprocesses. When an
+inspection reader cannot supply a fact safely, return a typed assessment error,
+not a new completion blocker. For unchanged inputs that inspection can assess,
+both surfaces must agree on the first blocker, path evidence, and drift count.
+The absence of an inspection verdict does not prove Continue would be refused.
+
+The assessment returns typed findings and evidence, not CLI strings. Its
+observable facts include the note's entry/target/merge identities, current HEAD,
+recorded conflict paths, and the allowed/unexpected path partition from the
+existing tree comparison. A non-conflict change never becomes acceptable by
+rewriting the conflict set. Preserve the whole-docs worktree marker scan above,
+including markers outside recorded conflicts, and the existing treatment of
+legacy entry records. An absent legacy merge tree still prevents completion.
+
+`ResolutionState` is a reporting heuristic for hooks, not a completion proof.
+In particular, a clean resolution that keeps the local side need not create a
+new commit or change a conflict path. Do not gate inspection or Continue on the
+heuristic's `resolved` label. Reuse overlapping helpers where safe without
+silently changing the existing hook lifecycle or commit behavior.
+
+Continue obtains a fresh assessment on each invocation and retains its guarded
+mutation phase. Preserve the actual write order: clear the sync note first,
+then write the corroborated target base, with the existing adapter-side guard.
+This feature adds no transactional rollback or atomicity promise across those
+writes. Inspection readiness describes local preconditions only; it is not a
+promise that later persistence will succeed. Preserve the current failure
+behavior when the note clear or base write fails, and verify it explicitly.
+
+### Read-only boundary
+
+Bind inspection using application and worktree-state read capabilities only.
+Do not construct the normal sync use case through `docsyncUseCase` if doing so
+would ensure or fetch a canonical clone. Do not read or update the registry
+merely to inspect a sync. Use the worktree-specific Git directory for the note,
+not the common directory's sibling state.
+
+Inspection must not change docs, unrelated files, the real index, HEAD or any
+application/canonical ref, Git operation metadata, hook files, configuration,
+base files or backups, the sync note, or registry files. It must not create or
+repair a clone, run hooks, fetch, probe a remote, push, commit, or clear state.
+This prohibition includes writes by programs launched indirectly by Git, even
+to paths outside the repository. A scratch index is not an execution sandbox.
+`WorktreeDocsTree()` runs `git add -A`, and `DocsClean()` uses `git status`;
+both require the inspection execution policy, not only the final comparison.
+
+The initial execution policy is deliberately conservative:
+
+1. Before a reached check uses status, worktree normalization, or scratch
+   staging, read effective Git configuration without invoking configured
+   programs. Include system, global, repository, worktree, include/includeIf,
+   and command/environment configuration with Git's normal precedence.
+2. If any effective `filter.<driver>.clean` or `filter.<driver>.process` has a
+   non-empty command, stop before the filter-capable operation with the planned
+   `inspection_unavailable` / `external_filter_configured` error. This first
+   implementation gates the configuration, even when that driver might not
+   apply to docs. Attribute-scoped exemptions are outside this Epic. Never run
+   a filter to discover whether it is harmless, and never disable conversion
+   and then describe raw-byte comparison as equivalent Git content.
+3. Apply inspection-only runner controls before any affected Git invocation:
+   disable optional index-refresh writes, fsmonitor hooks/services, external
+   diff and textconv, and automatic maintenance. Do not invoke smudge/process
+   filters or checkout paths. Required objects must be read locally without
+   lazy fetching. When these controls cannot be established, return
+   `inspection_unavailable` / `execution_policy_unavailable`; do not run the
+   uncontrolled command. Configuration read failures remain ordinary errors.
+4. Reuse the current worktree-to-tree normalization only after that admission,
+   with the same policy on its nested Git calls. Seed its disposable index
+   from a verified HEAD, or empty only for a verified unborn HEAD. Retain Git's
+   built-in attribute conversions, tracked-but-ignored paths, modes, symlinks,
+   and exact path semantics. Do not substitute `HEAD`'s docs tree merely
+   because status was clean; that shortcut is not part of this plan.
+
+Keep the safety probe and affected invocations consistent. Check the effective
+execution configuration again before another filter-capable operation, and
+stop on a detected change instead of continuing under earlier admission.
+Use command-scoped controls, not edits to user configuration or inherited
+settings of unrelated commands. This is a bounded observation under ordinary
+concurrent work, not an OS sandbox against a process actively replacing Git
+or its configuration; do not advertise stronger isolation. Preserve existing
+Continue filter support rather than applying the inspection restriction to it.
+
+A no-note/corrupt-note result or a marker blocker reached before worktree
+normalization still reports that earlier diagnosis; a later filter restriction
+must not replace it. Suppressing fsmonitor is an execution control, not proof
+of cleanliness, and the actual docs check must still run on admitted inputs.
+
+Admitted comparison may create a disposable scratch index and bounded,
+unreferenced local Git objects. Clean up disposable files on success, error,
+and cancellation; do not run GC or delete shared objects as cleanup. This
+allowance does not authorize external programs and does not promise a
+byte-identical object database. No filesystem-wide traversal is introduced.
+
+### Trustworthy HEAD and object reads
+
+TASK-006 must harden `HeadCommit()`, `HeadDocsTree()`, and the admitted scratch
+seed path, including their relevant object/tree helpers. A nonzero Git exit
+alone is not evidence of an unborn HEAD. Classify HEAD as unborn only when it
+is a valid symbolic reference to an absent local branch. A valid detached HEAD
+is an ordinary committed state. An existing ref whose object is missing, an
+invalid HEAD/ref, an unreadable or corrupt object/index, and a Git execution
+failure must propagate as errors. If absence itself cannot be established,
+return an error rather than inventing an empty history.
+
+Use Git-supported reference queries rather than assumptions about loose ref
+files; packed refs and linked worktrees must work. Ref existence and commit
+object validity are separate checks. Capability failures on older Git versions
+must remain failures, never evidence of absence. Preserve existing error
+classification for surfaced failures; removing a success-shaped fallback is
+an intentional correctness fix, not an incompatible change to valid inputs.
+
+`seedScratchIndex()` may use `read-tree --empty` only after positive unborn
+classification. Failure of `read-tree` for a verified commit must be returned.
+Likewise, an empty docs tree is valid only for a verified unborn state or a
+verified existing tree with no docs subtree. Missing required commit, tree, or
+blob objects must not be mapped to an empty tree, zero drift, or a clean result.
+Do not repair, fetch, or rewrite refs while determining these facts. This is a
+bounded repair of helpers used by the feature, not a repository-wide Git audit.
+
+### Observation limits
+
+The inspection is advisory, not a capability token. Detect HEAD or sync-note
+changes across the assessment and invalidate the read as the CLI contract
+specifies. Do not introduce a daemon, session, lease, persistent inspection
+record, or second lock/scheduler framework to make the observation appear
+atomic. Later mutations always recheck their own preconditions.
+
+### Typed diagnoses and shared guidance
+
+Keep domain/use-case blocker types independent of CLI wording and recovery
+identifiers. A typed path-bearing cause must preserve `errors.Is` relationships
+with the existing sentinels so error codes, hook handling, and exit behavior
+remain stable for existing outcomes. The new inspection-only availability
+error has its own code in the planned CLI contract; it must not be mapped to
+an existing completion refusal. Paths are data carried from Git results, not
+comma-separated text recovered from an error message.
+
+The CLI owns the mapping from typed causes to public reasons and recovery IDs.
+Extend the existing `messages.go` guidance catalog rather than building a
+parallel policy table in the skill, inspection command, or error renderer.
+The human recovery sequence and machine recovery ID must resolve to the same
+catalog definition; the closure suite proves the named prerequisites and
+commands in the relevant states. A recovery ID does not authorize its effects.
+In particular, abort and restart guidance must preserve the requirement to
+review and protect user work before acting.
+
+Keep unknown operational errors as errors. The assessment must not convert a
+Git/I/O failure into a successful negative diagnosis or an empty conflict list.
+A generic error code alone is insufficient to infer the more specific reason.
+No new JSON output is added to hook entrypoints.
+
+### Adoption and compatibility
+
+There is no persistent-state schema change, registry migration, hook
+installation, global skill upgrade, or release-version change in this Epic.
+Existing managed workspaces and active notes are assessed in place. Missing
+legacy information remains explicitly missing; inspection never repairs or
+rewrites it. The regular status report remains the lightweight existing view;
+full inspection is conditional, not an additional mandatory command at every
+commit or push boundary.
 
 ## Related documentation
 

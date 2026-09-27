@@ -13,7 +13,11 @@ Task identity until it is explicitly adopted into the canonical roadmap.
 
 ## Adopted dossiers
 
-No adopted Epic dossiers are currently active.
+- [EPIC-003: Structured diagnostics and sync inspection](EPIC-003-structured-diagnostics-sync-inspection.md)
+  defines the approved combined feature, sequential implementation Tasks,
+  requirements, exclusions, and acceptance scenarios. Consult the
+  [roadmap](../roadmap/README.md#epic-003-structured-diagnostics-and-sync-inspection)
+  for its lifecycle status.
 
 When a candidate is adopted with Tasks, retain its file here as the Epic's
 temporary dossier, identify the Epic in the dossier, register it in this

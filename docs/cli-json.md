@@ -451,6 +451,264 @@ Stable reasons are `clean`, `current`, `published`, `canonical_empty`,
 state. Doctor exits 0 when it finds warnings so automation can consume the full
 report; it fails only when diagnosis itself cannot run.
 
+## Planned structured sync diagnostics
+
+This section is the adopted target contract for
+[EPIC-003](roadmap/README.md#epic-003-structured-diagnostics-and-sync-inspection).
+It is not implemented at the time of adoption. The command list and contracts
+above continue to describe available behavior. Implementing a Task promotes
+only the fields or command it actually delivers into the current sections;
+planning does not make this interface available.
+
+### Additive error details
+
+Existing `error.code`, `error.message`, exit codes, stdout/stderr separation,
+and successful command documents remain compatible. Errors in the following
+sync families gain three fields together: `reason`, `paths`, and `recovery_id`.
+Existing errors outside the table keep their current envelope; consumers must
+accept both forms and ignore unknown additive fields. The new inspection-only
+availability error is specified separately below and changes no existing code.
+Do not retrofit these fields onto `version` or unrelated success documents.
+
+```json
+{
+  "error": {
+    "code": "sync_in_progress",
+    "message": "the resolution changed paths that did not conflict: docs/architecture.md",
+    "reason": "non_conflict_paths_changed",
+    "paths": ["docs/architecture.md"],
+    "recovery_id": "sync_review_unverified_resolution"
+  }
+}
+```
+
+`reason` is a stable diagnosis, not wording parsed from `message`.
+`recovery_id` identifies the shared CLI guidance catalog entry; it is not a
+command, execution plan, permission, or promise that every prerequisite is
+already satisfied. Its value is null when no catalog recovery is selected;
+null does not mean the operation succeeded or recovery is unnecessary. The
+same guidance definition must serve the human message and the machine
+identifier. Several reasons may share a recovery sequence.
+
+| Reason | Existing error code | Recovery ID | Meaning |
+|---|---|---|---|
+| `active_sync` | `sync_in_progress` | `sync_inspect_active` | A new sync or pull is blocked by an existing sync |
+| `no_sync` | `sync_in_progress` | null | Continue was requested without a sync note |
+| `sync_note_corrupt` | `sync_in_progress` | `sync_review_corrupt_note` | A present note cannot be decoded as a usable record |
+| `invalid_sync_target` | `sync_in_progress` | `sync_review_corrupt_note` | A decoded note has no valid completion target |
+| `markers_remaining` | `markers_present` | `sync_finish_resolution` | The whole-docs worktree scan found unresolved markers, including outside recorded conflicts |
+| `resolution_uncommitted` | `docs_dirty` | `sync_finish_resolution` | Docs have staged, unstaged, or untracked work that prevents completion |
+| `foreign_entry_history` | `sync_in_progress` | `sync_return_to_entry_history` | HEAD does not descend from the recorded entry HEAD |
+| `non_conflict_paths_changed` | `sync_in_progress` | `sync_review_unverified_resolution` | Resolution differs from the merge result outside the recorded conflict set |
+| `missing_merge_tree` | `sync_in_progress` | `sync_review_unverified_resolution` | A legacy note has no recorded merge result to verify |
+
+The required coverage is `sync` and `pull` refusals caused by an active/corrupt
+sync note, and all listed `sync --continue` refusals. Other JSON commands may
+reuse these typed diagnoses when the same cause reaches their error boundary.
+Do not infer a new reason from a generic error code alone. In particular,
+`docs_dirty` during an ordinary sync is not automatically an uncommitted
+conflict resolution. Hook stdout gains no JSON protocol.
+
+All new `paths` arrays use repository-relative, forward-slash paths including
+the configured docs directory, matching the existing sync conflict contract.
+They are sorted, unique, and lossless for supported filenames, including
+spaces, commas, newlines, and Unicode. Use `[]` when the diagnosis has no
+path evidence; do not derive filenames by splitting error prose. New fields
+never expose absolute state-file paths, credentials, or document contents.
+Existing human error detail is not redefined by this restriction.
+
+### Inspection command and result
+
+The new read-only mode is:
+
+```bash
+sanho sync --inspect
+sanho sync --inspect --json
+```
+
+`--inspect` is mutually exclusive with `--continue`, `--abort`, and
+`--rebase-onto`. Reject a supplied `--rebase-onto` even when its value is empty
+in an inspection invocation. Invalid combinations return `invalid_arguments`
+before any workspace mutation, clone creation, or network access. Inspection
+has no `--refresh`, repair, apply, or automatic completion option.
+
+Inspection diagnoses the active sync from the application repository and its
+worktree-local note. It needs neither a canonical clone nor network access.
+It reports whether the *local completion checks* pass, not whether a later
+base write, filesystem operation, or push will succeed. A missing clone or an
+unavailable canonical remote does not prevent inspection when the local
+objects needed for the assessment are present and its execution policy can
+safely obtain the required facts. Inspection does not run external clean or
+process filters. The initial policy conservatively refuses worktree evaluation
+when any such command is configured, even if it might not apply to docs; see
+[the execution boundary](architecture.md#read-only-boundary). Built-in Git
+attribute conversions remain supported. This inspection restriction does not
+remove existing filter support from Continue.
+
+A blocked example follows. OIDs here are illustrative; actual output uses full
+OIDs accepted by the repository.
+
+```json
+{
+  "state": "active",
+  "head": "3333333333333333333333333333333333333333",
+  "note": {
+    "previous_base": {
+      "commit": "1111111111111111111111111111111111111111",
+      "tree": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "target": {
+      "commit": "2222222222222222222222222222222222222222",
+      "tree": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "entry_head": "4444444444444444444444444444444444444444",
+    "entry_docs_tree": "cccccccccccccccccccccccccccccccccccccccc",
+    "merged_tree": "dddddddddddddddddddddddddddddddddddddddd",
+    "conflicts": ["docs/api.md"]
+  },
+  "checks": [
+    {"name": "sync_note", "state": "passed", "reason": null, "paths": []},
+    {"name": "markers", "state": "passed", "reason": null, "paths": []},
+    {"name": "docs_clean", "state": "passed", "reason": null, "paths": []},
+    {"name": "entry_history", "state": "passed", "reason": null, "paths": []},
+    {"name": "merge_tree", "state": "passed", "reason": null, "paths": []},
+    {
+      "name": "non_conflict_preservation",
+      "state": "blocked",
+      "reason": "non_conflict_paths_changed",
+      "paths": ["docs/architecture.md"]
+    }
+  ],
+  "comparison": {
+    "expected_tree": "dddddddddddddddddddddddddddddddddddddddd",
+    "actual_tree": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "allowed_changes": ["docs/api.md"],
+    "unexpected_changes": ["docs/architecture.md"]
+  },
+  "continuation": {
+    "ready": false,
+    "reason": "non_conflict_paths_changed",
+    "paths": ["docs/architecture.md"],
+    "recovery_id": "sync_review_unverified_resolution"
+  }
+}
+```
+
+The result obeys these rules:
+
+- `state` is `none`, `active`, `corrupt`, or `changed`. `none` means no note;
+  `corrupt` means a present but undecodable or invalid-target note; `changed`
+  means an observed HEAD or note change invalidated the assessment during the
+  read. A supported legacy note missing only its merge-tree/entry fields is
+  `active`, not automatically corrupt.
+- `head` is the assessed application HEAD, or null for a positively verified
+  unborn HEAD. A valid detached HEAD retains its OID. A missing referenced
+  object, broken HEAD/ref, or failed Git command is an error, not unborn.
+  `note` is null for `none`, `corrupt`, or `changed`. Unknown/unrecorded OIDs
+  and `previous_base` without a recorded previous base are null, not invented
+  empty identifiers. A note's target is not the currently adopted base.
+- `checks` always contains the six names above in that order. Each state is
+  `passed`, `blocked`, `not_evaluated`, or `not_applicable`. Stop at the first
+  completion blocker; later checks are `not_evaluated`, not passed. Reuse the
+  actual Continue guard order. Its marker check scans regular files throughout
+  the configured docs worktree, including untracked/ignored files and paths
+  outside `note.conflicts`. That recorded set bounds only the later allowed
+  changes. Missing entry provenance that current Continue accepts is
+  `not_applicable` with the check-only reason
+  `entry_history_unrecorded`; it is neither proven ancestry nor a new blocker.
+- `comparison` is null unless the merge comparison ran. Otherwise it reports
+  the recorded merge tree and the comparable current docs tree after the
+  clean-docs guard, together with changed paths partitioned by the *recorded*
+  conflict set. Obtain the actual tree through the admitted, semantics-preserving
+  worktree comparison; do not substitute HEAD content or filtered-off raw
+  bytes. An unchanged local-side resolution can be valid. A positive
+  `allowed_changes` count is not a requirement for readiness. Do not widen the
+  conflict set to make a changed path appear acceptable.
+- `continuation.reason` is the first blocking reason from the table, with
+  matching `paths` and `recovery_id`. For `none`, it is `no_sync` with empty
+  paths and null recovery. When ready, it is null, paths are empty, and recovery
+  is null. Readiness never grants permission to run Continue.
+- For `changed`, `head`, `note`, and `comparison` are null, all checks are
+  `not_evaluated`, and continuation is not ready with the inspection-only
+  reason `observation_changed`, empty paths, and null recovery. Discard the
+  invalidated snapshot; a fresh read is needed. Do not retry indefinitely.
+- Check-only and inspection-only reasons are not new global error codes.
+  Arrays are always arrays. Human output safely quotes unusual paths and
+  shows the same decision and evidence without claiming unseen checks passed.
+  The separately specified `inspection_unavailable` is an error envelope,
+  not a fifth result state or a seventh completion check.
+
+The assessment is a bounded observation, not a locked snapshot or execution
+receipt. Compare HEAD and the note's identity/content before and after the
+assessment and report detected changes. This does not claim to detect every
+possible concurrent edit. Continue always performs a fresh assessment; it
+never consumes or trusts an earlier inspection result.
+
+Inspection exits 0 when it produces a diagnosis, including `none`, `corrupt`,
+`changed`, or a blocked active sync. Failures that prevent diagnosis, such as
+Git execution failure, missing required local objects, unreadable repository
+state, or a text scan limit, retain the normal error envelope and exit-code
+classification. Do not report those failures as clean or ready. In particular,
+a malformed sync note is a diagnosable corrupt state, while an unrelated I/O
+failure must not be silently reclassified as note corruption. HEAD/object reads
+must distinguish a verified unborn branch or genuinely absent docs subtree
+from existing refs/trees with missing objects. Failed `read-tree` must not fall
+back to an empty index unless unborn HEAD was positively established. Apply
+this rule to the shared reader implementations, not just the JSON renderer.
+
+### Inspection availability errors
+
+When a required fact cannot be obtained under the read-only execution policy,
+inspection exits 1 and emits exactly one error envelope instead of a partial
+success report:
+
+```json
+{
+  "error": {
+    "code": "inspection_unavailable",
+    "message": "Read-only inspection cannot assess this Git filter configuration.",
+    "reason": "external_filter_configured",
+    "paths": [],
+    "recovery_id": null
+  }
+}
+```
+
+This new code is limited to `sync --inspect` and has two stable reasons:
+
+| Reason | Meaning |
+|---|---|
+| `external_filter_configured` | Effective configuration contains a non-empty clean/process command; the initial conservative policy stops before a filter-capable read |
+| `execution_policy_unavailable` | Required local-only, non-executing reader controls cannot be established, or a detected configuration change invalidates their admission |
+
+For both reasons, `paths` is `[]` and `recovery_id` is null. Configuration-level
+refusal must not invent affected document paths or expose configured commands,
+credentials, or absolute paths. Human output states that assessment was not
+performed, not that docs are dirty, corrupt, or ready. Operational Git/I/O
+failures use their normal classifications; they are not converted to this code
+merely to hide an implementation error.
+
+Apply admission only when the ordered assessment reaches a read that needs it.
+A valid no-note/corrupt-note diagnosis or an earlier marker blocker is returned
+without attempting a later status/normalization operation. Markers outside the
+recorded conflict set still take precedence. Do not probe a prohibited filter
+to find out whether the later clean-docs check would pass.
+
+On unchanged inputs successfully evaluated by both surfaces, inspection and
+Continue must agree. `inspection_unavailable` means no equivalent verdict was
+obtained, not that Continue would reject. Do not alter Git filter configuration,
+retry with filters disabled, fall back to ordinary `status`/`sync` as an escape,
+or automatically invoke Continue. Any further mutation remains subject to the
+existing authorization and guard contracts. The fixed availability message
+need not name a recovery command; keep it at the CLI message boundary rather
+than inventing an automatic catalog recovery.
+
+A failed real Continue still returns its normal error envelope and nonzero
+exit code. Its existing success document, including `merge_drift`, is unchanged.
+Inspection does not introduce another value into the existing sync `status`
+vocabulary. File-content/patch viewing is not required by this Epic: tree OIDs
+and exact allowed/unexpected paths are the initial comparison evidence.
+
 ## Automation rules
 
 1. Parse stdout as one JSON document and read the process exit separately.
