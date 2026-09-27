@@ -85,13 +85,16 @@ Aquarium TASK-014 or TASK-015.
 
 ## EPIC-003: Structured diagnostics and sync inspection
 
-- Status: In Progress
+- Status: Completed
 - Objective: Combine structured recovery diagnoses and read-only active-sync
   inspection so operators and agents can understand the actual local Continue
   guards without parsing human error messages or retrying mutations.
-- Detailed SOT: [Implementation dossier](../todo/EPIC-003-structured-diagnostics-sync-inspection.md)
-- Target Contracts: [CLI JSON](../cli-json.md#sync-inspection),
-  [assessment architecture](../architecture.md#structured-diagnostics-and-sync-inspection)
+- Canonical Outcomes: [CLI JSON](../cli-json.md#sync-inspection),
+  [assessment architecture](../architecture.md#structured-diagnostics-and-sync-inspection),
+  [operations](../operations.md), [recovery](../recovery.md),
+  [source guidance](../../skills/use-sanho/SKILL.md),
+  [inspection scenarios](../../test/cli/e2e/inspection_parity_test.go),
+  [agent verification](../implementation-tips/agent-skill-verification.md#structured-completion-diagnostics)
 - Dependencies: Existing sync completion guards, CLI guidance catalog, and Git
   adapters. No new external service or runtime dependency. TASK-005's existing
   recovery wording must be preserved and reconciled, but its separate review
@@ -111,28 +114,19 @@ Aquarium TASK-014 or TASK-015.
 | TASK-009 | Verify cross-surface parity and failure boundaries | Completed | TASK-008 |
 | TASK-010 | Update consumer guidance and prepare Epic acceptance | Completed | TASK-009 |
 
-Planning-review corrections are mandatory within these existing Tasks:
-TASK-006 owns whole-read-path execution safety, positive unborn classification,
-and preservation of the actual whole-docs marker scope. TASK-007 maps the new
-inspection-only availability errors; TASK-008 binds strict readers and proves
-no indirect effects. TASK-009 verifies S05, expanded S13, and new S20-S22;
-TASK-010 explains the availability limit and safe consumer behavior.
+The five Tasks delivered additive typed diagnoses, shared completion assessment,
+read-only sync inspection, real Git and CLI failure-boundary coverage, and
+conditional consumer guidance. Focused checks and the complete `make test`
+gate passed. Whole-Epic validation reconciled the requirements, canonical
+contracts, tests, and independent six-role review.
 
-Inspection conservatively stops before filter-capable reads when any effective
-clean/process command is configured, including unused drivers. It does not
-remove Continue's filter support. Only safely obtained verdicts must match;
-policy-limited evaluation exits 1 with `inspection_unavailable`, never a guessed
-clean/dirty result. Scratch index safety alone is insufficient. Reader fixes
-must preserve valid inputs, not the existing concealment of Git failures.
-
-Each implementation Task owns its focused tests and only promotes the contract
-it actually delivers. TASK-009 verifies the combined failure boundaries;
-TASK-010 performs the final consumer/documentation handoff and complete
-repository gate. The dossier's SDI requirements and scenario matrix define
-acceptance evidence. Completing the member Tasks does not automatically
-complete the Epic; explicit acceptance and dossier closeout are still required.
-This registration authorizes planning, not implementation, publication, or
-installation.
+Master accepted Epic closeout with manual agent cases SDI-M1 through SDI-M5
+unperformed. Automatic fixtures verify CLI behavior; they do not establish
+observed agent decisions or older-installed-binary behavior. The manual
+verification guide retains those scenarios for later observation. Independent
+follow-ups remain in [deferred feedback](../deferred-feedback/README.md).
+No release, installation, activation, push, or real-remote operation is part
+of this closeout.
 
 ## Standalone tasks
 

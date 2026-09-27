@@ -51,7 +51,7 @@ an available feature. Implemented sync diagnostics and inspection are defined
 in [CLI JSON](cli-json.md#sync-inspection) and
 [architecture](architecture.md#structured-diagnostics-and-sync-inspection).
 Its [roadmap](roadmap/README.md#epic-003-structured-diagnostics-and-sync-inspection)
-links the temporary delivery dossier. Promote only behavior that has actually
+links the canonical outcomes. Promote only behavior that has actually
 been implemented and verified; do not replace current operational instructions
 with unimplemented commands.
 

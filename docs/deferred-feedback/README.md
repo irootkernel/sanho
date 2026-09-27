@@ -10,6 +10,8 @@ work.
   hooks and interactive commands also pay a cost proportional to docs content.
   The existing 1,000-file, 52 MB scale scenario passes; per-command overhead
   has not been measured.
+- **Reason for deferral:** No measured latency problem currently requires a
+  change to the verified object-read boundary.
 - **Re-entry:** When larger docs repositories or reported hook/command latency
   justify investigation, benchmark the affected readers and their callers.
   Use those measurements before proposing a narrower verification boundary;
@@ -23,6 +25,8 @@ work.
 - **Impact:** The current reason table agrees with the implementation and
   behavioral tests. Future vocabulary changes could leave the documentation
   behind because the table and source-skill reason guidance are checked manually.
+- **Reason for deferral:** The current vocabulary is consistent across these
+  owners; an automated drift guard is independent of current acceptance.
 - **Re-entry:** When the diagnostic vocabulary grows or a mismatch is found,
   assess a focused consistency check across the contract and source skill.
   The distributed skill must retain its local references. Keep behavioral contract

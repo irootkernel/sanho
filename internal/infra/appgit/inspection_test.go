@@ -125,6 +125,59 @@ func TestTreeReadersRejectMissingRequiredObjects(t *testing.T) {
 	})
 }
 
+func TestTreeReadersResolveNestedDocsDirectories(t *testing.T) {
+	for _, state := range []string{"present", "absent-parent", "absent-child", "parent-file", "docs-file", "missing-parent-tree", "missing-docs-tree"} {
+		t.Run(state, func(t *testing.T) {
+			dir := newRepo(t)
+			path := "guides/en/page.md"
+			switch state {
+			case "absent-parent":
+				path = "code.txt"
+			case "absent-child":
+				path = "guides/other/page.md"
+			case "parent-file":
+				path = "guides"
+			case "docs-file":
+				path = "guides/en"
+			}
+			writeFile(t, dir, path, []byte("content\n"))
+			head := commitAll(t, dir, "nested docs fixture")
+			if state == "missing-parent-tree" {
+				removeGitObject(t, dir, gitLine(t, dir, "rev-parse", "HEAD:guides"))
+			}
+			if state == "missing-docs-tree" {
+				removeGitObject(t, dir, gitLine(t, dir, "rev-parse", "HEAD:guides/en"))
+			}
+			strict, err := appgit.NewInspection(context.Background(), dir, "guides/en")
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, reader := range []*appgit.Repo{appgit.New(dir, "guides/en", gitx.New(dir)), strict} {
+				want, err := reader.EmptyTree(context.Background())
+				if err != nil {
+					t.Fatal(err)
+				}
+				if state == "present" {
+					want = gitLine(t, dir, "rev-parse", "HEAD:guides/en")
+				}
+				for name, read := range map[string]func(context.Context) (string, error){
+					"revision": func(ctx context.Context) (string, error) { return reader.DocsTreeOf(ctx, head) },
+					"head":     reader.HeadDocsTree, "worktree": reader.WorktreeDocsTree,
+				} {
+					got, err := read(context.Background())
+					if state == "present" || state == "absent-parent" || state == "absent-child" {
+						if err != nil || got != want {
+							t.Fatalf("%s nested docs=%q, want %q: %v", name, got, want, err)
+						}
+					} else if err == nil {
+						t.Fatalf("%s accepted unavailable nested docs as %q", name, got)
+					}
+				}
+			}
+		})
+	}
+}
+
 func TestTreeReadersRejectCorruptBlobContents(t *testing.T) {
 	dir, _ := newRepoWithDocs(t)
 	blob := gitLine(t, dir, "rev-parse", "HEAD:docs/a.md")
@@ -169,6 +222,9 @@ func TestDocsTreeReaderRejectsAFileAtTheDocsPath(t *testing.T) {
 		}
 		if _, err := reader.HeadDocsTree(context.Background()); err == nil {
 			t.Fatal("HEAD docs file became an empty tree")
+		}
+		if _, err := reader.WorktreeDocsTree(context.Background()); err == nil {
+			t.Fatal("worktree docs file became an empty tree")
 		}
 	}
 }

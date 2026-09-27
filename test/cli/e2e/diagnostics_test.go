@@ -41,6 +41,22 @@ func TestSyncAndPullAdmissionDiagnostics(t *testing.T) {
 	}
 }
 
+func TestOrdinaryDirtySyncKeepsLegacyErrorEnvelope(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t, defaultCanonicalDocs())
+	ws := w.setup("dirty-sync")
+	ws.writeDocs(map[string]string{"api.md": "uncommitted change\n"})
+	out := ws.run("sync", "--json")
+	requireExit(t, "ordinary dirty sync", out, 1)
+	var envelope struct{ Error map[string]json.RawMessage }
+	if err := json.Unmarshal([]byte(out.stdout), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if len(envelope.Error) != 2 || string(envelope.Error["code"]) != `"docs_dirty"` || len(envelope.Error["message"]) == 0 {
+		t.Fatalf("ordinary dirty sync gained completion details: %s", out.stdout)
+	}
+}
+
 func TestContinueWithoutSyncHasNullRecovery(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t, defaultCanonicalDocs())
