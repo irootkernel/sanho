@@ -322,43 +322,43 @@ weakening it or adding hidden effects.
 
 Implement and verify:
 
-- [ ] Complete the scenario matrix below using package tests and real-Git
+- [x] Complete the scenario matrix below using package tests and real-Git
   integration/E2E fixtures; reuse existing fixtures instead of duplicating an
   unrelated harness.
-- [ ] Compare inspection and Continue on equivalent independent fixtures, or
+- [x] Compare inspection and Continue on equivalent independent fixtures, or
   inspect then Continue only where the inspection's no-mutation proof makes
   that comparison valid. Do not reuse a fixture after a mutation as if its
   earlier state still existed. Limit verdict parity to safely assessed inputs;
   separately prove that a filtered fixture returns inspection unavailability
   while authorized Continue still uses its original normalization semantics.
-- [ ] Test precedence with multiple simultaneous blockers and operational
+- [x] Test precedence with multiple simultaneous blockers and operational
   failures; a skipped check must never be reported as passed.
-- [ ] Test changed HEAD/note observations and a separate edit between a ready
+- [x] Test changed HEAD/note observations and a separate edit between a ready
   inspection and Continue; the mutation must reassess rather than trust output.
-- [ ] Assert protected-state preservation, worktree isolation, no network or
+- [x] Assert protected-state preservation, worktree isolation, no network or
   clone repair, and unchanged persistence failure semantics. Include sentinel
   paths outside the repository for clean/process/fsmonitor/diff/textconv probes;
   a byte-identical real index alone is insufficient.
-- [ ] Verify clean-filter and long-running process-filter fixtures are capable
+- [x] Verify clean-filter and long-running process-filter fixtures are capable
   of invocation in disposable positive controls. Reset only fixture-owned
   evidence after setup, then prove inspection launches none of those programs.
   Force same-content mtime changes so cached status cannot hide the risk.
-- [ ] Exercise missing commit/tree/blob objects, corrupt index, valid unborn
+- [x] Exercise missing commit/tree/blob objects, corrupt index, valid unborn
   and detached HEAD, packed refs, and linked worktrees; prove no false empty
   assessment, no lazy fetch, no note/base mutation, and no silent repair.
-- [ ] Verify actual catalog-recommended recovery sequences under their stated
+- [x] Verify actual catalog-recommended recovery sequences under their stated
   prerequisites, including abort/restart preservation of committed work.
 
 Do not:
 
-- [ ] Weaken an assertion to make a failed safety case pass.
-- [ ] Treat prose matching, compilation, or a mocked Git merge as adequate
+- [x] Weaken an assertion to make a failed safety case pass.
+- [x] Treat prose matching, compilation, or a mocked Git merge as adequate
   evidence for actual Git, publication, or persistence boundaries.
-- [ ] Operate a real remote, install globally, or run an unapproved review tool.
+- [x] Operate a real remote, install globally, or run an unapproved review tool.
 
 Done when:
 
-- [ ] Every applicable matrix row has a test owner and recorded passing
+- [x] Every applicable matrix row has a test owner and recorded passing
   evidence; existing sync-window, guard, concurrency, and closure regressions
   still pass. Report unresolved failures instead of marking the Task complete.
 
@@ -452,6 +452,55 @@ unavailability without imposing the inspection restriction on Continue.
   no conversion to empty history, empty path lists, or success. Use real Git
   repositories for corruption cases and narrow process fault injection for
   launch/error paths, not mocks of the merge semantics.
+
+### Scenario test owners
+
+The following owners cover the matrix. CLI fixtures use the checkout-built
+binary, isolated homes, and disposable repositories. Inspection precedes
+Continue only after protected-state snapshots prove that the fixture is
+unchanged. Filter cases instead compare explicit inspection unavailability
+with successful filter-aware completion.
+
+| Scenarios | Behavioral test owners |
+|---|---|
+| S01, S03, S04, S07, S08 | `test/cli/e2e/inspection_test.go`: `TestSyncInspectionDiagnosesLocalCompletion`, with actual Continue assertions in `inspection_parity_test.go` |
+| S02, accepted S09 | `TestSyncInspectionLocalAndLegacyParity`: unchanged HEAD, retained staged/unstaged code, legacy ancestry marked `not_applicable` |
+| S05 | `test/docsync/assessment_test.go`: `TestAssessmentWholeDocsMarkersPrecedeFilterAdmission`; `test/cli/e2e/inspection_test.go`: `TestSyncInspectionWholeDocsPathsAndFilterPrecedence`; worktree scanner tests in `internal/infra/appgit/write_test.go` |
+| S06 | `TestSyncInspectionDirtyDocsParity` covers staged, unstaged, and untracked docs; `TestSyncInspectionLocalAndLegacyParity` preserves unrelated code |
+| Missing-tree S09 | `TestSyncInspectionDiagnosesLocalCompletion/missing_merge_tree` retains the refusal and note/base bytes |
+| S10 | `TestSyncInspectionGitContentParity`: binary, symlink, mode, tracked ignored content, rename/deletion, EOL, UTF-16LE and ident normalization; actual Continue matches tree and drift |
+| S11 | `TestSyncInspectionCustomLiteralPathsParity`: custom directory and conflict filename with commas, newlines, Unicode and glob characters; nearby non-docs content survives |
+| S12 | `TestSyncInspectionWithoutCloneOrReachableRemote` |
+| S13 | `TestSyncInspectionReadFailuresNeverBecomeReady`, `TestSyncInspectionUnbornAndDetachedHead`, `TestSyncInspectionCapabilityLaunchAndConfigFailures`, and `TestSyncInspectionWorkspaceRefusals`; object/ref/index/scratch cases in `internal/infra/appgit/inspection_test.go` |
+| S14 | `TestSyncInspectionInvalidModesRunNoGit` |
+| S15 | `internal/interface/cli/sync_inspect_test.go`: `TestInspectionInvalidatesChangedObservation`, including intermediate HEAD movement and same-content note replacement |
+| S16 | `TestSyncInspectionReadyDoesNotAuthorizeLaterState`: docs, foreign HEAD, and invalid note changes each produce a fresh Continue refusal |
+| S17 | `TestSyncInspectionLinkedWorktreePrivateNote`, `TestSyncInspectionCancellationPreservesProtectedState`, and all `inspectUnchanged` snapshots |
+| S18 | `internal/usecase/docsync/assessment_test.go`: `TestContinueClearFailurePreservesNoteAndBase`; `docsync_test.go`: `TestContinueInterruptedBeforeTheBaseWriteFailsOld`; `test/cli/integration/surface_test.go`: `TestJSONErrorsCarryAMachineEnvelope` and `TestSyncJSONSchema`; actual parity assertions |
+| S19 | `TestGuidanceClosure`, including `sync_continue_blocked`, `sync_continue_unverified`, `sync_note_corrupt`, `sync_continue_foreign_history`, and `sync_in_progress_command`; source-agent behavior remains a separate manual check |
+| S20 | `TestSyncInspectionFilterNormalizationPreservesContinue`: real clean and long-running process filters, nonidentity conversion, add/status positive controls and mtime changes; reader scratch controls in `TestInspectionRejectsFiltersBeforeStatusOrScratch` |
+| S21 | `TestSyncInspectionControlsApplyBeforeDiscoveryAndNestedReads`: separate external-diff/textconv controls; `TestInspectionBuiltinConversionsAndNoFSMonitor`, `TestObjectReadersNeverLazilyFetchMissingObjects`, and `internal/infra/gitx/inspection_test.go` |
+| S22 | `TestInspectionConfigurationAdmission`: local/global/includeIf/worktree/environment, unused driver, changed and corrupt configuration; CLI config-read failure coverage |
+
+TASK-009 verification passed on the candidate based on `34b26a9`:
+
+- `go test -race ./internal/usecase/docsync ./internal/infra/appgit
+  ./internal/infra/gitx ./internal/interface/cli`: passed through Gaori.
+- `make test-e2e`: passed through the configured Gaori `e2e` command,
+  including the scenario, sync-window, guard, concurrency, guidance-closure,
+  and isolated install suites. The first run failed only during temporary
+  directory cleanup in two existing scenarios. Three focused repetitions and
+  the complete rerun passed; the remaining cleanup investigation is recorded
+  in [deferred feedback](../deferred-feedback/README.md#intermittent-e2e-fixture-cleanup).
+- `make test-prepare` and `make docs-check`: passed. The unchanged integration
+  surfaces retain TASK-008's passing `make test-int` evidence.
+- New focused parity cases passed against a fresh `bin/sanho` with isolated
+  homes. The initial EOL fixture incorrectly paired CRLF worktree bytes with
+  `eol=lf`; using the intended `eol=crlf` contract proves normalized LF blobs
+  and successful completion without weakening the clean-docs guard.
+
+The complete repository gate and manual agent-case reporting remain TASK-010
+work. These fixtures do not claim observed agent approval behavior.
 
 ## Verification discipline and closeout
 

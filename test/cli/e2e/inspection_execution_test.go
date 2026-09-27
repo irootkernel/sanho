@@ -166,6 +166,13 @@ func TestSyncInspectionControlsApplyBeforeDiscoveryAndNestedReads(t *testing.T) 
 		t.Fatal("external-program positive control did not execute")
 	}
 	removeFile(t, sentinel)
+	// Disable only the other probe for this positive control, so textconv
+	// itself must account for the external sentinel.
+	ws.git("-c", "core.fsmonitor=false", "diff", "--no-ext-diff", "--textconv", "HEAD~1", "HEAD", "--", "docs")
+	if !fileExists(t, sentinel) {
+		t.Fatal("textconv positive control did not execute")
+	}
+	removeFile(t, sentinel)
 	trace := filepath.Join(w.root, "trace-output")
 	env := append(ws.env(), "GIT_TRACE="+trace, "GIT_TRACE2_EVENT="+trace, "GIT_TRACE2_PERF="+trace)
 	before := inspectionProtectedState(t, w, ws.path(".git", "objects"))

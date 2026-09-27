@@ -66,6 +66,22 @@ work.
   explicit observation provenance and retain the intermediate HEAD-change
   regression test.
 
+## Intermittent E2E fixture cleanup
+
+- **Owner:** Temporary-repository lifecycle in `test/cli/e2e/harness_test.go`.
+- **Impact:** A combined E2E run passed its behavioral assertions but failed
+  cleanup in `TestAnUnresolvedSyncDoesNotBlockUnrelatedCommits` and
+  `TestGuidanceClosure/staged_markers/git_add_docs_git_commit`. Both failures
+  left `.git/objects/info/packs` after directory removal began. The writer has
+  not been identified.
+- **Reason for deferral:** Three focused repetitions and the complete E2E
+  rerun passed without changing assertions or runtime behavior. Current
+  acceptance has passing evidence; intermittent cleanup remains independent
+  test-infrastructure work.
+- **Re-entry:** If cleanup fails again, capture Git child-process tracing in
+  disposable fixtures and identify the writer before changing process lifetime
+  or fixture cleanup. Do not hide a functional failure with cleanup retries.
+
 Each entry must identify the finding, owner, reason for deferral, and concrete
 next action. Work required for current correctness or acceptance cannot be
 deferred. Promote epic-sized work to a TODO candidate or an adopted roadmap

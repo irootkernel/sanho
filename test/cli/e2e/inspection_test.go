@@ -236,6 +236,7 @@ func TestSyncInspectionDiagnosesLocalCompletion(t *testing.T) {
 						t.Fatalf("ready check=%+v", c)
 					}
 				}
+				requireInspectionContinueParity(t, ws, report)
 				return
 			}
 			if report.Continuation.Ready || report.Continuation.Reason == nil || *report.Continuation.Reason != reason {
@@ -295,6 +296,7 @@ func TestSyncInspectionDiagnosesLocalCompletion(t *testing.T) {
 			if reason != "non_conflict_paths_changed" && report.Comparison != nil {
 				t.Fatal("comparison was invented before its check")
 			}
+			requireInspectionContinueParity(t, ws, report)
 		})
 	}
 }
