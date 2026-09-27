@@ -138,7 +138,7 @@ installation.
 
 | Task | Title | Status | Dependencies |
 |---|---|---|---|
-| TASK-005 | Correct Sanho skill recovery guidance for rejected sync and push outcomes | In Review | None |
+| TASK-005 | Correct Sanho skill recovery guidance for rejected sync and push outcomes | Completed | None |
 
 TASK-005 checks Aquarium's Low review findings R8-06, R8-13, and R8-14 against
 current Sanho behavior. It clarifies the existing refresh authorization, the
