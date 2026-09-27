@@ -34,7 +34,9 @@ package e2e
 // is that the push works once the named condition is cleared.
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -55,6 +57,9 @@ type closureState struct {
 	// output is everything the binary (or git) printed on reaching the
 	// advising state.
 	output string
+	// diagnostic is the JSON refusal whose recovery identity selects this
+	// same guidance, when the catalog entry exposes a machine identity.
+	diagnostic string
 	// substitutions expand the catalog's angle-bracketed placeholders.
 	substitutions map[string]string
 	// runAs overrides how a catalog command is invoked, for the one
@@ -100,6 +105,23 @@ func runClosureCase(t *testing.T, entry cli.CatalogEntry, command string) {
 
 	w := newWorld(t, defaultCanonicalDocs())
 	state := closureFixtures[entry.Scenario](t, w)
+	if entry.RecoveryID != "" {
+		var envelope struct {
+			Error struct {
+				RecoveryID string `json:"recovery_id"`
+			}
+		}
+		decoder := json.NewDecoder(strings.NewReader(state.diagnostic))
+		if err := decoder.Decode(&envelope); err != nil {
+			t.Fatalf("%s recovery envelope: %v", entry.ID, err)
+		}
+		if envelope.Error.RecoveryID != entry.RecoveryID {
+			t.Fatalf("%s recovery=%q, want %q", entry.ID, envelope.Error.RecoveryID, entry.RecoveryID)
+		}
+		if err := decoder.Decode(new(any)); err != io.EOF {
+			t.Fatalf("%s extra JSON output: %v", entry.ID, err)
+		}
+	}
 
 	// 1. The message really appears. Without this the rest proves
 	//    nothing: a fixture that drifted out of the advising state would
@@ -714,14 +736,15 @@ func reachSyncNeedsContinue(t *testing.T, w *world) closureState {
 func reachSyncContinueBlocked(t *testing.T, w *world) closureState {
 	ws := conflictedSync(t, w)
 
-	out := ws.run("sync", "--continue")
+	out := ws.run("sync", "--continue", "--json")
 	requireExit(t, "--continue with markers still in the worktree", out, 1)
 
 	return closureState{
-		ws:      ws,
-		output:  out.combined(),
-		prepare: resolveMarkersFirst(),
-		verify:  resolutionOutcomes(),
+		diagnostic: out.stdout,
+		ws:         ws,
+		output:     out.combined(),
+		prepare:    resolveMarkersFirst(),
+		verify:     resolutionOutcomes(),
 	}
 }
 
@@ -743,12 +766,13 @@ func reachSyncContinueUnverified(t *testing.T, w *world) closureState {
 	ws.git("add", "-A", "docs")
 	ws.git("commit", "-m", "docs: resolve without the clean addition")
 
-	refused := ws.run("sync", "--continue")
+	refused := ws.run("sync", "--continue", "--json")
 	requireExit(t, "lossy completion", refused, 1)
 
 	return closureState{
-		ws:     ws,
-		output: refused.combined(),
+		diagnostic: refused.stdout,
+		ws:         ws,
+		output:     refused.combined(),
 		verify: map[string]func(*testing.T, *workspace){
 			"sanho sync --abort": func(t *testing.T, ws *workspace) {
 				if fileExists(t, ws.path(".git", "sanho", "sync.json")) {
@@ -775,12 +799,13 @@ func reachSyncNoteCorrupt(t *testing.T, w *world) closureState {
 	ws := conflictedSync(t, w)
 	writeFile(t, ws.path(".git", "sanho", "sync.json"), "{ this file is not JSON\n")
 
-	out := ws.run("sync")
+	out := ws.run("sync", "--json")
 	requireExit(t, "sync with a corrupt note", out, 1)
 
 	return closureState{
-		ws:     ws,
-		output: out.combined(),
+		diagnostic: out.stdout,
+		ws:         ws,
+		output:     out.combined(),
 		verify: map[string]func(*testing.T, *workspace){
 			"sanho sync --abort": func(t *testing.T, ws *workspace) {
 				if fileExists(t, ws.path(".git", "sanho", "sync.json")) {
@@ -1131,14 +1156,15 @@ func reachStatusBehind(t *testing.T, w *world) closureState {
 // reachSyncInProgressCommand runs `sanho sync` while one is unresolved.
 func reachSyncInProgressCommand(t *testing.T, w *world) closureState {
 	ws := conflictedSync(t, w)
-	out := ws.run("sync")
+	out := ws.run("sync", "--json")
 	requireExit(t, "sync during a sync", out, 1)
 
 	return closureState{
-		ws:      ws,
-		output:  out.combined(),
-		prepare: resolveMarkersFirst(),
-		verify:  syncEnded(),
+		diagnostic: out.stdout,
+		ws:         ws,
+		output:     out.combined(),
+		prepare:    resolveMarkersFirst(),
+		verify:     syncEnded(),
 	}
 }
 
@@ -1350,12 +1376,13 @@ func reachSyncContinueForeignHistory(t *testing.T, w *world) closureState {
 	ws.git("stash", "push", "--quiet", "--", "docs")
 	ws.git("checkout", "--quiet", "other")
 
-	refused := ws.run("sync", "--continue")
+	refused := ws.run("sync", "--continue", "--json")
 	requireExit(t, "sync --continue from foreign history", refused, 1)
 
 	return closureState{
-		ws:     ws,
-		output: refused.combined(),
+		diagnostic: refused.stdout,
+		ws:         ws,
+		output:     refused.combined(),
 		verify: map[string]func(*testing.T, *workspace){
 			"sanho sync --abort": func(t *testing.T, ws *workspace) {
 				if fileExists(t, ws.path(".git", "sanho", "sync.json")) {

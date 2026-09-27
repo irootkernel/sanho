@@ -4,6 +4,11 @@ This file records concise shipped outcomes and the planned next stable release.
 
 ## v0.2.9 - Unreleased
 
+### Added
+
+- Add stable reasons, exact paths, and guidance recovery IDs to sync and pull
+  refusal JSON while preserving existing error codes and exit behavior.
+
 ### Changed
 
 - Require Go 1.27 to build and test Sanho, and update the CI toolchain and

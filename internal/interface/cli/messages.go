@@ -56,6 +56,9 @@ func shortOID(oid string) string {
 // --- Fixed strings ----------------------------------------------------
 
 const (
+	msgInspectionFilterUnavailable = "Read-only inspection cannot assess this Git filter configuration."
+	msgInspectionPolicyUnavailable = "Read-only inspection cannot establish the required Git execution controls."
+
 	// msgMigrateRequired is the legacy-workspace contract pre-migration degradation line. It is
 	// the single hint a v1 workspace gets from every entry point, and the
 	// only command that succeeds in that state.
@@ -975,6 +978,9 @@ func registryLockHint(lockPath string) string {
 type CatalogEntry struct {
 	// ID is this message's stable identity, independent of its wording.
 	ID string
+	// RecoveryID is the optional public machine identity for this guidance.
+	// It conveys no permission to execute NextCommands or skip Prerequisites.
+	RecoveryID string
 	// Source is the constant or renderer in messages.go that produces
 	// it. It is what ties the catalog to the file the scan reads.
 	Source string
@@ -1174,6 +1180,7 @@ var Catalog = []CatalogEntry{
 	},
 	{
 		ID:            "sync_continue_blocked",
+		RecoveryID:    "sync_finish_resolution",
 		Source:        "syncContinueBlockedMessage",
 		Scenario:      "sync_continue_blocked",
 		Sample:        syncContinueBlockedMessage("the docs worktree still contains conflict markers: docs/api.md"),
@@ -1183,6 +1190,7 @@ var Catalog = []CatalogEntry{
 	},
 	{
 		ID:            "sync_continue_unverified",
+		RecoveryID:    "sync_review_unverified_resolution",
 		Source:        "syncContinueUnverifiedMessage",
 		Scenario:      "sync_continue_unverified",
 		Sample:        syncContinueUnverifiedMessage("docs/guide.md changed even though it did not conflict"),
@@ -1192,6 +1200,7 @@ var Catalog = []CatalogEntry{
 	},
 	{
 		ID:           "sync_note_corrupt",
+		RecoveryID:   "sync_review_corrupt_note",
 		Source:       "syncNoteCorruptMessage",
 		Scenario:     "sync_note_corrupt",
 		Sample:       syncNoteCorruptMessage("/repo/.git/sanho/sync.json: unexpected end of JSON input"),
@@ -1349,9 +1358,10 @@ var Catalog = []CatalogEntry{
 		NextCommands: []string{"sanho sync"},
 	},
 	{
-		ID:       "sync_continue_foreign_history",
-		Source:   "syncContinueForeignHistoryMessage",
-		Scenario: "sync_continue_foreign_history",
+		ID:         "sync_continue_foreign_history",
+		RecoveryID: "sync_return_to_entry_history",
+		Source:     "syncContinueForeignHistoryMessage",
+		Scenario:   "sync_continue_foreign_history",
 		Sample: syncContinueForeignHistoryMessage(
 			"it began at " + sampleBaseOID[:12] + ", and HEAD is " + sampleHeadOID[:12]),
 		Match: "this sync cannot be completed here",
@@ -1380,6 +1390,7 @@ var Catalog = []CatalogEntry{
 	},
 	{
 		ID:            "sync_in_progress_command",
+		RecoveryID:    "sync_inspect_active",
 		Source:        "syncInProgressMessage",
 		Scenario:      "sync_in_progress_command",
 		Sample:        syncInProgressMessage("syncing " + sampleBaseOID[:12] + " to " + sampleHeadOID[:12]),

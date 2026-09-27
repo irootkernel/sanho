@@ -78,6 +78,63 @@ Stable codes are:
 The compatibility code `v1_workspace` is part of the current v0.2 error
 vocabulary. It does not make the legacy layout an active operating mode.
 
+### Additive error details
+
+Existing `error.code`, `error.message`, exit codes, stdout/stderr separation,
+and successful command documents remain compatible. Errors in the following
+sync families gain three fields together: `reason`, `paths`, and `recovery_id`.
+Existing errors outside the table keep their current envelope; consumers must
+accept both forms and ignore unknown additive fields. The new inspection-only
+availability error is specified separately below and changes no existing code.
+Do not retrofit these fields onto `version` or unrelated success documents.
+
+```json
+{
+  "error": {
+    "code": "sync_in_progress",
+    "message": "the resolution changed paths that did not conflict: docs/architecture.md",
+    "reason": "non_conflict_paths_changed",
+    "paths": ["docs/architecture.md"],
+    "recovery_id": "sync_review_unverified_resolution"
+  }
+}
+```
+
+`reason` is a stable diagnosis, not wording parsed from `message`.
+`recovery_id` identifies the shared CLI guidance catalog entry; it is not a
+command, execution plan, permission, or promise that every prerequisite is
+already satisfied. Its value is null when no catalog recovery is selected;
+null does not mean the operation succeeded or recovery is unnecessary. The
+same guidance definition must serve the human message and the machine
+identifier. Several reasons may share a recovery sequence.
+
+| Reason | Existing error code | Recovery ID | Meaning |
+|---|---|---|---|
+| `active_sync` | `sync_in_progress` | `sync_inspect_active` | A new sync or pull is blocked by an existing sync |
+| `no_sync` | `sync_in_progress` | null | Continue was requested without a sync note |
+| `sync_note_corrupt` | `sync_in_progress` | `sync_review_corrupt_note` | A present note cannot be decoded as a usable record |
+| `invalid_sync_target` | `sync_in_progress` | `sync_review_corrupt_note` | A decoded note has no valid completion target |
+| `markers_remaining` | `markers_present` | `sync_finish_resolution` | The whole-docs worktree scan found unresolved markers, including outside recorded conflicts |
+| `resolution_uncommitted` | `docs_dirty` | `sync_finish_resolution` | Docs have staged, unstaged, or untracked work that prevents completion |
+| `foreign_entry_history` | `sync_in_progress` | `sync_return_to_entry_history` | HEAD does not descend from the recorded entry HEAD |
+| `non_conflict_paths_changed` | `sync_in_progress` | `sync_review_unverified_resolution` | Resolution differs from the merge result outside the recorded conflict set |
+| `missing_merge_tree` | `sync_in_progress` | `sync_review_unverified_resolution` | A legacy note has no recorded merge result to verify |
+
+The required coverage is `sync` and `pull` refusals caused by an active/corrupt
+sync note, and all listed `sync --continue` refusals. Other JSON commands may
+reuse these typed diagnoses when the same cause reaches their error boundary.
+Do not infer a new reason from a generic error code alone. In particular,
+`docs_dirty` during an ordinary sync is not automatically an uncommitted
+conflict resolution. Hook stdout gains no JSON protocol.
+
+All new `paths` arrays use repository-relative, forward-slash paths including
+the configured docs directory, matching the existing sync conflict contract.
+They are sorted, unique, and lossless for supported filenames, including
+spaces, commas, newlines, and Unicode. Use `[]` when the diagnosis has no
+path evidence; do not derive filenames by splitting error prose. New fields
+never expose absolute state-file paths, credentials, or document contents.
+Existing human error detail is not redefined by this restriction.
+
 ## Exit codes
 
 | Exit | Meaning |
@@ -455,67 +512,10 @@ report; it fails only when diagnosis itself cannot run.
 
 This section is the adopted target contract for
 [EPIC-003](roadmap/README.md#epic-003-structured-diagnostics-and-sync-inspection).
-It is not implemented at the time of adoption. The command list and contracts
-above continue to describe available behavior. Implementing a Task promotes
-only the fields or command it actually delivers into the current sections;
-planning does not make this interface available.
-
-### Additive error details
-
-Existing `error.code`, `error.message`, exit codes, stdout/stderr separation,
-and successful command documents remain compatible. Errors in the following
-sync families gain three fields together: `reason`, `paths`, and `recovery_id`.
-Existing errors outside the table keep their current envelope; consumers must
-accept both forms and ignore unknown additive fields. The new inspection-only
-availability error is specified separately below and changes no existing code.
-Do not retrofit these fields onto `version` or unrelated success documents.
-
-```json
-{
-  "error": {
-    "code": "sync_in_progress",
-    "message": "the resolution changed paths that did not conflict: docs/architecture.md",
-    "reason": "non_conflict_paths_changed",
-    "paths": ["docs/architecture.md"],
-    "recovery_id": "sync_review_unverified_resolution"
-  }
-}
-```
-
-`reason` is a stable diagnosis, not wording parsed from `message`.
-`recovery_id` identifies the shared CLI guidance catalog entry; it is not a
-command, execution plan, permission, or promise that every prerequisite is
-already satisfied. Its value is null when no catalog recovery is selected;
-null does not mean the operation succeeded or recovery is unnecessary. The
-same guidance definition must serve the human message and the machine
-identifier. Several reasons may share a recovery sequence.
-
-| Reason | Existing error code | Recovery ID | Meaning |
-|---|---|---|---|
-| `active_sync` | `sync_in_progress` | `sync_inspect_active` | A new sync or pull is blocked by an existing sync |
-| `no_sync` | `sync_in_progress` | null | Continue was requested without a sync note |
-| `sync_note_corrupt` | `sync_in_progress` | `sync_review_corrupt_note` | A present note cannot be decoded as a usable record |
-| `invalid_sync_target` | `sync_in_progress` | `sync_review_corrupt_note` | A decoded note has no valid completion target |
-| `markers_remaining` | `markers_present` | `sync_finish_resolution` | The whole-docs worktree scan found unresolved markers, including outside recorded conflicts |
-| `resolution_uncommitted` | `docs_dirty` | `sync_finish_resolution` | Docs have staged, unstaged, or untracked work that prevents completion |
-| `foreign_entry_history` | `sync_in_progress` | `sync_return_to_entry_history` | HEAD does not descend from the recorded entry HEAD |
-| `non_conflict_paths_changed` | `sync_in_progress` | `sync_review_unverified_resolution` | Resolution differs from the merge result outside the recorded conflict set |
-| `missing_merge_tree` | `sync_in_progress` | `sync_review_unverified_resolution` | A legacy note has no recorded merge result to verify |
-
-The required coverage is `sync` and `pull` refusals caused by an active/corrupt
-sync note, and all listed `sync --continue` refusals. Other JSON commands may
-reuse these typed diagnoses when the same cause reaches their error boundary.
-Do not infer a new reason from a generic error code alone. In particular,
-`docs_dirty` during an ordinary sync is not automatically an uncommitted
-conflict resolution. Hook stdout gains no JSON protocol.
-
-All new `paths` arrays use repository-relative, forward-slash paths including
-the configured docs directory, matching the existing sync conflict contract.
-They are sorted, unique, and lossless for supported filenames, including
-spaces, commas, newlines, and Unicode. Use `[]` when the diagnosis has no
-path evidence; do not derive filenames by splitting error prose. New fields
-never expose absolute state-file paths, credentials, or document contents.
-Existing human error detail is not redefined by this restriction.
+The inspection command and its availability errors remain planned. The shared
+completion assessment and additive existing-command error details are
+implemented. The command list and current contracts above describe available
+behavior; planning does not make the remaining interface available.
 
 ### Inspection command and result
 

@@ -226,40 +226,40 @@ existing consumers keep their code/exit behavior.
 
 Implement:
 
-- [ ] Add the planned optional error fields for the reason table in CLI JSON.
-- [ ] Carry path evidence through typed errors; never split human strings.
-- [ ] Define public reason/recovery mappings at the CLI boundary and associate
+- [x] Add the planned optional error fields for the reason table in CLI JSON.
+- [x] Carry path evidence through typed errors; never split human strings.
+- [x] Define public reason/recovery mappings at the CLI boundary and associate
   recovery IDs with the existing guidance catalog entries.
-- [ ] Cover active/corrupt sync refusals from sync/pull and the listed Continue
+- [x] Cover active/corrupt sync refusals from sync/pull and the listed Continue
   causes. Leave unrelated error envelopes and success documents unchanged.
-- [ ] Add the inspection-only `inspection_unavailable` mapping with
+- [x] Add the inspection-only `inspection_unavailable` mapping with
   `external_filter_configured` / `execution_policy_unavailable`, exit 1, empty
   paths, and null recovery. A fixed CLI message explains assessment limits
   without inventing a completion verdict or an automatically runnable remedy.
-- [ ] Promote only the delivered existing-command error-detail subsection into
+- [x] Promote only the delivered existing-command error-detail subsection into
   the current machine contract. The new inspection mode and its availability
   error remain planned until TASK-008 delivers that public surface.
 
 Do not:
 
-- [ ] Replace `error.code`, invent new success exit rules, or emit hook JSON.
-- [ ] Populate a specific diagnosis from only a generic code such as
+- [x] Replace `error.code`, invent new success exit rules, or emit hook JSON.
+- [x] Populate a specific diagnosis from only a generic code such as
   `sync_in_progress` or `docs_dirty`.
-- [ ] Add a parallel recovery table to the skill or auto-execute catalog steps.
-- [ ] Relabel policy-limited inspection as `docs_dirty`, note corruption, or
+- [x] Add a parallel recovery table to the skill or auto-execute catalog steps.
+- [x] Relabel policy-limited inspection as `docs_dirty`, note corruption, or
   an internal defect, or change an existing command's error code to the new
   inspection-only code.
 
 Verify and finish:
 
-- [ ] Test old consumer decoding of extended envelopes and new consumer
+- [x] Test old consumer decoding of extended envelopes and new consumer
   fallback to existing two-field envelopes.
-- [ ] Assert stable sentinel/code/exit behavior, single stdout JSON, stderr
+- [x] Assert stable sentinel/code/exit behavior, single stdout JSON, stderr
   guidance, null recovery where required, and unchanged version/success output.
-- [ ] Verify special filenames survive the entire typed-error-to-JSON path.
-- [ ] Extend catalog identity/closure checks for the new recovery IDs and
+- [x] Verify special filenames survive the entire typed-error-to-JSON path.
+- [x] Extend catalog identity/closure checks for the new recovery IDs and
   preserve the existing command/prerequisite scenarios.
-- [ ] Test the two availability mappings, null-recovery meaning, absence of
+- [x] Test the two availability mappings, null-recovery meaning, absence of
   command/config secrets, and one error envelope with no partial success JSON.
 
 ### TASK-008: Deliver local read-only sync inspection

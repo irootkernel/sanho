@@ -106,7 +106,7 @@ Aquarium TASK-014 or TASK-015.
 | Task | Title | Status | Dependencies |
 |---|---|---|---|
 | TASK-006 | Extract the shared read-only completion assessment | Completed | None |
-| TASK-007 | Add structured error details through the guidance catalog | Planned | TASK-006 |
+| TASK-007 | Add structured error details through the guidance catalog | Completed | TASK-006 |
 | TASK-008 | Deliver local read-only sync inspection | Planned | TASK-007 |
 | TASK-009 | Verify cross-surface parity and failure boundaries | Planned | TASK-008 |
 | TASK-010 | Update consumer guidance and prepare Epic acceptance | Planned | TASK-009 |

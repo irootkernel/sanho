@@ -436,7 +436,8 @@ nothing exits 1 at every level of the command tree, not only at the root.
 
 For [EPIC-003](roadmap/README.md#epic-003-structured-diagnostics-and-sync-inspection),
 the shared completion assessment and strict local Git readers are implemented
-in TASK-006. The public inspection mode and structured error interface remain
+in TASK-006. TASK-007 adds typed error details and recovery IDs from the existing CLI
+guidance catalog. The public inspection mode and its availability error remain
 planned in [CLI JSON](cli-json.md#planned-structured-sync-diagnostics).
 The roadmap-linked dossier tracks delivery and verification of each part.
 

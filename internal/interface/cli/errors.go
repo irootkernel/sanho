@@ -267,6 +267,7 @@ type errorJSON struct {
 type errorBodyJSON struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
+	*SyncErrorDetails
 }
 
 // Machine error codes (the guidance contract). They are stable identifiers, so they are
@@ -294,15 +295,20 @@ const (
 	// codeBaseNotCorroborated is the state contract guard's refusal to record a
 	// base it cannot vouch for. It is a `sync_required`-family state:
 	// what establishes a base the workspace can stand behind is a sync.
-	codeBaseNotCorroborated = "base_not_corroborated"
-	codeInvalidArguments    = "invalid_arguments"
-	codeInternal            = "internal"
+	codeBaseNotCorroborated   = "base_not_corroborated"
+	codeInvalidArguments      = "invalid_arguments"
+	codeInternal              = "internal"
+	codeInspectionUnavailable = "inspection_unavailable"
 )
 
 // machineErrorCode maps an error to its the guidance contract code. The order matters
 // where an error satisfies two sentinels: the more specific reading
 // comes first.
 func machineErrorCode(err error) string {
+	var unavailable *inspectionUnavailableError
+	if errors.As(err, &unavailable) {
+		return codeInspectionUnavailable
+	}
 	switch {
 	case errors.Is(err, errV1Workspace):
 		return codeV1Workspace
@@ -415,14 +421,19 @@ func argsRequestJSON(args []string) bool {
 // the flag, stdout carries prose and an envelope there would be noise.
 func writeJSONError(out io.Writer, err error) {
 	_ = writeJSON(out, errorJSON{Error: errorBodyJSON{
-		Code:    machineErrorCode(err),
-		Message: userMessage(err),
+		Code:             machineErrorCode(err),
+		Message:          userMessage(err),
+		SyncErrorDetails: syncDetails(err),
 	}})
 }
 
 // userMessage renders an error the way the human-facing renderer would,
 // minus the "sanho: " prefix, so both channels describe the same thing.
 func userMessage(err error) string {
+	var unavailable *inspectionUnavailableError
+	if errors.As(err, &unavailable) {
+		return unavailable.Error()
+	}
 	return stripInternalPrefixes(strings.TrimPrefix(err.Error(), errorPrefix))
 }
 
