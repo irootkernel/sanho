@@ -37,7 +37,9 @@ when it changes docs. A conflicted sync uses the standard Git idiom: resolve,
 
 - Go 1.27 or later — **to install only.** The installed binary does not need Go.
 - Git. No minimum version is enforced; merge paths use `git merge-tree
-  --write-tree`, which needs git 2.38 or newer in practice.
+  --write-tree`, which needs git 2.38 or newer in practice. Shared object reads
+  also require `--no-lazy-fetch`, and unborn HEAD checks require
+  `show-ref --exists`. Missing capabilities fail at the operation that needs them.
 - macOS or Linux.
 - Non-interactive credentials that can read and write the docs repository.
   Sanho never prompts: network operations run with `GIT_TERMINAL_PROMPT=0` and

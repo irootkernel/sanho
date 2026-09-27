@@ -15,6 +15,10 @@ This file records concise shipped outcomes and the planned next stable release.
 
 - Correct agent recovery guidance for rejected sync continuation and partial
   application pushes after canonical docs publication.
+- Reject failed Git reference, object, and scratch-index reads instead of
+  treating them as unborn history or empty docs in shared repository readers.
+  These reads require Git's `--no-lazy-fetch` control, and unborn HEAD checks
+  require `show-ref --exists`.
 
 ## v0.2.8 - 2026-09-14
 

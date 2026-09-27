@@ -209,7 +209,7 @@ func checkGitVersion(ctx context.Context, ws *workspace, out *report) {
 		out.warn("git", "could not read the git version: %s", causeOf(err))
 		return
 	}
-	out.ok("git", "%s (no minimum is enforced; merges need git 2.38 or newer)", line)
+	out.ok("git", "%s (no minimum is enforced; merges need git 2.38 or newer; object reads need --no-lazy-fetch; unborn HEAD checks need show-ref --exists)", line)
 }
 
 // checkHooks reports hook problems and, under --fix, repairs them.

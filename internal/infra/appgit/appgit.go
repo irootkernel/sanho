@@ -55,10 +55,11 @@ const MaxSubjects = 100
 
 // Repo is a handle on one application repository's docs directory.
 type Repo struct {
-	workDir string
-	docsDir string
-	git     *gitx.Runner
-	hooks   HookConfig
+	workDir    string
+	docsDir    string
+	git        *gitx.Runner
+	hooks      HookConfig
+	inspection *inspectionPolicy
 
 	emptyTreeOnce sync.Once
 	emptyTree     string
@@ -79,8 +80,7 @@ func (r *Repo) WithHooks(config HookConfig) *Repo {
 // runner supplies the git policy for plain read commands; nil means the
 // gitx default rooted at workDir. Calls that need extra environment —
 // only WorktreeDocsTree, which redirects GIT_INDEX_FILE — build their own
-// runner with default policy, because gitx.Runner is immutable and
-// carries no accessor for its options.
+// runner derived from the supplied policy.
 func New(workDir, docsDir string, runner *gitx.Runner) *Repo {
 	if docsDir == "" {
 		docsDir = DefaultDocsDir
@@ -118,26 +118,11 @@ func (r *Repo) EmptyTree(ctx context.Context) (string, error) {
 // DocsTreeOf returns the docs tree OID of a commit (empty-tree OID
 // when the docs dir is absent).
 func (r *Repo) DocsTreeOf(ctx context.Context, commit string) (string, error) {
-	res, err := r.git.RunExit(ctx, "rev-parse", "--verify", "--quiet", commit+":"+r.docsDir)
+	root, err := r.git.WithOptions(gitx.WithLocalObjects()).Line(ctx, "rev-parse", "--verify", commit+"^{tree}")
 	if err != nil {
 		return "", fmt.Errorf("appgit: resolve docs tree of %s: %w", commit, err)
 	}
-	if res.ExitCode == 0 {
-		return firstLine(res.Stdout), nil
-	}
-
-	// The lookup can fail for two very different reasons: the commit
-	// does not exist (a caller bug or a corrupt hook input, which must
-	// surface), or the commit simply has no docs directory (ordinary,
-	// and means the empty tree).
-	present, err := r.commitExists(ctx, commit)
-	if err != nil {
-		return "", err
-	}
-	if !present {
-		return "", fmt.Errorf("appgit: commit %s does not exist in %s", commit, r.workDir)
-	}
-	return r.EmptyTree(ctx)
+	return r.docsSubtree(ctx, root)
 }
 
 // HeadCommit returns HEAD's commit OID, or "" when HEAD is unborn.
@@ -146,14 +131,39 @@ func (r *Repo) DocsTreeOf(ctx context.Context, commit string) (string, error) {
 // has not been made), not a failure, so it is reported as the absence of
 // a commit rather than as an error.
 func (r *Repo) HeadCommit(ctx context.Context) (string, error) {
-	res, err := r.git.RunExit(ctx, "rev-parse", "--verify", "--quiet", "HEAD^{commit}")
+	res, err := r.git.WithOptions(gitx.WithLocalObjects()).RunExit(ctx, "rev-parse", "--verify", "--quiet", "HEAD^{commit}")
 	if err != nil {
 		return "", fmt.Errorf("appgit: resolve HEAD in %s: %w", r.workDir, err)
 	}
-	if res.ExitCode != 0 {
+	if res.ExitCode == 0 {
+		return firstLine(res.Stdout), nil
+	}
+	if res.ExitCode != 1 {
+		return "", fmt.Errorf("appgit: resolve HEAD: %w", &gitx.ExitError{Args: []string{"rev-parse", "--verify", "--quiet", "HEAD^{commit}"}, Result: res})
+	}
+	// Ref existence is independent of object validity. Only a valid symbolic
+	// HEAD pointing to an absent local branch is positively unborn.
+	ref, refErr := r.git.Line(ctx, "symbolic-ref", "--quiet", "HEAD")
+	if refErr != nil {
+		return "", fmt.Errorf("appgit: resolve HEAD: %w", refErr)
+	}
+	if !strings.HasPrefix(ref, "refs/heads/") {
+		return "", fmt.Errorf("appgit: HEAD does not name a local branch")
+	}
+	if _, err := r.git.Run(ctx, "check-ref-format", ref); err != nil {
+		return "", fmt.Errorf("appgit: invalid HEAD reference: %w", err)
+	}
+	existence, err := r.git.RunExit(ctx, "show-ref", "--exists", ref)
+	if err != nil {
+		return "", fmt.Errorf("appgit: read HEAD reference: %w", err)
+	}
+	if existence.ExitCode == 2 {
 		return "", nil
 	}
-	return firstLine(res.Stdout), nil
+	if existence.ExitCode == 0 {
+		return "", fmt.Errorf("appgit: HEAD reference exists but its commit cannot be read: %w", &gitx.ExitError{Args: []string{"rev-parse", "--verify", "--quiet", "HEAD^{commit}"}, Result: res})
+	}
+	return "", fmt.Errorf("appgit: read HEAD reference: %w", &gitx.ExitError{Args: []string{"show-ref", "--exists", ref}, Result: existence})
 }
 
 // BranchCommit returns the commit a local branch points at, and whether
@@ -187,15 +197,13 @@ func (r *Repo) commitExists(ctx context.Context, commit string) (bool, error) {
 // which is what lets `sanho sync --continue` ask "did this sync begin on
 // the history I am standing on?" from an offline machine.
 //
-// A commit either side does not resolve is reported as "not an
-// ancestor" rather than as an error: the callers all treat an
-// unanswerable ancestry question as a failed proof, and an OID that is
-// not in this repository is exactly that.
+// Missing objects and execution failures are errors, not evidence of unrelated
+// history. Only Git's negative ancestry result is a successful false answer.
 func (r *Repo) IsAncestor(ctx context.Context, a, b string) (bool, error) {
 	if a == "" || b == "" {
 		return false, nil
 	}
-	res, err := r.git.RunExit(ctx, "merge-base", "--is-ancestor", a, b)
+	res, err := r.git.WithOptions(gitx.WithLocalObjects()).RunExit(ctx, "merge-base", "--is-ancestor", a, b)
 	if err != nil {
 		return false, fmt.Errorf("appgit: ancestry check %s..%s in %s: %w", a, b, r.workDir, err)
 	}
@@ -205,9 +213,7 @@ func (r *Repo) IsAncestor(ctx context.Context, a, b string) (bool, error) {
 	case 1:
 		return false, nil
 	default:
-		// git exits 128 for an OID it cannot resolve, which is a missing
-		// object rather than a broken repository.
-		return false, nil
+		return false, fmt.Errorf("appgit: ancestry check: %w", &gitx.ExitError{Args: []string{"merge-base", "--is-ancestor", a, b}, Result: res})
 	}
 }
 
@@ -397,12 +403,12 @@ func (r *Repo) stagedDocsPaths(ctx context.Context) ([]string, error) {
 // headOrEmptyTree names something diffable: HEAD when it exists, the
 // empty tree when it does not.
 func (r *Repo) headOrEmptyTree(ctx context.Context) (string, error) {
-	res, err := r.git.RunExit(ctx, "rev-parse", "--verify", "--quiet", "HEAD^{commit}")
+	head, err := r.HeadCommit(ctx)
 	if err != nil {
 		return "", fmt.Errorf("appgit: resolve HEAD in %s: %w", r.workDir, err)
 	}
-	if res.ExitCode == 0 {
-		return "HEAD", nil
+	if head != "" {
+		return head, nil
 	}
 	return r.EmptyTree(ctx)
 }
@@ -715,7 +721,7 @@ func describeObject(object string, paths map[string]string) string {
 // the merge contract binary classification needs, and is why an oversized blob can
 // be classified without being materialized.
 func (r *Repo) sniffBinary(ctx context.Context, object string) (bool, error) {
-	run := gitx.New(r.workDir, gitx.WithStdoutLimit(markers.BinarySniffSize))
+	run := r.git.WithOptions(gitx.WithStdoutLimit(markers.BinarySniffSize))
 	res, err := run.Run(ctx, "cat-file", "blob", object)
 	if err != nil {
 		return false, err
@@ -958,6 +964,18 @@ func repoNameFromURL(url string) string {
 // reproduces exactly what a commit would contain — which is the
 // comparison the base-advance rule needs.
 func (r *Repo) WorktreeDocsTree(ctx context.Context) (string, error) {
+	if err := r.admitWorktreeRead(ctx, r.git); err != nil {
+		return "", err
+	}
+	head, err := r.HeadCommit(ctx)
+	if err != nil {
+		return "", err
+	}
+	if head != "" {
+		if _, err := r.DocsTreeOf(ctx, head); err != nil {
+			return "", err
+		}
+	}
 	docsPath := filepath.Join(r.workDir, filepath.FromSlash(r.docsDir))
 	switch _, err := os.Stat(docsPath); {
 	case err == nil:
@@ -973,22 +991,32 @@ func (r *Repo) WorktreeDocsTree(ctx context.Context) (string, error) {
 	}
 	defer func() { _ = os.RemoveAll(scratch) }()
 
-	run := gitx.New(r.workDir, gitx.WithEnv("GIT_INDEX_FILE="+filepath.Join(scratch, "index")))
-	if err := seedScratchIndex(ctx, run); err != nil {
+	run := r.git.WithOptions(gitx.WithLocalObjects(), gitx.WithEnv("GIT_INDEX_FILE="+filepath.Join(scratch, "index")))
+	if err := seedScratchIndex(ctx, run, head); err != nil {
 		return "", err
 	}
+	paths, err := run.Run(ctx, "ls-files", "--cached", "--others", "--exclude-standard", "-z", "--", ":(literal)"+r.docsDir)
+	if err != nil {
+		return "", fmt.Errorf("appgit: read scratch docs paths: %w", err)
+	}
+	if len(paths.Stdout) == 0 {
+		return r.EmptyTree(ctx)
+	}
 
-	res, err := run.RunExit(ctx, "add", "-A", "--", r.docsDir)
+	if err := r.admitWorktreeRead(ctx, run); err != nil {
+		return "", err
+	}
+	res, err := run.RunExit(ctx, "add", "-A", "--", ":(literal)"+r.docsDir)
 	if err != nil {
 		return "", fmt.Errorf("appgit: stage worktree docs into scratch index: %w", err)
 	}
 	if res.ExitCode != 0 {
-		// An empty or fully ignored docs directory matches no pathspec.
-		if strings.Contains(string(res.Stderr), "did not match any files") {
-			return r.EmptyTree(ctx)
-		}
 		return "", fmt.Errorf("appgit: stage worktree docs into scratch index: exit %d: %s",
 			res.ExitCode, strings.TrimSpace(string(res.Stderr)))
+	}
+	// Staging can turn an untracked embedded repository into a new gitlink.
+	if err := r.admitWorktreeRead(ctx, run); err != nil {
+		return "", err
 	}
 
 	root, err := run.Line(ctx, "write-tree")
@@ -996,28 +1024,18 @@ func (r *Repo) WorktreeDocsTree(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("appgit: write scratch index tree: %w", err)
 	}
 
-	sub, err := run.RunExit(ctx, "rev-parse", "--verify", "--quiet", root+":"+r.docsDir)
-	if err != nil {
-		return "", fmt.Errorf("appgit: resolve worktree docs tree: %w", err)
-	}
-	if sub.ExitCode != 0 {
-		return r.EmptyTree(ctx)
-	}
-	return firstLine(sub.Stdout), nil
+	return r.docsSubtree(ctx, root)
 }
 
 // seedScratchIndex loads HEAD into the scratch index, or empties it when
 // HEAD is unborn.
-func seedScratchIndex(ctx context.Context, run *gitx.Runner) error {
-	res, err := run.RunExit(ctx, "read-tree", "HEAD")
-	if err != nil {
-		return fmt.Errorf("appgit: seed scratch index from HEAD: %w", err)
+func seedScratchIndex(ctx context.Context, run *gitx.Runner, head string) error {
+	seed := head
+	if seed == "" {
+		seed = "--empty"
 	}
-	if res.ExitCode == 0 {
-		return nil
-	}
-	if _, err := run.Run(ctx, "read-tree", "--empty"); err != nil {
-		return fmt.Errorf("appgit: initialize empty scratch index: %w", err)
+	if _, err := run.Run(ctx, "read-tree", seed); err != nil {
+		return fmt.Errorf("appgit: seed scratch index: %w", err)
 	}
 	return nil
 }

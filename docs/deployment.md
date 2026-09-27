@@ -8,7 +8,9 @@ container image, or frontend asset to deploy.
 - Go 1.27 or newer to build. On macOS, the Go 1.27 toolchain requires macOS 13
   Ventura or newer.
 - Git at runtime. No minimum is enforced; merge paths require Git 2.38 or newer
-  in practice.
+  in practice. Shared object reads also require `--no-lazy-fetch`, and unborn
+  HEAD checks require `show-ref --exists`. Missing capabilities fail at the
+  operation that needs them.
 - Read/write credentials for the canonical docs repository.
 - Non-interactive SSH access for hook execution.
 

@@ -34,15 +34,50 @@ const killWaitDelay = 3 * time.Second
 
 // Runner executes git with a fixed working directory and policy.
 type Runner struct {
-	dir         string
-	timeout     time.Duration
-	network     bool
-	extraEnv    []string
-	stdoutLimit int64
+	dir          string
+	timeout      time.Duration
+	network      bool
+	extraEnv     []string
+	stdoutLimit  int64
+	inspection   bool
+	localObjects bool
+}
+
+// ErrInspectionPolicyUnavailable means Git cannot enforce the inspection policy.
+var ErrInspectionPolicyUnavailable = errors.New("read-only Git execution controls are unavailable")
+
+// NewInspection establishes controls before any repository-dependent command.
+// The global no-lazy-fetch option is deliberately probed: unsupported Git must
+// reject inspection instead of silently ignoring a newer environment variable.
+func NewInspection(ctx context.Context, dir string) (*Runner, error) {
+	r := New(dir)
+	r.inspection = true
+	res, err := r.RunExit(ctx, "--version")
+	if err != nil {
+		return nil, err
+	}
+	if res.ExitCode != 0 {
+		return nil, ErrInspectionPolicyUnavailable
+	}
+	return r, nil
+}
+
+// WithOptions derives a runner without losing its execution or timeout policy.
+func (r *Runner) WithOptions(opts ...Option) *Runner {
+	derived := *r
+	derived.extraEnv = append([]string(nil), r.extraEnv...)
+	for _, option := range opts {
+		option(&derived)
+	}
+	return &derived
 }
 
 // Option configures a Runner.
 type Option func(*Runner)
+
+// WithLocalObjects forbids implicit promisor fetches while reading Git objects.
+// Unsupported Git returns an execution error rather than ignoring the policy.
+func WithLocalObjects() Option { return func(r *Runner) { r.localObjects = true } }
 
 // WithTimeout overrides DefaultTimeout for this runner.
 func WithTimeout(d time.Duration) Option { return func(r *Runner) { r.timeout = d } }
@@ -113,6 +148,8 @@ type Result struct {
 	// StdoutTruncated reports that WithStdoutLimit cut the capture
 	// short, so Stdout is a prefix of what git actually wrote.
 	StdoutTruncated bool
+	// StdoutBytes counts all bytes received, including discarded output.
+	StdoutBytes int64
 }
 
 // limitedBuffer is the stdout sink. With limit <= 0 it is an ordinary
@@ -120,24 +157,26 @@ type Result struct {
 // discards the rest, which keeps the child's pipe drained (so it never
 // blocks) without growing without bound.
 type limitedBuffer struct {
-	bytes.Buffer
+	buffer    bytes.Buffer
 	limit     int64
 	truncated bool
+	received  int64
 }
 
 func (b *limitedBuffer) Write(p []byte) (int, error) {
+	b.received += int64(len(p))
 	if b.limit <= 0 {
-		return b.Buffer.Write(p)
+		return b.buffer.Write(p)
 	}
-	room := b.limit - int64(b.Len())
+	room := b.limit - int64(b.buffer.Len())
 	if room <= 0 {
 		b.truncated = true
 		return len(p), nil
 	}
 	if int64(len(p)) <= room {
-		return b.Buffer.Write(p)
+		return b.buffer.Write(p)
 	}
-	if _, err := b.Buffer.Write(p[:room]); err != nil {
+	if _, err := b.buffer.Write(p[:room]); err != nil {
 		return 0, err
 	}
 	b.truncated = true
@@ -253,7 +292,22 @@ func (r *Runner) env() []string {
 		connectSecs := int(NetworkConnectTimeout / time.Second)
 		env = append(env, fmt.Sprintf("GIT_SSH_COMMAND=ssh -o BatchMode=yes -o ConnectTimeout=%d", connectSecs))
 	}
-	return append(env, r.extraEnv...)
+	env = append(env, r.extraEnv...)
+	if r.localObjects {
+		env = append(env, "GIT_NO_LAZY_FETCH=1")
+	}
+	if r.inspection {
+		// Trace destinations can write outside the repository even for reads.
+		kept := env[:0]
+		for _, value := range env {
+			if !strings.HasPrefix(value, "GIT_TRACE") {
+				kept = append(kept, value)
+			}
+		}
+		env = append(kept, "GIT_OPTIONAL_LOCKS=0", "GIT_NO_LAZY_FETCH=1",
+			"GIT_TRACE2=0", "GIT_TRACE2_EVENT=0", "GIT_TRACE2_PERF=0")
+	}
+	return env
 }
 
 // invoke runs git with the runner's policy and classifies the outcome.
@@ -278,6 +332,14 @@ func (r *Runner) invoke(ctx context.Context, stdin io.Reader, args ...string) (r
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
+	if r.inspection {
+		args = append([]string{"--no-pager", "--no-optional-locks", "--no-lazy-fetch",
+			"-c", "core.hooksPath=" + os.DevNull,
+			"-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false", "-c", "core.splitIndex=false",
+			"-c", "maintenance.auto=false", "-c", "gc.auto=0", "-c", "submodule.recurse=false"}, args...)
+	} else if r.localObjects {
+		args = append([]string{"--no-lazy-fetch"}, args...)
+	}
 	cmd := exec.CommandContext(runCtx, "git", args...)
 	cmd.Dir = r.dir
 	cmd.Env = r.env()
@@ -311,7 +373,7 @@ func (r *Runner) invoke(ctx context.Context, stdin io.Reader, args ...string) (r
 
 	runErr := cmd.Run()
 
-	res = Result{Stdout: stdout.Bytes(), Stderr: stderr.Bytes(), ExitCode: -1, StdoutTruncated: stdout.truncated}
+	res = Result{Stdout: stdout.buffer.Bytes(), Stderr: stderr.Bytes(), ExitCode: -1, StdoutTruncated: stdout.truncated, StdoutBytes: stdout.received}
 	if cmd.ProcessState != nil {
 		res.ExitCode = cmd.ProcessState.ExitCode()
 	}

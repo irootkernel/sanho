@@ -358,9 +358,11 @@ before Sanho invokes Git for another repository. Network operations set
 `GIT_TERMINAL_PROMPT=0` and an SSH command with `BatchMode=yes`.
 
 No minimum Git version is enforced at startup. Merge paths require Git 2.38 or
-newer in practice; a capability failure is reported at the operation that needs
-it. Exit codes that carry Git meaning are read explicitly instead of being
-collapsed into generic failures.
+newer in practice. Shared object reads require `--no-lazy-fetch`, and unborn
+HEAD checks require `show-ref --exists`, as described under
+[trustworthy reads](#trustworthy-head-and-object-reads). A capability failure is
+reported at the operation that needs it. Exit codes that carry Git meaning are
+read explicitly instead of being collapsed into generic failures.
 
 ## Git hooks
 
@@ -432,20 +434,18 @@ nothing exits 1 at every level of the command tree, not only at the root.
 
 ## Planned structured diagnostics and sync inspection
 
-This is the adopted implementation design for
-[EPIC-003](roadmap/README.md#epic-003-structured-diagnostics-and-sync-inspection),
-not a claim about current executable behavior. The planned public interface is
-owned by [CLI JSON](cli-json.md#planned-structured-sync-diagnostics); delivery
-and verification detail lives in the Epic's roadmap-linked dossier. The
-existing contracts above remain in force until the corresponding implementation
-and verification are complete.
+For [EPIC-003](roadmap/README.md#epic-003-structured-diagnostics-and-sync-inspection),
+the shared completion assessment and strict local Git readers are implemented
+in TASK-006. The public inspection mode and structured error interface remain
+planned in [CLI JSON](cli-json.md#planned-structured-sync-diagnostics).
+The roadmap-linked dossier tracks delivery and verification of each part.
 
 ### One completion assessment
 
-Extract one completion assessment in `internal/usecase/docsync` and make both
-`Continue` and the new inspection mode consume it. The assessment requests
-facts through ports and never performs the completion state writes. Keep the
-ordered checks that actual Continue currently applies: note existence/validity,
+`AssessCompletion` in `internal/usecase/docsync` supplies the completion
+assessment used by `Continue` and available to the planned inspection mode.
+It requests facts through read-only ports and never performs completion state
+writes. Its ordered checks are note existence/validity,
 remaining markers, clean docs, entry-history ancestry, a recorded merge tree,
 and preservation of paths outside the recorded conflict set. The first blocker
 remains the command's refusal; subsequent checks are explicitly unevaluated.
@@ -511,8 +511,9 @@ The initial execution policy is deliberately conservative:
    a filter to discover whether it is harmless, and never disable conversion
    and then describe raw-byte comparison as equivalent Git content.
 3. Apply inspection-only runner controls before any affected Git invocation:
-   disable optional index-refresh writes, fsmonitor hooks/services, external
-   diff and textconv, and automatic maintenance. Do not invoke smudge/process
+   disable optional index-refresh writes, hooks (including scratch-index
+   change hooks), fsmonitor services, external diff and textconv, Trace2 file
+   destinations, and automatic maintenance. Do not invoke smudge/process
    filters or checkout paths. Required objects must be read locally without
    lazy fetching. When these controls cannot be established, return
    `inspection_unavailable` / `execution_policy_unavailable`; do not run the
@@ -523,6 +524,13 @@ The initial execution policy is deliberately conservative:
    built-in attribute conversions, tracked-but-ignored paths, modes, symlinks,
    and exact path semantics. Do not substitute `HEAD`'s docs tree merely
    because status was clean; that shortcut is not part of this plan.
+
+The strict adapter rejects an indexed docs gitlink before status or scratch
+staging with `execution_policy_unavailable`. Git status can run a nested repository's
+filters even with recursion disabled, and the parent configuration check
+cannot establish that nested execution policy. Continue retains its ordinary
+Git behavior for submodules. Scratch staging also rejects any new gitlink
+created from an untracked embedded repository before returning a tree.
 
 Keep the safety probe and affected invocations consistent. Check the effective
 execution configuration again before another filter-capable operation, and
@@ -546,8 +554,8 @@ byte-identical object database. No filesystem-wide traversal is introduced.
 
 ### Trustworthy HEAD and object reads
 
-TASK-006 must harden `HeadCommit()`, `HeadDocsTree()`, and the admitted scratch
-seed path, including their relevant object/tree helpers. A nonzero Git exit
+`HeadCommit()`, `HeadDocsTree()`, and the admitted scratch seed path verify
+the references and objects they require. A nonzero Git exit
 alone is not evidence of an unborn HEAD. Classify HEAD as unborn only when it
 is a valid symbolic reference to an absent local branch. A valid detached HEAD
 is an ordinary committed state. An existing ref whose object is missing, an
@@ -557,8 +565,10 @@ return an error rather than inventing an empty history.
 
 Use Git-supported reference queries rather than assumptions about loose ref
 files; packed refs and linked worktrees must work. Ref existence and commit
-object validity are separate checks. Capability failures on older Git versions
-must remain failures, never evidence of absence. Preserve existing error
+object validity are separate checks. Shared object readers require Git's
+`--no-lazy-fetch` control, and unborn classification also requires
+`show-ref --exists`. An unsupported capability is an execution error; it is
+never evidence of absence. Preserve existing error
 classification for surfaced failures; removing a success-shaped fallback is
 an intentional correctness fix, not an incompatible change to valid inputs.
 
@@ -567,6 +577,9 @@ classification. Failure of `read-tree` for a verified commit must be returned.
 Likewise, an empty docs tree is valid only for a verified unborn state or a
 verified existing tree with no docs subtree. Missing required commit, tree, or
 blob objects must not be mapped to an empty tree, zero drift, or a clean result.
+These reads use local objects on both ordinary and inspection runners. Missing
+docs objects in a partial clone remain errors; they do not trigger a fetch.
+Ordinary worktree normalization still supports configured filters.
 Do not repair, fetch, or rewrite refs while determining these facts. This is a
 bounded repair of helpers used by the feature, not a repository-wide Git audit.
 

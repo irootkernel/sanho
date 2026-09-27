@@ -4,7 +4,8 @@ This is the temporary implementation dossier for
 [EPIC-003](../roadmap/README.md#epic-003-structured-diagnostics-and-sync-inspection).
 The roadmap alone owns Epic/Task identity, order, and lifecycle status.
 Checkboxes below are implementation acceptance evidence, not a second status
-register. Adopting this plan does not claim implementation or authorize a
+register. A checked item under **Do not** confirms that the prohibition was
+respected. Adopting this plan does not claim implementation or authorize a
 commit, push, installation, release, or live-remote operation.
 
 ## Objective
@@ -163,59 +164,59 @@ failed reads and providing the strict inspection execution boundary.
 
 Implement:
 
-- [ ] Add assessment/result and blocker types in the existing docsync package;
+- [x] Add assessment/result and blocker types in the existing docsync package;
   keep ports read-focused and avoid a new framework or CLI dependency.
-- [ ] Extract note, marker, clean-docs, ancestry, merge-tree, and non-conflict
+- [x] Extract note, marker, clean-docs, ancestry, merge-tree, and non-conflict
   preservation checks from Continue, retaining first-failure precedence.
-- [ ] Return structured path evidence and expected/actual comparable trees;
+- [x] Return structured path evidence and expected/actual comparable trees;
   preserve existing error sentinels through wrapping or typed causes.
-- [ ] Make Continue use a fresh assessment before its current mutation phase.
+- [x] Make Continue use a fresh assessment before its current mutation phase.
   Preserve clear-note-before-guarded-base-write ordering and write failures.
-- [ ] Provide the read boundary needed for the inspection-only observation
+- [x] Provide the read boundary needed for the inspection-only observation
   check without accepting a previous read as a completion token.
-- [ ] Keep missing legacy entry fields distinct from a missing merge tree.
-- [ ] Introduce bounded inspection reader policy in the existing adapters,
+- [x] Keep missing legacy entry fields distinct from a missing merge tree.
+- [x] Introduce bounded inspection reader policy in the existing adapters,
   covering `DocsClean()` as well as `WorktreeDocsTree()`. Read effective Git
   configuration without programs; implement conservative filter admission
   before each reached filter-capable read and enforce the runner controls.
   Carry a typed unavailability cause without importing CLI codes into usecase.
-- [ ] Preserve current Git normalization on admitted inputs. Keep Continue's
+- [x] Preserve current Git normalization on admitted inputs. Keep Continue's
   normal filter-aware readers; do not turn inspection restrictions into new
   completion guards or raw-byte comparisons.
-- [ ] Harden `HeadCommit()`, `HeadDocsTree()`, scratch seeding, and their used
+- [x] Harden `HeadCommit()`, `HeadDocsTree()`, scratch seeding, and their used
   tree/object readers. Verify unborn versus detached/broken/missing-object HEAD;
   only proved absence permits an empty fallback. Use Git ref APIs compatible
   with packed refs and linked worktrees; propagate capability/execution errors.
-- [ ] Preserve the scanner's whole-docs regular-file traversal, including
+- [x] Preserve the scanner's whole-docs regular-file traversal, including
   untracked/ignored files and paths outside recorded conflicts. Align source
   comments and architecture; do not narrow the scanner to match the old prose.
 
 Do not:
 
-- [ ] Use `ResolutionState == resolved` as a new completion requirement.
-- [ ] Change the conflict set, marker scope, or accepted local-side resolution.
-- [ ] Expose the new CLI mode before its command contract and tests are ready.
-- [ ] Add state writes, registry calls, clone setup, or network to assessment.
-- [ ] Treat `--no-optional-locks` or a scratch index as filter isolation, or
+- [x] Use `ResolutionState == resolved` as a new completion requirement.
+- [x] Change the conflict set, marker scope, or accepted local-side resolution.
+- [x] Expose the new CLI mode before its command contract and tests are ready.
+- [x] Add state writes, registry calls, clone setup, or network to assessment.
+- [x] Treat `--no-optional-locks` or a scratch index as filter isolation, or
   silently trust an unguarded nested Git invocation.
-- [ ] Translate a failed HEAD/object read to unborn, or retry failed
+- [x] Translate a failed HEAD/object read to unborn, or retry failed
   `read-tree HEAD` with `--empty` without proving unborn state.
 
 Verify and finish:
 
-- [ ] Table-test every ordered blocker, skipped check, and successful drift
+- [x] Table-test every ordered blocker, skipped check, and successful drift
   result; prove assessment invokes no mutation capabilities.
-- [ ] Retain real-Git regression cases for local-side resolutions, ancestry,
+- [x] Retain real-Git regression cases for local-side resolutions, ancestry,
   discarded clean upstream content, legacy notes, and comparable-tree semantics.
-- [ ] Add reader-level regression cases from S13 and S20-S22 now, including
+- [x] Add reader-level regression cases from S13 and S20-S22 now, including
   unchanged contents with changed mtime, scratch re-staging, external sentinel
   files, Git execution controls, and built-in conversions. Do not postpone
   adapter safety to TASK-009 or accept index-only snapshots as proof.
-- [ ] Assert a marker in a regular file outside the recorded conflict set wins
+- [x] Assert a marker in a regular file outside the recorded conflict set wins
   over dirty docs and any later inspection filter restriction.
-- [ ] Inject note-clear and guarded-base-write failures and verify the existing
+- [x] Inject note-clear and guarded-base-write failures and verify the existing
   ordering and actual residual state, not an invented rollback guarantee.
-- [ ] Existing Continue tests pass without changing expected safety behavior.
+- [x] Existing Continue tests pass without changing expected safety behavior.
   Record exact checks and outcomes before marking the Task complete.
 
 ### TASK-007: Add structured error details through the guidance catalog

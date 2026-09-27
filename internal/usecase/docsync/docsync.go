@@ -23,7 +23,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/irootkernel/sanho/internal/domain/provenance"
 	pubdom "github.com/irootkernel/sanho/internal/domain/publish"
@@ -91,6 +90,7 @@ type AppRepoPort interface {
 	// THIS repository's history. It is local and network-free, which is
 	// what lets `--continue` insist on standing where the sync began
 	// without reaching for the canonical clone.
+	// Missing objects and execution failures are errors, not negative ancestry.
 	IsAncestor(ctx context.Context, a, b string) (bool, error)
 	// CheckoutDocsTree materializes tree into the docs worktree and
 	// index (docs paths only).
@@ -741,44 +741,15 @@ func (u *UseCase) restoreBase(ctx context.Context, note SyncNote) error {
 // still guarded: SaveSyncTargetBase re-proves the same ancestry from the
 // adapter side, so the invariant does not rest on this function alone.
 func (u *UseCase) Continue(ctx context.Context) (ContinueResult, error) {
-	note, exists, err := u.State.LoadSyncNote()
-	switch {
-	case errors.Is(err, ErrSyncNoteCorrupt):
-		return ContinueResult{}, err
-	case err != nil:
-		return ContinueResult{}, fmt.Errorf("read sync state: %w", err)
-	case !exists:
-		return ContinueResult{}, ErrNoSyncInProgress
-	}
-	if !note.Target.Valid() {
-		// A note that cannot say what to adopt is unusable for exactly
-		// the reason an unparseable one is, so it is reported the same
-		// way and routed to the abort, which needs nothing from it.
-		return ContinueResult{}, fmt.Errorf("%w: the sync note records no usable merge target", ErrSyncNoteCorrupt)
-	}
-
-	conflicted, err := u.App.ScanWorktreeDocsForMarkers(ctx)
-	if err != nil {
-		return ContinueResult{}, fmt.Errorf("scan docs for conflict markers: %w", err)
-	}
-	if len(conflicted) > 0 {
-		return ContinueResult{}, fmt.Errorf("%w: %s", ErrMarkersRemain, strings.Join(conflicted, ", "))
-	}
-	clean, err := u.App.DocsClean(ctx)
-	if err != nil {
-		return ContinueResult{}, fmt.Errorf("read docs status: %w", err)
-	}
-	if !clean {
-		return ContinueResult{}, ErrResolutionUncommitted
-	}
-	if err := u.requireSyncHistory(ctx, note); err != nil {
-		return ContinueResult{}, err
-	}
-
-	drift, err := u.validateMergeResult(ctx, note)
+	assessment, err := AssessCompletion(ctx, u.App, u.State)
 	if err != nil {
 		return ContinueResult{}, err
 	}
+	if assessment.Blocker != nil {
+		return ContinueResult{}, assessment.Blocker
+	}
+	note := assessment.Note
+	drift := len(assessment.Comparison.AllowedChanges)
 
 	if err := u.State.ClearSyncNote(); err != nil {
 		return ContinueResult{}, fmt.Errorf("clear the sync note: %w", err)
@@ -787,69 +758,6 @@ func (u *UseCase) Continue(ctx context.Context) (ContinueResult, error) {
 		return ContinueResult{}, fmt.Errorf("record new base: %w", err)
 	}
 	return ContinueResult{Base: note.Target, MergeDrift: drift}, nil
-}
-
-// requireSyncHistory is `--continue`'s fourth precondition.
-//
-// An empty EntryHead is not a failure to check: it means the sync began
-// on an unborn HEAD, or on a note written before the field existed
-// (PreDatesEntryRecord). Neither can say which history the sync belongs
-// to, so neither can be violated — and refusing there would strand a
-// workspace left mid-sync across an upgrade with no way to finish it,
-// which is a worse answer than the one this precondition prevents.
-func (u *UseCase) requireSyncHistory(ctx context.Context, note SyncNote) error {
-	if note.EntryHead == "" {
-		return nil
-	}
-	head, err := u.App.HeadCommit(ctx)
-	if err != nil {
-		return fmt.Errorf("read HEAD: %w", err)
-	}
-	if head == note.EntryHead {
-		return nil
-	}
-	descends, err := u.App.IsAncestor(ctx, note.EntryHead, head)
-	if err != nil {
-		return fmt.Errorf("check whether HEAD descends from where the sync began: %w", err)
-	}
-	if descends {
-		return nil
-	}
-	return fmt.Errorf("%w: it began at %s, and HEAD is %s",
-		ErrContinueForeignHistory, shortOID(note.EntryHead), shortOID(head))
-}
-
-// validateMergeResult allows the user's resolution to differ on the
-// paths that conflicted and nowhere else. A missing merge tree is not a
-// compatibility warrant: abort remains available and preserves every
-// committed resolution, while advancing the base would make an
-// unverified tree eligible for fast-forward publication.
-func (u *UseCase) validateMergeResult(ctx context.Context, note SyncNote) (int, error) {
-	if note.MergedTree == "" {
-		return 0, ErrResolutionUnverifiable
-	}
-	worktree, err := u.App.WorktreeDocsTree(ctx)
-	if err != nil {
-		return 0, fmt.Errorf("hash worktree docs: %w", err)
-	}
-	changed, err := u.App.DocsTreeChangedPaths(ctx, note.MergedTree, worktree)
-	if err != nil {
-		return 0, fmt.Errorf("compare the worktree with the merge result: %w", err)
-	}
-	conflicts := make(map[string]struct{}, len(note.Conflicts))
-	for _, path := range note.Conflicts {
-		conflicts[path] = struct{}{}
-	}
-	var unexpected []string
-	for _, path := range changed {
-		if _, allowed := conflicts[path]; !allowed {
-			unexpected = append(unexpected, path)
-		}
-	}
-	if len(unexpected) > 0 {
-		return 0, fmt.Errorf("%w: %s", ErrResolutionChangedNonConflicts, strings.Join(unexpected, ", "))
-	}
-	return len(changed), nil
 }
 
 // ResolutionState reports where an unfinished sync stands. It is a

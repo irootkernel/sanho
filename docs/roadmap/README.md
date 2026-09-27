@@ -30,7 +30,7 @@ Epic.
 |---|---|---|
 | [EPIC-001](#epic-001-sanho-skill-modernization-for-gpt-6-astra) | Sanho skill modernization for GPT-6 Astra | Completed |
 | [EPIC-002](#epic-002-integrate-sanho-with-the-aquarium-development-channel) | Integrate Sanho with the Aquarium development channel | Completed |
-| [EPIC-003](#epic-003-structured-diagnostics-and-sync-inspection) | Structured diagnostics and sync inspection | Planned |
+| [EPIC-003](#epic-003-structured-diagnostics-and-sync-inspection) | Structured diagnostics and sync inspection | In Progress |
 
 ## EPIC-001: Sanho skill modernization for GPT-6 Astra
 
@@ -85,7 +85,7 @@ Aquarium TASK-014 or TASK-015.
 
 ## EPIC-003: Structured diagnostics and sync inspection
 
-- Status: Planned
+- Status: In Progress
 - Objective: Combine structured recovery diagnoses and read-only active-sync
   inspection so operators and agents can understand the actual local Continue
   guards without parsing human error messages or retrying mutations.
@@ -105,7 +105,7 @@ Aquarium TASK-014 or TASK-015.
 
 | Task | Title | Status | Dependencies |
 |---|---|---|---|
-| TASK-006 | Extract the shared read-only completion assessment | Planned | None |
+| TASK-006 | Extract the shared read-only completion assessment | Completed | None |
 | TASK-007 | Add structured error details through the guidance catalog | Planned | TASK-006 |
 | TASK-008 | Deliver local read-only sync inspection | Planned | TASK-007 |
 | TASK-009 | Verify cross-surface parity and failure boundaries | Planned | TASK-008 |

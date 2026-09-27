@@ -50,6 +50,7 @@ import (
 	"strings"
 
 	"github.com/irootkernel/sanho/internal/domain/markers"
+	"github.com/irootkernel/sanho/internal/infra/gitx"
 )
 
 // pathBatchSize bounds how many paths one git invocation receives. Docs
@@ -76,7 +77,10 @@ func literalPathspec(path string) string { return ":(literal)" + path }
 // of "commit or stash your docs changes first", and `git status` is the
 // very signal the user is being asked to clear.
 func (r *Repo) DocsClean(ctx context.Context) (bool, error) {
-	res, err := r.git.Run(ctx, "status", "--porcelain", "--", r.docsDir)
+	if err := r.admitWorktreeRead(ctx, r.git); err != nil {
+		return false, err
+	}
+	res, err := r.git.Run(ctx, "status", "--porcelain", "--", ":(literal)"+r.docsDir)
 	if err != nil {
 		return false, fmt.Errorf("appgit: read docs status in %s: %w", r.workDir, err)
 	}
@@ -89,14 +93,14 @@ func (r *Repo) DocsClean(ctx context.Context) (bool, error) {
 // "this commit contributes no docs content" is one state, however it
 // came about.
 func (r *Repo) HeadDocsTree(ctx context.Context) (string, error) {
-	res, err := r.git.RunExit(ctx, "rev-parse", "--verify", "--quiet", "HEAD^{commit}")
+	head, err := r.HeadCommit(ctx)
 	if err != nil {
 		return "", fmt.Errorf("appgit: resolve HEAD in %s: %w", r.workDir, err)
 	}
-	if res.ExitCode != 0 {
+	if head == "" {
 		return r.EmptyTree(ctx)
 	}
-	return r.DocsTreeOf(ctx, "HEAD")
+	return r.DocsTreeOf(ctx, head)
 }
 
 // CommitTree returns the root tree OID of any commit present in this
@@ -134,6 +138,8 @@ func (r *Repo) CommitTree(ctx context.Context, commit string) (string, error) {
 // else. The empty answers — no paths, an unrecorded tree, two identical
 // trees — are all "nothing changed", which is the reading that keeps a
 // caller from mistaking an absent fact for a resolution.
+// This is an ordinary-reader reporting heuristic, not a completion or strict
+// inspection proof. Those callers use DocsTreeChangedPaths to verify objects.
 func (r *Repo) DocsPathsChangedBetween(ctx context.Context, fromTree, toTree string, paths []string) (bool, error) {
 	if fromTree == "" || toTree == "" || len(paths) == 0 {
 		return false, nil
@@ -173,11 +179,19 @@ func (r *Repo) DocsPathsChangedBetween(ctx context.Context, fromTree, toTree str
 // differs between two trees. The names come from Git as tree-relative
 // paths, so the adapter restores the docs prefix before returning them
 // to the use case. Sorting makes error output deterministic.
+// Unlike DocsPathsChangedBetween, this completion reader verifies even equal
+// trees and disables external diff and textconv on its Git invocation.
 func (r *Repo) DocsTreeChangedPaths(ctx context.Context, fromTree, toTree string) ([]string, error) {
-	if fromTree == "" || toTree == "" || fromTree == toTree {
+	if err := r.verifyDocsTree(ctx, fromTree); err != nil {
+		return nil, err
+	}
+	if fromTree == toTree {
 		return nil, nil
 	}
-	res, err := r.git.Run(ctx, "diff-tree", "-r", "-z", "--name-only", fromTree, toTree)
+	if err := r.verifyDocsTree(ctx, toTree); err != nil {
+		return nil, err
+	}
+	res, err := r.git.WithOptions(gitx.WithLocalObjects()).Run(ctx, "diff-tree", "--no-ext-diff", "--no-textconv", "-r", "-z", "--name-only", fromTree, toTree)
 	if err != nil {
 		return nil, fmt.Errorf("appgit: diff docs trees %s..%s in %s: %w", fromTree, toTree, r.workDir, err)
 	}

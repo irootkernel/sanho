@@ -160,8 +160,9 @@ func TestDocsTreeOfRejectsAnAbsentCommit(t *testing.T) {
 	if err == nil {
 		t.Fatal("DocsTreeOf accepted a commit that does not exist")
 	}
-	if !strings.Contains(err.Error(), "does not exist") {
-		t.Fatalf("error = %v, want it to say the commit does not exist", err)
+	var exit *gitx.ExitError
+	if !errors.As(err, &exit) || exit.Result.ExitCode == 0 {
+		t.Fatalf("error = %v, want the failed Git read preserved", err)
 	}
 }
 
