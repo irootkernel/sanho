@@ -88,6 +88,22 @@ work.
   disposable fixtures and identify the writer before changing process lifetime
   or fixture cleanup. Do not hide a functional failure with cleanup retries.
 
+## Changed inspection process coverage
+
+- **Owner:** `runSyncInspect` in `internal/interface/cli/sync_inspect.go` and
+  `test/cli/e2e/inspection_execution_test.go`.
+- **Impact:** Unit tests cover seven observation changes and their human
+  output, but no CLI process test produces the `changed` state. A future
+  change to output or error handling could break its exit status or JSON
+  envelope without those tests catching it.
+- **Reason for deferral:** The current CLI renders every inspection state
+  through the same path. Existing mutation tests satisfy the accepted
+  freshness contract; process coverage is additional regression protection.
+- **Re-entry:** When inspection output or error handling changes, add a
+  deterministic Git gate that lets a fixture change HEAD or the sync note
+  during inspection. Assert exit status 0, `changed`, invalidated checks,
+  null recovery, and no protected-state writes beyond the fixture's mutation.
+
 Each entry must identify the finding, owner, reason for deferral, and concrete
 next action. Work required for current correctness or acceptance cannot be
 deferred. Promote epic-sized work to a TODO candidate or an adopted roadmap
