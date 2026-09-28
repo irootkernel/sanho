@@ -152,12 +152,12 @@ caches for each build. It reports the native rebuild time separately, since
 that measurement also includes the manager's exact clone and immutable
 publication work.
 
-The current Darwin arm64 check used Go 1.26.6 and Git 2.50.1 with the
+A Darwin arm64 check on Go 1.26.6 and Git 2.50.1 used
 per-output caches empty at the start of the producer build. It measured
 description in 54 ms, the cold producer build in 2.71 s, and the native
-consumer rebuild in 3.81 s. These values document the observed dependency and
-toolchain conditions; repeat the check after changing either checkout or
-toolchain rather than treating them as a release latency guarantee.
+consumer rebuild in 3.81 s. These numbers describe that older toolchain.
+Repeat the check after changing either checkout or toolchain; do not treat
+these timings as a release latency guarantee.
 
 ## Onboard a workspace
 
