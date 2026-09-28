@@ -7,7 +7,7 @@ import (
 
 const (
 	// CurrentVersion is the planned stable version reported by source builds.
-	CurrentVersion     = "v0.2.8"
+	CurrentVersion     = "v0.2.9"
 	DevelopmentVersion = "dev"
 )
 
